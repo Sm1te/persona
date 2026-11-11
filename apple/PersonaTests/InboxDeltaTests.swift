@@ -8,7 +8,7 @@ struct InboxDeltaTests {
     private func item(_ id: String, manager: String? = "assistant", at: TimeInterval, title: String? = nil) -> InboxItem {
         let m = manager.map { #","manager":"\#($0)""# } ?? ""
         let json = """
-        {"id":"\(id)","source":"mail","kind":"mail","title":"\(title ?? id)","preview":"","count":1,
+        {"id":"\(id)","source":"mail","kind":"mail","account":"a","account_name":"A","title":"\(title ?? id)","preview":"","count":1,
          "updated_at":"\(ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: at)))"\(m)}
         """
         do { return try JSON.decoder.decode(InboxItem.self, from: Data(json.utf8)) }
