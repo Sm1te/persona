@@ -807,21 +807,35 @@ func (c *Client) PaneReportMetadata(ctx context.Context, paneID, source string, 
 }
 
 // PaneReportResume tells herdr how to resume the pane's agent after a server restart: argv replaces herdr's
-// built-in resume command (`claude --resume <id>`) for this pane while source holds it. herdr only takes resume_argv
-// from the reporter holding the pane, so a pane.report_agent comes first (herdr's own screen detection still decides
-// the pane's state). herdr types argv into the restored pane's shell, quoting elements that need it; no element may
-// contain an apostrophe. Older herdr ignores resume_argv.
+// built-in resume command (`claude --resume <id>`) for this pane. When herdr already detects the agent process in
+// the pane (Claude, Codex, pi…), pane.report_agent_session accepts resume_argv without claiming lifecycle authority,
+// so herdr's own screen and OSC detection continues to decide agent_status; pane.clear_agent_authority drops any stale
+// authority an older node left for source without clearing another integration's (such as herdr:pi). Only when herdr
+// rejects the session report with resume_not_accepted (an agent process herdr does not detect natively, such as a
+// compatible CLI) does it claim the pane with pane.report_agent first. herdr types argv into the restored pane's
+// shell, quoting elements that need it; no element may contain an apostrophe. Older herdr ignores resume_argv.
 func (c *Client) PaneReportResume(ctx context.Context, pane, source, agent, sessionID string, argv []string) error {
 	seq := ReportSeq()
-	if err := c.rpc(ctx, "pane.report_agent", map[string]any{
-		"pane_id": pane, "source": source, "agent": agent, "state": "idle", "seq": seq,
-	}, nil); err != nil {
-		return err
-	}
-	return c.rpc(ctx, "pane.report_agent_session", map[string]any{
+	_ = c.rpc(ctx, "pane.clear_agent_authority", map[string]any{
+		"pane_id": pane, "source": source, "seq": seq,
+	}, nil)
+	err := c.rpc(ctx, "pane.report_agent_session", map[string]any{
 		"pane_id": pane, "source": source, "agent": agent, "seq": seq + 1,
 		"agent_session_id": sessionID, "resume_argv": argv,
 	}, nil)
+	var he *Error
+	if errors.As(err, &he) && he.Code == "resume_not_accepted" {
+		if rerr := c.rpc(ctx, "pane.report_agent", map[string]any{
+			"pane_id": pane, "source": source, "agent": agent, "state": "idle", "seq": seq + 2,
+		}, nil); rerr != nil {
+			return rerr
+		}
+		return c.rpc(ctx, "pane.report_agent_session", map[string]any{
+			"pane_id": pane, "source": source, "agent": agent, "seq": seq + 3,
+			"agent_session_id": sessionID, "resume_argv": argv,
+		}, nil)
+	}
+	return err
 }
 
 // ReportSeq orders a reporter's reports (herdr drops one older than the last it took); tests fix it.

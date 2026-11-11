@@ -59,7 +59,7 @@ func TestLiveHerdr(t *testing.T) {
 		mkdir(t, filepath.Join(home, "libexec"))
 		_ = os.WriteFile(filepath.Join(home, "libexec", "claude"), b, 0o755)
 	}
-	write("claude", "#!/bin/sh\necho \"CLAUDE $*\" >> "+log+"\nexec "+filepath.Join(home, "libexec", "claude")+"\n")
+	write("claude", "#!/bin/sh\necho \"CLAUDE $*\" >> "+log+"\nprintf '\\033]0;◐ Working\\007'\nexec "+filepath.Join(home, "libexec", "claude")+"\n")
 	_ = os.WriteFile(filepath.Join(home, ".zshenv"), []byte("export PATH="+bin+":"+filepath.Dir(herdrBin)+":$PATH\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(home, ".zshrc"), []byte("alias work_gw='claude --gateway work_gw'\n"), 0o644)
 	cli := func(args ...string) string {
@@ -153,11 +153,19 @@ func TestLiveHerdr(t *testing.T) {
 	spec := claudeLaunch{Launcher: "work_gw", Settings: filepath.Join(n.dir, "claude-settings.json")}
 	_ = c.AgentRename(ctx, persona, "j-0e0000")
 	n.holdResume(ctx, n.hosts.Get(host.Herdr).(*herdrHost), persona, startID, spec)
-	// Held by Persona, the pane keeps its agent, its name and herdr's own reading of its state.
-	if a, err := c.AgentGet(ctx, persona); err != nil || a.Agent != "claude" || a.Name != "j-0e0000" {
-		t.Errorf("after the hold: %+v %v", a, err)
+	// Given its resume command, the pane keeps its agent, its name and herdr's own reading of its working state (#4657:
+	// before this fix, pane.report_agent pinned agent_status to "idle" forever).
+	var held *herdr.Agent
+	for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		held, err = c.AgentGet(ctx, persona)
+		if err == nil && held.AgentStatus == "working" {
+			break
+		}
+	}
+	if err != nil || held == nil || held.Agent != "claude" || held.Name != "j-0e0000" || held.AgentStatus != "working" {
+		t.Errorf("after the hold: %+v %v (want agent claude, name j-0e0000, status working)", held, err)
 	} else {
-		t.Logf("LIVE held pane: agent %s, name %s, status %s", a.Agent, a.Name, a.AgentStatus)
+		t.Logf("LIVE held pane: agent %s, name %s, status %s", held.Agent, held.Name, held.AgentStatus)
 	}
 	official(persona, startID) // herdr's integration reports again (its SessionStart hook): the command stays
 	time.Sleep(time.Second)

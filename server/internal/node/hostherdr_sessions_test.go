@@ -257,7 +257,7 @@ func TestHerdrHostRoutesEachCallToItsSession(t *testing.T) {
 		"agent.get target=w4:p1", "pane.process_info pane_id=w4:p1", "agent.rename target=w4:p1", "pane.send_input pane_id=w4:p1",
 		"pane.split target_pane_id=w4:p1", "tab.create workspace_id=w4", "tab.create label=new", "tab.rename tab_id=w4:t1",
 		"tab.rename label=tab", "workspace.rename workspace_id=w4", "workspace.rename label=renamed", "pane.list workspace_id=w4",
-		"tab.close tab_id=w4:t1", "tab.close tab_id=w4:t1", "pane.report_agent pane_id=w4:p1",
+		"tab.close tab_id=w4:t1", "tab.close tab_id=w4:t1", "pane.clear_agent_authority pane_id=w4:p1",
 		"pane.report_agent_session pane_id=w4:p1", "pane.focus pane_id=w4:p1", "pane.report_metadata pane_id=w4:p1",
 		"pane.process_info pane_id=w4:p1", "pane.layout pane_id=w4:p1", "worktree.create workspace_id=w4",
 	}

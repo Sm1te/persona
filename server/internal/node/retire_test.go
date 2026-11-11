@@ -21,7 +21,7 @@ import (
 // whatever is being driven; a test that lists the calls it expects should not depend on where it fell (#1940).
 func withoutAgentReports(trace []string) []string {
 	return slices.DeleteFunc(slices.Clone(trace), func(c string) bool {
-		return strings.HasPrefix(c, "pane.report_agent")
+		return strings.HasPrefix(c, "pane.report_agent") || strings.HasPrefix(c, "pane.clear_agent_authority")
 	})
 }
 

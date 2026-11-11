@@ -16,15 +16,17 @@ import (
 // session silently moved to the user's own subscription), --settings, --mcp-config, Persona's hooks — and a session
 // without a transcript stopped at Claude's login screen (2026-11-04, #1879).
 //
-// herdr v0.9.5 has no per-pane switch to turn its resume off, but it takes a per-pane resume command: a reporter that
-// holds the pane (pane.report_agent) may attach resume_argv to its session report, and herdr runs that instead of its
-// built-in one, only for that pane. So every Claude Persona starts in herdr gets one: `eval "<the command Persona
-// starts it with, --resume <id>>"`, typed into the restored pane's shell like herdr's own (so ~/.zshrc launchers
-// work). Claude that the user starts in a terminal is never touched: herdr resumes it as before. The user's herdr
-// config is not changed. herdr keeps the command across later session reports with another id (checked against
-// v0.9.5), so a Claude that moved to a new session (/clear) is reported again from its SessionStart hook.
+// herdr v0.9.5 has no per-pane switch to turn its resume off, but it takes a per-pane resume command: when herdr
+// detects the agent process in the pane (or a reporter claims an unrecognized one), pane.report_agent_session may
+// attach resume_argv, and herdr runs that instead of its built-in one, only for that pane — without holding lifecycle
+// authority on panes herdr detects itself, so herdr's screen and OSC detection still decides agent_status (#4657).
+// Every Agent Persona starts in herdr gets `eval "<the command Persona starts it with, --resume <id>>"`, typed into
+// the restored pane's shell like herdr's own (so ~/.zshrc launchers work). Agents that the user starts in a terminal
+// are never touched: herdr resumes them as before. The user's herdr config is not changed. herdr keeps the command
+// across later session reports with another id (checked against v0.9.5), so a Claude that moved to a new session
+// (/clear) is reported again from its SessionStart hook.
 
-// resumeSource is the reporter Persona holds its panes as (a custom source: herdr's own integration keeps its own).
+// resumeSource is the reporter Persona sends resume_argv as (a custom source: herdr's own integration keeps its own).
 const resumeSource = "custom:persona"
 
 // agentLaunch is what an agent in a pane was started with, to start it again the same way.

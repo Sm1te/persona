@@ -33,15 +33,15 @@ func startCmd(launcher, args, dir string) string {
 		" --mcp-config "+shellQuote(filepath.Join(dir, "mcp.json")), shellQuote)
 }
 
-// resumeHeld are the two reports that give herdr the pane's resume command (herdrresume.go): the pane held as
-// Persona's, then the session with eval of cmd as its resume_argv.
+// resumeHeld are the two reports that give herdr the pane's resume command (herdrresume.go): any stale Persona
+// authority cleared so herdr's screen detection decides state (#4657), then the session with eval of cmd as resume_argv.
 func resumeHeld(pane, id, cmd string) [2]string {
 	return resumeHeldAgent("claude", pane, id, cmd)
 }
 
 func resumeHeldAgent(agent, pane, id, cmd string) [2]string {
 	return [2]string{
-		call("pane.report_agent", map[string]any{"pane_id": pane, "source": resumeSource, "agent": agent, "state": "idle", "seq": 7}),
+		call("pane.clear_agent_authority", map[string]any{"pane_id": pane, "source": resumeSource, "seq": 7}),
 		call("pane.report_agent_session", map[string]any{"pane_id": pane, "source": resumeSource, "agent": agent, "seq": 8,
 			"agent_session_id": id, "resume_argv": []string{"eval", cmd}}),
 	}

@@ -353,3 +353,51 @@ func TestCutAnswerIsErrTruncated(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestPaneReportResumeAvoidsLifecycleAuthorityUntilNeeded(t *testing.T) {
+	oldSeq := ReportSeq
+	ReportSeq = func() int64 { return 100 }
+	t.Cleanup(func() { ReportSeq = oldSeq })
+
+	var calls []string
+	rejectFirst := false
+	sock := fakeServer(t, func(method string, params map[string]any) string {
+		b, _ := json.Marshal(params)
+		calls = append(calls, method+" "+string(b))
+		if method == "pane.report_agent_session" && rejectFirst {
+			rejectFirst = false
+			return `"error":{"code":"resume_not_accepted","message":"resume_argv requires the reporter to hold the pane"}`
+		}
+		return `"result":{"type":"ok"}`
+	})
+	c := &Client{Bin: "/nonexistent/herdr", Socket: sock}
+	ctx := context.Background()
+
+	// Detected agent (Claude, Codex, pi): clears stale authority and reports resume_argv without pane.report_agent.
+	if err := c.PaneReportResume(ctx, "w1:p2", "custom:persona", "claude", "s1", []string{"eval", "cmd"}); err != nil {
+		t.Fatal(err)
+	}
+	wantDetected := []string{
+		`pane.clear_agent_authority {"pane_id":"w1:p2","seq":100,"source":"custom:persona"}`,
+		`pane.report_agent_session {"agent":"claude","agent_session_id":"s1","pane_id":"w1:p2","resume_argv":["eval","cmd"],"seq":101,"source":"custom:persona"}`,
+	}
+	if strings.Join(calls, "\n") != strings.Join(wantDetected, "\n") {
+		t.Fatalf("detected calls:\n%s\nwant:\n%s", strings.Join(calls, "\n"), strings.Join(wantDetected, "\n"))
+	}
+
+	// Unrecognized agent (compatible CLI): falls back to pane.report_agent only after resume_not_accepted.
+	calls = nil
+	rejectFirst = true
+	if err := c.PaneReportResume(ctx, "w1:p5", "custom:persona", "traex", "s2", []string{"eval", "tx"}); err != nil {
+		t.Fatal(err)
+	}
+	wantFallback := []string{
+		`pane.clear_agent_authority {"pane_id":"w1:p5","seq":100,"source":"custom:persona"}`,
+		`pane.report_agent_session {"agent":"traex","agent_session_id":"s2","pane_id":"w1:p5","resume_argv":["eval","tx"],"seq":101,"source":"custom:persona"}`,
+		`pane.report_agent {"agent":"traex","pane_id":"w1:p5","seq":102,"source":"custom:persona","state":"idle"}`,
+		`pane.report_agent_session {"agent":"traex","agent_session_id":"s2","pane_id":"w1:p5","resume_argv":["eval","tx"],"seq":103,"source":"custom:persona"}`,
+	}
+	if strings.Join(calls, "\n") != strings.Join(wantFallback, "\n") {
+		t.Fatalf("fallback calls:\n%s\nwant:\n%s", strings.Join(calls, "\n"), strings.Join(wantFallback, "\n"))
+	}
+}

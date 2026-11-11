@@ -161,7 +161,11 @@ func (n *Node) traexAgents(ctx context.Context, panes []host.Agent, agents []hos
 	}
 	isAgent := map[string]bool{}
 	for _, a := range agents {
-		isAgent[a.PaneID] = true
+		// PaneReportResume claims a compatible-CLI pane in herdr so resume_argv persists, which makes herdr list a
+		// session-less traex entry in snap.Agents; keep filling its session id and screen status from the owner file.
+		if a.Agent != traexAgent || a.SessionID() != "" {
+			isAgent[a.PaneID] = true
+		}
 	}
 	byPane := map[string]host.Agent{}
 	for _, p := range panes {
