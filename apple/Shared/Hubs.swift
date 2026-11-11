@@ -373,7 +373,8 @@ nonisolated enum HubRoute {
         guard let (data, resp) = try? await URLSession.shared.data(for: req, delegate: HubRedirects.shared),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-        if let want = candidate.hubID, !want.isEmpty, let got = obj["hub_id"] as? String, !got.isEmpty, got != want { return false }
+        // Known hub_id: the answer must carry the same one (an answer without it could be any server, or an older hub).
+        if let want = candidate.hubID, !want.isEmpty, obj["hub_id"] as? String != want { return false }
         return obj["ok"] as? Bool == true
     }
 }

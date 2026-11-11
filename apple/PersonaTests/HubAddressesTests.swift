@@ -2,14 +2,14 @@ import Foundation
 import Testing
 @testable import Persona
 
-/// Answers health probes at addresses.invalid as hub "H" would.
+/// Answers health probes at addresses.invalid as hub "H" would, and at old.invalid as a server without a hub_id.
 private final class HealthProtocol: URLProtocol, @unchecked Sendable {
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "addresses.invalid" }
+    override class func canInit(with request: URLRequest) -> Bool { ["addresses.invalid", "old.invalid"].contains(request.url?.host) }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let resp = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"ok":true,"hub_id":"H"}"#.utf8))
+        client?.urlProtocol(self, didLoad: Data((request.url?.host == "old.invalid" ? #"{"ok":true}"# : #"{"ok":true,"hub_id":"H"}"#).utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
@@ -100,5 +100,9 @@ struct HubAddressesTests {
         #expect(await HubRoute.healthProbe(.init(config: config, hub: "h", address: 1, hubID: "H")))
         #expect(await !HubRoute.healthProbe(.init(config: config, hub: "h", address: 1, hubID: "OTHER")))
         #expect(await HubRoute.healthProbe(.init(config: config))) // the paired address: not checked, as before
+        // No hub_id in the answer: it can't be told apart from another server.
+        let old = ServerConfig(url: URL(string: "https://old.invalid")!, token: "device")
+        #expect(await !HubRoute.healthProbe(.init(config: old, hub: "h", address: 1, hubID: "H")))
+        #expect(await HubRoute.healthProbe(.init(config: old, hub: "h", address: 1))) // hub_id not known yet
     }
 }

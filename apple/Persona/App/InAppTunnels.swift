@@ -248,7 +248,7 @@ extension AppModel {
     /// fails, or a device that may not read the extension's settings, leaves what was there.
     func refreshInAppTunnel(_ group: String) async {
         guard let link = link(group), !link.isDemo, link.features.contains("extensions"), let on = link.live.currentConfig,
-              let hub = registry.members(group).first(where: { $0.config == on }) else { return }
+              let hub = registry.members(group).first(where: { $0.configs.contains(on) }) else { return }
         let api = link.api
         guard let list = try? await api.plugins() else { return }
         guard let id = InAppTunnelRoute.extensionOn(list) else {
@@ -282,7 +282,7 @@ extension AppModel {
     /// details and Settings › hub say.
     func inAppTunnelState(_ group: String) -> (hub: PairedHub, route: InAppTunnelRoute, routed: Bool, state: InAppTunnels.State?)? {
         guard let link = link(group), let on = link.live.currentConfig,
-              let hub = registry.members(group).first(where: { $0.config == on }), let route = hub.inAppTunnel, route.isUsable else { return nil }
+              let hub = registry.members(group).first(where: { $0.configs.contains(on) }), let route = hub.inAppTunnel, route.isUsable else { return nil }
         let tunnels = InAppTunnels.shared
         return (hub, route, tunnels.routed.contains(hub.id), tunnels.states[hub.id])
     }

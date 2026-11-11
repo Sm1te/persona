@@ -9,6 +9,7 @@ struct HubAddressesPage: View {
     @State private var url = ""
     @State private var clientID = ""
     @State private var clientSecret = ""
+    @State private var showAccess = false
 
     var body: some View {
         if let hub = model.registry.hubs.first(where: { $0.id == hubID }) {
@@ -33,7 +34,7 @@ struct HubAddressesPage: View {
             } header: {
                 SettingsHeading(String(localized: "Order to Try"))
             } footer: {
-                Text("The app asks every address at once and uses the first in this order that answers; a later one only when the earlier ones don't. The paired address always comes first.")
+                Text("The app asks every address at once and uses the first in this order that answers; a later one when the earlier ones don't answer quickly. The paired address always comes first.")
             }
             Section {
                 #if os(macOS)
@@ -47,11 +48,17 @@ struct HubAddressesPage: View {
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("addresses.url")
                 #endif
-                CloudflareAccessFields(clientID: $clientID, clientSecret: $clientSecret, idPrefix: "addresses.access")
+                // Closed until needed, as in the pairing sheet: most addresses have no token.
+                DisclosureGroup(isExpanded: $showAccess) {
+                    CloudflareAccessFields(clientID: $clientID, clientSecret: $clientSecret, idPrefix: "addresses.access")
+                } label: {
+                    Label("Cloudflare Access", systemImage: Theme.Icon.cloudflareAccess).lineLimit(1)
+                }
+                .accessibilityIdentifier("addresses.access")
             } header: {
                 SettingsHeading(String(localized: "Add Address"))
             } footer: {
-                Text("Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in the Cloudflare Access token only if this address is behind Access; it's sent to this address only.")
+                Text("Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in both Cloudflare Access fields only if this address is behind Access; the token is sent to this address only.")
             }
             // In a section of its own, as Cloudflare Access's Save: the fields' card keeps its rounded end.
             Section {
@@ -110,7 +117,7 @@ struct HubAddressesPage: View {
     private func add(_ hub: PairedHub, _ added: [HubAddress]) {
         guard let a = draft(hub) else { return }
         save(added) { $0.append(a) }
-        url = ""; clientID = ""; clientSecret = ""
+        url = ""; clientID = ""; clientSecret = ""; showAccess = false
         Haptics.success()
     }
 

@@ -272,7 +272,7 @@ extension AppModel {
     /// Settings › hub say.
     func tunnel(_ group: String) -> (hub: PairedHub, routed: Bool, state: SSHTunnels.State?)? {
         guard let link = link(group), let on = link.live.currentConfig,
-              let hub = registry.members(group).first(where: { $0.config == on }), let route = hub.ssh, route.isUsable else { return nil }
+              let hub = registry.members(group).first(where: { $0.configs.contains(on) }), let route = hub.ssh, route.isUsable else { return nil }
         let tunnels = SSHTunnels.shared
         return (hub, tunnels.routed.contains(hub.id), tunnels.states[hub.id])
     }
