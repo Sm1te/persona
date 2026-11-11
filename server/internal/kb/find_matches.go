@@ -40,8 +40,8 @@ func (e *Engine) Matches(kind, id, query string, limit int) []Match {
 	look := func(p string, msgs bool) {
 		var raw []byte
 		var err error
-		if kind == KindRecording && filepath.Base(p) != "summary.md" && filepath.Base(p) != "minutes.md" {
-			raw = recording[filepath.Base(p)] // the uploaded files, as committed (summary and minutes are the hub's)
+		if base := filepath.Base(p); kind == KindRecording && base != "summary.md" && base != "minutes.md" && base != photosText {
+			raw = recording[base] // the uploaded files, as committed (summary, minutes and photos are the hub's)
 		} else {
 			raw, err = os.ReadFile(p)
 		}
@@ -103,7 +103,7 @@ func (e *Engine) Matches(kind, id, query string, limit int) []Match {
 			}
 		}
 	case KindRecording:
-		for _, f := range []string{"summary.md", "minutes.md", "transcript.md", "meta.json"} {
+		for _, f := range []string{"summary.md", "minutes.md", "transcript.md", photosText, "meta.json"} {
 			look(e.Store.path(kind, id, f), false)
 		}
 	case KindTopic:

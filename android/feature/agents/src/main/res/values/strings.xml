@@ -146,6 +146,7 @@
     <string name="agents_action_stop_loop">Stop loop</string>
     <string name="agents_action_handoff">Hand to Persona</string>
     <string name="agents_action_mark_read">Mark as read</string>
+    <string name="agents_action_interrupt">Interrupt</string>
     <string name="agents_action_copy_resume">Copy resume command</string>
     <string name="agents_action_copy_directory">Copy directory</string>
     <string name="agents_action_open_session">Open session</string>
@@ -155,8 +156,8 @@
     <string name="agents_repo_worktree">Worktree</string>
     <string name="agents_card_question">Claude has a question</string>
     <string name="agents_card_question_by">%1$s has a question</string>
-    <string name="agents_card_permission">Needs your permission</string>
-    <string name="agents_card_permission_by">%1$s needs your permission</string>
+    <string name="agents_card_permission">Waiting for your approval</string>
+    <string name="agents_card_permission_by">%1$s is waiting for your approval</string>
     <string name="agents_card_plan">Plan awaiting approval</string>
     <string name="agents_card_screen">Terminal needs you</string>
     <string name="agents_card_other">Needs you</string>
@@ -212,6 +213,7 @@
     <string name="agents_notice_renamed">Renamed</string>
     <string name="agents_notice_deleted">Chat deleted</string>
     <string name="agents_notice_attached">Joined live</string>
+    <string name="agents_notice_interrupted">Interrupted</string>
     <string name="agents_notice_stop_loop_offline">Connect to the hub to stop the loop</string>
     <string name="agents_notice_stop_loop_sent">Stop request sent; the hub will update the loop\'s state</string>
     <string name="agents_notice_operations_missing">Session actions aren\'t connected yet</string>

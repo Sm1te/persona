@@ -19,6 +19,7 @@ import { baseName, sessionTitle, tabLabel } from "../lib/format";
 import { cardState } from "../lib/card-focus";
 import { agentKey, isSpacePinned, pinnedSessions } from "../lib/pins";
 import { firstAndCurrent } from "../lib/persona-nav";
+import { recentConversations } from "../lib/conversation-origins";
 import { countsLabel, directionLabel, totalCounts, useDirectionNames, useLeaderCounts } from "../lib/direction-names";
 import { groupsByDirection, useDirectionTree } from "../lib/direction-tree";
 import { buildDirectionAgentTree } from "../lib/direction-agent-tree";
@@ -263,11 +264,13 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
   const activeKey = useActiveKey(route);
   const workBrowserReady = useStore((s) => s.features.includes("sessions_dimensions"));
   // Persona chats are the main conversation (its row above) and the leaders, "常驻" (#4331): making a chat one and ending
-  // it is the menu's 设为常驻 / 取消常驻, on the hub for every device; every other chat is under 全部对话. Each says what
-  // it has open, Working and Waiting on you, and an open sidebar follows the hub's `directions` (lib/store.ts).
+  // it is the menu's 设为常驻 / 取消常驻, on the hub for every device. Each says what it has open, Working and Waiting on
+  // you, and an open sidebar follows the hub's `directions` (lib/store.ts). Then "最近", the newest five of the user's
+  // other chats (#4873); every other chat is under 全部对话.
   const leaders = (assistant?.leaders ?? []).filter((id) => id !== assistant?.main);
   const isLeader = (id: string) => leaders.includes(id);
   const directions = leaders.map((id) => assistant?.conversations.find((c) => c.session_id === id)).filter((c): c is Session => !!c);
+  const recent = recentConversations(assistant?.conversations ?? [], assistant?.main, leaders);
   const directionNames = useDirectionNames(directions.map((c) => `${c.session_id}\u0000${c.title ?? ""}`).join("\u0001"));
   const counts = useLeaderCounts();
   const leaderTotal = totalCounts(counts, leaders);
@@ -277,7 +280,7 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
   const [convMenu, setConvMenu] = useState<{ s: Session; anchor: HTMLElement; at?: MenuAt } | null>(null);
   // one function for the sidebar's life: the conversation rows and the main row keep their memo across pushes
   const onConvMenu = useCallback<RowMenuFn>((s, anchor, at) => setConvMenu((m) => (!at && m?.anchor === anchor ? null : { s, anchor, at })), []);
-  const [personaFolded, togglePersona] = useFolded("persona", false, { holds: activeKey === "history" || activeKey === "j:new" || directions.some((c) => activeKey === `j:${c.session_id}`) });
+  const [personaFolded, togglePersona] = useFolded("persona", false, { holds: activeKey === "history" || activeKey === "j:new" || [...directions, ...recent].some((c) => activeKey === `j:${c.session_id}`) });
   // the pages fold under their own title (#2524); the drawer's grid of icons doesn't
   const [pagesFolded, togglePages] = useFolded("pages", false, { all: false, holds: more.some((p) => p.k === activeKey) });
   const { nav, reg, hover, highlight } = useGlide(activeKey);
@@ -286,6 +289,10 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
 
   const directionRow = (c: Session) => (
     <SessionRow key={c.session_id} s={c} k={`j:${c.session_id}`} reg={reg} hover={hover} active={activeKey === `j:${c.session_id}`} to={conversationPage(c.session_id, c.machine_id, c.manager)} go={go} label={directionLabel(directionNames, c.session_id, conversationTitle(c))} hint={countsLabel(counts.get(c.session_id), t) || undefined} hintFull showState={false} icon="pin" onMenu={onConvMenu} menuLabel={t("conversation-menu.actions")} />
+  );
+
+  const recentRow = (c: Session) => (
+    <SessionRow key={c.session_id} s={c} k={`j:${c.session_id}`} reg={reg} hover={hover} active={activeKey === `j:${c.session_id}`} to={conversationPage(c.session_id, c.machine_id, c.manager)} go={go} label={conversationTitle(c)} showState={false} onMenu={onConvMenu} menuLabel={t("conversation-menu.actions")} />
   );
 
   return (
@@ -341,6 +348,8 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
             {directions.length > 0 && <SubHeading label={t("sidebar.directions")} />}
             {/* each 常驻 row folds open to its tasks (#4352) */}
             {directions.map((c) => <SidebarDirectionRow key={c.session_id} id={c.session_id} name={directionLabel(directionNames, c.session_id, conversationTitle(c))} row={directionRow(c)} reg={reg} hover={hover} go={go} onNavigate={onNavigate} />)}
+            {recent.length > 0 && <SubHeading label={t("sidebar.recent_chats")} />}
+            {recent.map(recentRow)}
             {assistant && <NavRow k="history" reg={reg} hover={hover} active={activeKey === "history"} to={{ name: "history" }} go={go} icon="list" label={t("sidebar.all_chats")} hint={assistant.conversations.length > 0 ? String(assistant.conversations.length) : undefined} />}
           </Section>
         )}

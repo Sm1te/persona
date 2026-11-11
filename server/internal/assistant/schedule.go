@@ -69,6 +69,10 @@ type Task struct {
 	// sentence or two on top. On for the default morning and evening routines (a hub set up before gets it with their
 	// current prompt, upgradeDefaultRoutines); an app that leaves it out of a change keeps it.
 	Facts bool `json:"facts,omitempty"`
+	// Report: a daily report (a dot's, docs/assistant/north-star.md "Daily briefing"): its runs open with the north
+	// star's lines. Set with schedule_routine's report or in the body of PUT /api/v1/assistant/tasks/{id}; a change
+	// that leaves it out keeps it.
+	Report bool `json:"report,omitempty"`
 	// factsText is the run's facts as the model is given them (briefing.go); set on the copy a run is made from, never stored.
 	factsText string
 	// kbDir is the knowledge directory the run's hint names (a daily run with the knowledge base on); set on the copy, never stored.
@@ -1079,7 +1083,8 @@ func (s *Service) toolScheduleRoutine(ctx context.Context, self string, args jso
 		Weekdays []int           `json:"weekdays"`
 		Cron     string          `json:"cron"`
 		Enabled  *bool           `json:"enabled"`
-		Push     *string         `json:"push"` // left out: a new routine pushes every run, an existing one keeps its push
+		Report   *bool           `json:"report"` // left out: kept
+		Push     *string         `json:"push"`   // left out: a new routine pushes every run, an existing one keeps its push
 		Until    json.RawMessage `json:"until"`
 		// The task's own model configuration (schedule_model.go): nil leaves it as it is, "" clears that part.
 		Launcher *string `json:"launcher"`
@@ -1158,6 +1163,9 @@ func (s *Service) toolScheduleRoutine(ctx context.Context, self string, args jso
 	}
 	if a.Enabled != nil {
 		t.Enabled = *a.Enabled
+	}
+	if a.Report != nil {
+		t.Report = *a.Report
 	}
 	if push != nil {
 		t.Push = *push
@@ -1689,9 +1697,7 @@ func (s *Service) runTask(t Task, due, now time.Time, manual, retried bool) (pro
 	if kb {
 		t.kbDir = s.kb.dir // the hint names where the knowledge base is, not the default
 	}
-	if t.Facts {
-		t.factsText = s.briefStart(ctx, t, time.Now()) // the run's facts, worked out once (briefing.go)
-	}
+	t.factsText = s.runFacts(ctx, t, time.Now()) // the run's facts, worked out once (north_star.go)
 	if t.SessionID != "" && t.pushesOnlyAsked() && s.mayBeMain(ctx, t.SessionID) {
 		// The conversation it came from became (or may be) the main one, which is never quiet.
 		s.logf("task %s: %s is (or may be) the main conversation, which is never quiet; running in its own", t.ID, short(t.SessionID))
@@ -2578,6 +2584,13 @@ func (s *Service) scheduleRoutes() {
 		}
 		if v, ok := raw["facts"]; ok { // and its facts: set only when the body has them
 			if err := json.Unmarshal(v, &t.Facts); err != nil {
+				sc.mu.Unlock()
+				apierr.Write(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if v, ok := raw["report"]; ok { // and whether it is a daily report, the same way
+			if err := json.Unmarshal(v, &t.Report); err != nil {
 				sc.mu.Unlock()
 				apierr.Write(w, http.StatusBadRequest, err)
 				return

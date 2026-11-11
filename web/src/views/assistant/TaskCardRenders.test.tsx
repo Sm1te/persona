@@ -68,7 +68,7 @@ const session = (sid: string) => getState().sessions.m1.find((s) => s.session_id
 
 describe("a task card", () => {
   it("draws its agent's question and where it runs", () => {
-    expect(host.textContent).toContain("需要你授权：swift test");
+    expect(host.textContent).toContain("在等你批准：swift test");
     expect(host.textContent).toContain("MacBook · app");
   });
 

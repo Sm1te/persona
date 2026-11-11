@@ -2,6 +2,7 @@ package hub
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -166,7 +167,9 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	}
 	s, known := m.session(sid)
 	picked := "" // a model picked in the chat's chip that the message runs on (#1644)
+	assistantConv := false
 	if h.isMainOn(m.cfg.ID, sid) || (known && (s.Assistant || m.isAssistant(s))) {
+		assistantConv = true
 		// One of the assistant's conversations: it says what the message runs on (and, the first one to a new main
 		// conversation started empty, what the old one left before it).
 		asked, _ := p["model"].(string)
@@ -210,7 +213,10 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 		}
 	}
 	if id == "" {
-		status, body := h.deliver(ctx, m, p)
+		status, body, outcome := h.deliverOnce(ctx, m, p)
+		if assistantConv {
+			h.conversationSent(m.cfg.ID, sid, status, body, outcome)
+		}
 		modelSent(status)
 		if status == http.StatusOK && fresh {
 			h.fresh.done(m.cfg.ID, sid)
@@ -266,6 +272,9 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	default:
 		var outcome string
 		f.status, f.body, outcome = h.deliverOnce(ctx, m, p)
+		if assistantConv {
+			h.conversationSent(m.cfg.ID, sid, f.status, f.body, outcome)
+		}
 		if h.store != nil {
 			if err := h.store.SettleSend(context.WithoutCancel(ctx), id, outcome); err != nil {
 				h.logf("send %s: %v", id, err)
@@ -314,9 +323,25 @@ func (h *Hub) deliverOnce(ctx context.Context, m *Machine, p map[string]any) (in
 	}
 }
 
-func (h *Hub) deliver(ctx context.Context, m *Machine, p map[string]any) (int, []byte) {
-	status, body, _ := h.deliverOnce(ctx, m, p)
-	return status, body
+// conversationSent tells the conversation's manager how an app's message to it went, delivered or not (the north
+// star's availability, docs/assistant/north-star.md): only a send that ran, not a retry answered from its record.
+func (h *Hub) conversationSent(mid, sid string, status int, body []byte, outcome string) {
+	r := assistantwire.ConversationSent{MachineID: mid, SessionID: sid, Outcome: assistantwire.ConversationFailed}
+	switch {
+	case status == http.StatusOK:
+		r.Outcome = assistantwire.ConversationDelivered
+	case outcome == sendUnknown:
+		r.Outcome = assistantwire.ConversationUnknown
+	default:
+		var e struct {
+			Code   string `json:"code"`
+			Detail string `json:"detail"`
+			Error  string `json:"error"`
+		}
+		_ = json.Unmarshal(body, &e)
+		r.Code, r.Error = e.Code, cmp.Or(e.Detail, e.Error)
+	}
+	h.asstOf(h.sessionOwner(mid, sid)).notify(assistantwire.EventConversationSent, r)
 }
 
 // sendOutcome reads a node call's error: what may have reached the terminal.

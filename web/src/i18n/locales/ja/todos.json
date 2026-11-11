@@ -26,7 +26,7 @@
   "delete_confirm": "「{title}」を削除しますか？関連付けられたエージェントには影響しません。",
   "delete": "削除",
   "kicker_plan": "プランの承認待ち",
-  "kicker_permission": "許可が必要です",
+  "kicker_permission": "承認を待っています",
   "kicker_screen": "ターミナルで対応が必要です",
   "kicker_question": "質問があります",
   "reopen_todo": "ToDoを再開",

@@ -82,9 +82,11 @@ nonisolated struct ExtensionPartialRemoval: Equatable, Sendable {
     /// nil for any other error.
     init?(error: Error) {
         guard let e = error as? APIError, e.code == "partial_uninstall", let body = e.details else { return nil }
-        let ids = { (key: String) in (body[key]?.array ?? []).compactMap(\.string) }
+        // Ids are strings; anything else in the lists is left out (`JSONValue.string` would make a number one).
+        let text = { (v: JSONValue?) -> String? in if case .string(let s)? = v { s } else { nil } }
+        let ids = { (key: String) in (body[key]?.array ?? []).compactMap { text($0) } }
         let failed = (body["failed_members"]?.array ?? []).compactMap { item in
-            item["id"]?.string.map { Failure(id: $0, error: item["error"]?.string ?? "") }
+            text(item["id"]).map { Failure(id: $0, error: text(item["error"]) ?? "") }
         }
         self.init(removed: ids("removed_members"), failed: failed, remaining: ids("remaining_members"))
     }

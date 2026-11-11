@@ -396,6 +396,42 @@ nonisolated struct InboxTriageStatus: Codable, Hashable, Sendable {
 nonisolated struct InboxListing: Decodable, Sendable {
     var items: [InboxItem]
     var triage: InboxTriageStatus?
+    /// Asked with `since` (docs/protocol/protocol.md "Inbox delta", #4740): what names this list for the next one; nil
+    /// from a hub without deltas.
+    var cursor: String?
+    /// A delta: `items` are only the ones added or changed since the cursor asked with, `removed` the ones gone.
+    var delta: Bool?
+    var removed: [Removed]?
+    /// What `since` says before the app holds a cursor: one no list has, so the hub answers the whole list and its cursor
+    /// (an empty value would not be sent at all).
+    static let noCursor = "0"
+
+    nonisolated struct Removed: Decodable, Sendable, Hashable {
+        var id: String
+        var manager: String?
+        var key: String { InboxItem.key(id: id, manager: manager) }
+    }
+
+    /// `held` with this delta applied: changed items in place, new ones in, removed ones out, then in the hub's order
+    /// (each manager's items together, the managers as they came; newest first, by id among items of the same moment).
+    func applied(to held: [InboxItem]) -> [InboxItem] {
+        let gone = Set((removed ?? []).map(\.key))
+        var changed: [String: InboxItem] = [:]
+        for it in items where changed[it.key] == nil { changed[it.key] = it }
+        var out = held.compactMap { it -> InboxItem? in
+            guard !gone.contains(it.key) else { return nil }
+            return changed.removeValue(forKey: it.key) ?? it
+        }
+        out += items.filter { changed.removeValue(forKey: $0.key) != nil }
+        var managers: [String: Int] = [:]
+        for it in out where managers[it.manager ?? ""] == nil { managers[it.manager ?? ""] = managers.count }
+        return out.sorted { a, b in
+            let ma = managers[a.manager ?? ""] ?? 0, mb = managers[b.manager ?? ""] ?? 0
+            if ma != mb { return ma < mb }
+            let ta = a.updatedAt ?? .distantPast, tb = b.updatedAt ?? .distantPast
+            return ta != tb ? ta > tb : a.id < b.id
+        }
+    }
 }
 
 /// A page of the hub's done history (GET /api/v1/inbox/done, #2200): done items older than the list's few days, newest
@@ -439,6 +475,27 @@ extension APIClient {
     func inboxListing(connectors: Bool = false) async throws -> InboxListing {
         try await Self.decodeInbox(request("GET", "/api/v1/inbox", query: connectors ? ["sources": "all"] : [:]))
     }
+
+    /// The list again, sending the tag of the one held as `If-None-Match`: nil when it is still the hub's (304), and
+    /// nothing is downloaded or decoded. Without a tag it sends one no answer has, so the hub tags its answer
+    /// (docs/protocol/protocol.md "Inbox validator", #4739). Old hubs answer the whole list every time, untagged.
+    func inboxListing(connectors: Bool, etag: String?) async throws -> (listing: InboxListing?, etag: String?) {
+        let answer = try await conditionalGet("/api/v1/inbox", query: connectors ? ["sources": "all"] : [:],
+                                              etag: etag ?? Self.noInboxTag)
+        guard let data = answer.data else { return (nil, etag) }
+        return (try await Self.decodeInbox(data), answer.etag)
+    }
+
+    /// The list asked with `since` (docs/protocol/protocol.md "Inbox delta", #4740): a cursor of a list this app holds, or
+    /// `InboxListing.noCursor` for the whole list and its cursor. A hub without deltas answers the whole list, no cursor.
+    func inboxListing(connectors: Bool, since: String) async throws -> InboxListing {
+        var query = ["since": since]
+        if connectors { query["sources"] = "all" }
+        return try await Self.decodeInbox(request("GET", "/api/v1/inbox", query: query))
+    }
+
+    /// The tag a client sends before it has one (as the web app does): no answer has it.
+    nonisolated static let noInboxTag = #"W/"i1-""#
 
     /// A page of done items older than the list's (GET /api/v1/inbox/done, #2200), from `after` (nil: the newest).
     /// `before` without a cursor is a moment: the items done before it (a Done group's end, #2969).

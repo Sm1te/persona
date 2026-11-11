@@ -476,12 +476,13 @@ func (n *Node) assistantSend(ctx context.Context, id, cwd, launcher, text string
 	}
 
 	interject = interject && !fresh && p.interjects()
+	midTurn := !fresh && p.midTurn()
 	content := []map[string]any{}
 	if live != "" {
 		content = append(content, map[string]any{"type": "text", "text": live})
 	}
-	if interject {
-		content = append(content, interjectNote())
+	if midTurn {
+		content = append(content, interjectNote(interject))
 	}
 	for _, img := range images {
 		content = append(content, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": img.Mime, "data": img.Data}})

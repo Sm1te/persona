@@ -8,6 +8,7 @@ import { ConfirmedFacts } from "./ConfirmedFacts";
 import { RecordingMinutes } from "./RecordingMinutes";
 import { RecordingAsks } from "./RecordingAsks";
 import { MeetingPrivate, RecordingConversation, useRecordingMeeting } from "./RecordingConversation";
+import { RecordingPhotos } from "./RecordingPhotos";
 import { scrollBehavior } from "../../ui/stream/motion";
 import { Relationships } from "./Relationships";
 import { TopicPoints } from "./TopicPoints";
@@ -180,8 +181,11 @@ function OwnedEntryDetail({ kind, id, query, reloadKey, onToggleSidebar, onBack,
 
   const facts = d ? factsOf(d.kind, d.meta) : null;
   const rec = d ? recordingView(d.kind, d.meta, d.segments) : null;
-  // The meeting conversation (#3862): its private mark, room and follow-up, on a hub that lists meeting_conversation.
-  const meeting = useRecordingMeeting(d, rec, auth, current, manager);
+  // The meeting conversation (#3862): its private mark, room and follow-up, on a hub that lists meeting_conversation;
+  // its photos too where the hub lists meeting_photos (after a change of the photos the minutes may have lost a deleted
+  // photo's items or be made again: read them, and again on the next poll, reconnect or event if that read fails).
+  const reloadDetail = useCallback(() => load(), [load]);
+  const meeting = useRecordingMeeting(d, rec, auth, current, manager, reloadDetail);
   const log = timeline(d?.log);
   // A topic's summary is its points as Markdown (for search and Persona): the page shows the points themselves.
   const prof = d?.kind === "topics" ? "" : profile(d?.summary, e.one_line, e.name);
@@ -283,6 +287,7 @@ function OwnedEntryDetail({ kind, id, query, reloadKey, onToggleSidebar, onBack,
                 refresh={load}
                 onSaved={onSaved}
                 onJump={jumpToTranscript}
+                photos={meeting.photos}
               />}
               {rec && <RecordingConversation detail={d} rec={rec} meeting={meeting} auth={auth} current={current} manager={manager} />}
               {/* A room meeting's questions are in its thread; a #2981 meeting's stay here. */}
@@ -292,6 +297,7 @@ function OwnedEntryDetail({ kind, id, query, reloadKey, onToggleSidebar, onBack,
                 auth={{ token, tokenOwner: owner, headers: { [MANAGER_HEADER]: manager } }}
                 current={current}
               />}
+              {rec && <RecordingPhotos rec={rec} photos={meeting.photos} highlighted={highlighted} />}
 
               {query && resp?.matches && (
                 <Matches

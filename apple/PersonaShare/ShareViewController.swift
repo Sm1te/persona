@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 
 /// Share › Persona (#4586, #1460): text, a link or pictures from another app go to the conversation or agent picked in
@@ -190,7 +191,8 @@ final class ShareViewController: UIViewController {
                 }
             }
         }
-        let payload = images.compactMap(ShareModel.jpeg)
+        let pictures = images
+        let payload = await Task.detached(priority: .userInitiated) { pictures.compactMap(ShareModel.jpeg) }.value
         let text = ShareTargets.message(message, paths: paths)
         let body = text.isEmpty ? String(localized: "Please look at the image [Assistant View 5ad878]") : text
         do {
@@ -204,10 +206,13 @@ final class ShareViewController: UIViewController {
 
     var isFailed: Bool { if case .failed = phase { true } else { false } }
 
-    /// As the composer sends a picture: at most 1600 px a side, JPEG.
-    private static func jpeg(_ img: UIImage) -> ImagePayload? {
+    /// The long side a picture is sent at, as the composer's (`MessagePhotos.maxSide`).
+    nonisolated static let maxSide: CGFloat = 1600
+
+    /// As the composer sends a picture: at most `maxSide` a side, JPEG. Runs off the main actor (`send`).
+    nonisolated private static func jpeg(_ img: UIImage) -> ImagePayload? {
         let side = max(img.size.width, img.size.height)
-        let scale = side > 1600 ? 1600 / side : 1
+        let scale = side > maxSide ? maxSide / side : 1
         let size = CGSize(width: (img.size.width * scale).rounded(), height: (img.size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
@@ -444,13 +449,20 @@ private extension NSItemProvider {
 
     /// The item as a picture, when it is one: its own image type's bytes (Photos gives JPEG or HEIC; an app's UIImage
     /// comes as PNG), else the object itself. Asking for the abstract `public.image` gets nothing from most providers.
+    /// Decoded off the main actor by ImageIO, straight to the size it is sent at (`ShareModel.maxSide`): a 48 MP photo is
+    /// never decoded whole on the sheet's thread (docs/apple/performance.md, P8).
     func image() async -> UIImage? {
         guard let type = registeredContentTypes.first(where: { $0.conforms(to: .image) }) else { return nil }
-        if let data = try? await data(for: type), let img = UIImage(data: data) { return img }
+        let side = ShareModel.maxSide
+        if let data = try? await data(for: type),
+           let img = await Task.detached(priority: .userInitiated, operation: { SharedPicture.decode(data, maxPixel: side) }).value {
+            return img
+        }
         let item = try? await loadItem(forTypeIdentifier: type.identifier)
         if let img = item as? UIImage { return img }
-        if let url = item as? URL, let data = try? Data(contentsOf: url) { return UIImage(data: data) }
-        return (item as? Data).flatMap(UIImage.init(data:))
+        if let url = item as? URL { return await Task.detached(priority: .userInitiated) { SharedPicture.decode(url, maxPixel: side) }.value }
+        if let data = item as? Data { return await Task.detached(priority: .userInitiated) { SharedPicture.decode(data, maxPixel: side) }.value }
+        return nil
     }
 
     func data(for type: UTType) async throws -> Data {
@@ -473,5 +485,23 @@ private extension NSItemProvider {
         if let s = item as? String { return s }
         if let data = item as? Data, let s = String(data: data, encoding: .utf8) { return s }
         throw CocoaError(.fileReadUnknown)
+    }
+}
+
+/// A shared picture decoded by ImageIO to at most `maxPixel` on its long side, its orientation applied; nil when it isn't
+/// one. Called off the main actor (`NSItemProvider.image`). A file is read by ImageIO itself, never into memory whole.
+nonisolated enum SharedPicture {
+    static func decode(_ data: Data, maxPixel: CGFloat) -> UIImage? {
+        CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary).flatMap { thumbnail($0, maxPixel) }
+    }
+
+    static func decode(_ url: URL, maxPixel: CGFloat) -> UIImage? {
+        CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary).flatMap { thumbnail($0, maxPixel) }
+    }
+
+    private static func thumbnail(_ source: CGImageSource, _ maxPixel: CGFloat) -> UIImage? {
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map { UIImage(cgImage: $0) }
     }
 }

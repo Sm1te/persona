@@ -147,11 +147,21 @@ type ApiOptions = RequestInit & { json?: unknown; token?: string; tokenOwner?: s
 /** `tokenOwner`: explicit credentials opt into 401 recovery only while both the token and credential generation are current.
  *  `isAuthContextCurrent`: an optional additional lifetime fence for a request scoped to a view or manager.
  *  `timeout`: ms before a read gives up with HubTimeoutError (default READ_TIMEOUT_MS for GET, none otherwise; 0: none). */
-export async function api<T>(path: string, init: ApiOptions & { timeout?: number } = {}): Promise<T> {
+export function api<T>(path: string, init: ApiOptions & { timeout?: number } = {}): Promise<T> {
+  return call<T>(path, init, false);
+}
+
+/** A hub route's bytes (an image it serves, such as a meeting photo's) with `api`'s credentials, headers, time limit and
+ *  errors: for what an `<img>` can't fetch itself, since it sends no header (the bearer token, the manager's). */
+export function apiBlob(path: string, init: ApiOptions & { timeout?: number } = {}): Promise<Blob> {
+  return call<Blob>(path, init, true);
+}
+
+async function call<T>(path: string, init: ApiOptions & { timeout?: number }, binary: boolean): Promise<T> {
   const { timeout, ...rest } = init;
   const read = (init.method ?? "GET").toUpperCase() === "GET";
   const limit = timeout ?? (read ? READ_TIMEOUT_MS : 0);
-  if (!limit) return request<T>(path, rest);
+  if (!limit) return request<T>(path, rest, binary);
   // The caller's own signal still aborts as before (an AbortError); only the time running out becomes HubTimeoutError.
   const controller = new AbortController();
   const outer = init.signal;
@@ -166,7 +176,7 @@ export async function api<T>(path: string, init: ApiOptions & { timeout?: number
   try {
     for (let tries = 0; ; tries++) {
       try {
-        return await request<T>(path, { ...rest, signal: controller.signal });
+        return await request<T>(path, { ...rest, signal: controller.signal }, binary);
       } catch (e) {
         // asking again is safe for a read: a gap gets a couple more tries, all inside the read's own time limit
         if (!read || tries >= readRetryMs().length || !isTransient(e)) throw e;
@@ -191,7 +201,7 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function request<T>(path: string, init: ApiOptions): Promise<T> {
+async function request<T>(path: string, init: ApiOptions, binary = false): Promise<T> {
   const { onResponse, isAuthContextCurrent, ...fetchOptions } = init;
   const owner = init.token === undefined ? credentialOwner() : init.tokenOwner;
   const headers = new Headers(init.headers);
@@ -231,6 +241,10 @@ async function request<T>(path: string, init: ApiOptions): Promise<T> {
       reloadForSignIn(); // the layer in front takes over the page and sends it to its sign-in
     }
     throw new ApiError(res.status || 401, t("lib-api.hub_no_response"), {}, false);
+  }
+  if (binary && res.ok) {
+    onResponse?.(res.headers, res.status);
+    return (await res.blob()) as T;
   }
   const text = await res.text();
   let data: Record<string, unknown> = {};

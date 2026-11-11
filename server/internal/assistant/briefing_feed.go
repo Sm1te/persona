@@ -21,6 +21,8 @@ const feedBrief = "brief" // ref: the routine's task id; body: briefBody
 // to verify, and the newest of done (10) and failed (8), whose totals say how many there were. Texts the hub writes (a
 // waiting card's line) are in the bot's language.
 type briefBody struct {
+	// NorthStar is what the report opens with: its lines and the numbers they say (north_star.go).
+	NorthStar     briefBodyNorthStar `json:"north_star"`
 	Confirmations briefConfirmations `json:"confirmations"`
 	Title         string             `json:"title"` // the routine's name
 	At            time.Time          `json:"at"`
@@ -40,6 +42,19 @@ type briefBody struct {
 	// Progress are the tasks being worked on, the longest running first (at most 8); stage is plan / develop / review / merge / deploy / verify, "" when not known.
 	Progress      []briefBodyProgress `json:"progress"`
 	ProgressTotal int                 `json:"progress_total"`
+}
+
+// briefBodyNorthStar is a `brief` item's north star: the lines as the report says them, and today's and yesterday's
+// (until the same time) numbers; a number is null when it is unknown.
+type briefBodyNorthStar struct {
+	Lines                  []string `json:"lines"`
+	Interruptions          *int     `json:"interruptions"`
+	InterruptionsYesterday *int     `json:"interruptions_yesterday"`
+	Partial                bool     `json:"partial,omitempty"`
+	Availability           *float64 `json:"availability"`
+	AvailabilityYesterday  *float64 `json:"availability_yesterday"`
+	Attempts               int      `json:"attempts"`
+	OK                     int      `json:"ok"`
 }
 
 // briefBodyRow is a row of what waits: a card (waiting) with its line, or a task to verify (accept) with its title.
@@ -86,6 +101,7 @@ func (f *briefFacts) body(s *Service, title string) briefBody {
 	if b.Failed == nil {
 		b.Failed = []todayFailed{}
 	}
+	b.NorthStar = f.NorthStar.body(f.NorthStarLines)
 	row := func(r boardRow) briefBodyRow {
 		return briefBodyRow{ID: r.id, Title: r.summary, From: r.from, Link: r.link, WaitedS: int64(r.waited / time.Second), Nudged: r.nudged}
 	}

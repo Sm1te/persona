@@ -50,8 +50,8 @@ const pill = (title: string) => [...host.querySelectorAll<HTMLButtonElement>("bu
 describe("the dock's task pills", () => {
   it("says what a waiting task waits on", () => {
     const b = pill("Waiting task");
-    expect(b.getAttribute("title")).toBe("Waiting task：需要你授权：swift test");
-    expect(b.getAttribute("aria-label")).toBe("Waiting task：需要你授权：swift test");
+    expect(b.getAttribute("title")).toBe("Waiting task：在等你批准：swift test");
+    expect(b.getAttribute("aria-label")).toBe("Waiting task：在等你批准：swift test");
   });
 
   it("adds nothing to a task at work", () => {

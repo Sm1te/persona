@@ -27,5 +27,16 @@
   "no_text": "テキストか画像、または両方を送ってください。",
   "meeting_running": "会議はまだ続いています。終わってから会議後の会話で続けてください。",
   "no_material": "この録音には文字起こしも議事録もありません。",
-  "just_me_notify": "送信していません。会議中に自分だけに聞いた質問です。回答はこの会話に残り、会議ページに表示されます。"
+  "just_me_notify": "送信していません。会議中に自分だけに聞いた質問です。回答はこの会話に残り、会議ページに表示されます。",
+  "bad_photo_at": "at は数値にしてください。録音開始から撮影までの秒数です。",
+  "bad_photo_mime": "mime は image/jpeg か image/png にしてください。",
+  "bad_photo_data": "data は mime と同じ種類の JPEG か PNG 画像を base64 にしたものにしてください。",
+  "photo_too_large": "写真は {size} までです。",
+  "photo_too_wide": "写真の長辺は {max} ピクセルまでです。",
+  "photo_field_too_long": "{field} が {max} 文字を超えています。",
+  "transcript_expired": "この録音の文字起こしは期限切れで、議事録だけが残っています。",
+  "photo_not_found": "この会議にその写真はありません。",
+  "photo_deleted": "この写真は削除されたため、もう一度追加できません。",
+  "photo_id_reused": "この id はすでに別の写真に使われています。",
+  "photos_full": "この会議にはすでに {max} 枚の写真があります。"
 }

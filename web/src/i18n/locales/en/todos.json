@@ -26,7 +26,7 @@
   "delete_confirm": "Delete \"{title}\"? Linked agents aren't affected.",
   "delete": "Delete",
   "kicker_plan": "Plan awaiting approval",
-  "kicker_permission": "Needs your permission",
+  "kicker_permission": "Waiting for your approval",
   "kicker_screen": "Terminal needs you",
   "kicker_question": "Has a question",
   "reopen_todo": "Reopen to-do",

@@ -73,6 +73,9 @@ class HttpAgentOperations(
     override suspend fun attachSession(key: SessionKey) {
         request("POST", listOf("sessions", key.machineId, key.sessionId, "attach"))
     }
+    override suspend fun interruptSession(key: SessionKey) {
+        request("POST", listOf("sessions", key.machineId, key.sessionId, "interrupt"))
+    }
     override suspend fun deleteSession(key: SessionKey) {
         request("DELETE", listOf("sessions", key.machineId, key.sessionId))
     }

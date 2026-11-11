@@ -1,7 +1,7 @@
 import XCTest
 
 /// A message that has not gone out has the action bar of a sent one on a long press (#6427): a send the computer
-/// refused can be copied instead of typed again. Against the mock of SendSafetyTests:
+/// refused can be copied instead of typed again, or deleted (#4626). Against the mock of SendSafetyTests:
 ///   PORT=18771 MOCK_SCREEN_DIALOG=1 MOCK_PROMPT_CHANGED=1 MOCK_SEND_REFUSE=input_draft python3 scripts/mock/mock_hub.py &
 ///   TEST_RUNNER_PERSONA_SAFETY_HUB=http://127.0.0.1:18771 xcodebuild test … -only-testing:PersonaUITests/PendingBubbleMenuTests
 /// `TEST_RUNNER_PERSONA_SHOTS=<dir>` saves the bar over the failed bubble, named by the simulator's appearance.
@@ -62,6 +62,76 @@ final class PendingBubbleMenuTests: XCTestCase {
         try failedMark(nextTo: message).tap() // still there to resend; deleted, not left for the next run
         app.buttons["删除"].tap()
         XCTAssertTrue(bubble.waitForNonExistence(timeout: 5), "Delete left the failed message")
+    }
+
+    /// Refused, Not Now: the failed bubble's long press ends in Delete (#4626). Delete takes it away with Undo in a toast,
+    /// and Undo brings it back; deleted again (from its mark's menu), a relaunch does not bring it back. A message the
+    /// hub has (the session's first, from its transcript) has no Delete. Shots: the bar in dark and light, the toast.
+    @MainActor func testDeleteAMessageThatWasNotSent() throws {
+        let hub = ProcessInfo.processInfo.environment["PERSONA_SAFETY_HUB"]!
+        let message = "这条没发出去，长按删除它 \(Int(Date.now.timeIntervalSince1970) % 100_000)"
+        app = XCUIApplication()
+        let pair = "persona://pair?url=" + hub.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&token=mock"
+        app.launchArguments = ["-pairURL", pair, "-openSession", "macbook/" + widget, "-openSendMessage", message, "-openSendDelay", "8"]
+        app.launchPinned()
+        let notNow = app.alerts.buttons["先不发"]
+        XCTAssertTrue(notNow.waitForExistence(timeout: 25), "no draft alert:\n\(app.debugDescription)")
+        notNow.tap()
+        XCTAssertTrue(app.buttons["发送失败，重发或删除"].waitForExistence(timeout: 5), "no failed mark:\n\(app.debugDescription)")
+        let bubble = app.staticTexts[message]
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "the failed bubble is not there")
+
+        let delete = app.buttons["删除"]
+        settle()
+        press(bubble, until: delete)
+        XCTAssertTrue(delete.exists, "no Delete on the failed bubble's bar:\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["复制"].exists && app.buttons["选择文本"].exists && app.buttons["分享"].exists, "the bar lost Copy, Select Text or Share")
+        let look = XCUIDevice.shared.appearance
+        for each in [XCUIDevice.Appearance.dark, .light] {
+            XCUIDevice.shared.appearance = each
+            sleep(1)
+            press(bubble, until: delete) // a switch of appearance may have put the message back
+            shot("bar-delete")
+        }
+        XCUIDevice.shared.appearance = look // as the run was
+        sleep(1)
+        press(bubble, until: delete)
+        XCTAssertTrue(delete.exists, "the bar went with the switch of appearance:\n\(app.debugDescription)")
+
+        delete.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        XCTAssertTrue(bubble.waitForNonExistence(timeout: 5), "Delete left the failed message")
+        let undo = app.buttons["撤销"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3), "no Undo after Delete:\n\(app.debugDescription)")
+        shot("deleted")
+        undo.tap()
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Undo did not bring the message back")
+
+        try failedMark(nextTo: message).tap()
+        app.buttons["删除"].tap()
+        XCTAssertTrue(bubble.waitForNonExistence(timeout: 5), "the mark's Delete left the failed message")
+        sleep(2) // the outbox is written 300 ms after a change
+        app.terminate()
+        app.launchArguments = ["-pairURL", pair, "-openSession", "macbook/" + widget] // the same hub (its chats kept); nothing sent
+        app.launchPinned()
+        let first = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "给天气 App 加一个主屏幕小组件")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 25), "the chat did not open again:\n\(app.debugDescription)")
+        sleep(3) // the outbox is restored at launch: a message it brought back would be on screen by now
+        XCTAssertFalse(app.staticTexts[message].exists, "the deleted message came back after a relaunch")
+
+        settle()
+        let copy = app.buttons["复制"]
+        press(first, until: copy)
+        XCTAssertTrue(copy.exists, "no bar on the session's first message:\n\(app.debugDescription)")
+        XCTAssertFalse(app.buttons["删除"].exists, "Delete on a message the hub has")
+    }
+
+    /// Long-presses `bubble` until `item` of its bar shows. Now and then a press lands while the list still moves (a tick
+    /// of the working row above), which only stops it.
+    @MainActor private func press(_ bubble: XCUIElement, until item: XCUIElement) {
+        for _ in 0..<3 where !item.exists {
+            centre(of: bubble).press(forDuration: 0.8)
+            _ = item.waitForExistence(timeout: 3)
+        }
     }
 
     /// The list settles at the newest message, and the header folds into its slim bar a few seconds in, moving the

@@ -23,7 +23,8 @@ import (
 // user asked, or it overlaps a calendar item of the knowledge base) gets minutes.json (Minutes, what detail.minutes
 // is) and minutes.md (the same as Markdown, what the searches and kb_get read) in its directory, so a delete takes them
 // with it; the retention keeps them past the transcript, until minutes_days (recording_trim.go). The transcript goes to
-// the model as numbered lines; the model cites line numbers, which become seconds here, and an item citing no line it
+// the model as numbered lines, the meeting's photos (recording_photos.go) as lines of their own among them, by their
+// words only; the model cites line or photo numbers, which become seconds here, and an item citing no line or photo it
 // read is dropped. Long transcripts are read in chunks whose notes one more call merges.
 
 // Minutes is minutes.json, and detail.minutes of GET /api/v1/kb/recordings/{id}.
@@ -47,17 +48,20 @@ type Minutes struct {
 	End   time.Time `json:"end,omitzero"`
 }
 
-// MinutesItem is a decision or an open question; At is seconds from the recording's start (a segment's start).
+// MinutesItem is a decision or an open question; At is seconds from the recording's start (a segment's start, or the
+// photo's time when it cites photo Photo).
 type MinutesItem struct {
-	Text string  `json:"text"`
-	At   float64 `json:"at"`
+	Text  string  `json:"text"`
+	At    float64 `json:"at"`
+	Photo int     `json:"photo,omitempty"`
 }
 
 // MinutesPoint is a point discussed; Who only when the transcript or the calendar names the person.
 type MinutesPoint struct {
-	Text string  `json:"text"`
-	At   float64 `json:"at"`
-	Who  string  `json:"who,omitempty"`
+	Text  string  `json:"text"`
+	At    float64 `json:"at"`
+	Photo int     `json:"photo,omitempty"`
+	Who   string  `json:"who,omitempty"`
 }
 
 // MinutesAction is an action item: a suggested to-do until the user confirms it (TodoID then).
@@ -68,6 +72,7 @@ type MinutesAction struct {
 	By      string  `json:"by,omitempty"`       // the deadline as said
 	DueDate string  `json:"due_date,omitempty"` // YYYY-MM-DD, when By is one date
 	At      float64 `json:"at"`
+	Photo   int     `json:"photo,omitempty"`
 	TodoID  string  `json:"todo_id,omitempty"`
 }
 
@@ -76,7 +81,7 @@ var (
 	ErrMinutesStale = errors.New("the minutes changed since; read them again")
 	// ErrRecordingIncomplete: the transcript is not complete yet, so there is nothing to make minutes of.
 	ErrRecordingIncomplete = errors.New("the transcript is not complete yet")
-	// errMinutesUnusable: the model answered, but nothing in it cites the transcript.
+	// errMinutesUnusable: the model answered, but nothing in it cites the transcript (or a photo).
 	errMinutesUnusable = errors.New("no item of the answer cites a transcript line")
 )
 
@@ -199,12 +204,23 @@ func (e *Engine) AskMinutes(rawID string) error {
 	if !r.Complete || r.Chars == 0 {
 		return ErrRecordingIncomplete
 	}
-	r.MinutesAsked, r.MinutesRev, r.MatchedRev = true, 0, 0
+	r.MinutesAsked, r.MatchedRev = true, 0
+	r.remakeMinutes()
+	return st.putEntity(KindRecording, r.ID, r, &r.Tagging, false)
+}
+
+// remakeMinutes has r's minutes made again at the next round (the caller holds recMu and writes r): minutes a model
+// call running now brings don't settle it (MinutesAsks), and the minutes kept show meanwhile.
+func (r *Recording) remakeMinutes() {
+	r.MinutesRev = 0
 	r.clearMinutesFailures()
 	r.MinutesAsks++
 	r.planMinutes()
-	return st.putEntity(KindRecording, r.ID, r, &r.Tagging, false)
 }
+
+// quietMinutes: the minutes being made now are made again only because a photo changed: not pushed once written
+// (photosRemake).
+func (r *Recording) quietMinutes() bool { return r.MinutesQuiet > 0 && r.MinutesQuiet == r.MinutesAsks }
 
 // SetMinutesTodos records the to-dos made of actions (action id → to-do id) in version of recording id's minutes;
 // ErrNotFound without minutes. Minutes written again since get them by task instead (byTask: MinutesTaskKey → to-do
@@ -399,37 +415,44 @@ func recordingEnd(r *Recording) time.Time {
 	return end
 }
 
-// minutesLine is a transcript line as the model reads it: N is what it cites.
+// minutesLine is a line as the model reads it: a transcript line, N what it cites, or a photo's (Photo its number, N
+// 0).
 type minutesLine struct {
-	N    int
-	At   float64
-	Text string
+	N     int
+	Photo int
+	At    float64
+	Text  string
 }
 
-// minutesAnswer is the model's minutes (kb/minutes, kb/minutes_merge): items cite transcript lines by number.
+// minutesAnswer is the model's minutes (kb/minutes, kb/minutes_merge): items cite transcript lines, or photos, by
+// number.
 type minutesAnswer struct {
 	Title     string   `json:"title"`
 	Where     string   `json:"where"`
 	Attendees []string `json:"attendees"`
 	Points    []struct {
-		Text string    `json:"text"`
-		Line modelLine `json:"line"`
-		Who  string    `json:"who"`
+		Text  string     `json:"text"`
+		Line  modelLine  `json:"line"`
+		Photo modelPhoto `json:"photo"`
+		Who   string     `json:"who"`
 	} `json:"points"`
 	Decisions []struct {
-		Text string    `json:"text"`
-		Line modelLine `json:"line"`
+		Text  string     `json:"text"`
+		Line  modelLine  `json:"line"`
+		Photo modelPhoto `json:"photo"`
 	} `json:"decisions"`
 	Actions []struct {
-		Who     string    `json:"who"`
-		What    string    `json:"what"`
-		By      string    `json:"by"`
-		DueDate string    `json:"due_date"`
-		Line    modelLine `json:"line"`
+		Who     string     `json:"who"`
+		What    string     `json:"what"`
+		By      string     `json:"by"`
+		DueDate string     `json:"due_date"`
+		Line    modelLine  `json:"line"`
+		Photo   modelPhoto `json:"photo"`
 	} `json:"actions"`
 	Open []struct {
-		Text string    `json:"text"`
-		Line modelLine `json:"line"`
+		Text  string     `json:"text"`
+		Line  modelLine  `json:"line"`
+		Photo modelPhoto `json:"photo"`
 	} `json:"open"`
 }
 
@@ -437,18 +460,33 @@ type minutesAnswer struct {
 type modelLine int
 
 func (l *modelLine) UnmarshalJSON(data []byte) error {
+	*l = modelLine(modelNumber(data, "[]#Ll "))
+	return nil
+}
+
+// modelPhoto is a cited photo number as models write it: 3, "3", "P3" or "[P3]"; anything else is 0 (no photo).
+type modelPhoto int
+
+func (p *modelPhoto) UnmarshalJSON(data []byte) error {
+	*p = modelPhoto(modelNumber(data, "[]#Pp "))
+	return nil
+}
+
+// modelNumber is the positive whole number a model wrote as JSON data, a string's cut characters trimmed; 0 for
+// anything else.
+func modelNumber(data []byte, cut string) int {
 	data = bytes.TrimSpace(data)
 	text := string(data)
 	if len(data) > 0 && data[0] == '"' {
 		if json.Unmarshal(data, &text) != nil {
-			return nil
+			return 0
 		}
 	}
-	text = strings.Trim(strings.TrimSpace(text), "[]#Ll ")
+	text = strings.Trim(strings.TrimSpace(text), cut)
 	if f, err := strconv.ParseFloat(text, 64); err == nil && f == float64(int(f)) && f > 0 {
-		*l = modelLine(f)
+		return int(f)
 	}
-	return nil
+	return 0
 }
 
 // writeMinutes makes and stores the minutes of recording id from what is committed now.
@@ -478,6 +516,15 @@ func (e *Engine) writeMinutes(ctx context.Context, id string) error {
 			lines = append(lines, minutesLine{N: i + 1, At: sg.Start, Text: clip(t, minutesLineRunes)})
 		}
 	}
+	// The photos with words, among the lines in time order (after the lines of the same second). A photo added or
+	// deleted from now on makes them again (photosRemake), and one deleted is cited by nothing stored
+	// (storeMinutes).
+	for _, p := range e.PhotoTexts(id) {
+		if t := photoWords(p, true); t != "" {
+			lines = append(lines, minutesLine{Photo: p.N, At: p.At, Text: t})
+		}
+	}
+	slices.SortStableFunc(lines, func(a, b minutesLine) int { return cmp.Compare(a.At, b.At) })
 	chunks, partial := chunkLines(lines, minutesOneCall, minutesChunk, minutesMaxChunks)
 	if len(chunks) == 0 {
 		return nil
@@ -585,10 +632,15 @@ func chunkLines(lines []minutesLine, one, size, max int) (chunks [][]minutesLine
 	return chunks, false
 }
 
-// renderMinutesLines is the transcript as the model reads it: "[N] HH:MM:SS text" per line in the user's zone.
+// renderMinutesLines is the transcript as the model reads it: "[N] HH:MM:SS text" per line in the user's zone, a
+// photo's line as photos.md has it (photoLine).
 func renderMinutesLines(lines []minutesLine, start time.Time, zone *time.Location) string {
 	var b strings.Builder
 	for _, l := range lines {
+		if l.Photo > 0 {
+			b.WriteString(photoLine(l.Photo, clockAt(start, l.At, zone), l.Text) + "\n")
+			continue
+		}
 		fmt.Fprintf(&b, "[%d] %s %s\n", l.N, clockAt(start, l.At, zone), l.Text)
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -598,21 +650,32 @@ func clockAt(start time.Time, sec float64, zone *time.Location) string {
 	return start.Add(time.Duration(sec * float64(time.Second))).In(zone).Format("15:04:05")
 }
 
-// notesForMerge is a chunk's notes for the merging call, keeping only items citing a line of that chunk, at most each
-// of a section, each clipped to minutesNoteRunes.
+// notesForMerge is a chunk's notes for the merging call, keeping only items citing a line or a photo of that chunk, at
+// most each of a section, each clipped to minutesNoteRunes.
 func notesForMerge(part int, a minutesAnswer, chunk []minutesLine, start time.Time, zone *time.Location, each int) prompts.KBMinutesPart {
-	in := map[int]bool{}
+	in, photos := map[int]bool{}, map[int]bool{}
 	for _, l := range chunk {
-		in[l.N] = true
+		if l.Photo > 0 {
+			photos[l.Photo] = true
+		} else {
+			in[l.N] = true
+		}
 	}
 	p := prompts.KBMinutesPart{Part: part, From: clockAt(start, chunk[0].At, zone), To: clockAt(start, chunk[len(chunk)-1].At, zone),
 		Where: oneLine(a.Where), Attendees: a.Attendees}
-	note := func(text string, line modelLine, extra ...string) (prompts.KBMinutesNote, bool) {
+	note := func(text string, line modelLine, photo modelPhoto, extra ...string) (prompts.KBMinutesNote, bool) {
 		text = clipRunes(text, minutesNoteRunes)
-		if text == "" || !in[int(line)] {
+		n := prompts.KBMinutesNote{Text: text}
+		switch {
+		case text == "":
+			return prompts.KBMinutesNote{}, false
+		case photo > 0 && photos[int(photo)]:
+			n.Photo = int(photo)
+		case in[int(line)]:
+			n.Line = int(line)
+		default:
 			return prompts.KBMinutesNote{}, false
 		}
-		n := prompts.KBMinutesNote{Line: int(line), Text: text}
 		if len(extra) > 0 {
 			n.Who = oneLine(extra[0])
 		}
@@ -622,22 +685,22 @@ func notesForMerge(part int, a minutesAnswer, chunk []minutesLine, start time.Ti
 		return n, true
 	}
 	for _, x := range a.Points {
-		if n, ok := note(x.Text, x.Line, x.Who); ok {
+		if n, ok := note(x.Text, x.Line, x.Photo, x.Who); ok {
 			p.Points = append(p.Points, n)
 		}
 	}
 	for _, x := range a.Decisions {
-		if n, ok := note(x.Text, x.Line); ok {
+		if n, ok := note(x.Text, x.Line, x.Photo); ok {
 			p.Decisions = append(p.Decisions, n)
 		}
 	}
 	for _, x := range a.Actions {
-		if n, ok := note(x.What, x.Line, x.Who, x.By, x.DueDate); ok {
+		if n, ok := note(x.What, x.Line, x.Photo, x.Who, x.By, x.DueDate); ok {
 			p.Actions = append(p.Actions, n)
 		}
 	}
 	for _, x := range a.Open {
-		if n, ok := note(x.Text, x.Line); ok {
+		if n, ok := note(x.Text, x.Line, x.Photo); ok {
 			p.Open = append(p.Open, n)
 		}
 	}
@@ -645,19 +708,23 @@ func notesForMerge(part int, a minutesAnswer, chunk []minutesLine, start time.Ti
 	return p
 }
 
-// notedLines is the lines of read the parts' notes cite.
+// notedLines is the lines and photos of read the parts' notes cite.
 func notedLines(read []minutesLine, parts []prompts.KBMinutesPart) []minutesLine {
-	cited := map[int]bool{}
+	cited, photos := map[int]bool{}, map[int]bool{}
 	for _, p := range parts {
 		for _, list := range [][]prompts.KBMinutesNote{p.Points, p.Decisions, p.Actions, p.Open} {
 			for _, n := range list {
-				cited[n.Line] = true
+				if n.Photo > 0 {
+					photos[n.Photo] = true
+				} else {
+					cited[n.Line] = true
+				}
 			}
 		}
 	}
 	var out []minutesLine
 	for _, l := range read {
-		if cited[l.N] {
+		if l.Photo > 0 && photos[l.Photo] || l.Photo == 0 && cited[l.N] {
 			out = append(out, l)
 		}
 	}
@@ -676,13 +743,18 @@ func clipText(s string) string { return clipRunes(s, minutesTextRunes) }
 // clipRunes is s on one line, at most n runes ("…" marking a cut).
 func clipRunes(s string, n int) string { return clip(strings.Join(strings.Fields(s), " "), n) }
 
-// buildMinutes checks the model's answer against the lines it read: every item must cite one of them, a person must be
-// named in them or in the calendar, a due date must be a real day from the meeting on (within a year).
+// buildMinutes checks the model's answer against the lines it read: every item must cite one of them (a transcript
+// line, or a photo: its time then), a person must be named in them or in the calendar, a due date must be a real day
+// from the meeting on (within a year). A photo's words count as said.
 func (e *Engine) buildMinutes(r *Recording, a minutesAnswer, read []minutesLine, zone *time.Location) (*Minutes, error) {
-	at := map[int]float64{}
+	at, photoSec := map[int]float64{}, map[int]float64{}
 	var saidB strings.Builder
 	for _, l := range read {
-		at[l.N] = l.At
+		if l.Photo > 0 {
+			photoSec[l.Photo] = l.At
+		} else {
+			at[l.N] = l.At
+		}
 		saidB.WriteString(l.Text)
 		saidB.WriteByte('\n')
 	}
@@ -708,14 +780,19 @@ func (e *Engine) buildMinutes(r *Recording, a minutesAnswer, read []minutesLine,
 		return ""
 	}
 	cited, dropped := 0, 0
-	line := func(l modelLine) (float64, bool) {
+	// The photo when the item cites one read, else its line: one citing neither is dropped.
+	line := func(l modelLine, p modelPhoto) (float64, int, bool) {
+		if sec, ok := photoSec[int(p)]; ok && p > 0 {
+			cited++
+			return sec, int(p), true
+		}
 		sec, ok := at[int(l)]
 		if ok {
 			cited++
 		} else {
 			dropped++
 		}
-		return sec, ok
+		return sec, 0, ok
 	}
 	m := &Minutes{Title: cmp.Or(r.Title, calendarTitle(r), oneLine(a.Title), r.Name), When: minutesWhen(r, zone)}
 	m.Start, m.End = minutesSpan(r, zone)
@@ -742,15 +819,15 @@ func (e *Engine) buildMinutes(r *Recording, a minutesAnswer, read []minutesLine,
 	// The citation first: an item citing nothing read must not hide a later copy of it that does.
 	for _, x := range a.Points {
 		if t := clipText(x.Text); t != "" {
-			if sec, ok := line(x.Line); ok && fresh("p", t) {
-				m.Points = append(m.Points, MinutesPoint{Text: t, At: sec, Who: named(x.Who)})
+			if sec, photo, ok := line(x.Line, x.Photo); ok && fresh("p", t) {
+				m.Points = append(m.Points, MinutesPoint{Text: t, At: sec, Photo: photo, Who: named(x.Who)})
 			}
 		}
 	}
 	for _, x := range a.Decisions {
 		if t := clipText(x.Text); t != "" {
-			if sec, ok := line(x.Line); ok && fresh("d", t) {
-				m.Decisions = append(m.Decisions, MinutesItem{Text: t, At: sec})
+			if sec, photo, ok := line(x.Line, x.Photo); ok && fresh("d", t) {
+				m.Decisions = append(m.Decisions, MinutesItem{Text: t, At: sec, Photo: photo})
 			}
 		}
 	}
@@ -758,20 +835,20 @@ func (e *Engine) buildMinutes(r *Recording, a minutesAnswer, read []minutesLine,
 	for _, x := range a.Actions {
 		if t := clipText(x.What); t != "" {
 			// The same task for two people is two actions.
-			if sec, ok := line(x.Line); ok && fresh("a"+oneLine(x.Who), t) {
+			if sec, photo, ok := line(x.Line, x.Photo); ok && fresh("a"+oneLine(x.Who), t) {
 				by := oneLine(x.By)
 				due := ""
 				if by != "" { // a date only for a deadline someone said
 					due = dueDate(x.DueDate, day)
 				}
-				m.Actions = append(m.Actions, MinutesAction{Who: named(x.Who), What: t, By: by, DueDate: due, At: sec})
+				m.Actions = append(m.Actions, MinutesAction{Who: named(x.Who), What: t, By: by, DueDate: due, At: sec, Photo: photo})
 			}
 		}
 	}
 	for _, x := range a.Open {
 		if t := clipText(x.Text); t != "" {
-			if sec, ok := line(x.Line); ok && fresh("o", t) {
-				m.Open = append(m.Open, MinutesItem{Text: t, At: sec})
+			if sec, photo, ok := line(x.Line, x.Photo); ok && fresh("o", t) {
+				m.Open = append(m.Open, MinutesItem{Text: t, At: sec, Photo: photo})
 			}
 		}
 	}
@@ -906,10 +983,17 @@ func keepTodos(m, old *Minutes) {
 // MinutesTaskKey is what makes an action the same task in minutes made again: who and what.
 func MinutesTaskKey(a MinutesAction) string { return a.Who + "\x00" + a.What }
 
-// renderMinutes is minutes.md: the minutes with clock times, sections without anything left out.
+// renderMinutes is minutes.md: the minutes with clock times, sections without anything left out; an item citing a
+// photo ends with its number.
 func renderMinutes(m *Minutes, start time.Time, zone *time.Location) string {
 	at := func(sec float64) string { return "[" + clockAt(start, sec, zone) + "] " }
 	var b strings.Builder
+	end := func(photo int) {
+		if photo > 0 {
+			b.WriteString("（照片 " + strconv.Itoa(photo) + "）")
+		}
+		b.WriteByte('\n')
+	}
 	fmt.Fprintf(&b, "# %s\n\n- 时间：%s\n", m.Title, m.When)
 	if m.Where != "" {
 		fmt.Fprintf(&b, "- 地点：%s\n", m.Where)
@@ -924,7 +1008,7 @@ func renderMinutes(m *Minutes, start time.Time, zone *time.Location) string {
 			if p.Who != "" {
 				b.WriteString("（" + p.Who + "）")
 			}
-			b.WriteByte('\n')
+			end(p.Photo)
 		}
 	}
 	section := func(title string, items []MinutesItem) {
@@ -933,7 +1017,8 @@ func renderMinutes(m *Minutes, start time.Time, zone *time.Location) string {
 		}
 		b.WriteString("\n## " + title + "\n\n")
 		for _, x := range items {
-			b.WriteString("- " + at(x.At) + x.Text + "\n")
+			b.WriteString("- " + at(x.At) + x.Text)
+			end(x.Photo)
 		}
 	}
 	section("结论与决定", m.Decisions)
@@ -948,7 +1033,7 @@ func renderMinutes(m *Minutes, start time.Time, zone *time.Location) string {
 			if by := cmp.Or(a.By, a.DueDate); by != "" {
 				b.WriteString("（" + by + "）")
 			}
-			b.WriteByte('\n')
+			end(a.Photo)
 		}
 	}
 	section("未决问题", m.Open)
@@ -958,43 +1043,71 @@ func renderMinutes(m *Minutes, start time.Time, zone *time.Location) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// storeMinutes writes m for snapshot r (the revision read) unless the recording was deleted meanwhile, then tells
-// MinutesWritten once they are the current revision's.
+// storeMinutes writes m for snapshot r (the revision read) unless the recording was deleted or trimmed meanwhile, then
+// tells MinutesWritten once they are the current revision's, unless they were made again only for a photo
+// (quietMinutes). Items citing a photo no longer listed are left out; when the photos the minutes cite changed, so does
+// PartPhotos, before the minutes are written.
 func (e *Engine) storeMinutes(ctx context.Context, r *Recording, m *Minutes) error {
 	st := e.Store
 	st.recMu.Lock()
 	cur, ok := st.Recording(r.ID)
-	if !ok {
+	if !ok || cur.Trimmed() {
+		// Trimmed while the model wrote them: the minutes the trim kept (and the photos they cite) stay as they are.
 		st.recMu.Unlock()
 		return nil
 	}
+	book, err := st.readPhotos(cur.ID)
+	if err != nil {
+		st.recMu.Unlock()
+		return err
+	}
+	// A photo deleted while the model wrote them is cited by nothing stored (and they are made again: photoDelete).
+	dropUnlistedPhotos(m, book)
 	// The version after both meta's and the file's: a write of minutes.json that meta.json never caught up with (a
 	// crash between the two) must not give different actions the version an app may still confirm.
 	m.Version, m.Revision, m.GeneratedAt = cur.MinutesVersion+1, r.Revision, time.Now().UTC()
+	var before map[int]bool
 	if old, err := st.ReadMinutes(cur.ID); err == nil {
 		m.Version = max(m.Version, old.Version+1)
 		keepTodos(m, old)
+		before = minutesPhotos(old)
 	}
 	m.Markdown = renderMinutes(m, r.StartedAt, st.Zone())
+	// Each photo's cited follows the minutes: PartPhotos' revision moves first, so that a failure leaves the minutes
+	// pending (made again at the next round) and a crash between costs only a revision too many.
+	photos := citedChanged(book, before, minutesPhotos(m))
+	if photos {
+		if err := st.bumpPhotosRev(cur.ID, cur.StartedAt); err != nil {
+			st.recMu.Unlock()
+			return fmt.Errorf("photos before the minutes: %w", err)
+		}
+	}
 	if wrote, err := st.putMinutes(cur.ID, m); err != nil || !wrote {
 		st.recMu.Unlock()
 		return err
 	}
+	quiet := cur.quietMinutes()
 	cur.MinutesVersion = m.Version
 	cur.clearMinutesFailures()
-	if cur.MinutesAsks == r.MinutesAsks { // else the user asked again meanwhile: made again at the next round
+	if cur.MinutesAsks == r.MinutesAsks { // else asked again meanwhile (the user, a photo): made again at the next round
 		cur.MinutesRev = r.Revision
 	}
 	cur.planMinutes()
-	err := st.putEntity(KindRecording, cur.ID, cur, &cur.Tagging, false)
-	st.notify(KindRecording, cur.ID, "summary")
 	ready := cur.MinutesState == MinutesReady
+	if ready {
+		cur.MinutesQuiet = 0 // settled: minutes of a later revision or request are pushed again
+	}
+	err = st.putEntity(KindRecording, cur.ID, cur, &cur.Tagging, false)
+	st.notify(KindRecording, cur.ID, "summary")
 	snap := *cur
 	st.recMu.Unlock()
+	if photos {
+		e.meetingChanged(cur.ID, []string{PartPhotos})
+	}
 	if err != nil {
 		return err
 	}
-	if ready && e.MinutesWritten != nil {
+	if ready && !quiet && e.MinutesWritten != nil {
 		e.MinutesWritten(ctx, snap, *m)
 	}
 	return nil

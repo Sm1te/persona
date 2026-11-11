@@ -24,7 +24,7 @@ export function Labelled({ label, hint, error, children, htmlFor, describedById 
   );
 }
 
-export function TextField({ label, value, onChange, hint, error, placeholder, mono, disabled, inputMode }: {
+export function TextField({ label, value, onChange, hint, error, placeholder, mono, disabled, inputMode, onPaste, onBlur }: {
   label: React.ReactNode;
   value: string;
   onChange: (v: string) => void;
@@ -34,12 +34,15 @@ export function TextField({ label, value, onChange, hint, error, placeholder, mo
   mono?: boolean;
   disabled?: boolean;
   inputMode?: "numeric" | "url";
+  onPaste?: React.ClipboardEventHandler<HTMLInputElement>;
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }) {
   const id = useId();
   const noteId = useId();
   return (
     <Labelled label={label} hint={hint} error={error} htmlFor={id} describedById={noteId}>
-      <input id={id} aria-invalid={error ? true : undefined} aria-describedby={error || hint ? noteId : undefined} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder={placeholder} inputMode={inputMode} autoComplete="off" spellCheck={false} className={cx(INPUT, mono && "font-mono")} />
+      <input id={id} aria-invalid={error ? true : undefined} aria-describedby={error || hint ? noteId : undefined} value={value}
+        onChange={(e) => onChange(e.target.value)} onPaste={onPaste} onBlur={onBlur} disabled={disabled} placeholder={placeholder} inputMode={inputMode} autoComplete="off" spellCheck={false} className={cx(INPUT, mono && "font-mono")} />
     </Labelled>
   );
 }

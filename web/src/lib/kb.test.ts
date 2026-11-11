@@ -19,8 +19,11 @@ import {
   kindOf,
   linkGroups,
   markParts,
+  citedPhoto,
+  meetingKind,
   minutesKeptUntil,
   parseLogLine,
+  recordingPhotos,
   recordingView,
   recordingClock,
   transcriptLineId,
@@ -428,4 +431,31 @@ describe("minutesKeptUntil", () => {
     "is unknown for %j and %j", (start, days) => {
       expect(minutesKeptUntil(start, days)).toBeUndefined();
     });
+});
+
+// #3862 phase 3: a meeting's photos (GET …/photos) and the minutes items that cite one.
+describe("meeting photos", () => {
+  it("reads the list defensively, oldest first, blank words as absent", () => {
+    const photos = recordingPhotos({ photos: [
+      { n: 2, id: "b", at: 90.5, mime: "image/png", width: 800, height: 600, caption: "  ", text: "Q3 budget", cited: true, forwarded: true, added_at: "2026-11-10T06:02:00Z" },
+      { n: 1, id: "a", at: -3, mime: "image/jpeg", width: 1600, height: 1200, caption: " Whiteboard ", note: "A table.", cited: false, forwarded: false, added_at: "2026-11-10T06:01:00Z" },
+      { n: 0, id: "zero" }, { n: 1.5, id: "half" }, { n: 3 }, null, "x",
+    ] });
+    expect(photos.map((p) => p.n)).toEqual([1, 2]);
+    expect(photos[0]).toEqual({ n: 1, id: "a", at: 0, mime: "image/jpeg", width: 1600, height: 1200, caption: "Whiteboard", note: "A table.", cited: false, forwarded: false, added_at: "2026-11-10T06:01:00Z" });
+    expect(photos[1]).toMatchObject({ text: "Q3 budget", cited: true, forwarded: true });
+    expect(photos[1]).not.toHaveProperty("caption");
+    for (const v of [undefined, null, [], { photos: "x" }, { photos: null }]) expect(recordingPhotos(v)).toEqual([]);
+  });
+
+  it("knows the photo a minutes item cites", () => {
+    expect(citedPhoto({ photo: 3 })).toBe(3);
+    for (const photo of [undefined, 0, -1, 2.5, "3", null]) expect(citedPhoto({ photo })).toBeUndefined();
+  });
+
+  it("takes photos only on a recording whose kind is meeting", () => {
+    expect(meetingKind({ kind: " Meeting " })).toBe(true);
+    expect(meetingKind({ kind: "note", minutes_asked: true })).toBe(false);
+    expect(meetingKind(undefined)).toBe(false);
+  });
 });

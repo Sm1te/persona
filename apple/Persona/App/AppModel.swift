@@ -756,7 +756,10 @@ final class AppModel {
         phoneConfirmations.denyAll()
         toolResults.forget(groups: Set(links.map(\.group)))
         // Where Hand to AI sent each source's items: ids on a hub that is gone (#2121).
-        for group in Set(links.map(\.group)).union([hubGroup]) { InboxHandOffMemory.forget(group: group) }
+        for group in Set(links.map(\.group)).union([hubGroup]) {
+            InboxHandOffMemory.forget(group: group)
+            ForwardMemory.forget(group: group) // and where forwards went (#3807)
+        }
         LarkDrafts.shared.forget()
         pairingEngineMachine = nil
         checklistPending = false
@@ -2465,9 +2468,26 @@ final class AppModel {
         }
     }
 
+    /// Deletes a message only on this phone (`PendingMessage.onlyHere`: failed, or waiting for the network), from its
+    /// mark's menu or its long press: the bubble and its outbox entry go and nothing is sent. Undo in the toast puts it
+    /// back where it was (#4626).
     func discard(_ key: SessionKey, _ msg: PendingMessage) {
-        chat(key).pending.removeAll { $0.id == msg.id }
+        let store = chat(key)
+        guard let i = store.pending.firstIndex(where: { $0.id == msg.id }) else { return }
+        let gone = store.pending.remove(at: i)
         saveOutbox()
+        toast = .messageDeleted { [weak self] in self?.undoDiscard(key, gone, at: i) }
+    }
+
+    /// `discard`'s Undo: the message comes back as it was, where it was; a waiting one goes out once the app is
+    /// connected. Not when its transcript copy came in meanwhile (one that may have arrived after all).
+    func undoDiscard(_ key: SessionKey, _ msg: PendingMessage, at i: Int) {
+        let store = chat(key)
+        guard !store.pending.contains(where: { $0.id == msg.id }),
+              !store.items.contains(where: { PendingMessage.tied($0, to: msg.id) == true }) else { return }
+        store.pending.insert(msg, at: min(i, store.pending.count))
+        saveOutbox()
+        if msg.state == .waiting { flushOutbox() }
     }
 
     private func deliver(_ key: SessionKey, _ msg: PendingMessage, clearDraft: String? = nil) {
@@ -3108,6 +3128,7 @@ final class AppModel {
             defaultAssistantReads.remove(g)
             assistantItemManagers = assistantItemManagers.filter { $0.key.group != g }
             InboxHandOffMemory.forget(group: g)
+            ForwardMemory.forget(group: g)
             if !keepingPushKeys { PushCrypto.removeKey(group: g) }
         }
         if links.contains(where: { $0.fleet != nil }) { LiveActivityController.shared.apply(mergedFleet()) }
@@ -3525,6 +3546,11 @@ struct Toast: Identifiable, Equatable {
     }
 
     static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+
+    /// A message only on this phone was deleted (#4626): Undo brings it back.
+    static func messageDeleted(undo: @escaping @MainActor () -> Void) -> Toast {
+        Toast(String(localized: "Message deleted"), style: .success, action: Action(title: String(localized: "Undo"), run: undo))
+    }
 }
 
 #if os(visionOS)

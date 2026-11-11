@@ -24,9 +24,10 @@ val AgentSession.isNestedSubtask: Boolean get() = session.isSubtask && state != 
 
 data class CodexTaskForest(val roots: List<AgentSession>, val children: Map<String, List<AgentSession>>) {
     /** Search retains an ancestor when a descendant matches, so the matching conversation remains reachable. */
-    fun searchSettings(settings: AgentListSettings): AgentListSettings {
+    fun searchSettings(settings: AgentListSettings, pins: AgentPreferences = AgentPreferences(),
+                       machineNames: Map<String, String> = emptyMap()): AgentListSettings {
         if (settings.query.isEmpty()) return settings
-        fun matches(row: AgentSession): Boolean = settings.admits(row.session) || children[row.id].orEmpty().any(::matches)
+        fun matches(row: AgentSession): Boolean = settings.admits(row.session, pins, machineNames) || children[row.id].orEmpty().any(::matches)
         return settings.copy(queryAncestors = settings.queryAncestors + roots.filter(::matches).map { it.id })
     }
 }

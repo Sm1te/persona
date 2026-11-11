@@ -1,3 +1,4 @@
 {
-  "git_missing": "hub 所在的机器上没有 git：git 市场（git:…、git@…、ssh://…）要用它，github: 和直接写索引地址的 https:// 市场不用"
+  "git_missing": "hub 所在的机器上没有 git：git 市场（git:…、git@…、ssh://…）要用它，github: 和直接写索引地址的 https:// 市场不用",
+  "git_too_old": "hub 所在机器上的 git 是 {version}：带 token 的 git 市场要 git 2.31 或更新（这样 token 不会出现在命令行里），请升级那台机器上的 git"
 }

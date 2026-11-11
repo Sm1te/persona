@@ -137,5 +137,6 @@
   "check_wait": "Checking when you stop typing…",
   "discovering": "Fetching models…",
   "testing": "Testing the connection…",
-  "retry": "Retry"
+  "retry": "Retry",
+  "check_leave_url": "Checking once you leave the URL field."
 }

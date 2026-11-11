@@ -3,8 +3,9 @@ import PersonaKit
 
 /// Keeps Feishu current while the app is open and online. Push: the hub relays the Lark gateway's realtime events as
 /// `lark` (which conversations changed); the inbox and an open chat refresh on them instead of waiting for a poll.
-/// Pull: the latest page of each changed conversation goes into the cache its chat paints from, so opening it shows
-/// the new messages at once; on (re)connect the first page of the inbox is checked the same way.
+/// Pull: while a Feishu list is in front, the latest page of each changed conversation goes into the cache its chat
+/// paints from, so opening it shows the new messages at once; with none in front the changes wait (`parked`). On
+/// (re)connect the first page of the inbox is checked the same way.
 /// Conversations go by `LarkConversation.key`: a chat of another Feishu account than the hub's own is apart from the
 /// same feed in the hub's own account.
 @MainActor
@@ -32,6 +33,10 @@ final class LarkSync {
     private var running = Set<String>()
     private var cooling = Set<String>() // fetched within minGap
     private var dirty = Set<String>()   // changed again while running / cooling
+    /// Changed while no Feishu list was in front: nothing is fetched for them until one is (`listChanges`), then the
+    /// newest `reconnectCount` are. Fetching every changed chat's page with Feishu out of sight was a third of the app's
+    /// HTTP bytes on a busy account (#4693); a chat opened before its turn shows its cached page until its own fetch lands.
+    private var parked = Set<String>()
     private let saver = Debouncer(.seconds(2))
     private static let stateName = "lark-sync"
 
@@ -54,12 +59,23 @@ final class LarkSync {
 
     /// What the conversation list heard since it last looked: one change that names every chat the events did, or says
     /// to read everything again (a reconnect). The list reads page 1 alone for most of them (`refreshHead`).
+    /// A list asking is a Feishu screen in front (it asks from `tabActiveTask`): what was parked meanwhile is fetched now.
     func listChanges() -> AsyncStream<LarkListChange> {
-        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { cont in
+        let stream = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { cont in
             let id = UUID()
             lists[id] = cont
             cont.onTermination = { _ in Task { @MainActor in LarkSync.shared.lists[id] = nil } }
         }
+        let due = Self.catchUp(parked, known: known, limit: Self.reconnectCount)
+        parked = []
+        enqueue(due)
+        return stream
+    }
+
+    /// The parked chats worth fetching when Feishu is back: the most recently changed first, at most `limit`.
+    nonisolated static func catchUp(_ parked: Set<String>, known: [String: LarkConversation], limit: Int) -> [String] {
+        let recent = parked.compactMap { key in known[key].map { (key, $0.updatedAt ?? .distantPast) } }
+        return recent.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }.prefix(limit).map(\.0)
     }
 
     /// One more change for the lists: one the list has not taken yet is folded in, not dropped.
@@ -150,6 +166,10 @@ final class LarkSync {
     }
 
     private func enqueue(_ ids: [String]) {
+        guard !lists.isEmpty else {
+            parked.formUnion(ids.filter { !isOpen($0) })
+            return
+        }
         for id in ids where !isOpen(id) {
             if running.contains(id) || cooling.contains(id) { dirty.insert(id) } else if !queue.contains(id) { queue.append(id) }
         }

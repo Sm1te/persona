@@ -91,8 +91,8 @@ class AgentsPaginationScreenTest {
         assertEquals(8000, model.page.value.allCount)
         assertEquals(8000, model.page.value.machineTotal)
         assertEquals(8000, model.page.value.list.counts[AgentQuickFilter.Working])
-        rule.waitUntil(5_000) { model.page.value.list.machines.firstOrNull()?.sessionCount == 8000 &&
-            model.page.value.list.groups.firstOrNull()?.totalCount == 8000 }
+        // One computer has no heading (#4338 A7), so only its repository asks for its count.
+        rule.waitUntil(5_000) { model.page.value.list.groups.firstOrNull()?.totalCount == 8000 }
         assertTrue(repository.countFilters.contains(SessionListFilter(machineId = "demo", project = "/demo/app")))
         assertEquals(8000, model.page.value.list.groups.first().totalCount)
         assertTrue("offscreen row is not composed", rule.onAllNodesWithText("Task 49", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())

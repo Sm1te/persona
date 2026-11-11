@@ -326,6 +326,7 @@ internal fun AgentOperations.inGroup(names: GroupNames): AgentOperations {
             source.renameSpace(names.rawMachine(machineId), workspaceId, name)
         override suspend fun closeSession(key: SessionKey) = source.closeSession(names.raw(key))
         override suspend fun attachSession(key: SessionKey) = source.attachSession(names.raw(key))
+        override suspend fun interruptSession(key: SessionKey) = source.interruptSession(names.raw(key))
         override suspend fun deleteSession(key: SessionKey) = source.deleteSession(names.raw(key))
     }
 }

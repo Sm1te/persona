@@ -14,6 +14,23 @@ struct MessageBarInfo {
     var isUser: Bool
     var date: Date?
     var pending: Bool
+    /// Who wrote it, when not the chat's Agent or Persona (`messageActionBar(from:)`).
+    var from: String? = nil
+    var delete: MessageBarDelete? = nil
+}
+
+/// The bar's last item on a message that is only on this phone (`PendingMessage.onlyHere`, #4626), in the danger color:
+/// Delete, or Don't Send for one waiting for the network, the words of its mark's menu.
+struct MessageBarDelete {
+    var title: String
+    var run: () -> Void
+
+    /// For a message sent from here: Delete when it failed, Don't Send while it waits for the network, nil while the hub
+    /// may have it (sending, sent).
+    static func of(_ msg: PendingMessage, run: @escaping () -> Void) -> MessageBarDelete? {
+        guard msg.onlyHere else { return nil }
+        return MessageBarDelete(title: msg.state == .waiting ? String(localized: "Don't Send") : String(localized: "Delete"), run: run)
+    }
 }
 
 extension EnvironmentValues {
@@ -151,7 +168,8 @@ private struct LiftedMessage: View {
         let f = lift.frame.offsetBy(dx: -space.minX, dy: -space.minY)
         let message = CGRect(x: f.minX - pad.leading, y: f.minY - pad.top, width: f.width + pad.leading + pad.trailing,
                              height: selecting && height > 0 ? height : f.height + pad.top + pad.bottom)
-        let count = MessageActionBar.count(id: lift.bar.id, isUser: lift.bar.isUser, menu: menu, pending: lift.bar.pending)
+        let count = MessageActionBar.count(id: lift.bar.id, isUser: lift.bar.isUser, menu: menu, pending: lift.bar.pending,
+                                           deletes: lift.bar.delete != nil)
         let barWidth = min(MessageActionBar.width(count: count), bounds.width - 2 * Theme.Space.s)
         let p = LiftLayout.place(message: message, press: lift.press.y + pad.top, bar: CGSize(width: barWidth, height: MessageActionBar.height),
                                  bounds: bounds, margin: Theme.Space.s, gap: Theme.Space.s, trailing: lift.bar.isUser)
@@ -163,7 +181,8 @@ private struct LiftedMessage: View {
             // Out of the way of the edit menu while the words are selected.
             if !selecting {
                 MessageActionBar(id: lift.bar.id, text: lift.bar.text, isUser: lift.bar.isUser, date: lift.bar.date, menu: menu,
-                                 pending: lift.bar.pending, itemWidth: MessageActionBar.itemWidth(barWidth, count: count))
+                                 pending: lift.bar.pending, from: lift.bar.from, delete: lift.bar.delete,
+                                 itemWidth: MessageActionBar.itemWidth(barWidth, count: count))
                     .position(x: p.bar.midX, y: p.bar.midY)
                     .transition(.scale(scale: 0.85, anchor: p.below ? .top : .bottom).combined(with: .opacity))
             }

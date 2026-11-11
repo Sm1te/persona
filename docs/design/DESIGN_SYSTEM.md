@@ -243,7 +243,7 @@ Apple has no shadow tokens. Shadows are inline literals:
 | Island surface | black 0.13, r20, y10 | `apple/Persona/DesignSystem/Styling.swift:66` |
 | Soft button | black 0.12 (0.25 tinted), r6, y3 | `apple/Persona/DesignSystem/Styling.swift:183` |
 | Composer | black 0.08, r12, y4 | `apple/Persona/DesignSystem/ShellComposerBar.swift:477` |
-| Message action bar | black 0.25, r10, y4 | `apple/Persona/Views/Chat/MessageMenu.swift:461` |
+| Message action bar | black 0.25, r10, y4 | `apple/Persona/Views/Chat/MessageMenu.swift:498` |
 | Drawer card (under iPhone Duo's side bars, the sidebar over the page) | black 0.18, r24 | `apple/Persona/Views/Assistant/AssistantSidebar.swift:219` |
 
 The Glass style relies on Liquid Glass and has no shadow. The vendored BeautifulUI package has real elevation tokens that Persona does not read. Web has seven shadow tokens (`web/src/styles.css:68-74`) plus `--shadow-knob` for the switch knob. Android has four literals. See DS-08.
@@ -334,6 +334,10 @@ For every component: use the design-system one, not a lookalike. Counts are appr
 - User bubble: trailing, radius 20, padding 16 x 12, `ChatBox.user` fill in the unified layout, otherwise the theme's bubble gradient (`apple/Persona/DesignSystem/QuoteViews.swift:295-345`, `apple/Persona/Views/Chat/MessageViews.swift:151`).
 - Assistant text: unboxed in Agents chats; boxed in `ChatBox.persona` in Assistant chats. Streaming text re-parses only the tail.
 - Quotes sit above the words and jump to the original on tap.
+- Forwards (#3807) use the quote card with the forward arrow before the heading ("Forwarded from Claude · chat"), a line
+  for the computer and time, and four lines of the original; a tap opens the original chat at that message. Over the
+  composer the same row adds a line saying where it comes from and goes. Forward takes Share's place in the message bar
+  (the bar keeps its width); Share as Image is the first row of the Forward To sheet.
 - No shared bubble component exists. Messages, Tasks and Lark rebuild it with different paddings and gutters (DS-20).
 - Web: user bubble 14 px radius; replies unboxed. Android: 20 dp in Glass, max width 86%.
 
@@ -549,7 +553,7 @@ A dispatched task's Open link (#3711) is a compact row using existing typography
 | Horizontal drag between pages | pager with 3x resistance past the ends; flick above 300 pt/s or past half way |
 | Edge swipe back | system; the pan yields to it |
 | Swipe on a message (Agents) | quote, threshold 66 pt, with a VoiceOver "Quote" action |
-| Long press on a message | lifted menu with an action bar |
+| Long press on a message | lifted menu with an action bar; a message only on this device ends it in a red Delete (Don't Send while it waits), Undo in a toast (#4626) |
 | Hold the mic | cancel by sliding left, lock by sliding up |
 | Touch and hold the composer's + (iPhone) | system menu of the attach panel's More list; a tap still opens the panel, whose More tab is the plain alternative (#3225) |
 | Link card drag | to 0.6 it stops blocking the chat; further down it closes |
@@ -656,6 +660,10 @@ full text. Without an outcome (an older node) a row draws as before.
 Kinds: questions, plan approvals, tool approvals, secret entry, MCP forms, and waiting for a reply.
 
 - **Home**: the bottom of the session page. A request that blocks the Agent stays visible there until it is answered or folded, and says why the Agent waits ("Answer this so Claude can continue"). Several read "1 of 3", one open at a time; any can be folded to answer later.
+  A Persona conversation's own requests (its model's tool approvals, `ask_user`) are the same: above its composer, under
+  the Needs you / In progress entries, on every client (#4883: on the web and Android they sat only in the closed Needs
+  you tray, and an owner waited minutes on an approval no screen in the chat showed). Needs you still counts them, and
+  its row for one closes the tray onto the card instead of drawing it a second time.
 - **One count, per session**: the Agents list's Needs you section, its Needs you filter and the tab's badge count the sessions that wait for the user, each once, its requests in its row oldest first, the way `docs/assistant/managers.md` ("Counts") counts an assistant's waiting agents (principle 4). The Inbox's Agent section and the Assistant's composer entries open the same requests; the composer's entries count tasks (`docs/assistant/unified-entry.md`).
 - **Background rounds and supervisors** (#4314, `docs/assistant/assistant.md` "Background rounds"): in the main conversation a round another conversation, a scheduled task or a follow-up started reuses the quiet supervision record, one muted line `@<source> · Background round` that always opens, never a new component; a round that asked or told the user stays shown. While that switch is on, the composer's Needs you groups rows under the conversation supervising them, this one's first, with a plain caption header and no other change: the same rows, order within a group and count.
 - **Room** (web, #4656): an open tray of requests takes the room its cards need, up to most of the visible height (the assistant's Needs you / In progress tray lets the dock grow to 82% of it while open), never a fixed short box. Its header (title, All, Expand, Close) stays and only its list scrolls; a card's answer row stays at the list's bottom edge with a hairline over what scrolls under it. **Expand** in the header fills the chat column for going through many requests, the composer still on screen; the same button, **Restore size**, or closing the tray gives the room back.
@@ -754,15 +762,18 @@ Full glossary: `docs/protocol/i18n.md`. Languages: en, zh-Hans, ja. Apple string
 | Inbox item | message, mail | the Inbox | the sender or group, and a summary |
 | Computer | computer | the Machines page | the user's name for it |
 
-Titles of plans, permissions, questions and terminal prompts, the same on every client and screen that names one (cards, list rows, the Inbox, the chat panel's label, the hub's push titles). iOS writes them in title case, the web, Android and the hub in sentence case. A notification may put the agent's name in front; a label that cannot name the agent reads "Has a question" (在问你, 質問があります). The line under a title says what is asked (the command, the plan's title, the question) and keeps its own words; a row with one line puts the title first ("Needs your permission: swift test").
+Titles of plans, permissions, questions and terminal prompts, the same on every client and screen that names one (cards, list rows, the Inbox, the chat panel's label, the hub's push titles). iOS writes them in title case, the web, Android and the hub in sentence case. A notification may put the agent's name in front; a label that cannot name the agent reads "Has a question" (在问你, 質問があります). The line under a title says what is asked (the command, the plan's title, the question) and keeps its own words; a row with one line puts the title first ("Waiting for your approval: swift test").
 
 | Request | en | zh-Hans | ja |
 | --- | --- | --- | --- |
 | Plan | Plan awaiting approval | 计划等你审批 | プランの承認待ち |
-| Tool or command | Needs your permission; {agent} needs your permission | 需要你授权；{agent} 需要你授权 | 許可が必要です；{agent}に許可が必要です |
+| Tool or command | Waiting for your approval; {agent} is waiting for your approval | 在等你批准；{agent} 在等你批准 | 承認を待っています；{agent}が承認を待っています |
 | Question | {agent} has a question (Claude by default, Persona for its own) | {agent} 在问你 | {agent}から質問があります |
 | Terminal prompt | Terminal needs you | 终端等你处理 | ターミナルで対応が必要です |
 | A kind the client does not know | Needs you | 需要你 | 要対応 |
+
+Notification titles for a tool approval (the hub's pushes, the web's browser notifications) still read "{agent} needs
+your permission" (section 5, "Notifications"); moving them to the card's words is a follow-up of #4883.
 
 - A session's title is its top-bar title and its row's first line.
 - Primary screens (list rows, top-bar titles, the Assistant home and notifications) never show raw model IDs, session IDs, paths or engine names (herdr, Orca, Paseo); this is principle 2 applied to Agent work. A row may name the model by its short name.
@@ -931,11 +942,16 @@ Apple reuses the pairing Form, Section, Picker, toolbar and Theme tokens.
 
 Where a form exists to connect to something with an address or key the user types (the web provider wizard's preset
 key step and its custom gateway's Connect step), the check runs without a button: once what it needs is valid and has
-stopped changing for 0.7 s, it runs once for that input. It never runs on opening something already saved, only after
-its connection fields change; fields that play no part in the connection (a name) never block or repeat it. A line
-says it will check by itself, then shows progress with a spinner, then the result; a failure keeps the server's words
-and offers to run it again (Retry on the Connect step). Manual buttons, where the form has them, and the note that a
-test may cost a little stay. Once the check found what the next step needs, that step's button is the one primary
+stopped changing for 0.7 s, it runs once for that input. An address being typed counts only once focus moves from its
+field to something else on the page (not when the window loses focus), the step is left, or a paste fills all of it,
+so a key never goes to a half-typed host; until then the form says leaving the field starts the check. It never runs
+on opening something already saved, only after the fields the form names as its connection change (the provider
+wizard: address, key, sign-in method); fields that play no part in the connection (a name) never block or repeat it.
+Each part runs whatever an earlier part said, since one part failing does not prove another will (a key may chat
+without listing models); a part that is running or passed is not sent again. A line says it will check by itself, then
+shows progress with a spinner, then the result; a failure keeps the server's words and offers to run that part again
+(Retry on the Connect step). Manual buttons, where the form has them, and the note that a test may cost a little stay;
+pressing one counts as the check. Once the check found what the next step needs, that step's button is the one primary
 action (section 3.7). Reason: the user's next question after pasting a key is whether it works, and the preset path
 already answered it this way; two paths in one dialog should not differ. This reuses the existing Button, Spinner and
 status-line styles and adds no setting.

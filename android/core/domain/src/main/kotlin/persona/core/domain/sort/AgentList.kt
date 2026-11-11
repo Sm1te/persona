@@ -148,12 +148,15 @@ const val StateSeenGroup = "state/idle"
 const val StateSeenOpened = "!state/idle"
 
 /**
- * The list's own filter before the quick filter and the botmux switch: not the assistant, the machine, the search. The
- * search reads the branch too, which a working tree headed by its workspace's title shows nowhere (#4497, as the web).
+ * The list's own filter before the quick filter and the botmux switch: not the assistant, the machine, the search ([AgentQuery]:
+ * its words in the session's fields, the branch among them, #4497, and its conditions, #4338 A10). [pins] and
+ * [machineNames] are what `is:pinned` and `machine:` read; [now] dates `since:`.
  */
-fun AgentListSettings.admits(s: persona.core.contracts.Session): Boolean =
+fun AgentListSettings.admits(s: persona.core.contracts.Session, pins: AgentPreferences = AgentPreferences(),
+                             machineNames: Map<String, String> = emptyMap(), now: java.time.Instant = java.time.Instant.now()): Boolean =
     !s.assistant && (machineFilter.isEmpty() || machineFilter == s.machineId) &&
-        (query.isEmpty() || s.key.path in queryAncestors || listOf(s.title, s.cwd, s.lastText, s.spaceName, s.slotName, s.branch).any { it?.contains(query, ignoreCase = true) == true })
+        (query.isEmpty() || s.key.path in queryAncestors ||
+            AgentQuery.parse(query).admits(s, s.key.path in pins.sessions, machineNames[s.machineId], now))
 
 /**
  * Whether the list of running sessions draws [row], its search, quick filter and botmux switch aside: pinned (under
@@ -169,7 +172,7 @@ fun buildAgentList(
     settings: AgentListSettings = AgentListSettings(), todos: List<Todo> = emptyList(),
 ): AgentListResult {
     val tree = codexTaskForest(sessions, runs = { settings.draws(it, pins) })
-    return buildFlatAgentList(tree.roots, machines, pins, mutes, tree.searchSettings(settings), todos)
+    return buildFlatAgentList(tree.roots, machines, pins, mutes, tree.searchSettings(settings, pins, machines.associate { it.id to it.name }), todos)
         .copy(children = tree.children)
 }
 
@@ -185,7 +188,8 @@ fun buildFlatAgentList(
     settings: AgentListSettings = AgentListSettings(),
     todos: List<Todo> = emptyList(),
 ): AgentListResult {
-    val base = sessions.filter { settings.admits(it.session) && !(settings.hideBotmux && it.session.isBotmux) }
+    val machineNames = machines.associate { it.id to it.name }
+    val base = sessions.filter { settings.admits(it.session, pins, machineNames) && !(settings.hideBotmux && it.session.isBotmux) }
     val counts = AgentQuickFilter.entries.filter { it != AgentQuickFilter.All }
         .associateWith { filter -> base.count { !it.isNestedSubtask && filter.matches(it) } }
     val filtered = base.filter { settings.quick.matches(it) || it.id in settings.kept }
@@ -387,6 +391,17 @@ fun buildFlatAgentList(
 private fun repoTitle(name: String): CoreText = if (name == UnnamedRepo) CoreText.of(Key.RepoOther) else CoreText.plain(name)
 
 /** "By to-do"'s sections that are not a to-do: agents opened by hand, then those on none. */
+/**
+ * A long run of a section's rows (iOS `AgentRowCap`): the first [ROWS], then "Show All N"; a run only a few over the cap
+ * shows them all (no "Show All 22").
+ */
+object AgentRowCap {
+    const val ROWS = 20
+    fun capped(count: Int, cap: Int = ROWS): Int? = if (count <= cap + 5) null else cap
+    /** In `expandedIdle` while the section [groupId] shows all its rows. */
+    fun key(groupId: String) = "all:$groupId"
+}
+
 const val TodoManualGroup = "todo/manual"
 const val TodoNoneGroup = "todo/none"
 /** In `expandedIdle` once the user opened "No to-do", which is folded by default under to-dos. */

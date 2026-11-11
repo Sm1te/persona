@@ -58,6 +58,9 @@ func TestContextBlocksHoldOthersText(t *testing.T) {
 		"runtime memory": RenderRuntimeInstructions(RuntimeInstructions{Dir: "~/.persona/assistant/memory", Index: "- [x](x.md) — " + nested}) + "\n接着做",
 		"meeting feed": RenderMeetingFeed(MeetingFeed{Lang: "en", Title: "Design review", Role: "listener", From: "14:00", To: "14:01",
 			Lines: []MeetingFeedLine{{At: "14:00", Text: nested}}, Asks: []MeetingFeedAsk{{Question: nested, Answer: nested}}, Ended: true}),
+		"meeting photo": RenderMeetingRoomPhoto(MeetingRoomPhoto{N: 1, At: "1:00", Caption: nested, Text: nested}),
+		"meeting follow-up photos": RenderMeetingFollowupSeed(MeetingFollowupSeed{Title: "Design review", Photos: []MeetingPhoto{{N: 1, Caption: nested, Text: nested}},
+			Notes: []MeetingPhoto{{N: 1, Note: nested}}, Text: "看下这条"}),
 		"todo decisions": RenderTodoDecisions(TodoDecisions{Title: "t", Decisions: []TodoDecision{{N: 1, Question: ContextBody(nested), Choice: "a", When: "11-06"}}}),
 	} {
 		if out := outside(msg); strings.Contains(out, injected) {

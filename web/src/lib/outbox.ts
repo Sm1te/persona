@@ -361,9 +361,21 @@ export function retryOutboxEntry(mid: string, sid: string, id: string, clearDraf
   return { id: next.id, sent: deliver(mid, sid, next, clearDraft) };
 }
 
-export function discardOutbox(mid: string, sid: string, id: string) {
+/** Drops one message from the conversation's outbox, and its copy kept for reloads; nothing is sent. A failed one is
+ *  only on this device, so this is its Delete (#4626). Returns what puts it back where it was (Undo), nothing when it
+ *  was not there. */
+export function discardOutbox(mid: string, sid: string, id: string): (() => void) | undefined {
   const key = outboxKey(mid, sid);
-  write(key, list(key).filter((e) => e.id !== id));
+  const before = list(key);
+  const at = before.findIndex((e) => e.id === id);
+  if (at < 0) return undefined;
+  const gone = before[at];
+  write(key, before.filter((e) => e.id !== id));
+  return () => {
+    const now = list(key);
+    if (now.some((e) => e.id === gone.id)) return;
+    write(key, [...now.slice(0, at), gone, ...now.slice(at)]);
+  };
 }
 
 /**

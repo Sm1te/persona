@@ -100,6 +100,36 @@ class AgentsHomeAffordancesTest {
         rule.onAllNodesWithText("By status").assertCountEquals(0)
     }
 
+    // #4338 A11, as iOS's list menu: Sort is not offered under By Status, whose sections are the states.
+    @Test fun sortIsOfferedUnderOtherGroupings() {
+        showScreen()
+        rule.onNodeWithContentDescription("List settings").performClick()
+        rule.onAllNodes(androidx.compose.ui.test.hasText("Sort:", substring = true)).assertCountEquals(2)
+    }
+
+    @Test fun sortIsNotOfferedUnderByStatus() {
+        val model = showScreen()
+        rule.runOnIdle { model.grouping(persona.core.domain.sort.AgentGrouping.State) }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("List settings").performClick()
+        rule.onNodeWithText("All machines").assertIsDisplayed()
+        rule.onAllNodes(androidx.compose.ui.test.hasText("Sort:", substring = true)).assertCountEquals(0)
+    }
+
+    // #4338 A11, as iOS's row menu: a working agent can be interrupted from its row; a finished one offers nothing to stop.
+    @Test fun aWorkingRowOffersInterrupt() {
+        showScreen(rows = listOf(Session("box", "busy", title = "Busy task", state = "working")))
+        rule.onNodeWithText("Busy task").performTouchInput { longClick() }
+        rule.onNodeWithText("Interrupt").assertIsDisplayed()
+    }
+
+    @Test fun anUnreadRowOffersNoInterrupt() {
+        showScreen(rows = listOf(Session("box", "done", title = "Done task", state = "unread")))
+        rule.onNodeWithText("Done task").performTouchInput { longClick() }
+        rule.onNodeWithText("Mute").assertIsDisplayed()
+        rule.onAllNodesWithText("Interrupt").assertCountEquals(0)
+    }
+
     @Test fun groupingLight() = shootGrouping(dark = false)
     @Test fun groupingDark() = shootGrouping(dark = true)
 

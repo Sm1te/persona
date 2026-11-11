@@ -225,6 +225,48 @@ describe("message context interaction paths", () => {
   });
 });
 
+describe("a message only on this device (#4626)", () => {
+  it.each(["hover", "right-click", "long-press"] as const)("ends in Delete, in red, through %s", (entry) => {
+    if (entry === "long-press") {
+      media.noHover = true;
+      vi.useFakeTimers();
+    }
+    const onDelete = vi.fn();
+    act(() => root.render(
+      <ChatActionsContext.Provider value={{ ...chat, rewind: { block: liveValue(""), run: async () => {} } }}>
+        <MessageActions text="Not sent" isUser side onDelete={onDelete}><p data-message>Not sent</p></MessageActions>
+      </ChatActionsContext.Provider>,
+    ));
+    act(() => {
+      const message = host.querySelector("[data-message]")!;
+      if (entry === "hover") host.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!.click();
+      if (entry === "right-click") message.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+      if (entry === "long-press") {
+        message.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 20, clientY: 20 }));
+        vi.advanceTimersByTime(450);
+        message.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
+      }
+    });
+    const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const last = items.at(-1)!;
+    expect(last.textContent?.trim()).toBe("删除");
+    expect(last.className).toContain("text-red");
+    expect(items.map((item) => item.textContent?.trim())).not.toContain("回退到这里"); // not in the transcript to go back to
+    act(() => last.click());
+    expect(onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("has no Delete on a message the hub has", () => {
+    act(() => root.render(
+      <ChatActionsContext.Provider value={chat}>
+        <MessageActions text="Sent" isUser side messageId="m#0"><p data-message>Sent</p></MessageActions>
+      </ChatActionsContext.Provider>,
+    ));
+    act(() => void host.querySelector("[data-message]")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })));
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).not.toContain("删除");
+  });
+});
+
 describe("why rewind is off, as the session starts and stops working", () => {
   it("renders no message's actions, and an open menu follows it", () => {
     vi.useFakeTimers({ toFake: ["Date"] }); // fixed time (lesson #1989): only the block's changes are under test

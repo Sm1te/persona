@@ -136,5 +136,6 @@
   "check_wait": "入力が止まったら確認します…",
   "discovering": "モデル一覧を取得中…",
   "testing": "接続をテスト中…",
-  "retry": "再試行"
+  "retry": "再試行",
+  "check_leave_url": "URL欄から移動するとチェックします。"
 }

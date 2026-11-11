@@ -77,6 +77,12 @@ export function moreActions(itemId: string | undefined, fork: ((itemId: string) 
   return [{ key: "fork", label: t("chat-messageactions.fork"), icon: "fork", onSelect: () => fork(itemId) }];
 }
 
+/** "Delete", last and in red, on a message only on this device (#4626, the apps' long press): in the right-click / long-press
+ *  menu, and for your own bubbles in ⋯. */
+export function deleteActions(onDelete: (() => void) | undefined): Action[] {
+  return onDelete ? [{ key: "delete", label: t("chat-outboxbubbles.delete"), icon: "trash", danger: true, onSelect: onDelete }] : [];
+}
+
 type Rewind = NonNullable<ChatActions["rewind"]>;
 
 /** "Rewind to here" (#2436) on a message of yours: "Conversation only" / "Code and conversation", the second asking again (it puts files back too). Off
@@ -123,6 +129,7 @@ export function MessageActions({
   task,
   itemId,
   messageId,
+  onDelete,
   children,
   className,
 }: {
@@ -136,6 +143,8 @@ export function MessageActions({
   itemId?: string;
   /** Your message (UserMessage.id): where "Rewind to here" goes back to. */
   messageId?: string;
+  /** A message only on this device (a failed send): "Delete" ends its menus (#4626). */
+  onDelete?: () => void;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -147,7 +156,11 @@ export function MessageActions({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const rewind = isUser ? chat?.rewind : undefined;
   const rewindBlock = useWhileOpen(rewind?.block, Boolean(anchor || moreAnchor), "");
-  const extras = [...moreActions(itemId, chat?.fork), ...rewindActions(messageId, text, rewind && { block: rewindBlock, run: rewind.run })];
+  const extras = [
+    ...moreActions(itemId, chat?.fork),
+    ...rewindActions(messageId, text, rewind && { block: rewindBlock, run: rewind.run }),
+    ...deleteActions(onDelete),
+  ];
   const contextActions = side ? actions.filter((a) => a.key === "handToPersona" || a.key === "context") : [];
   const more: MenuItem[] = [...contextActions, ...extras].map((a, i) => ({ ...a, divider: i === contextActions.length && i > 0 }));
   const anchorRef = useRef<HTMLElement | null>(null);

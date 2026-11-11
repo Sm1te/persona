@@ -66,7 +66,9 @@ export function segmentHeight(user: UserMessage | undefined, nodes: WorkNode[]):
  *  (spec/fixtures/sync); the transcript's own bubbles have none. `starting`: the first message of a conversation still
  *  starting (the new-conversation page, #1697): drawn as it will be once sent, without actions (there is nothing yet to
  *  act on) and without "Sending…" (the page says it is preparing). */
-export function UserBubble({ msg, mid, sid, pending, sendState, starting }: { msg: UserMessage; mid: string; sid: string; pending?: boolean; sendState?: "sending" | "sent" | "failed"; starting?: boolean }) {
+/** `onDelete`: a message only on this device (a failed send): its menu ends in Delete, and it has no Rewind (it is not in
+ *  the transcript to go back to). */
+export function UserBubble({ msg, mid, sid, pending, sendState, starting, onDelete }: { msg: UserMessage; mid: string; sid: string; pending?: boolean; sendState?: "sending" | "sent" | "failed"; starting?: boolean; onDelete?: () => void }) {
   const own = isOwnMessage(msg);
   return (
     <div className="ml-auto flex max-w-[488px] min-w-0 flex-col items-end gap-1.5 pl-[12%]" style={pending ? { animation: `fade-up 300ms ${EASE} both` } : undefined} data-user-bubble data-send-state={sendState} data-items={pending || starting ? undefined : [msg.id, ...msg.images.map((i) => i.id)].join(" ")}>
@@ -86,7 +88,7 @@ export function UserBubble({ msg, mid, sid, pending, sendState, starting }: { ms
         ) : pending ? (
           <BubbleText text={msg.text} mid={mid} sid={sid} own={own} pending />
         ) : (
-          <MessageActions text={msg.text} isUser ts={msg.ts} side messageId={msg.id} className="max-w-full">
+          <MessageActions text={msg.text} isUser ts={msg.ts} side messageId={onDelete ? undefined : msg.id} onDelete={onDelete} className="max-w-full">
             <BubbleText text={msg.text} ts={msg.ts} mid={mid} sid={sid} own={own} />
           </MessageActions>
         ))}

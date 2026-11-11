@@ -76,6 +76,7 @@ inbox.write          DELETE /api/v1/inbox/policies/{id}
 -                    DELETE /api/v1/managers/{id}
 -                    DELETE /api/v1/model-profiles/{id}
 -                    DELETE /api/v1/recordings/{id}
+-                    DELETE /api/v1/recordings/{id}/photos/{n}
 -                    DELETE /api/v1/sessions/{mid}/{sid}
 -                    DELETE /api/v1/subscriptions/{id}
 -                    DELETE /api/v1/task-trust
@@ -128,6 +129,7 @@ assistant.ask        GET /api/v1/assistant/conversations/{id}/feed
 -                    GET /api/v1/assistant/followups
 leaders.read         GET /api/v1/assistant/leaders
 -                    GET /api/v1/assistant/memory
+-                    GET /api/v1/assistant/north-star
 -                    GET /api/v1/assistant/places
 -                    GET /api/v1/assistant/readiness
 assistant.ask        GET /api/v1/assistant/reporters
@@ -263,6 +265,8 @@ machines.read        GET /api/v1/machines/{mid}/stat
 -                    GET /api/v1/pins
 -                    GET /api/v1/recordings
 -                    GET /api/v1/recordings/{id}/live
+-                    GET /api/v1/recordings/{id}/photos
+-                    GET /api/v1/recordings/{id}/photos/{n}
 agents.read          GET /api/v1/sessions
 agents.read          GET /api/v1/sessions/archived
 agents.read          GET /api/v1/sessions/{mid}/{sid}/info
@@ -483,6 +487,7 @@ notify               POST /api/v1/notify
 -                    POST /api/v1/recordings/{id}/live
 -                    POST /api/v1/recordings/{id}/minutes
 -                    POST /api/v1/recordings/{id}/minutes/todos
+-                    POST /api/v1/recordings/{id}/photos
 agents.control       POST /api/v1/sessions
 -                    POST /api/v1/sessions/{mid}/{sid}/archive
 -                    POST /api/v1/sessions/{mid}/{sid}/attach

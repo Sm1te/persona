@@ -32,6 +32,10 @@ struct NewChatView: View {
     /// A todo handed to a new Agent (TodoHandoffSheet): the todo's context block goes ahead of the first message, the
     /// session is named after the todo, and only the todo's hub's machines are offered.
     var contextBlock: String? = nil
+    /// A message forwarded to a new Agent (#3807): its card over the first message, which carries it as `contextBlock`,
+    /// and the pictures it had, attached.
+    var forwarded: ContextRef? = nil
+    var forwardedImages: [UIImage] = []
     var nameHint: String? = nil
     var onlyGroup: String? = nil
     var onStarted: (Session) -> Void
@@ -79,6 +83,8 @@ struct NewChatView: View {
     @State private var worktreeBranch = ""
     /// Photos and files for the first message (#2321), and the pickers that add them.
     @State private var attachments = NewAgentAttachments()
+    /// The forwarded pictures are attached once, not again each time the form appears.
+    @State private var forwardedAttached = false
     @State private var photoPicks: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showCamera = false
@@ -369,6 +375,11 @@ struct NewChatView: View {
                 }
 
                 Section {
+                    if let forwarded {
+                        QuoteCard(heading: forwarded.quoteHeading, icon: Theme.Icon.forwardMessage, meta: ForwardMessage.meta(forwarded),
+                                  summary: forwarded.forwardSummary, lines: QuoteBlock.forwardLines, tint: Theme.accent, ink: .secondary) {}
+                            .accessibilityIdentifier("newChat.forward")
+                    }
                     promptField
                         .focused($promptFocused)
                         .accessibilityIdentifier("newChat.prompt")
@@ -484,6 +495,12 @@ struct NewChatView: View {
             }
             .onAppear {
                 if prompt.isEmpty { prompt = initialPrompt }
+                if !forwardedAttached {
+                    forwardedAttached = true
+                    for img in forwardedImages.prefix(MessagePhotos.limit) {
+                        if let p = MessagePhotos.payload(img) { attachments.images.append(p) }
+                    }
+                }
                 if let preset { machineID = preset.machineID; cwd = preset.cwd } else { pickDefaultMachine() }
             }
             .onChange(of: model.machines) { _, _ in if preset == nil { pickDefaultMachine() } }

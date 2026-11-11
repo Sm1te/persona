@@ -37,7 +37,8 @@ class AgentsTreeTest {
 
     @Test fun searchingOpensQuietSpacesAndFoldingAComputerLeavesOnlyItsHeading() {
         val searched = agentTreeEntries(buildAgentList(rows, machines, settings = AgentListSettings(grouping = AgentGrouping.MachineSpace, query = "notes")), "")
-        assertEquals(listOf("machine-header:machine/mac", "group:mac/notes", "session:mac/c", "session:mac/d"), searched.map { it.key })
+        // One computer left: no heading over its own list, as iOS (#4338 A7).
+        assertEquals(listOf("group:mac/notes", "session:mac/c", "session:mac/d"), searched.map { it.key })
         val rowsOfNotes = searched.filterIsInstance<TreeRowEntry>()
         assertEquals(listOf(true, false), rowsOfNotes.map { it.first })
         assertEquals(listOf(false, true), rowsOfNotes.map { it.last })
@@ -198,5 +199,23 @@ class AgentsTreeTest {
         // one agent of the tab left under a quick filter: a row of its own
         val needs = agentTreeEntries(buildAgentList(panes, machines, settings = MachineSpaceTree.copy(quick = AgentQuickFilter.NeedsYou)), "mac", tabs = true)
         assertTrue(needs.none { it is TreeTabEntry })
+    }
+
+    // #4338 A11, as iOS's `cappedRows`: a long section shows 20 rows, then "Show All N"; open, "Collapse" at its end.
+    @Test fun aLongSectionShowsTwentyRowsThenShowAll() {
+        val many = (1..30).map { session("box", "s$it", "working", "api") }
+        val byStatus = AgentListSettings(grouping = AgentGrouping.State)
+        val list = buildAgentList(many, machines, settings = byStatus)
+        fun entries(showAll: Set<String>?, of: AgentListResult = list) = agentTreeEntries(of, "", showAll = showAll)
+        val capped = entries(emptySet())
+        assertEquals(20, capped.count { it is TreeRowEntry })
+        assertEquals(TreeShowAllEntry(list.groups.single(), 30, 0, expanded = false), capped.last())
+        val open = entries(setOf(AgentRowCap.key("state/working")))
+        assertEquals(30, open.count { it is TreeRowEntry })
+        assertTrue((open.last() as TreeShowAllEntry).expanded)
+        // A search, a quick filter or a paged list shows every row (null); a run only a few over the cap shows them all.
+        assertEquals(30, entries(null).count { it is TreeRowEntry })
+        assertTrue(entries(null).none { it is TreeShowAllEntry })
+        assertTrue(entries(emptySet(), buildAgentList(many.take(25), machines, settings = byStatus)).none { it is TreeShowAllEntry })
     }
 }

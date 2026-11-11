@@ -188,3 +188,22 @@ func TestAssistantClaudeMDLanguage(t *testing.T) {
 		}
 	}
 }
+
+// Process text, the lines between tool calls, is in the user's language too (#4883: the only line a Chinese owner saw
+// in six minutes of work was English), in every language the CLAUDE.md is written for, and in the health space's.
+func TestAssistantClaudeMDProcessTextLanguage(t *testing.T) {
+	ctx := context.Background()
+	f := claudeMDHub(Device{ID: "server", Name: "服务器", Kind: "local"})
+	s := newTestService(t, f)
+	s.kb.dir = "<hub>/data"
+	const rule = "工作中写给用户看的每一句（工具调用之间的说明、进度、在等什么）也用这种语言，不因为读的代码、日志或资料是英文就改用英文。"
+	for _, locale := range []string{"", "zh-Hans", "en", "ja"} {
+		f.hello.Locale = locale
+		if got := s.claudeMD(ctx, "server", false); !strings.Contains(got, rule) {
+			t.Errorf("locale %q: no process-text language rule", locale)
+		}
+	}
+	if !strings.Contains(s.healthClaudeMD(ctx, "server"), rule) {
+		t.Error("health CLAUDE.md: no process-text language rule")
+	}
+}

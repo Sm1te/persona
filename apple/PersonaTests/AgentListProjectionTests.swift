@@ -438,4 +438,17 @@ import Testing
         #expect(snippet.role == .user)
         #expect(snippet.match.lowercased() == "composable")
     }
+
+    /// Search in All finds a working tree's sessions by their branch, as the web, Android and the hub's paged list do
+    /// (#4770). The Titles scope does not read it.
+    @Test func searchFindsASessionByItsBranch() throws {
+        var tree = try session("login-form")
+        tree.branch = "fix/123-login"
+        let other = try session("release-notes")
+        var settings = AgentListProjection.Settings()
+        settings.query = "FIX/123"
+        #expect(AgentListProjection.build(input([tree, other], settings: settings)).base.map(\.sessionID) == ["login-form"])
+        settings.searchScope = .title
+        #expect(AgentListProjection.build(input([tree, other], settings: settings)).base.isEmpty)
+    }
 }

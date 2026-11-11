@@ -59,7 +59,8 @@ func (s *Service) sessionMCPTools(ctx context.Context, machine, session string, 
 		if s.isWorkMachine(machine) {
 			return []proto.Tool{}
 		}
-		return meetingRoomTools() // a meeting's room: its meeting tools only (meeting_room_tools.go)
+		// A meeting's room: its meeting tools only (meeting_room_tools.go), those it started with.
+		return guestTools(meetingRoomTools(), allowed)
 	}
 	if !guest {
 		if guestHint {

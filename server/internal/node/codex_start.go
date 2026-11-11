@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -110,11 +111,45 @@ func codexOwnProcess(argv []string) string {
 	return ""
 }
 
+// A managed launcher's -- can precede every caller argument. Defer injection until Launch has assembled its argv.
+const codexBypassEnv = "PERSONA_CODEX_BYPASS_PERMISSIONS"
+
+func codexBypassArgs(argv []string) []string {
+	end := slices.Index(argv, "--")
+	if end < 0 {
+		end = len(argv)
+	}
+	for i := 0; i < end; i++ {
+		if argv[i] == "--dangerously-bypass-approvals-and-sandbox" || argv[i] == "--yolo" {
+			return argv
+		}
+		if codexValueFlags[argv[i]] {
+			i++
+		}
+	}
+	return slices.Insert(slices.Clone(argv), end, "--dangerously-bypass-approvals-and-sandbox")
+}
+
 // startCodex starts a Codex launcher in a new tab with the first message and returns its session once the thread is
 // known.
 func (n *Node) startCodex(ctx context.Context, launch host.Launcher, cwd, launcher string, argv []string, prompt, ws, tabName, mode string) (*proto.Session, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return nil, refusal("codex_needs_prompt", "新建 Codex 会话要连第一条消息一起发：Codex 收到第一条消息才建会话。", nil)
+	}
+	if mode == "bypassPermissions" {
+		if managed, ok := n.managedLauncher(launcher); ok && len(argv) >= 3 && slices.Equal(argv[:3], []string{n.bin, "launch", launcher}) {
+			// Only this wrapper executes managed Args; a same-name shell alias takes precedence.
+			args := append(slices.Clone(managed.Args), argv[3:]...)
+			if len(codexBypassArgs(args)) != len(args) {
+				if slices.Contains(managed.Args, "--") {
+					argv = append([]string{codexBypassEnv + "=1"}, argv...)
+				} else {
+					argv = codexBypassArgs(argv)
+				}
+			}
+		} else {
+			argv = codexBypassArgs(argv)
+		}
 	}
 	key := cwd + "\x00" + launcher
 	if err := n.closeAbandonedCodex(ctx, key); err != nil {
@@ -191,7 +226,7 @@ func (n *Node) startCodex(ctx context.Context, launch host.Launcher, cwd, launch
 	}
 	n.bindPane(pane, id)
 	st := sessionState{Pane: pane, Launcher: launcher, Cwd: cwd, StartedAt: began.UTC()}
-	if mode == "plan" { // Other modes still come from the launcher's arguments, not this request.
+	if mode == "plan" {
 		st.AppMode = mode
 	}
 	n.state.put(id, st)

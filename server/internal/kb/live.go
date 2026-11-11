@@ -44,8 +44,9 @@ const (
 	maxLiveText      = 4000 // bytes of one sentence: longer ones are cut at a character boundary
 	maxLivePositions = 20000
 	maxLiveBytes     = 4 << 20 // of live text in all
-	// What MeetingMaterial gives of the live sentences, and of earlier meetings.
+	// What MeetingMaterial gives of the live sentences, of the photos' words, and of earlier meetings.
 	materialLiveRunes  = 12000
+	materialPhotoRunes = 8000
 	materialMaxEarlier = 6
 )
 

@@ -67,6 +67,8 @@ import { SentLine, TaskSentList } from "./Sent";
 import { latestReview, parkedLine, progressLine } from "../../lib/supervision";
 import { planLabel, planLine, planShown } from "../../lib/plan";
 import { AnsweredCard, InteractionCard } from "../chat/Interactions";
+import { cardLine } from "../chat/dock";
+import { interactionKicker } from "../../lib/row-line";
 import { MessageActions } from "../chat/MessageActions";
 import { sessionTitle, stateOf } from "../../lib/format";
 import { formatDate, t } from "../../i18n";
@@ -260,7 +262,7 @@ export function taskInteraction(todo: Todo, interactions: Interaction[], lead?: 
   return (lead && interactions.find((ix) => ix.machine_id === lead.machine_id && ix.session_id === lead.session_id)) ?? interactions.find(mine);
 }
 
-/** What a waiting task needs, in a line (#3301): "Has a question: which framework?", "Needs your permission: swift test", "Plan awaiting approval", the words
+/** What a waiting task needs, in a line (#3301): "Has a question: which framework?", "Waiting for your approval: swift test", "Plan awaiting approval", the words
  *  the to-dos page's agent rows use; undefined without a card. */
 export function taskAsk(ix: Interaction | undefined): string | undefined {
   if (!ix) return undefined;
@@ -1404,7 +1406,21 @@ function RunningAgentRow({ session, activity }: { session: Session; activity?: B
 
 /** The conversation's two upward trays (#3387): Needs you, everything waiting on the user, and In progress, everything
  *  running that does not; each thing in one of them only (lib/assistant-entries). Finished things are on the board. */
-export const AssistantActionBar = memo(function AssistantActionBar({ conversation, ownPending, ownCount = 0 }: { conversation: string; ownPending?: ReactNode; ownCount?: number }) {
+const NO_ASKS: Interaction[] = [];
+
+/** One of the conversation's own cards in Needs you (#4883): the card itself is in the chat above the composer, as on
+ *  iOS (ActionTrayContent's asks); its row says what it waits for and closes the tray onto it. */
+function OwnAskRow({ ix, onOpen }: { ix: Interaction; onOpen: () => void }) {
+  return (
+    <button type="button" data-own-ask={ix.id} onClick={onOpen} className="flex items-center gap-2 rounded-control bg-field px-3 py-2 text-left text-sm">
+      <StatusMark state="needs_you" />
+      <span className="min-w-0 flex-1 truncate">{cardLine(ix)}</span>
+      <span className="shrink-0 whitespace-nowrap text-xs text-ink-2">{interactionKicker(ix)}</span>
+    </button>
+  );
+}
+
+export const AssistantActionBar = memo(function AssistantActionBar({ conversation, ownAsks = NO_ASKS }: { conversation: string; ownAsks?: Interaction[] }) {
   const [tray, setTrayNow] = useState<AssistantTray | null>(null);
   // the open tray filling the chat column (#4656), for going through many cards; closing or switching trays undoes it
   const [expanded, setExpanded] = useState(false);
@@ -1450,7 +1466,12 @@ export const AssistantActionBar = memo(function AssistantActionBar({ conversatio
     const row = conversations?.find((c) => c.session_id === id);
     return row ? conversationTitle(row) : t("assistant-tasks.needs_group_another");
   };
-  const counts: Record<AssistantTray, number> = { needs: ownCount + entries.needsYou.length, running: entries.running.length };
+  const counts: Record<AssistantTray, number> = { needs: ownAsks.length + entries.needsYou.length, running: entries.running.length };
+  // the card is in the chat already: close the tray onto it and bring it into view
+  const openOwn = (id: string) => {
+    setTray(null);
+    requestAnimationFrame(() => [...document.querySelectorAll<HTMLElement>("[data-card]")].find((el) => el.dataset.card === id)?.firstElementChild?.scrollIntoView?.({ block: "nearest" }));
+  };
   useEffect(() => {
     const needs = (event: Event) => { if ((event as CustomEvent).detail === conversation) setTray("needs"); };
     window.addEventListener("persona:task-pending", needs);
@@ -1485,7 +1506,7 @@ export const AssistantActionBar = memo(function AssistantActionBar({ conversatio
           </div>}
           {tray === "needs" && <div className="flex flex-col gap-2 p-2">
             {asking.map((item) => <NeedsYouRow key={item.key} item={item} />)}
-            {ownPending}
+            {ownAsks.map((ix) => <OwnAskRow key={ix.id} ix={ix} onOpen={() => openOwn(ix.id)} />)}
             {rest.map((item) => <NeedsYouRow key={item.key} item={item} />)}
             {groups.slice(1).map((group) => (
               <section key={group.supervisor} data-needs-supervisor={group.supervisor} aria-label={supervisorTitle(group.supervisor)} className="flex flex-col gap-2">

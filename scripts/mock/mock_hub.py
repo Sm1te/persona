@@ -1632,6 +1632,20 @@ if os.environ.get("MOCK_ORIGINS") == "1":
     for c in ASSISTANT[:4]:
         c.setdefault("origin", "user")
 
+# MOCK_RECENT=1 (#4873): more of the user's own conversations, so the sidebar's Recent (the newest five that are not the main
+# conversation or a leader) has more than it lists and All chats holds the rest. Synthetic titles.
+if os.environ.get("MOCK_RECENT") == "1":
+    for i, (title, minutes, last) in enumerate([  # i18n-ignore: the hub's own titles
+        ("1112 | 规划 | 周末去杭州的行程", 60 * 2, "两天的安排排好了。"),
+        ("1112 | 写作 | 给物业的报修邮件", 60 * 7, "邮件草稿在这里。"),
+        ("1111 | 研究 | 家用净水器怎么选", 60 * 26, "三款的对比如下……"),
+        ("1109 | 整理 | 孩子的疫苗时间表", 60 * 24 * 3, "下一针在 12 月。"),
+        ("1106 | 学习 | 每天 20 分钟西班牙语", 60 * 24 * 6, "第 6 课的单词表。"),
+    ]):
+        c = assistant_sess(f"mine{i:04d}-0000-4000-8000-{i:012d}", title, minutes, last)
+        c["origin"] = "user"
+        ASSISTANT.append(c)
+
 # MOCK_LEADERS=1 (#3623, docs/assistant/unified-entry.md "Leader conversations"): four side conversations are leaders. GET
 # /api/v1/assistant lists them in `leaders`; GET /api/v1/assistant/leaders names each direction (#3695), and the web
 # sidebar shows them first among the Persona chats as the "Directions" group under those names, on any browser.
@@ -6058,6 +6072,15 @@ def _long_lark_card(ix_id, machine, session, title, tool, verb, minutes, **extra
 # MOCK_ASK_LONG=perm: the main conversation waits on a long Feishu permission card instead.
 if os.environ.get("MOCK_ASK_LONG") == "perm":
     INTERACTIONS.append(_long_lark_card("ix_perm_long", "server", ASK1, "Persona", "mcp__lark__run", "list", 1))
+# MOCK_ASSISTANT_BASH=1: the main conversation's own first Bash waits for approval (#4883), its only card: the chat
+# shows it above the composer, "Waiting for your approval", not only in the closed Needs you tray.
+if os.environ.get("MOCK_ASSISTANT_BASH") == "1":
+    INTERACTIONS[:] = [x for x in INTERACTIONS if x["session_id"] != ASK1]
+    INTERACTIONS.append({"id": "ix_assistant_bash", "machine_id": "server", "session_id": ASK1, "session_title": "Persona",
+                         "kind": "permission", "created_at": ago(minutes=3), "expires_at": later(minutes=27),
+                         "tool_name": "Bash", "summary": "ssh vps 'cat /etc/example/config.json'",
+                         "tool_input": {"command": "ssh vps 'cat /etc/example/config.json'",
+                                        "description": "Read the server config on the VPS"}})
 # MOCK_ASK_LONG=agent: two long Feishu permission cards on an agent's chat (the tests session on the MacBook) and no
 # other card there, whose cards a phone and a side panel fold under the composer (PendingCards): the first open, the
 # second behind "1 more".
@@ -10093,8 +10116,14 @@ def providers_route(h, method, p, q, body):
     if not MOCK_PROVIDERS and not probe: return False
     if p == "/mock/providers/log":
         h.send_json(PROVIDER_LOG); return True
-    b = json.loads(body or b"{}") if method != "GET" else {}
-    if not MOCK_PROVIDERS and b.get("preset"): return False
+    if MOCK_PROVIDERS:
+        b = json.loads(body or b"{}") if method != "GET" else {}
+    else:  # a body that is not a typed-in gateway's probe goes on to the routes after this one
+        try:
+            b = json.loads(body or b"{}")
+        except ValueError:
+            return False
+        if not isinstance(b, dict) or b.get("preset"): return False
     if p == "/api/v1/launchers/import":
         machine = (q.get("machine") or [""])[0] if method == "GET" else b.get("machine", "")
         if machine == "studio":
@@ -10132,7 +10161,7 @@ def providers_route(h, method, p, q, body):
     if p == "/api/v1/launchers/discover" and method == "POST":
         PROVIDER_LOG["discover"].append(_provider_redacted(b))
         if "bad" in (b.get("base_url") or ""):
-            h.send_json({"models": [], "error": "网关没有 /v1/models"}); return True
+            h.send_json({"models": [], "error": "网关没有 /v1/models", "code": "not_found"}); return True
         h.send_json({"models": PROVIDER_DISCOVERED}); return True
     if p == "/api/v1/launchers" and method == "POST" and not b.get("preset"):
         PROVIDER_LOG["post"] = _provider_redacted(b)
@@ -20426,6 +20455,7 @@ def features():
 MOCK_HELP.append("MOCK_EXTENSION_PICKERS=1  （配合 MOCK_EXTENSIONS=1）多一个扩展「Example 聊天」：设置里选一台电脑（format machine）、选启动器（format launcher，代答的那个已经不在了）、整数带步进（#2385）")
 MOCK_HELP.append("MOCK_EXTENSION_OPS=1|fail  （配合 MOCK_EXTENSIONS）扩展的安装 / 升级 / 卸载分步骤推进度（extension_operation 事件）：后台预览、停在等你同意、同意后同一个操作接着装；fail：每个扩展第一次安装停在「启动」、第一次卸载停在「删除」，都能重试；MOCK_EXTENSION_OPS_STEP=秒 每步的时长；MOCK_EXTENSION_INSTALL_DELAY=秒 没有分步骤的旧 hub 安装 / 卸载要这么久才回（#3307）")
 MOCK_HELP.append("MOCK_MANAGER_NAS=1  （默认的三个管理者）NAS 归离线的「家里」：像 hub 一样显示成离线，error 是 hub 的「助手暂时连不上，稍后再试」；它的一个 agent（备份脚本）状态 unknown")
+MOCK_HELP.append("MOCK_ASSISTANT_BASH=1  主对话自己的第一条 Bash 在等批准（#4883），是它唯一的卡片：对话里输入区上方显示「在等你批准」，不只在收起的「需要你」里")
 MOCK_HELP.append("MOCK_ASK_LONG=1|perm|agent  卡片比输入区上方的盒子还高（#3112）：1 主对话的 ask_user 提问卡（八个带说明的选项）；perm 主对话的飞书授权卡（超长命令）；agent MacBook 上补测试的 Agent 对话里两张这样的授权卡、没有别的卡（手机和侧边面板把第二张折在「还有 1 件」后面）")
 MOCK_HELP.append("MOCK_MANAGER_NEEDS_YOU=0  名册不带 inbox_needs_you（旧 hub，或还不上报这个数的旧管理者）；默认每个在线的管理者带它收件箱里「需要你处理」的未完成条目数，数变了推 managers")
 MOCK_HELP.append("MOCK_MANAGER_OUTDATED=1  设置 › 管理者：「工作」带 needs_update（它还不读自己的 manager.json，hub 在它在线时这样标）")

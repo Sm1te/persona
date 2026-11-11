@@ -391,6 +391,21 @@ describe("messages kept across a reload", () => {
     discardOutbox("m", "s", "a5");
     expect(store.size).toBe(0);
   });
+
+  it("puts a deleted message back where it was on Undo, kept for reloads again (#4626)", () => {
+    keepFailed("m", "s", { id: "a6", text: "第一条", images: [], at: 1000 }, new TypeError("network"));
+    keepFailed("m", "s", { id: "a7", text: "第二条", images: [], at: 2000 }, new TypeError("network"));
+    const undo = discardOutbox("m", "s", "a6")!;
+    expect(outbox()["m/s"].map((e) => e.id)).toEqual(["a7"]);
+    expect(store.size).toBe(1);
+    undo();
+    expect(outbox()["m/s"].map((e) => e.id)).toEqual(["a6", "a7"]);
+    expect(outbox()["m/s"][0]).toMatchObject({ state: "failed", text: "第一条" });
+    expect(store.size).toBe(2);
+    undo(); // there already: no second copy
+    expect(outbox()["m/s"]).toHaveLength(2);
+    expect(discardOutbox("m", "s", "gone")).toBeUndefined();
+  });
 });
 
 describe("inSendOrder", () => {

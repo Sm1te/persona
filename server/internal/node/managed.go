@@ -403,6 +403,10 @@ func Launch(ctx context.Context, name string, args []string, ticket string) erro
 		env = append(withoutEnv(env, envNames(secrets)), secrets...)
 	}
 	argv := launchArgv(agent, args, resp.Args, resp.Effort, resp.Model, resp.Env)
+	if agent == "codex" && os.Getenv(codexBypassEnv) == "1" {
+		argv = codexBypassArgs(argv)
+	}
+	env = withoutEnv(env, []string{codexBypassEnv})
 	exe, argv, env, _ = launchExec(agent, exe, argv, env)
 	return osproc.Exec(exe, argv, env)
 }

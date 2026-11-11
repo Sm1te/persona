@@ -18,8 +18,11 @@ import (
 // each bound to the room's own recording: they take no recording id. The room is listed and may call these only;
 // every other tool call is refused (guestRefuses).
 
-// meetingRoomToolNames are the phase 1 meeting tools.
-func meetingRoomToolNames() []string { return []string{"meeting_lines", "meeting_earlier"} }
+// meetingRoomToolNames are the meeting tools a room starts with: phase 1's and meeting_photo_note (phase 3). A room
+// started before a tool was added keeps the list it started with (the guest book's, the node's allowed tools).
+func meetingRoomToolNames() []string {
+	return []string{"meeting_lines", "meeting_earlier", "meeting_photo_note"}
+}
 
 // meetingRoomTools are a room's tools as its MCP server lists them.
 func meetingRoomTools() []proto.Tool {
@@ -79,6 +82,8 @@ func (s *Service) roomToolCall(ctx context.Context, recording, name string, args
 			return proto.TextResult(err.Error(), true)
 		}
 		return proto.TextResult(string(out), false)
+	case "meeting_photo_note":
+		return photoNoteTool(e, recording, args) // meeting_photos.go
 	}
 	return proto.TextResult("unknown tool "+name, true)
 }
@@ -109,13 +114,14 @@ func meetingLinesText(segs []kb.LiveSegment, from, to *float64) string {
 }
 
 // roomState is what the manager holds in memory for the rooms: the asks waiting for a room to come up (woken when it
-// is ready, unavailable or ended), one ask at a time per room, and the earlier meetings meeting_earlier gave during
-// the ask being answered (its sources).
+// is ready, unavailable or ended), one ask at a time per room (a photo's send takes the slot too), the earlier meetings
+// meeting_earlier gave during the ask being answered (its sources), and the failed sends of photo messages.
 type roomState struct {
-	mu      sync.Mutex
-	waiters map[string][]chan struct{} // by recording: asks waiting for its room
-	turn    map[string]chan struct{}   // by recording: held while an ask runs in its room
-	sources map[string][]kb.AskSource  // by recording: what meeting_earlier gave since the running ask was sent
+	mu         sync.Mutex
+	waiters    map[string][]chan struct{} // by recording: asks waiting for its room
+	turn       map[string]chan struct{}   // by recording: held while an ask runs in its room
+	sources    map[string][]kb.AskSource  // by recording: what meeting_earlier gave since the running ask was sent
+	photoTries map[string]int             // by client_msg_id: failed sends of a photo's message (meeting_photos.go)
 }
 
 // wait is a channel closed when recording's room changes (wake).

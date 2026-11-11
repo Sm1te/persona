@@ -23,8 +23,9 @@ import (
 // keyed by its UUID, the whole state every time (revision orders them), so replays, reordering and a transcript
 // completed later all land on one entry. Only text: the audio stays on the phone. A directory per recording:
 // meta.json, segments.json, transcript.md (what the searches read), summary.md (the model's, once it is complete), and
-// for an attended meeting live.json (live.go). Uploads journal the accepted files until all replacements commit
-// (recording_commit.go). Past recording_days a recording with minutes keeps only meta.json and its minutes until
+// for an attended meeting live.json (live.go), for a meeting with photos photos.json, photos.md and attachments/
+// (recording_photos.go). Uploads journal the accepted files until all replacements commit (recording_commit.go). Past
+// recording_days a recording with minutes keeps only meta.json, its minutes and the photos they cite until
 // minutes_days (recording_trim.go); any other goes.
 // recordings/.deleted.json is the tombstones: a late upload of a deleted one is refused. Kept recordingDays.
 
@@ -159,8 +160,11 @@ type Recording struct {
 	MinutesFailRev  int64     `json:"minutes_fail_rev,omitempty"`
 	MinutesTimeouts int       `json:"minutes_timeouts,omitempty"`
 	MinutesRetryAt  time.Time `json:"minutes_retry_at,omitzero"`
-	// MinutesAsks counts the user's requests: minutes made from before the latest one don't settle it.
-	MinutesAsks int `json:"minutes_asks,omitempty"`
+	// MinutesAsks counts the requests to make them again (the user's, and a photo added or deleted): minutes made from
+	// before the latest one don't settle it. MinutesQuiet is the MinutesAsks of minutes made again only for a photo,
+	// which are not pushed (photosRemake); 0 once they are written.
+	MinutesAsks  int `json:"minutes_asks,omitempty"`
+	MinutesQuiet int `json:"minutes_quiet,omitempty"`
 	// TrimmedAt is the hub's: when its transcript went with recording_days and only meta.json and the minutes stayed
 	// (recording_trim.go); nil while it is whole.
 	TrimmedAt *time.Time `json:"trimmed_at,omitempty"`
@@ -438,6 +442,8 @@ func (e *Engine) putRecording(rawID string, u RecordingUpload, now time.Time) (p
 		put.Room, put.AttendanceProblem = true, u.roomProblem
 	}
 	put.Meeting = meeting
+	// A newer transcript (not a retry of the accepted upload): its minutes are pushed as before.
+	advanced := !exists || u.Revision > r.Revision
 	if !exists {
 		r = &Recording{ID: id}
 	}
@@ -453,6 +459,9 @@ func (e *Engine) putRecording(rawID string, u RecordingUpload, now time.Time) (p
 	r.Segments, r.Chars = len(u.Segments), 0
 	for _, sg := range u.Segments {
 		r.Chars += len([]rune(sg.Text))
+	}
+	if advanced {
+		r.MinutesQuiet = 0 // a retry keeps a generation made again only for a photo quiet
 	}
 	r.planMinutes() // after Chars: a meeting that completed with no text gets none
 	r.Name = st.recordingName(r)
@@ -584,6 +593,13 @@ func (e *Engine) PruneRecordings(now time.Time) int {
 	minutesDays := e.MinutesDays()
 	minutesCut := now.UTC().AddDate(0, 0, -minutesDays)
 	st := e.Store
+	// The trims' photo changes are told once recMu is let go (deferred calls run last first).
+	var photos []string
+	defer func() {
+		for _, id := range photos {
+			e.meetingChanged(id, []string{PartPhotos})
+		}
+	}()
 	st.recMu.Lock()
 	defer st.recMu.Unlock()
 	var gone []string
@@ -591,13 +607,15 @@ func (e *Engine) PruneRecordings(now time.Time) int {
 		if !r.StartedAt.Before(cut) {
 			// Within recording_days only a trimmed one has anything to do: the files an interrupted trim left (a crash
 			// after its meta.json, a failed removal) go even once recording_days made longer lets it back in the window.
-			if r.Trimmed() {
-				e.trimPruned(r, now)
+			if r.Trimmed() && e.trimPruned(r, now) {
+				photos = append(photos, r.ID)
 			}
 			continue
 		}
 		if (minutesDays == 0 || !r.StartedAt.Before(minutesCut)) && (r.Trimmed() || st.hasMinutes(r.ID)) {
-			e.trimPruned(r, now)
+			if e.trimPruned(r, now) {
+				photos = append(photos, r.ID)
+			}
 			continue
 		}
 		st.recFilesMu.Lock()
@@ -630,10 +648,12 @@ func (e *Engine) PruneRecordings(now time.Time) int {
 }
 
 // trimPruned trims recording r for PruneRecordings (which holds recMu), or finishes its trim: idempotent, it says
-// what changed and indexes the recording again only when something did.
-func (e *Engine) trimPruned(r *Recording, now time.Time) {
+// what changed and indexes the recording again only when something did. photos: PartPhotos' revision moved (the
+// caller tells MeetingChanged once it let recMu go).
+func (e *Engine) trimPruned(r *Recording, now time.Time) (photos bool) {
 	st := e.Store
-	if trimmed, err := st.trimRecording(r, now); err != nil {
+	trimmed, photos, err := st.trimRecording(r, now)
+	if err != nil {
 		e.logf("recording %s: trim: %v", r.ID, err)
 	} else if trimmed {
 		st.notify(KindRecording, r.ID, "metadata")
@@ -641,6 +661,7 @@ func (e *Engine) trimPruned(r *Recording, now time.Time) {
 		st.notify(KindRecording, r.ID, "summary")
 		e.index(KindRecording, r.ID, r.Name, r.Tagging, r.OneLine, r.StartedAt)
 	}
+	return photos
 }
 
 // RecordingDays is the retention in days (Engine.RecordingDaysFunc, the assistant's setting), the default without one.

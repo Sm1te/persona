@@ -163,10 +163,11 @@ func TestGitMirrorRelativePackageRefreshesCheckout(t *testing.T) {
 	Official = OfficialMarket{Spec: "github:example/plugins", SigningKey: key}
 	t.Cleanup(func() { Official = was })
 	work, bare := t.TempDir(), filepath.Join(t.TempDir(), "plugins.git")
-	// Git's test-only rewrite keeps every clone/fetch on the owned local source.
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "url."+bare+".insteadOf")
-	t.Setenv("GIT_CONFIG_VALUE_0", "https://github.com/example/plugins.git")
+	// A url rewrite in a temporary home's global config keeps every clone/fetch on the owned local source. Every git
+	// reads ~/.gitconfig; GIT_CONFIG_COUNT would need git 2.31, and an older git would reach the real host instead.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	run(t, home, "config", "--file", filepath.Join(home, ".gitconfig"), "url."+bare+".insteadOf", "https://github.com/example/plugins.git")
 	run(t, work, "init", "-q", "-b", "main")
 	write := func(data []byte) {
 		if err := os.MkdirAll(filepath.Join(work, "packages"), 0700); err != nil {

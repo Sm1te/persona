@@ -136,5 +136,6 @@
   "check_wait": "停下来就开始检查…",
   "discovering": "正在获取模型列表…",
   "testing": "正在测试连接…",
-  "retry": "重试"
+  "retry": "重试",
+  "check_leave_url": "离开地址输入框后开始检查。"
 }

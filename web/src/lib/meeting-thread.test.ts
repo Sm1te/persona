@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordingAsk } from "./kb";
 import { meetingMeta } from "./kb";
-import { followupThread, fromMeeting, meetingClock, meetingLines, meetingRunning, newerParts, roomState, roomThread } from "./meeting-thread";
+import { followupThread, fromMeeting, meetingClock, meetingLines, meetingRunning, newerParts, photoOf, roomState, roomThread } from "./meeting-thread";
 import type { Item } from "./types";
 
 const rid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -86,6 +86,61 @@ describe("the room's thread", () => {
     expect(fromMeeting(item({ text: `${source()}x` }))).toBe(true);
     expect(fromMeeting(item({ text: '<persona-context kind="message-source" title="">\n{"author":"user"}\n</persona-context>x' }))).toBe(false);
     expect(fromMeeting(item({ text: "plain" }))).toBe(false);
+  });
+});
+
+// Phase 3: a photo goes into the room as its image and a line from the meeting, both `photo-<id>`; a deleted one that went
+// there gets a line withdrawing it (`photo-withdrawn-<id>`).
+describe("photos in the room's thread", () => {
+  const photoID = "33333333-3333-4333-8333-333333333333";
+  const otherID = "44444444-4444-4444-8444-444444444444";
+  const photoText = (id: string, n: number) => item({
+    client_msg_id: `photo-${id}`,
+    source: { kind: "meeting", title: "Design review" },
+    text: `${source()}Photo ${n} was taken in the meeting at 14:32. Describe what matters in it with meeting_photo_note, then write nothing.\n\n<persona-context kind="context" title="Photo ${n} · 14:32" url="">\nCaption: Whiteboard\nText recognized on the phone: Q3 budget\n</persona-context>`,
+  });
+  const photoImage = (id: string) => item({ client_msg_id: `photo-${id}`, kind: "image", image: { mime: "image/jpeg", lazy: true }, source: { kind: "meeting" } });
+
+  it("makes the image and the text of one photo one entry, by the photo's id", () => {
+    const entries = roomThread([
+      header,
+      photoImage(photoID.toUpperCase()),
+      photoText(photoID.toUpperCase(), 1),
+      item({ role: "assistant", kind: "tool_use", tool_name: "mcp__persona__meeting_photo_note", tool_input: { photo: 1, text: "A budget table." } }),
+      item({ role: "user", kind: "tool_result", tool_use_id: "t1", text: "Noted." }),
+      photoText(otherID, 2),
+      photoImage(otherID),
+      batch(["[32:10] Ada: Next item."]),
+    ], rid);
+    expect(entries.map((e) => e.kind)).toEqual(["joined", "photo", "photo", "lines"]);
+    expect(entries.filter((e) => e.kind === "photo").map((e) => ("photo" in e ? e.photo : ""))).toEqual([photoID, otherID]);
+    // Nothing of the photo's text or the note's tool call reads as a batch, the end batch or an answer.
+    expect(entries.some((e) => e.kind === "ended" || e.kind === "answer" || e.kind === "image")).toBe(false);
+  });
+
+  it("leaves out the line withdrawing a deleted photo, which would otherwise read as the meeting's end", () => {
+    const withdrawn = item({
+      client_msg_id: `photo-withdrawn-${photoID}`,
+      source: { kind: "meeting", title: "Design review" },
+      text: `${source()}Photo 1 was withdrawn: do not describe or use it again. Write nothing in reply.`,
+    });
+    expect(roomThread([photoText(photoID, 1), withdrawn], rid).map((e) => e.kind)).toEqual(["photo"]);
+    // The same line without its id is the end batch's shape: the id is what tells them apart.
+    expect(roomThread([{ ...withdrawn, client_msg_id: undefined }], rid).map((e) => e.kind)).toEqual(["ended"]);
+  });
+
+  it("knows a photo's message id and nothing else", () => {
+    expect(photoOf(`photo-${photoID}`)).toBe(photoID);
+    expect(photoOf(`PHOTO-${photoID.toUpperCase()}`)).toBe(photoID);
+    expect(photoOf(`photo-withdrawn-${photoID}`)).toBeUndefined();
+    expect(photoOf(`ask-${photoID}-1`)).toBeUndefined();
+    expect(photoOf("photo-1")).toBeUndefined();
+    expect(photoOf(undefined)).toBeUndefined();
+  });
+
+  it("keeps a photo the owner's app sent as an image, and a follow-up's images as they were", () => {
+    expect(roomThread([item({ role: "user", kind: "image", client_msg_id: "web-1" })], rid).map((e) => e.kind)).toEqual(["image"]);
+    expect(followupThread([item({ role: "user", kind: "image", client_msg_id: `followup-${photoID}` })]).map((e) => e.kind)).toEqual(["image"]);
   });
 });
 

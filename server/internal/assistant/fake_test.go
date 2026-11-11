@@ -80,7 +80,8 @@ type fakeHub struct {
 	noModel       bool
 	asked         []modelCall
 	pushes        []Notification
-	events        []string // the type of each event the apps were sent
+	events        []string         // the type of each event the apps were sent
+	liveEvents    []map[string]any // the meeting_live events as sent
 	snaps         []Snapshot
 
 	// Agents a task starts (session.start a1, a2…) and what was sent to them; a machine offline, a node refusing.
@@ -593,6 +594,11 @@ func (f *fakeHub) Broadcast(_ context.Context, b Broadcast) {
 	_ = json.Unmarshal(b.Message, &ev)
 	f.mu.Lock()
 	f.events = append(f.events, ev.Type)
+	if ev.Type == "meeting_live" {
+		var live map[string]any
+		_ = json.Unmarshal(b.Message, &live)
+		f.liveEvents = append(f.liveEvents, live)
+	}
 	receipt := f.readHooks.receipt
 	f.mu.Unlock()
 	if receipt != nil && ev.Type == "assistant_feed" && ev.Item.Kind == feedReceipt {

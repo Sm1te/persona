@@ -142,6 +142,7 @@ internal class AgentOperationsState(private val api: AgentOperations, private va
 
     /** Not a projected edit: the list shows the source's attached flag once the hub has it. */
     suspend fun attach(session: Session) = mutex.withLock { api.attachSession(session.key) }
+    suspend fun interrupt(session: Session) = mutex.withLock { api.interruptSession(session.key) }
 
     private val expectedSessions = mutableMapOf<String, Pair<SessionKey, AgentSessionEdit>>()
     private val expectedSpaces = mutableMapOf<String, AgentSpaceEdit>()

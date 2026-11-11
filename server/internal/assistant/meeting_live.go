@@ -106,6 +106,9 @@ func (s *Service) meetingRoutes() {
 			asks = append(asks, viewAsk(a))
 		}
 		view := s.liveView(r.Context(), l, rec, asks)
+		if rev := e.PhotosRev(rec.ID); rev > 0 { // photos has a revision and no field: GET …/photos reads them
+			view.Revs[kb.PartPhotos] = rev
+		}
 		if parts := r.URL.Query().Get("parts"); parts != "" {
 			apierr.WriteJSON(w, view.only(strings.Split(parts, ",")))
 			return
@@ -114,6 +117,7 @@ func (s *Service) meetingRoutes() {
 	})
 	s.askRoute()
 	s.meetingConversationRoutes()
+	s.meetingPhotoRoutes()
 }
 
 // meetingCaller: the request carries full credentials; anything else has been answered 403 forbidden.
@@ -169,7 +173,8 @@ func meetingRecording(w http.ResponseWriter, e *kb.Engine, id string) (kb.Live, 
 	return l, rec, true
 }
 
-// writeMeetingError answers the knowledge base's refusals of an attending route as the contract codes them.
+// writeMeetingError answers the knowledge base's refusals of a meeting route as the contract codes them (the photos'
+// too, meeting_photos.go).
 func writeMeetingError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, kb.ErrRecordingDeleted):
@@ -180,8 +185,20 @@ func writeMeetingError(w http.ResponseWriter, err error) {
 		apierr.WriteCode(w, http.StatusForbidden, assistantwire.CodeKBReadOnly, i18n.Err("assistant-kb_routes.read_only"))
 	case errors.Is(err, kb.ErrNotAttending):
 		apierr.WriteCode(w, http.StatusConflict, codeNotAttending, i18n.Err("assistant-meeting.not_attending"))
-	case errors.Is(err, kb.ErrBadLive):
+	case errors.Is(err, kb.ErrBadLive), errors.Is(err, kb.ErrBadPhoto):
 		apierr.Write(w, http.StatusBadRequest, err)
+	case errors.Is(err, kb.ErrNotMeeting):
+		apierr.WriteCode(w, http.StatusConflict, codeNotMeeting, i18n.Err("assistant-meeting.not_meeting"))
+	case errors.Is(err, kb.ErrTranscriptExpired):
+		apierr.WriteCode(w, http.StatusConflict, codeTranscriptExpired, i18n.Err("assistant-meeting.transcript_expired"))
+	case errors.Is(err, kb.ErrPhotoNotFound):
+		apierr.WriteCode(w, http.StatusNotFound, codePhotoNotFound, i18n.Err("assistant-meeting.photo_not_found"))
+	case errors.Is(err, kb.ErrPhotoDeleted):
+		apierr.WriteCode(w, http.StatusGone, codePhotoDeleted, i18n.Err("assistant-meeting.photo_deleted"))
+	case errors.Is(err, kb.ErrOpIDReused):
+		apierr.WriteCode(w, http.StatusConflict, codeOpIDReused, i18n.Err("assistant-meeting.photo_id_reused"))
+	case errors.Is(err, kb.ErrPhotosFull):
+		apierr.WriteCode(w, http.StatusRequestEntityTooLarge, codePhotosFull, i18n.Err("assistant-meeting.photos_full", i18n.Args{"max": kb.MaxPhotos}))
 	default:
 		apierr.Write(w, http.StatusInternalServerError, err)
 	}
@@ -286,6 +303,8 @@ func (v meetingLiveView) only(parts []string) map[string]any {
 			if v.Followup != nil {
 				out[p] = v.Followup
 			}
+		case kb.PartPhotos:
+			// Only its revision: the photos are read with GET …/photos.
 		default:
 			continue
 		}

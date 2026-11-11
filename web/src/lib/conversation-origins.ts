@@ -1,7 +1,8 @@
 // Where an assistant conversation comes from (docs/protocol/protocol.md "Origin of assistant chats", #3264): the user's own (the app, a
-// channel's /new) stay in the sidebar's "Recent"; the ones the hub opened by itself (the inbox's AI twin, a scheduled task,
-// conversation_new, a plugin's /agent…) fold into one "Automatic" row, split by origin. Pure functions, tested without a DOM.
+// channel's /new) can be in the sidebar's "Recent" (#4873); the ones the hub opened by itself (the inbox's AI twin, a scheduled
+// task, conversation_new, a plugin's /agent…) are only in "All chats", filtered by origin. Pure functions, tested without a DOM.
 import { t } from "../i18n";
+import { byTime } from "./times";
 import type { Session } from "./types";
 
 /** The sidebar's groups of automatic conversations, in its order; `other` is any origin this page doesn't know. */
@@ -57,4 +58,18 @@ export function autoConversations(conversations: readonly Session[], main: strin
   const auto = conversations.filter((c) => c.session_id !== main && !c.archived && isAutoConversation(c));
   const groups = AUTO_ORIGINS.map((origin) => ({ origin, ...tally(auto.filter((c) => autoOrigin(c) === origin)) })).filter((g) => g.count > 0);
   return { total: tally(auto), groups };
+}
+
+/** How many chats the sidebar's "Recent" lists (#4873); the rest are in "All chats". */
+export const RECENT_LIMIT = 5;
+
+/** The sidebar's "Recent" under Persona chats (#4873): the newest `limit` of the user's own conversations that are not the
+ *  main one and not a leader (常驻, listed above it), by last activity (equal times by id, as iOS). The ones the hub opened
+ *  by itself stay in "All chats", as "Recent" left them out before #4331. */
+export function recentConversations(conversations: readonly Session[], main: string | undefined, leaders: readonly string[], limit = RECENT_LIMIT): Session[] {
+  const lead = new Set(leaders);
+  return conversations
+    .filter((c) => c.session_id !== main && !lead.has(c.session_id) && !c.archived && !isAutoConversation(c))
+    .sort((a, b) => byTime(b.updated_at, a.updated_at) || (a.session_id < b.session_id ? -1 : a.session_id > b.session_id ? 1 : 0))
+    .slice(0, limit);
 }

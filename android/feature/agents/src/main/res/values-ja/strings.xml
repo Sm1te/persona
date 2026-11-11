@@ -135,6 +135,7 @@
     <string name="agents_action_stop_loop">ループを停止</string>
     <string name="agents_action_handoff">Personaに任せる</string>
     <string name="agents_action_mark_read">既読にする</string>
+    <string name="agents_action_interrupt">中断</string>
     <string name="agents_action_copy_resume">再開コマンドをコピー</string>
     <string name="agents_action_copy_directory">ディレクトリをコピー</string>
     <string name="agents_action_open_session">セッションを開く</string>
@@ -144,8 +145,8 @@
     <string name="agents_repo_worktree">ワークツリー</string>
     <string name="agents_card_question">Claudeから質問があります</string>
     <string name="agents_card_question_by">%1$sから質問があります</string>
-    <string name="agents_card_permission">許可が必要です</string>
-    <string name="agents_card_permission_by">%1$sに許可が必要です</string>
+    <string name="agents_card_permission">承認を待っています</string>
+    <string name="agents_card_permission_by">%1$sが承認を待っています</string>
     <string name="agents_card_plan">プランの承認待ち</string>
     <string name="agents_card_screen">ターミナルで対応が必要です</string>
     <string name="agents_card_other">要対応</string>
@@ -198,6 +199,7 @@
     <string name="agents_notice_renamed">名前を変更しました</string>
     <string name="agents_notice_deleted">チャットを削除しました</string>
     <string name="agents_notice_attached">ライブで参加しました</string>
+    <string name="agents_notice_interrupted">中断しました</string>
     <string name="agents_notice_stop_loop_offline">ループを停止するにはハブに接続してください</string>
     <string name="agents_notice_stop_loop_sent">停止リクエストを送信しました。ループの状態はハブの更新を待ってください</string>
     <string name="agents_notice_operations_missing">セッション操作はまだ接続されていません</string>

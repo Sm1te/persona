@@ -148,6 +148,9 @@ export function formModel(m: ProviderModel, checked = true): FormModel {
   return { id: m.id, name: m.name ?? "", context_window: numText(m.context_window), efforts: [...(m.efforts ?? [])], default_effort: m.default_effort ?? "", checked };
 }
 
+/** How a saved provider signs in: what it stores, else x-api-key (providers saved before the choice existed). */
+export const storedAuth = (v: ProviderView): ProviderForm["auth"] => v.auth ?? "api_key";
+
 /** The form an existing provider opens with: its models checked, the default among them even when not listed. */
 export function formFromView(v: ProviderView): ProviderForm {
   const models = (v.models ?? []).map((m) => formModel(m));
@@ -159,7 +162,7 @@ export function formFromView(v: ProviderView): ProviderForm {
     api: v.api ?? "messages",
     name: v.name,
     base_url: v.base_url ?? "",
-    auth: v.auth ?? "api_key",
+    auth: storedAuth(v),
     models,
     model: v.model ?? "",
     small_model: v.small_model ?? "",
@@ -315,7 +318,7 @@ export function autoCheckable(f: ProviderForm, old: ProviderView | null): boolea
   if (key && !testableKey(key)) return false;
   if (!old) return !!key;
   if (!key && !old.has_key) return false;
-  return !!key || f.base_url.trim() !== (old.base_url ?? "").trim() || f.auth !== formFromView(old).auth;
+  return !!key || f.base_url.trim() !== (old.base_url ?? "").trim() || f.auth !== storedAuth(old);
 }
 
 const int = (s: string) => (s.trim() ? parseInt(s.trim(), 10) : 0);

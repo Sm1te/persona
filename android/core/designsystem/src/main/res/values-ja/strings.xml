@@ -43,8 +43,8 @@
     <string name="designsystem_loading">読み込み中</string>
     <string name="designsystem_processing">処理中…</string>
     <string name="designsystem_with_state">%1$s、%2$s</string>
-    <string name="designsystem_decision_command">許可が必要です</string>
-    <string name="designsystem_decision_tool">許可が必要です</string>
+    <string name="designsystem_decision_command">承認を待っています</string>
+    <string name="designsystem_decision_tool">承認を待っています</string>
     <string name="designsystem_decision_plan">プランの承認待ち</string>
     <string name="designsystem_decision_question">質問があります</string>
     <string name="designsystem_decision_form">いくつかの入力が必要です</string>
@@ -130,6 +130,8 @@
     </plurals>
     <string name="designsystem_group_expand">グループを展開</string>
     <string name="designsystem_group_collapse">グループを折りたたむ</string>
+    <string name="designsystem_show_all">すべて表示（%1$d件）</string>
+    <string name="designsystem_show_fewer">折りたたむ</string>
     <string name="designsystem_machine_monitor">マシンモニター</string>
     <string name="designsystem_details">詳細</string>
     <string name="designsystem_space">スペース</string>

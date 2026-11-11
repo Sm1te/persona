@@ -10,7 +10,7 @@ describe("rowLine", () => {
   it("says what a card asks, after its kind", () => {
     const q = ix({ questions: [{ question: "网络层的测试用哪个框架？" } as NonNullable<Interaction["questions"]>[number]] });
     expect(rowLine(s({ state: "needs_you" }), q)).toEqual({ lead: "在问你：", text: "网络层的测试用哪个框架？" });
-    expect(rowLine(s({ state: "needs_you" }), ix({ kind: "permission", summary: "swift test" }))).toEqual({ lead: "需要你授权：", text: "swift test" });
+    expect(rowLine(s({ state: "needs_you" }), ix({ kind: "permission", summary: "swift test" }))).toEqual({ lead: "在等你批准：", text: "swift test" });
   });
 
   it("names a card with nothing to quote by its kind alone", () => {
@@ -38,7 +38,7 @@ describe("rowLine", () => {
 
 describe("interactionKicker", () => {
   it("is the 待办 page's word for each kind", () => {
-    expect(["question", "plan", "permission", "screen", "elicitation"].map((kind) => interactionKicker({ kind } as Interaction))).toEqual(["在问你", "计划等你审批", "需要你授权", "终端等你处理", "MCP 请求"]);
+    expect(["question", "plan", "permission", "screen", "elicitation"].map((kind) => interactionKicker({ kind } as Interaction))).toEqual(["在问你", "计划等你审批", "在等你批准", "终端等你处理", "MCP 请求"]);
   });
 
   it("says 待你回复 and what it asks for a seen agent awaiting your reply (#5096)", () => {

@@ -20,22 +20,26 @@ nonisolated extension ContextRef {
     /// `refs` with `ref` added, or nil when it is there already: a message goes over the box once as a whole and once
     /// per picked part (a message without an id every time).
     static func adding(_ ref: ContextRef, to refs: [ContextRef]) -> [ContextRef]? {
-        let there = ref.kind == "quote" && !ref.msg.isEmpty && refs.contains {
-            $0.kind == "quote" && $0.msg == ref.msg && $0.part == ref.part && (ref.part == nil || $0.text == ref.text)
+        let sameKind = ref.kind == "quote" || ref.kind == ForwardMessage.kind
+        let there = sameKind && !ref.msg.isEmpty && refs.contains {
+            $0.kind == ref.kind && $0.msg == ref.msg && $0.part == ref.part && (ref.part == nil || $0.text == ref.text)
         }
         return there ? nil : refs + [ref]
     }
 
     /// What the user picked to go with a message (a message, a page's text, a session, a recording…), shown as a quote.
-    var isQuote: Bool { ["quote", "context", "edit"].contains(kind) }
+    var isQuote: Bool { ["quote", "context", "edit", ForwardMessage.kind].contains(kind) }
+
+    var isForward: Bool { kind == ForwardMessage.kind }
 
     /// A message's contexts as quotes, or nil when the hub put them there (a Feishu /agent request): those fold.
     static func quotes(_ refs: [ContextRef]) -> [ContextRef]? {
         refs.isEmpty || !refs.allSatisfy(\.isQuote) ? nil : refs
     }
 
+    /// An @-picked session as context (not a forward, whose link names its message's session too).
     var isSession: Bool {
-        guard let components = URLComponents(string: url) else { return false }
+        guard kind != ForwardMessage.kind, let components = URLComponents(string: url) else { return false }
         return HubNaming.accepts(scheme: components.scheme) && components.host == "session" && components.path.hasPrefix("/")
     }
 
@@ -62,6 +66,7 @@ nonisolated extension ContextRef {
             if mine { return String(localized: "Quoting your message") }
             return String(localized: "Quoting \(who)")
         case "edit": return String(localized: "Text to change · \(label)")
+        case ForwardMessage.kind: return ForwardMessage.heading(self)
         default:
             if isSession { return String(localized: "Quoting session \(label)") }
             if !url.isEmpty { return isWholePage ? String(localized: "Quoting \(label)") : String(localized: "Quoting selected text · \(label)") }
@@ -76,6 +81,12 @@ nonisolated extension ContextRef {
         if isSession, flat.count > 1 { flat.removeFirst() } // 「另一个会话：…」: the heading names it already
         let joined = flat.joined(separator: " ")
         return joined.isEmpty ? String(localized: "No content") : String(joined.prefix(240))
+    }
+
+    /// A forward's words in its card: its own lines, blank ones dropped.
+    var forwardSummary: String {
+        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return lines.isEmpty ? String(localized: "No content") : String(lines.joined(separator: "\n").prefix(1200))
     }
 }
 
@@ -104,8 +115,14 @@ extension Theme {
 /// The rule, the heading and the summary: one quote's words, in a bar over the box or in a bubble.
 private struct QuoteLines: View {
     var heading: String
+    /// A forward's arrow before the heading (#3807).
+    var icon: String? = nil
+    /// A forward's computer and time, under the heading.
+    var meta: String? = nil
     var summary: String
     var lines: Int
+    /// A forward's route over the box: where it comes from and where it goes.
+    var note: String? = nil
     var tint: Color
     var ink: Color
     /// The rule is drawn by the block's own shape (BeautifulUI's card), not beside the words.
@@ -115,8 +132,17 @@ private struct QuoteLines: View {
         HStack(spacing: Theme.Space.s) {
             if rule { Capsule().fill(tint).frame(width: Theme.Size.bar) }
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                Text(heading).font(Theme.Font.captionStrong).foregroundStyle(tint).lineLimit(1).truncationMode(.tail)
+                HStack(spacing: Theme.Space.xs) {
+                    if let icon { ThemedIcon(icon).font(Theme.Font.captionStrong).foregroundStyle(tint).accessibilityHidden(true) }
+                    Text(heading).font(Theme.Font.captionStrong).foregroundStyle(tint).lineLimit(1).truncationMode(.tail)
+                }
+                if let meta { Text(meta).font(Theme.Font.label).foregroundStyle(ink).lineLimit(1) }
                 Text(summary).font(Theme.Font.caption).foregroundStyle(ink).lineLimit(lines).truncationMode(.tail)
+                if let note {
+                    // Two lines: a computer's and an Agent's names are both in it, and a cut in the middle hides one.
+                    Text(note).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(2).truncationMode(.tail)
+                        .accessibilityIdentifier("composer.forwardRoute")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -134,7 +160,9 @@ struct QuoteBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             ForEach(refs) { r in
-                QuoteBarRow(heading: r.quoteHeading, summary: r.quoteSummary, lines: refs.count == 1 ? 2 : 1, tint: tint) {
+                QuoteBarRow(heading: r.quoteHeading, summary: r.quoteSummary, lines: refs.count == 1 ? 2 : 1, tint: tint,
+                            icon: r.isForward ? Theme.Icon.forwardMessage : nil, note: r.route,
+                            removeLabel: r.isForward ? String(localized: "Remove Forward") : String(localized: "Remove Quote")) {
                     withAnimation(Theme.Motion.state) { refs.removeAll { $0.id == r.id } }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -152,6 +180,9 @@ struct QuoteBarRow: View {
     var summary: String
     var lines = 2
     var tint: Color?
+    var icon: String? = nil
+    /// A forward's route (`ContextRef.route`), under its words.
+    var note: String? = nil
     /// What × says to VoiceOver (Feishu's reply: Cancel Reply).
     var removeLabel = String(localized: "Remove Quote")
     var remove: () -> Void
@@ -161,7 +192,8 @@ struct QuoteBarRow: View {
         let bui = AppStyle.current.usesBeautifulUI
         let tint = tint ?? (bui ? theme.colors.accent : Theme.accent)
         HStack(spacing: Theme.Space.xs) {
-            QuoteLines(heading: heading, summary: summary, lines: lines, tint: tint, ink: bui ? theme.colors.ink2 : .secondary, rule: !bui)
+            QuoteLines(heading: heading, icon: icon, summary: summary, lines: lines, note: note, tint: tint,
+                       ink: bui ? theme.colors.ink2 : .secondary, rule: !bui)
                 .padding(.vertical, bui ? Theme.Space.s : Theme.Space.xxs)
                 .padding(.leading, bui ? Theme.Space.m : 0)
             Button(action: remove) {
@@ -199,10 +231,21 @@ struct QuoteBlock: View {
     @Environment(\.openLink) private var openLink
     @State private var open = false
 
+    /// A forward shows this many lines of the original until it is opened.
+    static let forwardLines = 4
+
     var body: some View {
-        QuoteCard(heading: ref.quoteHeading, summary: open ? ref.text : ref.quoteSummary, lines: open ? .max : 2,
-                  tint: Theme.Quote.tint, ink: Theme.Quote.summary, action: tap)
-            .accessibilityHint(ref.msg.isEmpty ? "" : String(localized: "Jumps to the original message"))
+        if ref.isForward {
+            QuoteCard(heading: ref.quoteHeading, icon: Theme.Icon.forwardMessage, meta: ForwardMessage.meta(ref),
+                      summary: open ? ref.text : ref.forwardSummary, lines: open ? .max : Self.forwardLines,
+                      tint: Theme.Quote.tint, ink: Theme.Quote.summary, action: tap)
+                .accessibilityHint(String(localized: "Opens the original message"))
+                .accessibilityIdentifier("bubble.forward")
+        } else {
+            QuoteCard(heading: ref.quoteHeading, summary: open ? ref.text : ref.quoteSummary, lines: open ? .max : 2,
+                      tint: Theme.Quote.tint, ink: Theme.Quote.summary, action: tap)
+                .accessibilityHint(ref.msg.isEmpty ? "" : String(localized: "Jumps to the original message"))
+        }
     }
 
     private func tap() {
@@ -220,6 +263,8 @@ struct QuoteBlock: View {
 /// words on a tint), BeautifulUI a card with the rule along its edge.
 struct QuoteCard: View {
     var heading: String
+    var icon: String? = nil
+    var meta: String? = nil
     var summary: String
     var lines = 2
     var tint: Color
@@ -230,7 +275,7 @@ struct QuoteCard: View {
         let bui = AppStyle.current.usesBeautifulUI
         let shape = RoundedRectangle(cornerRadius: bui ? Theme.Radius.control : Theme.Radius.badge, style: .continuous)
         Button(action: action) {
-            QuoteLines(heading: heading, summary: summary, lines: lines, tint: tint, ink: ink, rule: !bui)
+            QuoteLines(heading: heading, icon: icon, meta: meta, summary: summary, lines: lines, tint: tint, ink: ink, rule: !bui)
                 .padding(.vertical, Theme.Space.sm)
                 .padding(.leading, bui ? Theme.Space.m : Theme.Space.s)
                 .padding(.trailing, Theme.Space.m)
@@ -244,7 +289,7 @@ struct QuoteCard: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(heading): \(summary)")
+        .accessibilityLabel([heading, meta, summary].compactMap { $0 }.joined(separator: ": "))
         .accessibilityIdentifier("bubble.quote")
     }
 }

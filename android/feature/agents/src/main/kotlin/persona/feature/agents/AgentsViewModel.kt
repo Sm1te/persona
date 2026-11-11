@@ -16,6 +16,9 @@ import java.util.UUID
 
 private data class GroupListCounts(val filter: SessionListFilter, val revision: String, val counts: SessionListCounts)
 
+/** What the hub's paged search matches: the search's words, not its conditions ([AgentQuery]), which it does not read. */
+internal fun hubQuery(query: String): String = AgentQuery.parse(query).text.take(256)
+
 internal data class AgentsPageState(
     val sessions: List<Session> = emptyList(),
     val machines: List<Machine> = emptyList(),
@@ -228,7 +231,8 @@ internal class AgentsViewModel(
         if (context != previousContext) previous = null
         previousContext = context
         // Server row search uses complete index text; searching the truncated summary again would lose matches.
-        val projectionSettings = if (pagination.paged) effective.copy(query = "") else effective
+        // A paged list: the hub matched the words ([hubQuery]); the conditions (machine:, is:pinned…) are checked here.
+        val projectionSettings = if (pagination.paged) effective.copy(query = AgentQuery.parse(effective.query).conditions) else effective
         val sorted = scopedAgentList(rows, knownMachines, prefs, projectionSettings, todos, openedRowsOfTheirOwn(previous, effective.kept))
         val result = retainOpenedRows(sorted, previous, effective.kept).also { previous = it }
         val all = scopedAgentList(rows, knownMachines, prefs,
@@ -275,7 +279,7 @@ internal class AgentsViewModel(
                 }
             }
             fun count(id: String): SessionListCounts? = metadata[id]?.takeIf {
-                it.revision == status.counts.revision && it.filter.query == projected.settings.query.take(256) &&
+                it.revision == status.counts.revision && it.filter.query == hubQuery(projected.settings.query) &&
                     it.filter.state == projected.settings.quick.state?.wire
             }?.counts
             fun SessionListCounts.states() = AgentState.entries.associateWith { state -> this.state[state.wire] ?: 0 }
@@ -302,7 +306,7 @@ internal class AgentsViewModel(
         SessionListFilter(state = settings.quick.state?.wire, machineId = settings.machineFilter.takeIf { it.isNotEmpty() },
             // Range, assistant exclusion, host and preference membership are local until #6108 is implemented.
             // A generic server total is not the number of rows this page admits.
-            query = settings.query.take(256), requiresCompleteMembership = true) to group
+            query = hubQuery(settings.query), requiresCompleteMembership = true) to group
     }.distinctUntilChanged()
 
     fun countMachine(machine: AgentMachineGroup) = requestGroupCounts("machine:${machine.machine.id}",
@@ -333,14 +337,14 @@ internal class AgentsViewModel(
         val page = this.page.value
         val revision = page.pagination.counts.revision
         if (!page.pagination.paged || revision.isEmpty()) return
-        val filter = dimension.copy(state = page.settings.quick.state?.wire, query = page.settings.query.take(256))
+        val filter = dimension.copy(state = page.settings.quick.state?.wire, query = hubQuery(page.settings.query))
         val key = Triple(id, revision, filter)
         if (groupListCounts.value[id]?.let { it.revision == revision && it.filter == filter } == true || !countingGroups.add(key)) return
         viewModelScope.launch {
             try {
                 val counts = repository.listCounts(filter)
                 val current = this@AgentsViewModel.page.value
-                if (current.pagination.counts.revision == revision && current.settings.query.take(256) == filter.query &&
+                if (current.pagination.counts.revision == revision && hubQuery(current.settings.query) == filter.query &&
                     current.settings.quick.state?.wire == filter.state) groupListCounts.update { metadata ->
                     (metadata + (id to GroupListCounts(filter, revision, counts))).entries.toList().takeLast(512)
                         .associate { it.key to it.value }
@@ -522,6 +526,9 @@ internal class AgentsViewModel(
         ?.let { it.isLive && it.canTerminal } ?: page.value.sessions.isEmpty()
     /** "Join live": join a Codex app-server thread live; the list refreshes after it. */
     fun attach(session: Session) = change(session.machineId, R.string.agents_notice_attached) { it.attach(session) }
+    /** Stop its turn from the list (iOS's row menu Interrupt): felt once it went through. */
+    fun interrupt(session: Session) = change(session.machineId, R.string.agents_notice_interrupted,
+        onDone = { _haptics.tryEmit(Haptic.Tap) }) { it.interrupt(session) }
     fun stopLoop(session: Session) = sendOperation("loop:${session.key.path}") {
         if (hubGroups.groups.value.stateFor(session.machineId, connection.state.value) != ConnectionState.Online) { _notice.value = AgentText(R.string.agents_notice_stop_loop_offline); return@sendOperation }
         sendOnce("loop:${session.key.path}", session.key, STOP_LOOP_PROMPT)
@@ -647,12 +654,18 @@ internal class AgentsViewModel(
     fun foldAll(fold: Boolean) {
         previous = null
         settings.update { it.copy(
-            folded = if (fold) (page.value.list.groups.map { group -> group.id } + page.value.list.machines.map { machine -> machine.id }).toSet()
+            // The sections, on top of what is folded: a computer heading stays as it is, as iOS's Collapse All (#4338 A11).
+            folded = if (fold) it.folded + page.value.list.groups.map { group -> group.id }
                 else if (page.value.settings.grouping == AgentGrouping.State) setOf(StateSeenOpened) else emptySet(),
             expandedQuiet = if (fold) emptySet() else page.value.list.groups.filter { group -> group.parent == "quiet" }.map { group -> group.id }.toSet(),
         ) }
         saveFolds()
         if (!fold) localChange { preferences.openAllTabs() }
+    }
+    /** A section's rows past [AgentRowCap]: all of them ([open]), or the first ones again. */
+    fun showAll(group: AgentListGroup, open: Boolean) {
+        val key = AgentRowCap.key(group.id)
+        settings.update { it.copy(expandedIdle = if (open) it.expandedIdle + key else it.expandedIdle - key) }
     }
     fun showIdle(group: AgentListGroup) {
         val key = when {

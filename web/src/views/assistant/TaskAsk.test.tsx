@@ -23,7 +23,7 @@ describe("taskAsk", () => {
     expect(taskAsk(ix({ questions: [{ question: "用哪个测试框架？" } as never] }))).toBe("在问你：用哪个测试框架？");
   });
   it("says the command a permission is for", () => {
-    expect(taskAsk(ix({ kind: "permission", tool_name: "Bash", tool_input: { command: "swift test" } }))).toBe("需要你授权：swift test");
+    expect(taskAsk(ix({ kind: "permission", tool_name: "Bash", tool_input: { command: "swift test" } }))).toBe("在等你批准：swift test");
   });
   it("says a plan waits, without its body", () => {
     expect(taskAsk(ix({ kind: "plan", plan: "# 计划\n1. 改代码" }))).toBe("计划等你审批");

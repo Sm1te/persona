@@ -1619,6 +1619,11 @@ nonisolated struct PendingMessage: Identifiable, Hashable, Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case id, text, images, state, failure, inboxHandOff, createdAt, mayHaveArrived, refused }
 
+    /// Only on this phone as far as it knows: failed, or waiting for the network. Deleting it (its long press, its mark's
+    /// menu) drops the bubble and its outbox entry and sends nothing (#4626). One being sent may be arriving and a sent
+    /// one is the hub's: neither can be deleted.
+    var onlyHere: Bool { state == .failed || state == .waiting }
+
     /// Comparable form: what the transcript keeps of it — the phone's image note, pasted wrappers and Claude's
     /// "[Image #21]" placeholders removed, whitespace ignored, and a context or file block read under either
     /// generation's tag name (a hub from before the rename keeps what `HubNaming.outbound` sent it).

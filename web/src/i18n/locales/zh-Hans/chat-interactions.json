@@ -30,7 +30,7 @@
   "request_changes": "打回修改",
   "approve": "批准",
   "approve_mode": "批准方式",
-  "permission_kicker": "需要你授权",
+  "permission_kicker": "在等你批准",
   "permission_title": "允许使用 {tool}？",
   "denied_message": "用户拒绝了",
   "deny": "拒绝",

@@ -50,8 +50,8 @@
     <string name="designsystem_processing">Working…</string>
     <string name="designsystem_with_state">%1$s, %2$s</string>
     <!-- Requests that need the user (Agents page) -->
-    <string name="designsystem_decision_command">Needs your permission</string>
-    <string name="designsystem_decision_tool">Needs your permission</string>
+    <string name="designsystem_decision_command">Waiting for your approval</string>
+    <string name="designsystem_decision_tool">Waiting for your approval</string>
     <string name="designsystem_decision_plan">Plan awaiting approval</string>
     <string name="designsystem_decision_question">Has a question</string>
     <string name="designsystem_decision_form">Needs a few answers</string>
@@ -148,6 +148,8 @@
     </plurals>
     <string name="designsystem_group_expand">Expand group</string>
     <string name="designsystem_group_collapse">Collapse group</string>
+    <string name="designsystem_show_all">Show All %1$d</string>
+    <string name="designsystem_show_fewer">Collapse</string>
     <string name="designsystem_machine_monitor">Machine monitor</string>
     <string name="designsystem_details">Details</string>
     <string name="designsystem_space">space</string>

@@ -424,8 +424,13 @@ merges such a message into the turn with `turn/steer` ("Codex" below); a Claude 
   in-flight foreground Bash command and subagent goes on in the background). The model then reads the message right after the tool that
   was running returns; the backgrounded work reports back as a task notification, as `run_in_background` does. 2.1.139 is the first
   release whose control protocol has `background_tasks` (Agent SDK 0.2.139).
-- **Best effort**: an older or unknown version gets no control request and no note; a refused or failed request is logged and the message
+- **Best effort**: an older or unknown version gets no control request; a refused or failed request is logged and the message
   still waits for the next tool boundary, as before. An idle chat is unaffected.
+- **The note goes with every mid-turn message** (#4883): whatever the switch and the version, a message that reaches a busy Claude on
+  the CLI (`midTurn`) carries `prompts/assistant/interject.md`. It asks the model, before its next tool call, for one sentence in the
+  user's language on what it is doing and how long it will take or what it waits for, then to answer the message; the sentence about
+  work moved to the background is there only when it was. Without it an owner's "what happened?" got six minutes of tool calls and no
+  word. Tests: `TestAssistantInterjectOffOrOldClaude`, `TestInterjectNote` (`node/assistant_interject_test.go`).
 
 ## Main chat, knowledge base, and context flow
 

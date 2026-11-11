@@ -487,7 +487,7 @@ No new polling: `lookAt` (node's `session.snapshot` on each herdr change) alread
 `panes.list` reads this cache, taking a snapshot only if over 3 seconds old (or host never captured). Response grouped by host:
 `{hosts: [{kind, stream, control, new_tab, workspaces, tabs, panes}]}`; panes include `agent` / `status` (host-reported) / `title` / `cwd` / `session_id` (with Agent session) / `terminal` (address above).
 Hub: `GET /api/v1/machines/{mid}/panes`, feature `terminal_panes`.
-A pane Persona opened for an Agent that has stopped (its `persona_tab` mark, no Agent in it now) carries `agent_session`, the stopped Agent's session (#4754): clients label it as that Agent's terminal, and **Close finished terminals** (`POST /api/v1/machines/{mid}/panes/close_finished`, `docs/protocol/protocol.md`) closes those the user confirms.
+A pane with no Agent carries `foreground`, the program in front as the host names it (`zsh` at its prompt, `vim`, `npm`…; herdr `pane.process_info`, asked for each such pane on every list, at most 1.5 s, nothing on the screen read; #4754). A pane Persona opened for an Agent that has stopped (its `persona_tab` mark, no Agent in it now) carries `agent_session`, the stopped Agent's session (#4754): clients label it as that Agent's terminal, and **Close finished terminals** (`POST /api/v1/machines/{mid}/panes/close_finished`, `docs/protocol/protocol.md`) closes those the user confirms.
 
 ### New terminal: `panes.new` (optional, explicit action)
 

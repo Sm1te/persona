@@ -16,7 +16,8 @@ import (
 // own material is included. EarlierMeetingsInAnswers gates the other three sources below together, and with it only
 // meetings marked not private are material ("The private mark", meeting.go).
 // The four possible sources are this meeting's own
-// upload title and calendar hint, live sentences and answered questions; the minutes of earlier meetings (never their
+// upload title and calendar hint, live sentences, answered questions and its photos' words (caption, recognized text,
+// the room's note; never an image); the minutes of earlier meetings (never their
 // transcript, summary, live log or questions); the name and status of the projects those meetings are linked to; and
 // the to-do ids of their action items, whose open or done the assistant looks up. Nothing else of the knowledge base
 // (chats, people, documents, notes, project goals, summaries or timelines, pinned facts) is read here.
@@ -32,6 +33,9 @@ type MeetingMaterial struct {
 	Lines []LiveSegment
 	// Asks are this meeting's questions already answered, oldest first.
 	Asks []LiveAsk
+	// Photos are the words of this meeting's listed photos that have any, oldest first, the latest materialPhotoRunes
+	// of them (other people's material, as the lines are).
+	Photos []PhotoText
 	// EarlierAvailable distinguishes an allowed but empty lookup from material excluded by the privacy policy.
 	EarlierAvailable bool
 	// Earlier are at most materialMaxEarlier earlier meetings, the best ranked first.
@@ -97,10 +101,40 @@ func (e *Engine) MeetingMaterial(rawID, question string) (MeetingMaterial, error
 			m.Asks = append(m.Asks, a)
 		}
 	}
+	m.Photos = latestPhotos(e.PhotoTexts(r.ID), materialPhotoRunes)
 	if m.EarlierAvailable {
 		m.Earlier = e.earlierMeetings(&r, question)
 	}
 	return m, nil
+}
+
+// latestPhotos are the last photos with words, at most n runes of them all (caption, recognized text and note), oldest
+// first: the oldest one kept is cut to what is left, its caption first, then its text, then its note.
+func latestPhotos(photos []PhotoText, n int) []PhotoText {
+	var out []PhotoText
+	for i := len(photos) - 1; i >= 0 && n > 0; i-- {
+		p := photos[i]
+		words := utf8.RuneCountInString(p.Caption) + utf8.RuneCountInString(p.Text) + utf8.RuneCountInString(p.Note)
+		if words == 0 {
+			continue
+		}
+		if words > n {
+			keep := func(s string) string {
+				c := utf8.RuneCountInString(s)
+				if c > n {
+					s, c = string([]rune(s)[:n]), n
+				}
+				n -= c
+				return s
+			}
+			p.Caption, p.Text, p.Note = keep(p.Caption), keep(p.Text), keep(p.Note)
+			words = 0
+		}
+		n -= words
+		out = append(out, p)
+	}
+	slices.Reverse(out)
+	return out
 }
 
 // latestLines is the last live sentences with text, at most n runes of it, oldest first.

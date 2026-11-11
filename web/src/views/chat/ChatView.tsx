@@ -1367,9 +1367,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       answered={answered}
       delegated={delegated}
       offerNext={inPage && !readOnly && !assistant ? { mid, sid } : undefined}
-      // in the assistant's Pending tray (AssistantActionBar) the tray is the box that scrolls: a second scroll box of
-      // their own left the card's sticky answer row at its bottom, out of sight below the tray's fold
-      narrow={compactDock && (!assistant || voiceState === "live")}
+      narrow={compactDock}
       short={short}
       keyboard={keyboard}
       onDismissKeyboard={() => composerBox.current?.querySelector("textarea")?.blur()}
@@ -1554,12 +1552,13 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         {assistant && (
           <>
             {voiceState === "live" && <TaskQuestions conversation={sid} />}
-            {/* A call keeps its existing decision controls; otherwise decisions live in Pending. */}
-            {voiceState !== "live" && <AssistantActionBar key={sid} conversation={sid} ownPending={pendingCards} ownCount={interactions.length} />}
+            {/* The conversation's own cards are in the chat under the bar (#4883, as iOS): Needs you counts them and
+                lists a row for each that closes the tray onto its card. */}
+            {voiceState !== "live" && <AssistantActionBar key={sid} conversation={sid} ownAsks={interactions} />}
             {voiceState !== "live" && <RouteChip conversation={sid} />}
           </>
         )}
-        {(!assistant || voiceState === "live") && pendingCards}
+        {pendingCards}
         {!assistant && !readOnly && session?.model_fallback && <ModelFallbackCard session={session} headless={false} />}
         {assistant && session && <CompactionStrip session={session} />}
         {failure ? <FailureCard failure={failure} onClose={() => setSendFailure(null)} onHelp={gate.help} onConfirm={gate.confirm} onRetry={failedEntry && !refusedNoRow && sessionCan(session, "send") && !gate.blocked ? () => void retryOutbox(mid, sid, failedEntry.id) : undefined} /> : <ReadinessCard gate={gate} />}

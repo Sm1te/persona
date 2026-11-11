@@ -126,7 +126,7 @@ func TestMeetingRoomStarts(t *testing.T) {
 	start := sends[0]
 	guest, _ := start["guest"].(map[string]any)
 	text, _ := start["text"].(string)
-	if start["new_session_id"] != sid || start["client_msg_id"] != "meeting-"+meetingRec || guest["kind"] != "meeting" || len(guest["tools"].([]any)) != 2 || start["is_main"] != false ||
+	if start["new_session_id"] != sid || start["client_msg_id"] != "meeting-"+meetingRec || guest["kind"] != "meeting" || len(guest["tools"].([]any)) != 3 || start["is_main"] != false ||
 		start["config_dir"] != meetingProfile || !strings.Contains(text, "Title: Design review") || !strings.Contains(text, `"kind":"meeting"`) || !strings.Contains(text, "Role: participant") {
 		t.Fatalf("start %v", start)
 	}
@@ -335,7 +335,7 @@ func TestMeetingRoomTools(t *testing.T) {
 	for _, tl := range tools {
 		names = append(names, tl.Name)
 	}
-	if !slices.Equal(names, []string{"meeting_lines", "meeting_earlier"}) {
+	if !slices.Equal(names, []string{"meeting_lines", "meeting_earlier", "meeting_photo_note"}) {
 		t.Fatalf("tools %v", names)
 	}
 	d := newFleetDevs() // the nodes' requests are the fleet's

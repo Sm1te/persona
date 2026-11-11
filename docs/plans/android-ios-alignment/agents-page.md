@@ -32,7 +32,7 @@ The Agents page on Android shows the same sessions as on iOS, in the same groupi
 
 - Repository: iOS draws a card with the folder, the bold name and a chevron, no counts, with its actions in the long-press menu. Android draws a plain heading with marks, state counts and a ⋯ sheet.
 - Worktree: iOS shows a Primary chip on the main one, the branch when it differs from the name, "Detached HEAD @sha" as a caution, "N agents" or "Idle", and dims it when the computer is offline. Android shows the icon, the name and counts.
-- Computer: iOS draws it only when the list shows more than one computer, with a background-waiting clock and an idle count. Android draws it always.
+- Computer: iOS draws it only when the list shows more than one computer, with a background-waiting clock and an idle count. Android draws it always. Done (11-12): only with more than one computer and no computer chosen (`AgentsTreeTest`); the clock and the idle count are still to do.
 
 **A8. Idle repositories.** iOS gives each computer an "Idle Repositories" section with a count, each idle repository one row with "N agents · tab names" and when it last moved; idle sessions show as "2 idle · review · research" with a "Hide N Idle" row. Android keeps idle repositories inline after the busy ones, without times, and "N more idle" can't be folded again.
 
@@ -48,10 +48,10 @@ The Agents page on Android shows the same sessions as on iOS, in the same groupi
 **A11. Smaller differences.**
 
 - A "Waiting in the background" quick filter, and the selected chip in its own state's color (Android always tints it like Needs You). Done (11-12): `AgentQuickFilter.BackgroundWaiting` with its clock, out of Working's count (a paged list takes the hub's `background_waiting` out of working); the Glass home's chosen chip takes its state's color (`ByStatusTest`, `ByStatusShotsTest`). Its lighter tone is still to come.
-- Collapse All keeps the computer headings open.
-- A long list shows 20 rows, then "Show All N".
-- Sort only under By Status.
-- Interrupt in the row's long-press menu.
+- Collapse All keeps the computer headings open. Done (11-12): it folds the sections on top of what is folded, so a computer heading stays as it is (`AgentsFoldAllTest`).
+- A long list shows 20 rows, then "Show All N". Done (11-12): `AgentRowCap` (20, or all up to 25) and `AgentShowAllRow` with "Collapse" once open; every row while searching, filtering or paged (`AgentsTreeTest`, `ShowAllRowShotsTest`).
+- Sort not under By Status (iOS hides it there: the sections are the states). Done (11-12): the list settings leave Sort out under By Status (`AgentsHomeAffordancesTest`).
+- Interrupt in the row's long-press menu. Done (11-12): after Pin while the agent works or needs you and can be interrupted, on the list and the space page (`AgentOperations.interruptSession`, `AgentsHomeAffordancesTest`).
 - A tab with several agents shows as a tab row in By Repository too, not only by computer.
 - The space page: two-column cards by urgency, the computer opening its projects page, the path shortened with ~, a dashed "Open a new tab" card.
 - The Personal Agents pill beside the grouping pill.
@@ -130,6 +130,8 @@ Each becomes an iOS issue or a row in the intentional-differences list, decided 
 ### A10
 
 Port `AgentListProjection.swift`'s query parser to core/domain with its cases as tests.
+
+Done (11-12): `AgentSearch.kt` (`AgentQuery.parse`, `searchFields`, `admits`) with `AgentSearchTest`: every word in one of twelve fields, and the conditions with iOS's aliases. A paged list sends the hub the words only (it matches one piece of text) and checks the conditions here. Not ported: iOS's search scopes and evidence snippets.
 
 ### Order of work
 

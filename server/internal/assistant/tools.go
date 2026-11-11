@@ -178,6 +178,7 @@ func (s *Service) runTool(ctx context.Context, machine, self, name string, args 
 		s.push(ctx, Notification{Subtitle: "Persona", DeviceID: machine, SessionID: self, Title: a.Title, Body: a.Body, Asked: true})
 		// The Feishu bot and the channels with pushes on (channels_handler.go).
 		s.channelsPushed(machine, self, a.Title, a.Body)
+		s.recordNotify(ctx, machine, self) // an interruption (north_star.go)
 		s.promoteSupervision(self)
 		return "Notification sent.", nil
 	case "conversations_list":

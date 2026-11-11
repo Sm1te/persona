@@ -130,3 +130,27 @@ func TestCloseFinishedTerminals(t *testing.T) {
 		t.Errorf("closed %q", got)
 	}
 }
+
+// panes.list names the program in front of each pane with no agent (#4754: plain terminals in the apps' lists),
+// asking the host, never reading the screen; an agent's pane is not asked.
+func TestPanesListNamesTheProgramInFront(t *testing.T) {
+	n, f, home := herdrNode(t)
+	cwd := mkdir(t, filepath.Join(home, "proj"))
+	f.reply("session.snapshot", snapshot(nil, nil, []any{claudeAgent(sidA, proto.StatusIdle, "w1:p1", "w1:t1", "w1", cwd, "")},
+		[]any{shellPane("w1:p2", "w1:t2", "w1", cwd, "")}))
+	f.reply("pane.process_info", map[string]any{"process_info": map[string]any{"foreground_processes": []any{
+		map[string]any{"pid": 1, "name": "zsh", "argv0": "-zsh"}, map[string]any{"pid": 2, "name": "vim", "argv0": "vim"}}}})
+	listSessions(t, n)
+	f.reset()
+	res, err := request(t, n, "panes.list", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res)
+	if s := string(b); !strings.Contains(s, `"foreground":"vim"`) || strings.Count(s, `"foreground"`) != 1 {
+		t.Fatalf("panes.list = %s", s)
+	}
+	if got := f.trace("pane.read"); len(got) != 0 {
+		t.Errorf("read a screen: %q", got)
+	}
+}

@@ -24,17 +24,17 @@ describe("the 今天 card's 需要你 row", () => {
     seed({ todos: [todo("修测试", "s1")], sessions: { m1: [session("s1")] }, interactions: [permission], answered: {} });
     const html = renderToStaticMarkup(<FeedLineView item={today({ date: now, waiting: [{ id: "修测试", title: "修测试" }] })} />);
     expect(html).toContain("需要你：修测试");
-    expect(html).toContain("需要你授权：swift test");
+    expect(html).toContain("在等你批准：swift test");
   });
 
   it("lists several by title and what each asks, a title alone without a card", () => {
     seed({ todos: [todo("修测试", "s1"), todo("写文档", "s2")], sessions: { m1: [session("s1"), session("s2")] }, interactions: [permission], answered: {} });
     const html = renderToStaticMarkup(<FeedLineView item={today({ date: now, waiting: [{ id: "修测试", title: "修测试" }, { id: "写文档", title: "写文档" }] })} />);
     expect(html).toContain("2 件需要你");
-    expect(html).toContain("修测试：需要你授权：swift test");
+    expect(html).toContain("修测试：在等你批准：swift test");
     // each task on its own truncated line, not one clamped block
     const lines = [...html.matchAll(/data-today-line="true" class="truncate[^"]*" title="([^"]*)"/g)].map((m) => m[1]);
-    expect(lines).toEqual(["修测试：需要你授权：swift test", "写文档"]);
+    expect(lines).toEqual(["修测试：在等你批准：swift test", "写文档"]);
     expect(html).not.toContain("line-clamp-2 whitespace-pre-line text-[12px] text-ink-2\">修测试");
   });
 

@@ -26,7 +26,7 @@
   "delete_confirm": "确定要删除「{title}」吗？已关联的 Agent 不受影响。",
   "delete": "删除",
   "kicker_plan": "计划等你审批",
-  "kicker_permission": "需要你授权",
+  "kicker_permission": "在等你批准",
   "kicker_screen": "终端等你处理",
   "kicker_question": "在问你",
   "reopen_todo": "重新打开待办",

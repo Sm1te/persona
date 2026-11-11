@@ -154,7 +154,8 @@ func indexedRow(mid, id string, row *proto.Session, stamp bool, manager string, 
 		ID: id, Machine: mid, Project: project, Group: group, PaneSource: pane,
 		State: row.State, BackgroundWaiting: row.BackgroundWaiting, Source: row.SourceKind, Provider: row.Agent, UpdatedAt: row.UpdatedAt,
 	}
-	text := [...]string{row.Title, row.Cwd, row.RepoRoot, row.SpaceName, row.SlotName, row.AgentName, row.LastText}
+	// What q finds a row by: the fields the apps' own searches read, the branch too (#4770).
+	text := [...]string{row.Title, row.Cwd, row.RepoRoot, row.Branch, row.SpaceName, row.SlotName, row.AgentName, row.LastText}
 	if was, ok := indexed.Full.(json.RawMessage); ok && sameIndexedFull(was, raw, pane) {
 		item.Summary, item.Full = indexed.Summary, indexed.Full
 		if item.SearchText = indexed.SearchText; !joinedBy(item.SearchText, text[:], '\n') {

@@ -2,5 +2,7 @@
   "failed": "没发出去：{error}",
   "clear_and_send": "清空并发送",
   "retry": "重试",
-  "delete": "删除"
+  "delete": "删除",
+  "deleted": "消息已删除",
+  "undo": "撤销"
 }

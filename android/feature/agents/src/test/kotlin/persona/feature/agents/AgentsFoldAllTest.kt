@@ -145,4 +145,23 @@ class AgentsFoldAllTest {
         assertTrue(rows.isNotEmpty())
         assertTrue(rows.all { it.inStateSection })
     }
+
+    // #4338 A11, as iOS's Collapse All: the sections fold, the computer headings stay as they are.
+    @Test fun collapseAllLeavesTheComputerHeadingsAsTheyAre() = runTest {
+        startModel()
+        model.foldAll(true)
+        runCurrent()
+        assertTrue(model.page.value.list.machines.isNotEmpty())
+        assertTrue(model.page.value.list.machines.none { it.folded })
+        assertTrue(model.page.value.list.groups.all { it.folded })
+        model.foldAll(false)
+        runCurrent()
+        val hidden = model.page.value.list.machines.single { it.machine.id == "hidden" }
+        model.fold(hidden)
+        runCurrent()
+        model.foldAll(true)
+        runCurrent()
+        assertTrue(model.page.value.list.machines.single { it.machine.id == "hidden" }.folded)
+        assertFalse(model.page.value.list.machines.single { it.machine.id == "shown" }.folded)
+    }
 }

@@ -802,7 +802,9 @@ Hub-inserted chat entries do not enter Claude's transcript (that would trigger a
 - **Action bar on iPhone, iPad and Mac (#3393, replacing #2879's Pending / To Start / Progress / Agents and the Mac's
   dock)**: Needs You and In Progress as "Needs you and In progress: each thing once" above defines them. The split is
   `AssistantEntries.split`, a port of the web's `assistantEntries`; `ActionTrayContent` puts the conversation's own cards
-  in front of Needs You (their row closes the tray onto the card below). An Agent linked to a to-do made by hand (no
+  in front of Needs You (their row closes the tray onto the card below). The web (`OwnAskRow` in `AssistantActionBar`,
+  the cards in `ChatView`'s dock) and Android (`panelRequests`, the chat's `InteractionPanel`) do the same since #4883:
+  the conversation's own cards are above its composer, never only inside the closed tray. An Agent linked to a to-do made by hand (no
   `origin`) is that to-do's row in the main chat, not a second row of its own (#3387's `dockAgents` leaves out only the
   agents of conversations' tasks, so web and Android list it twice; the fixture has no such case yet). Message cards also leave Needs You once the inbox
   has the item handled or the user put the card off with Later. Rows: a task opens its details (right-click or long press

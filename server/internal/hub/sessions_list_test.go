@@ -206,6 +206,28 @@ func TestRuntimeListPagesAndSummary(t *testing.T) {
 	}
 }
 
+// q finds a row by its branch, as the apps' own searches do (#4770): a working tree's sessions by `fix/123`.
+func TestRuntimeListSearchesTheBranch(t *testing.T) {
+	h := newTestHub(t)
+	m := newMachine(h, MachineConfig{ID: "demo"})
+	h.machines, h.byID["demo"] = []*Machine{m}, m
+	m.sessions = []proto.Session{
+		{MachineID: "demo", SessionID: "tree", Title: "Login form", State: "idle", UpdatedAt: time.Unix(100, 0), Cwd: "/demo/app-wt",
+			RepoRoot: "/demo/app", Worktree: "/demo/app-wt", Branch: "fix/123-login"},
+		{MachineID: "demo", SessionID: "main", Title: "Release notes", State: "idle", UpdatedAt: time.Unix(90, 0), Cwd: "/demo/app",
+			RepoRoot: "/demo/app", Worktree: "/demo/app", Branch: "main"},
+	}
+	for query, want := range map[string]string{"FIX/123": "tree", "123-login": "tree", "release": "main"} {
+		page := runtimePage(t, h, "summary=1&q="+neturl.QueryEscape(query))
+		if page.Total != 1 || page.Sessions[0].SessionID != want || page.Sessions[0].Branch == "" {
+			t.Fatalf("q=%s: %+v", query, page)
+		}
+	}
+	if page := runtimePage(t, h, "summary=1&q=fix%2F999"); page.Total != 0 {
+		t.Fatalf("another branch: %+v", page)
+	}
+}
+
 func TestRuntimeListDeltaTransitionsAndMachineRemoval(t *testing.T) {
 	h := newTestHub(t)
 	m := newMachine(h, MachineConfig{ID: "demo"})
@@ -361,7 +383,7 @@ func fullIndexItems(mid string, list []proto.Session, encoded []sentSession) []s
 			ID: string(id), Machine: mid, Project: cmp.Or(row.RepoRoot, row.WorkspaceCwd, row.Cwd), Group: cmp.Or(row.SpaceID, row.WorkspaceID),
 			PaneSource: sessionorigin.Of(row), State: row.State, BackgroundWaiting: row.BackgroundWaiting, Source: row.SourceKind,
 			Provider: row.Agent, UpdatedAt: row.UpdatedAt,
-			SearchText: strings.Join([]string{row.Title, row.Cwd, row.RepoRoot, row.SpaceName, row.SlotName, row.AgentName, row.LastText}, "\n"),
+			SearchText: strings.Join([]string{row.Title, row.Cwd, row.RepoRoot, row.Branch, row.SpaceName, row.SlotName, row.AgentName, row.LastText}, "\n"),
 			Summary:    json.RawMessage(summary),
 			Full: runtimeListFields(full[row.SessionID], struct {
 				PaneSource string `json:"pane_source"`
@@ -434,6 +456,9 @@ func TestIndexRowReuseMatchesFullPath(t *testing.T) {
 		},
 		func(r *proto.Session, n int) {
 			r.RepoRoot, r.WorkspaceCwd, r.Cwd = cycle(n, "", "/demo/repo", ""), cycle(n, "", "", "/demo/real"), cycle(n, "/demo/app", "/demo/b")
+		},
+		func(r *proto.Session, n int) { // searched by q (#4770)
+			r.Branch, r.SlotName = cycle(n, "", "fix/needle-1", "main"), cycle(n, "", "Demo workspace")
 		},
 		func(r *proto.Session, n int) {
 			r.State, r.BackgroundWaiting = cycle(n, "working", "needs_you", "idle"), n%2 == 0

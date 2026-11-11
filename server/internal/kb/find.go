@@ -83,7 +83,9 @@ func matcher(query string) func(string) bool {
 // the Moments verdicts of a project (moments-judged.json, moments_link.go) and recording undo snapshots mean nothing
 // to a model, and the hints are kept out of every tool and prompt. Nor are a topic's points.json and a source's
 // distill mark (.topics.json, topics.go). A meeting's live log (live.json, live.go) is never
-// searched: other people's words said while Persona attended, and the questions asked of it.
+// searched: other people's words said while Persona attended, and the questions asked of it. Nor is photos.json
+// (recording_photos.go: digests, deletions; photos.md has the photos' words), and the photos themselves are in
+// attachments/, which the walk never enters.
 func searchable(rel string) bool {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
 	switch {
@@ -97,6 +99,8 @@ func searchable(rel string) bool {
 		return false // live.json, and its temporary file while it is replaced
 	case len(parts) >= 3 && parts[0] == KindRecording && strings.HasPrefix(parts[2], meetingFile):
 		return false // meeting.json (meeting.go): the manager's bookkeeping of the room and the mark
+	case len(parts) >= 3 && parts[0] == KindRecording && strings.HasPrefix(parts[2], photosFile):
+		return false // photos.json (recording_photos.go): digests and deletions; photos.md has the photos' words
 	case len(parts) == 3 && parts[0] == KindPerson && parts[2] == "handles.json":
 		return false
 	case len(parts) == 3 && parts[0] == KindProject && parts[2] == "moments-judged.json":
@@ -145,7 +149,7 @@ func shown(kind, rel string) bool {
 		day, ok := strings.CutPrefix(rest, "messages/")
 		return kind == KindChat && ok && strings.HasSuffix(day, ".md") && !strings.Contains(day, "/")
 	case KindRecording:
-		return rest == "summary.md" || rest == "minutes.md" || rest == "transcript.md" || rest == "meta.json"
+		return rest == "summary.md" || rest == "minutes.md" || rest == "transcript.md" || rest == photosText || rest == "meta.json"
 	case KindTopic:
 		return rest == "summary.md" || rest == "meta.json"
 	case KindDoc, KindMeeting, KindEvent:
@@ -397,7 +401,7 @@ func sortHits(h []Found) []Found {
 			return 0
 		case strings.HasSuffix(f.Path, "/log.md"):
 			return 1
-		case strings.Contains(f.Path, "/messages/"), strings.HasSuffix(f.Path, "/transcript.md"):
+		case strings.Contains(f.Path, "/messages/"), strings.HasSuffix(f.Path, "/transcript.md"), strings.HasSuffix(f.Path, "/"+photosText):
 			return 2
 		}
 		return 3

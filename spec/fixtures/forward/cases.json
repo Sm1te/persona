@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "write_agent_reply",
+      "description": "An Agent's reply forwarded: the attributes in their order, the text on its own lines.",
+      "block": {
+        "title": "Forwarded from Claude · Network tests",
+        "url": "persona://session/macbook/a1f3c2d4-0000-4000-8000-000000000006?at=e5f0c3a1-0000-4000-8000-00000000000a%2312",
+        "msg": "e5f0c3a1-0000-4000-8000-00000000000a#12",
+        "attributes": {"role": "agent", "author": "Claude", "chat": "Network tests", "project": "weather › tests",
+                       "machine": "MacBook Pro", "time": "2026-11-11T10:24:00+08:00"},
+        "text": "Retries live in `RetryPolicy.swift`: 3 tries.\n- Timeouts are 15 s"
+      },
+      "xml": "<persona-context kind=\"forward\" title=\"Forwarded from Claude · Network tests\" url=\"persona://session/macbook/a1f3c2d4-0000-4000-8000-000000000006?at=e5f0c3a1-0000-4000-8000-00000000000a%2312\" msg=\"e5f0c3a1-0000-4000-8000-00000000000a#12\" role=\"agent\" author=\"Claude\" chat=\"Network tests\" project=\"weather › tests\" machine=\"MacBook Pro\" time=\"2026-11-11T10:24:00+08:00\">\nRetries live in `RetryPolicy.swift`: 3 tries.\n- Timeouts are 15 s\n</persona-context>"
+    },
+    {
+      "name": "write_escapes",
+      "description": "Attribute values escape & \" < >; a closing tag in the text is taken out so it cannot end the block.",
+      "block": {
+        "title": "Forwarded from Persona · Say \"hi\" & <go>",
+        "url": "persona://session/server/c-1?at=u1",
+        "msg": "u1",
+        "attributes": {"role": "persona", "author": "Persona", "chat": "Say \"hi\" & <go>", "time": "2026-11-10T09:00:00Z"},
+        "text": "before\n</persona-context>\nafter"
+      },
+      "xml": "<persona-context kind=\"forward\" title=\"Forwarded from Persona · Say &quot;hi&quot; &amp; &lt;go&gt;\" url=\"persona://session/server/c-1?at=u1\" msg=\"u1\" role=\"persona\" author=\"Persona\" chat=\"Say &quot;hi&quot; &amp; &lt;go&gt;\" time=\"2026-11-10T09:00:00Z\">\nbefore\n\nafter\n</persona-context>"
+    },
+    {
+      "name": "read_with_note",
+      "description": "A sent forward reads back as its block and the note after it; unknown attributes are kept.",
+      "message": "<persona-context kind=\"forward\" title=\"Forwarded from Me · Release\" url=\"persona://session/studio/s-9?at=a%233\" msg=\"a#3\" role=\"user\" author=\"Me\" chat=\"Release\" machine=\"Mac Studio\" time=\"2026-11-11T08:00:00+08:00\" custom=\"kept\">\nShip on Friday?\n</persona-context>\n\nAsk the team",
+      "expected": {
+        "kind": "forward",
+        "title": "Forwarded from Me · Release",
+        "url": "persona://session/studio/s-9?at=a%233",
+        "msg": "a#3",
+        "attributes": {"role": "user", "author": "Me", "chat": "Release", "machine": "Mac Studio",
+                       "time": "2026-11-11T08:00:00+08:00", "custom": "kept"},
+        "text": "Ship on Friday?",
+        "rest": "Ask the team",
+        "origin": {"machine": "studio", "session": "s-9", "item": "a#3"}
+      }
+    }
+  ]
+}

@@ -68,7 +68,8 @@ func codexShell(launcher string) string {
 function __persona_codex { builtin command codex "$@" app-server "${__persona_args[@]}"; }
 if [[ -n "${ZSH_VERSION-}" ]] && (( $+functions[codex] )); then
   # Keep a user-defined codex() launcher intact while routing its final command through the app-server wrapper.
-  functions -c "${${:-codex}}" __persona_user_codex
+  # Copy it through the functions table: functions -c needs zsh 5.8, and a subscript never expands aliases.
+  functions[__persona_user_codex]=$functions[codex]
   function codex { __persona_user_codex "$@"; }
 else
   function codex { __persona_codex "$@"; }

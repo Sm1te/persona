@@ -31,6 +31,11 @@ const (
 	// docs/assistant/meeting-minutes.md "Meeting conversation (#3862)"). The hub lists meeting_conversation only while
 	// the default manager names it. A manager that names it names CapabilityMeetingAttendance too.
 	CapabilityMeetingConversation = "meeting_conversation"
+	// CapabilityMeetingPhotos: the manager takes the meeting conversation's phase 3, its photos (…/photos, forwarding
+	// them to the room, the room's notes, citations in the minutes; docs/assistant/meeting-minutes.md "Phase 3:
+	// photos"). The hub lists meeting_photos only while the default manager names it beside
+	// CapabilityMeetingConversation.
+	CapabilityMeetingPhotos = "meeting_photos"
 )
 
 // The methods and events, by direction. The assistant's handshake is manager.hello {id, host, os, arch, deploy,
@@ -64,6 +69,10 @@ const (
 
 	// EventStartEnded (StartEnded): how an app's start the node ran before answering went (POST /api/v1/sessions).
 	EventStartEnded = "session.start_ended"
+
+	// EventConversationSent (ConversationSent): how an app's message to one of the assistant's conversations went, as
+	// the hub sent it (the north star's availability, docs/assistant/north-star.md). An older manager ignores it.
+	EventConversationSent = "session.assistant_sent"
 )
 
 // Error codes that cross the bus where a Go error would lose its kind (rpc.Error.Code).
@@ -116,6 +125,7 @@ var Routes = []string{
 	"POST /api/v1/assistant/conversations/{id}/archive",
 	"GET /api/v1/assistant/conversations/{id}/always",
 	"GET /api/v1/assistant/standing-authorizations",
+	"GET /api/v1/assistant/north-star",
 	"DELETE /api/v1/assistant/standing-authorizations/{id}",
 	"DELETE /api/v1/assistant/conversations/{id}/always/{hash}",
 	"POST /api/v1/assistant/conversations/{id}/unarchive",
@@ -238,4 +248,9 @@ var Routes = []string{
 	"PUT /api/v1/recordings/{id}/private",
 	"POST /api/v1/recordings/{id}/just-me",
 	"POST /api/v1/recordings/{id}/followup",
+	// Its photos (meeting_photos.go there, "Phase 3: photos").
+	"POST /api/v1/recordings/{id}/photos",
+	"GET /api/v1/recordings/{id}/photos",
+	"GET /api/v1/recordings/{id}/photos/{n}",
+	"DELETE /api/v1/recordings/{id}/photos/{n}",
 }

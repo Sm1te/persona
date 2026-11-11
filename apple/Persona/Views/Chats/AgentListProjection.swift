@@ -164,7 +164,8 @@ extension Session {
         case .errors:
             fields = [startError ?? "", turnError ?? "", failureReason ?? "", attentionReason ?? "", work?.line ?? "", title]
         case .all:
-            fields = [title, cwd, repoRoot ?? "", lastText ?? "", asks ?? "", spaceName ?? "", slotName ?? "", agentLabel, model ?? "", launcher ?? "", startError ?? "", turnError ?? ""]
+            // The branch too, as the web, Android and the hub's paged list search it (#4770).
+            fields = [title, cwd, repoRoot ?? "", branch ?? "", lastText ?? "", asks ?? "", spaceName ?? "", slotName ?? "", agentLabel, model ?? "", launcher ?? "", startError ?? "", turnError ?? ""]
         }
         return terms.allSatisfy { term in
             fields.contains { $0.localizedCaseInsensitiveContains(term) }

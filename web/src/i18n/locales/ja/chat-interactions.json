@@ -30,7 +30,7 @@
   "request_changes": "修正を依頼",
   "approve": "承認",
   "approve_mode": "承認方法",
-  "permission_kicker": "許可が必要です",
+  "permission_kicker": "承認を待っています",
   "permission_title": "{tool}の使用を許可しますか？",
   "denied_message": "ユーザーが拒否しました",
   "deny": "拒否",

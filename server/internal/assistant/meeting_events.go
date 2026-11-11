@@ -74,6 +74,9 @@ func (s *Service) meetingLiveFlush(id string) {
 				revs[kb.PartAsks] = l.AsksRev
 			}
 		}
+		if slices.Contains(parts, kb.PartPhotos) { // kept in photos.json, not meeting.json
+			revs[kb.PartPhotos] = e.PhotosRev(id)
+		}
 	}
 	s.event(context.WithoutCancel(ctx), map[string]any{"type": "meeting_live", "recording_id": id, "changed": parts, "revs": revs})
 }

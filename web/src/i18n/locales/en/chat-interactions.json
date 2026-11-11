@@ -30,7 +30,7 @@
   "request_changes": "Request changes",
   "approve": "Approve",
   "approve_mode": "Approval mode",
-  "permission_kicker": "Needs your permission",
+  "permission_kicker": "Waiting for your approval",
   "permission_title": "Allow {tool}?",
   "denied_message": "The user denied this",
   "deny": "Deny",

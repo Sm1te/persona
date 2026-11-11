@@ -26,7 +26,8 @@ class CodexTaskTreeTest {
         assertEquals(listOf("root"), agentTreeEntries(list, "").filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })
         val open = agentTreeEntries(list, "", expandedTasks = setOf("machine/root", "machine/child"))
         assertEquals(listOf("root", "child", "leaf"), open.filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })
-        assertEquals(listOf(1, 2, 3), open.filterIsInstance<TreeRowEntry>().map { it.depth })
+        // One computer: no heading, so the tree starts a step out (#4338 A7).
+        assertEquals(listOf(0, 1, 2), open.filterIsInstance<TreeRowEntry>().map { it.depth })
         assertEquals(listOf(false, true, true), open.filterIsInstance<TreeRowEntry>().map { it.nested })
         assertEquals(1, list.counts[AgentQuickFilter.Working])
         assertEquals(listOf("root"), agentTreeEntries(list, "").filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })

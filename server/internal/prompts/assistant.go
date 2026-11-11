@@ -376,6 +376,9 @@ func RenderTaskRun(t TaskRun) string { return render("assistant/task_run", t) }
 // BriefFacts are the facts of a morning or evening routine's run, as the model is given them (assistant/routine_facts):
 // the lines are ready to read; the totals count more than the lines when the lists were cut.
 type BriefFacts struct {
+	// NorthStar: the lines the report opens with (the interruptions and the availability today, their change against
+	// yesterday until the same time, and where they come from), ready to read.
+	NorthStar                                                        []string
 	ConfirmationSummary                                              string
 	Confirmations                                                    []string
 	Hours                                                            int // how far back "done" and "not through" look
@@ -438,6 +441,10 @@ type BriefProgress struct{ Title, Stage string }
 
 func RenderBriefFacts(b BriefFacts) string { return render("assistant/routine_facts", b) }
 
+// RenderNorthStarFacts is what a leader or main conversation's daily task opens with when it has no facts of its own
+// (assistant/north_star_facts): the north star's lines, ready to read.
+func RenderNorthStarFacts(lines []string) string { return render("assistant/north_star_facts", lines) }
+
 // RenderMorningRoutine and RenderEveningRoutine are the default daily tasks' prompts.
 func RenderMorningRoutine() string { return render("assistant/routine_morning", nil) }
 func RenderEveningRoutine() string { return render("assistant/routine_evening", nil) }
@@ -457,9 +464,15 @@ func RenderLostTasks(tasks []string) string {
 	return render("assistant/lost_tasks", struct{ Tasks []string }{tasks})
 }
 
-// RenderInterject goes with a message the user sent while the conversation was still answering, once its foreground
-// work was moved to the background (node/assistant_interject.go): answer it first. A <persona-context> block only.
-func RenderInterject() string { return render("assistant/interject", nil) }
+// Interject is the note on a message the user sent while the conversation was still answering
+// (node/assistant_interject.go). Background: its foreground work was moved to the background for it.
+type Interject struct {
+	Background bool
+}
+
+// RenderInterject goes with such a message: say in one sentence, before the next tool call, what is going on, then
+// answer it (#4883: six minutes of tool calls with no word to the owner). A <persona-context> block only.
+func RenderInterject(v Interject) string { return render("assistant/interject", v) }
 
 // RenderUsageRetry sends a conversation's message to the model again after a gateway's impossible usage made Claude
 // Code refuse it as too long and Persona repaired the transcript (assistant/usage_retry, node/assistant_usage.go). It

@@ -138,6 +138,12 @@ func (s *Service) toolKB(ctx context.Context, name string, args json.RawMessage)
 				b.WriteString(s.minutesActionLines(ctx, d.ID, &m))
 			}
 		}
+		// A meeting's photos, their words (photos.md): after the minutes' action items, before the transcript.
+		if a.Kind == kb.KindRecording {
+			if photos := e.PhotosMarkdown(d.ID); photos != "" {
+				fmt.Fprintf(&b, "\nphotos.md:\n%s", photos)
+			}
+		}
 		if a.Kind == kb.KindMeeting || a.Kind == kb.KindEvent {
 			b.WriteString(s.recordingsAt(ctx, e, a.Kind, d.ID))
 		}

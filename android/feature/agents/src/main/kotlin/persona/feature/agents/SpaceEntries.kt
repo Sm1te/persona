@@ -139,6 +139,7 @@ private fun SpacePage(route: SpaceRoute, model: AgentsViewModel, navigator: Navi
                     navigator.navigate(ChatRoute(it.machineId, it.sessionId, kind = ConversationKind.Assistant))
                 })
             },
+            onInterrupt = { model.interrupt(row.session) },
             onClose = { operationDialog = AgentOperationDialog.Close(row.session) },
             onDelete = { operationDialog = AgentOperationDialog.Delete(row.session) })
     }

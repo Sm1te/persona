@@ -287,7 +287,7 @@ data class CoreText(val key: Key, val args: List<Any> = emptyList()) {
         HeadlineScreen("Terminal needs you"),
         HeadlineNeedsYou("Needs you"),
         AskQuestion("Has a question"),
-        AskPermission("Needs your permission"),
+        AskPermission("Waiting for your approval"),
         AskPlan("Plan awaiting approval"),
         AskScreen("Terminal needs you"),
         AskElicitation("MCP request"),

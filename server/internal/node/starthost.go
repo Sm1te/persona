@@ -30,6 +30,31 @@ func (n *Node) startKind(ctx context.Context) string {
 	return n.defaultKind()
 }
 
+// withResumeHost keeps a retired session in its previous terminal host while that host remains enabled.
+// An explicit host wins; sessions without a remembered pane follow the machine default.
+func (n *Node) withResumeHost(ctx context.Context, id string) context.Context {
+	if k, _ := ctx.Value(startHostKey{}).(string); k != "" {
+		return ctx
+	}
+	if h, _, known := n.runtimes.belongs(id); h != nil || known {
+		return ctx // Runtime ownership wins over a terminal pane remembered before a takeover.
+	}
+	st, _ := n.state.get(id)
+	pane := st.Pane
+	if pane == "" {
+		n.mu.Lock()
+		pane = n.lastPanes[id]
+		n.mu.Unlock()
+	}
+	if pane != "" {
+		kind := host.ParsePane(pane).Kind
+		if n.hostEnabled(kind) {
+			return withStartHost(ctx, kind)
+		}
+	}
+	return ctx
+}
+
 // checkStartHost refuses a start naming a host the machine does not enable, or one that cannot start sessions; nothing
 // is started. "" is the default host, always fine here (the empty set is refused later).
 func (n *Node) checkStartHost(kind string) error {

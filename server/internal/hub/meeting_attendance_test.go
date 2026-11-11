@@ -91,3 +91,44 @@ func TestMeetingConversationFollowsTheDefaultManager(t *testing.T) {
 		t.Fatal("listed for a manager that does not name it")
 	}
 }
+
+// meeting_photos is listed only beside meeting_conversation, while the default manager names it too.
+func TestMeetingPhotosFollowTheDefaultManager(t *testing.T) {
+	h, srv, _ := newBusHub(t)
+	a := connectStateManager(t, h, srv, assistantwire.AssistantID)
+	hello := func(caps ...string) {
+		t.Helper()
+		if err := a.call(t, busHello, map[string]any{"id": a.id, "capabilities": append([]string{assistantwire.CapabilityConfigOwn}, caps...)}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func() bool { return slices.Contains(h.features(), featureMeetingPhotos) }
+	hello(assistantwire.CapabilityMeetingAttendance, assistantwire.CapabilityMeetingPhotos)
+	if listed() {
+		t.Fatal("listed without meeting_conversation")
+	}
+	hello(assistantwire.CapabilityMeetingAttendance, assistantwire.CapabilityMeetingConversation, assistantwire.CapabilityMeetingPhotos)
+	if !listed() || !slices.Contains(h.features(), featureMeetingConversation) {
+		t.Fatalf("features %v", h.features())
+	}
+	hello(assistantwire.CapabilityMeetingAttendance, assistantwire.CapabilityMeetingConversation)
+	if listed() {
+		t.Fatal("listed for a manager that does not name it")
+	}
+}
+
+// An extension's report cannot add a meeting feature: the hub lists them only from the default manager's hello.
+func TestMeetingFeaturesNotFromAReport(t *testing.T) {
+	h := newTestHub(t)
+	h.keepExtReport(assistantwire.AssistantID, &extwire.Report{Features: []string{featureMeetingAttendance, featureMeetingConversation,
+		featureMeetingPhotos, "fa"}})
+	features := h.features()
+	if !slices.Contains(features, "fa") {
+		t.Fatalf("the report's own feature is missing: %v", features)
+	}
+	for _, f := range []string{featureMeetingAttendance, featureMeetingConversation, featureMeetingPhotos} {
+		if slices.Contains(features, f) {
+			t.Errorf("a report added %s", f)
+		}
+	}
+}

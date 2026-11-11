@@ -81,7 +81,7 @@ Chat page:
   after its `covered` and merges silently: at most every 10 seconds, once per `updated_at` (`AgentSyncPacing.catchUpAt`, the rule of the
   web's `web/src/lib/stale-page.ts`). The `rev` catches the last line of a burst whose push was lost, which `updated_at` cannot (#1179); a push never settles a moved rev, only a read sent after the move (a subscription or a catch-up, `AgentSyncPacing.RevReads`, #3191). Working Agents fetch at most once per minute (`AgentSync.workingGap`; each fetch decodes and rewrites the entire disk cache),
   immediately at turn end / Needs you (most likely to open); 19-minute real-hub replay: 45 calls/minute → 9 (2026-11-02 battery investigation). Lark (`LarkSync`): hub forwards gateway live events (`lark`), refreshing Inbox Lark chats and open chats
-  (polling fallback only: list 90 seconds, chat 60); changed Inbox chats fetch the newest page into `lark-chat-<id>` cache; on hub connection catch up latest 20;
+  (polling fallback only: list 90 seconds, chat 60); while a Feishu list is in front, changed Inbox chats fetch the newest page into `lark-chat-<id>` cache, and with none in front they are only noted, the newest 20 fetched when one comes back (#4693; a chat opened before that shows its cached page until its own fetch lands); on hub connection catch up latest 20;
   unread chats open from cache if it reaches the first unread message.
 - Settings › Storage (`StorageView`): space used on this phone, size and share bars by category (Agent chats, chat images, Lark images/files, lists/Lark chats, websites,
   network cache, other, App data); swipe left / long-press clears a category, or Clear all caches (settings and pairing retained; websites clear cache, not login).
@@ -133,6 +133,27 @@ Chat page:
   - **Sending**: after the `<persona-context>` tags and before what was typed, numbered from 1; comments alone send without words.
   - **Sent bubble**: the blocks, from any client, are quote cards at the top of the bubble (kind, number, place; the note); a tap opens the whole note and the code. A plain `> ` quote before them is a quote card too; a message with no comment block is drawn as before.
   - **Edit**: the comments go back over the box as cards, the words into it.
+- Forwarding a message (#3807; `Views/Chat/Forward.swift`, `ForwardSheet.swift`; iPhone and iPad, not the frozen Mac app): the
+  `<persona-context kind="forward">` block and its metadata are in docs/protocol/protocol.md, "Forwarded messages".
+  - **Entry**: the lifted message's bar has Forward where Share was (`MessageActionBar.forwards`: a sent message, in a chat that
+    forwards), so the bar keeps its width; Share as Image is the first row of the picker. Messages not sent yet, the Mac and
+    Apple Vision Pro keep Share.
+  - **Forward To** (`ForwardSheet`): Share as Image, the message being forwarded, Persona (Main Chat, unless that is this
+    chat) and New Agent…, then Recent (`ForwardMemory`: the last 8 targets per hub group, ids only, never synced, gone with
+    the group) and each computer's live Agents in the Machines order, latest first (`ForwardTargets`: same hub, takes
+    messages, computer online, never this chat or Health). Search matches titles, Agents, projects and computers, and also
+    finds ended Agents (the send resumes them) and Persona's other conversations. The lists are the sessions the app holds,
+    read once as the sheet opens.
+  - **Picking a target** reads the whole message when the chat holds it cut (`/items/{iid}/full`) and the photos of your own
+    message, then opens the target's chat (`AppModel.forward`) with the forward over its box (`composerContexts`, like a
+    quote, × takes it off) and a line saying where it comes from and goes ("From MacBook Pro · to Codex on Mac Studio"), the
+    photos in the box's tray (`composerInbox`). The note is typed and sent there, through the usual send. New Agent opens
+    New Chat with the card over First Message, the block as its `contextBlock`. Persona with no main conversation yet: the
+    new conversation's box.
+  - **Sent**: the block is a card at the top of the bubble, as a quote's, with the arrow, "Forwarded from Claude · chat",
+    the computer and time, and four lines; a tap opens the original chat at the message (`AppModel.openLinked`), or the
+    whole text when this app does not have that chat. Nothing is written to the original chat.
+  - Tests: `ForwardTests` (`spec/fixtures/forward`), `ForwardMessageTests` (the whole way on the mock hub, screenshots).
   - Screenshots `-showSampleComments YES` (two code comments and an element over the box); `MOCK_COMMENTS=1` gives the widget chat a review sent from the web; end-to-end `CommentBubbleTests`.
 - Files: message paths and Read / Edit / Write tool paths become tappable file tags, read from the session's computer
   (`GET /api/v1/machines/{mid}/file`, at most 2 MB, iCloud directories denied), rendered Markdown / numbered code / images / PDF / directories.
@@ -305,6 +326,7 @@ Chat page:
   Action icons fixed 22pt high (SF Symbols differ, otherwise text misaligns).
   A message of yours not in the transcript yet (sending, waiting for the network, failed: `PendingBubble`) has the strip too, with Copy / Select text / Share (#6427), so one the computer refused can be copied rather than typed again;
   no Quote (also not by swiping or from Select text: it may never reach the agent), no Edit (a waiting one would still go out besides the edited one), no Rewind. `PendingBubbleMenuTests` (the `SendSafetyTests` mock: refused, Not Now, long-press, Copy, paste into the composer).
+  One only on this phone (`PendingMessage.onlyHere`: failed, or waiting for the network; #4626) ends the strip in red with what its mark's menu says, **Delete** or **Don't Send**, and the plain context menu where there is no strip (a new conversation's failed first message) has it too. It removes the bubble and its outbox entry and sends nothing; a toast offers Undo, which puts it back where it was (`AppModel.discard` / `undoDiscard`; a new conversation's first message through `FailedStart`). A message the hub may have (sending, sent, in the transcript) has no Delete. `PendingDeleteTests`, `PendingBubbleMenuTests.testDeleteAMessageThatWasNotSent` (Delete, Undo, deleted again, gone after a relaunch, no Delete on a delivered message).
   - Rewind here (#2915, web #2436, `Rewind.swift`): Claude Agent own transcript message action adds Rewind,
     chooses Chat only / Code and chat, latter confirms files too. Idle only; working/waiting/not running/non-Claude explains why;
     absent for assistant/sub-Agents. App sends original text (fetch full if truncated), reverse occurrence index of identical text and count after it (`POST …/rewind`),

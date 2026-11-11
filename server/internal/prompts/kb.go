@@ -146,7 +146,8 @@ func RenderKBMinutesMerge(o KBOwner) string { return render("kb/minutes_merge", 
 
 // KBMinutesInput is a meeting recording to make minutes of (kb/minutes_input, kb/minutes_meeting): times in the user's
 // zone; Title the user's or the calendar's; Meeting the knowledge base's calendar item; Attendees and Location the
-// phone calendar's. Part of Parts (both 1 for a transcript read at once); Transcript is that part's numbered lines.
+// phone calendar's. Part of Parts (both 1 for a transcript read at once); Transcript is that part's numbered lines,
+// the meeting's photos ("[P3] … photo: …", their words only) among them.
 type KBMinutesInput struct {
 	Pinned, Title, Meeting, Location, Weekday, Language string
 	Attendees                                           []string
@@ -158,9 +159,10 @@ type KBMinutesInput struct {
 
 func RenderKBMinutesInput(in KBMinutesInput) string { return render("kb/minutes_input", in) }
 
-// KBMinutesNote is an item of a part's notes: Line the transcript line it cites; Who, By and DueDate as the part said.
+// KBMinutesNote is an item of a part's notes: Line the transcript line it cites, or Photo the photo (Line 0 then); Who,
+// By and DueDate as the part said.
 type KBMinutesNote struct {
-	Line                   int
+	Line, Photo            int
 	Text, Who, By, DueDate string
 }
 

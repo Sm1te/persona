@@ -43,8 +43,8 @@
     <string name="designsystem_loading">加载中</string>
     <string name="designsystem_processing">正在处理…</string>
     <string name="designsystem_with_state">%1$s，%2$s</string>
-    <string name="designsystem_decision_command">需要你授权</string>
-    <string name="designsystem_decision_tool">需要你授权</string>
+    <string name="designsystem_decision_command">在等你批准</string>
+    <string name="designsystem_decision_tool">在等你批准</string>
     <string name="designsystem_decision_plan">计划等你审批</string>
     <string name="designsystem_decision_question">在问你</string>
     <string name="designsystem_decision_form">要你填几项</string>
@@ -130,6 +130,8 @@
     </plurals>
     <string name="designsystem_group_expand">展开分组</string>
     <string name="designsystem_group_collapse">折叠分组</string>
+    <string name="designsystem_show_all">显示全部 %1$d 个</string>
+    <string name="designsystem_show_fewer">收起</string>
     <string name="designsystem_machine_monitor">机器监控</string>
     <string name="designsystem_details">详情</string>
     <string name="designsystem_space">空间</string>

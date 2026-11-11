@@ -283,6 +283,29 @@ fun AgentIdleRow(hidden: Int, onClick: () -> Unit, modifier: Modifier = Modifier
     }
 }
 
+/**
+ * A long run of a section's rows (iOS's "Show All N"): [count] of them, the first ones above; once [expanded], "Collapse"
+ * at their end. In the accent, as a button; [depth] as the rows'.
+ */
+@Composable
+fun AgentShowAllRow(count: Int, expanded: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, depth: Int = 1) {
+    val start = Step * depth + (Caret - markSize) / 2
+    val accent = PersonaTheme.palette.accent
+    Row(
+        modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)
+            .padding(start = start.coerceAtLeast(None), top = Tokens.Space.s, bottom = Tokens.Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+    ) {
+        Box(Modifier.width(markSize), contentAlignment = Alignment.Center) {
+            JIcon(if (expanded) persona.core.designsystem.icons.PersonaIcons.collapse else persona.core.designsystem.icons.PersonaIcons.expand,
+                null, size = Caret, tint = accent, decorative = true)
+        }
+        Text(if (expanded) stringResource(R.string.designsystem_show_fewer) else stringResource(R.string.designsystem_show_all, count),
+            style = PersonaTheme.type.caption, color = accent, maxLines = 1)
+    }
+}
+
 // ------------------------------------------------------------------ rows
 
 /**

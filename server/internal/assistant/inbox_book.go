@@ -27,14 +27,15 @@ type inboxBook struct {
 	filing      map[string]*inboxFiling // pending filing ownership, independent of an unrelated parent change
 	epoch       string                  // the hub's run and its last round applied (InboxRound.Epoch, Seq), under running
 	seq         uint64
-	triaging    sync.Mutex  // one triage pass at a time (inbox_triage.go)
-	handing     sync.Mutex  // one judge / agent pass at a time (inbox_agent.go)
-	handAgain   atomic.Bool // a pass is asked for: the goroutine holding handing runs it (handInbox)
-	passHook    func()      // tests: runs as each pass starts
-	translating sync.Mutex  // one translation pass at a time (inbox_translate.go)
-	replies     sync.Map    // item id -> *inboxReply: replies to one item, one at a time (inbox_triage.go)
-	handingOff  sync.Map    // item id -> *sync.Mutex: hand-offs of one item, one at a time (inbox_handoff.go)
-	telling     sync.Map    // item id -> *sync.Mutex: deliveries to one item's conversation, one at a time (deliverNotes)
+	triaging    sync.Mutex     // one triage pass at a time (inbox_triage.go)
+	handing     sync.Mutex     // one judge / agent pass at a time (inbox_agent.go)
+	handAgain   atomic.Bool    // a pass is asked for: the goroutine holding handing runs it (handInbox)
+	passHook    func()         // tests: runs as each pass starts
+	translating sync.Mutex     // one translation pass at a time (inbox_translate.go)
+	replies     sync.Map       // item id -> *inboxReply: replies to one item, one at a time (inbox_triage.go)
+	handingOff  sync.Map       // item id -> *sync.Mutex: hand-offs of one item, one at a time (inbox_handoff.go)
+	telling     sync.Map       // item id -> *sync.Mutex: deliveries to one item's conversation, one at a time (deliverNotes)
+	snapshots   inboxSnapshots // the lists answered with a cursor, for GET /api/v1/inbox?since (inbox_delta.go)
 	mutes       []InboxMute
 	mutesMu     sync.Mutex // one read-change-save of the kept mutes at a time
 	policies    []InboxPolicy
