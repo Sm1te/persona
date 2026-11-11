@@ -842,6 +842,7 @@ your permission" (section 5, "Notifications"); moving them to the card's words i
 - Text uses `Theme.Font` levels only. Shapes use `scaledFrame`.
 - Rows with name plus chips stack at accessibility sizes (`NameWithChips`). Use `firstFittingText` when several candidate labels exist.
 - Caps are allowed for glyphs in fixed-size buttons and for top bars that must fit a small iPhone. They must be named, and the control must keep a 44 pt hit area.
+- A bar of fixed items (the message long-press bar, `MessageActionBar.largestTypeSize`) caps whole items, icon and word, as the system's tab bars and toolbars do, and gives each item the Large Content Viewer (`accessibilityShowsLargeContentViewer`), so a long press shows its name large. Past the cap a word that still can't fit its item leaves the icon alone (rule 3 in section 1.2), never "…"; the spoken name stays (#5019).
 - Never shrink to hide truncation of body text. For button labels `minimumScaleFactor` is a last resort only; follow rule 3 in section 1.2 (shorten the copy, reconsider the control, stack the group at accessibility sizes).
 
 ### 6.3 Accessibility baseline (the contract every component meets)

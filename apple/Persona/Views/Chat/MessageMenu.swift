@@ -442,9 +442,14 @@ struct MessageActionBar: View {
     /// Only on this phone (`messageActionBar(delete:)`): Delete last, in the danger color.
     var delete: MessageBarDelete?
     var itemWidth: CGFloat = Self.item
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     static let height: CGFloat = 62
     static let item: CGFloat = 58
+    /// The largest text size an item grows with, as the system's tab bars and toolbars do: past it a word could not fit
+    /// its fixed item, so the item stays as at this size and a long press shows its name large (Large Content Viewer,
+    /// #5019). A word too long even here leaves its icon alone (DESIGN_SYSTEM.md 1.2 rule 3), never "…".
+    static let largestTypeSize: DynamicTypeSize = .xxLarge
     static func width(isUser: Bool, more: Bool = false) -> CGFloat { width(count: (isUser ? 5 : 4) + (more ? 1 : 0)) }
     static func width(count: Int) -> CGFloat { item * CGFloat(count) + 12 }
     /// Each action's width when the bar is `width` wide.
@@ -534,17 +539,37 @@ struct MessageActionBar: View {
         } label: { label(title, symbol, tint: tint) }
         .buttonStyle(.plain)
         .accessibilityLabel(title) // its word only, not the symbol's own name too
+        .accessibilityShowsLargeContentViewer { ThemedIcon(symbol); Text(title) }
     }
 
-    private func label(_ title: String, _ symbol: String, tint: Color?) -> some View {
-        VStack(spacing: Theme.Space.xs) {
-            // Symbols differ in height: a fixed box keeps every label on one line.
-            ThemedIcon(symbol).font(Theme.Font.heading).dynamicTypeSize(...DynamicTypeSize.xxLarge).scaledFrame(height: Theme.Size.iconS)
-            Text(title).font(Theme.Font.label).lineLimit(1).minimumScaleFactor(0.8) // Select Text on a narrow bar
+    @ViewBuilder private func label(_ title: String, _ symbol: String, tint: Color?) -> some View {
+        Group {
+            if typeSize > Self.largestTypeSize {
+                // Past the cap: the word when it fits its item whole, else the icon alone.
+                ViewThatFits(in: .horizontal) {
+                    stack(title, symbol, scales: false)
+                    stack(nil, symbol, scales: false)
+                }
+            } else {
+                stack(title, symbol, scales: true)
+            }
         }
+        .dynamicTypeSize(...Self.largestTypeSize)
         .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(HierarchicalShapeStyle.primary))
         .frame(width: itemWidth, height: Self.height)
         .contentShape(.rect)
+    }
+
+    /// An item's icon over its word (none: the icon alone, in the same place). `scales`: up to the cap a word a little too
+    /// long for a narrow bar shrinks to fit (Select Text); past it, one that does not fit is left out instead.
+    private func stack(_ title: String?, _ symbol: String, scales: Bool) -> some View {
+        VStack(spacing: Theme.Space.xs) {
+            // Symbols differ in height: a fixed box keeps every label on one line.
+            ThemedIcon(symbol).font(Theme.Font.heading).scaledFrame(height: Theme.Size.iconS)
+            Text(title ?? " ").font(Theme.Font.label).lineLimit(1).minimumScaleFactor(scales ? 0.8 : 1)
+                .opacity(title == nil ? 0 : 1)
+                .accessibilityHidden(title == nil)
+        }
     }
 }
 

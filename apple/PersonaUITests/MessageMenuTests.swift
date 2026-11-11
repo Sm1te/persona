@@ -7,14 +7,14 @@ final class MessageMenuTests: XCTestCase {
     private let answer = "PR #42 看完了"
     private let question = "看一下 PR #42"
 
-    @MainActor private func launch() throws -> XCUIApplication {
+    @MainActor private func launch(_ extra: [String] = []) throws -> XCUIApplication {
         guard let mock = ProcessInfo.processInfo.environment["PERSONA_MOCK_URL"] else {
             throw XCTSkip("needs scripts/mock/mock_hub.py (PERSONA_MOCK_URL)")
         }
         let url = mock.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? mock
         let app = XCUIApplication()
         app.launchArguments = ["-pairURL", "persona://pair?url=\(url)&token=mock", "-tab", "dev",
-                               "-openSession", "macbook/a1f3c2d4-0000-4000-8000-000000000006"]
+                               "-openSession", "macbook/a1f3c2d4-0000-4000-8000-000000000006"] + extra
         app.launchPinned()
         return app
     }
@@ -94,6 +94,51 @@ final class MessageMenuTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", answer)).firstMatch.waitForExistence(timeout: 10),
                       "the new conversation does not have the reply it was branched from")
         shot("fork-ios-new")
+    }
+
+    /// At the largest text the bar keeps its words whole (#5019): items stay as at `MessageActionBar.largestTypeSize`, a word
+    /// too long even there leaves its icon alone, and every item keeps its spoken name. Your own message's bar (five
+    /// actions) and a reply's, in Chinese, English and Japanese, light and dark; the default size beside it for comparison.
+    /// `TEST_RUNNER_PERSONA_SHOTS=<dir>` keeps `message-bar-<size>-<language>-<look>-<whose>.png`.
+    @MainActor func testBarAtTheLargestText() throws {
+        let names: [String: [String]] = ["zh-Hans": ["复制", "选择文本", "引用", "编辑"], "en": ["Copy", "Select Text", "Quote", "Edit"],
+                                         "ja": ["コピー", "テキストを選択", "引用", "編集"]]
+        let runs: [(String, String, String, Bool)] = [("zh-Hans", "zh_CN", "light", false), ("zh-Hans", "zh_CN", "dark", false)]
+            + ["zh-Hans", "en", "ja"].flatMap { language in
+                ["light", "dark"].map { (language, ["zh-Hans": "zh_CN", "en": "en_US", "ja": "ja_JP"][language]!, $0, true) }
+            }
+        for (language, locale, look, large) in runs {
+            let app = try launch(["-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-ui.scheme", look]
+                + (large ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] : []))
+            let label = "\(large ? "ax5" : "default")-\(language)-\(look)"
+            let want = names[language]!
+            for (whose, message) in [("own", question), ("reply", answer)] {
+                let copy = app.buttons[want[0]]
+                for _ in 0..<3 where !copy.exists {
+                    point(of: message, in: app).press(forDuration: 0.6)
+                    _ = copy.waitForExistence(timeout: 3)
+                }
+                XCTAssertTrue(copy.exists, "\(label) \(whose): the bar did not open:\n\(app.debugDescription)")
+                // Your own message adds Quote and Edit; every item there by its whole name, on the screen.
+                for name in whose == "own" ? want : Array(want.prefix(3)) {
+                    let item = app.buttons[name]
+                    XCTAssertTrue(item.exists && item.isHittable, "\(label) \(whose): no \(name):\n\(app.debugDescription)")
+                    XCTAssertTrue(app.frame.contains(item.frame), "\(label) \(whose): \(name) off the screen at \(item.frame)")
+                }
+                shot(named: "message-bar-\(label)-\(whose)")
+                // A tap on the list away from the bar closes it (Select Text, on the bar, would not).
+                let away = copy.frame.midY > app.frame.midY ? 0.15 : 0.6
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: away)).tap()
+                XCTAssertTrue(copy.waitForNonExistence(timeout: 3), "\(label) \(whose): the bar stayed")
+            }
+            app.terminate()
+        }
+    }
+
+    /// A screen named as the test chose its look (no suffix added).
+    @MainActor private func shot(named name: String) {
+        guard let dir = ProcessInfo.processInfo.environment["PERSONA_SHOTS"] else { return }
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
     }
 
     @MainActor private func shot(_ name: String) {
