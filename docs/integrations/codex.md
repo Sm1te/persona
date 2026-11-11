@@ -277,6 +277,11 @@ and answers with a **waiting row** for the pane (`node/codex_waiting.go`).
 - **Tests**: `node/codex_waiting_test.go`. It covers: the start skipping the update offer with `2` and never Enter; the row listed idle while herdr says working; the App's first message as one paste and the row becoming the thread;
   drafts, photos and dialogs refused with nothing typed; a model loading and MCP servers starting waited out; two rows in one directory;
   an app-server holding a pane's thread ignored; rule 4's ambiguities; the row known again after a restart and gone with Codex.
+  The clients: the web's unit tests (`web/src/lib/codex-waiting.test.ts`, `web/src/lib/new-agent.test.ts`,
+  `web/src/views/NewAgent.recents.test.tsx`) and `web/e2e/codex-first-message.mjs` against the fake hub with `MOCK_CODEX_WAITING=1`
+  (a start with no message, the waiting chat, its first message moving the page to the thread). iOS screenshots use the same
+  fake hub: `-tab dev -showNewChat YES -showNewAgentPrompt YES` for New Agent's hint (New Agent's default set to Codex),
+  `-tab dev -dev.harnessFilter codex -dev.grouping recent` for the row, `-openSession macbook/c0de0000-0000-4000-8000-000000000001` for its chat.
 
 ## Resuming from the phone
 

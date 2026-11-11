@@ -527,6 +527,11 @@ struct NewChatView: View {
                     attachments.upload([url], to: ref, model: model)
                 }
             }
+            // `-showNewAgentPrompt YES`: once this computer's launchers are in, First Message scrolled into view and
+            // focused, for screenshots of its hint (#4961).
+            .onChange(of: defaultsFor) { _, now in
+                if !now.isEmpty, UserDefaults.standard.bool(forKey: "showNewAgentPrompt") { promptRequests += 1 }
+            }
             #endif
             .interactiveDismissDisabled(starting)
             // A list makes only the rows on screen: First Message is scrolled into view before it can take the focus.
