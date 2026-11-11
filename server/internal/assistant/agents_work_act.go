@@ -23,6 +23,7 @@ func (s *Service) actOn(ctx context.Context, v *workView, machine string, c prot
 	w := &e.Work
 	now := time.Now()
 	k := [2]string{e.MachineID, e.SessionID}
+	s.workWould(k, "") // of the stop before this one
 	if w.Phase != proto.WorkBlocked || c.ReadOnlyReason != "" {
 		return // nothing to do, or nothing Persona may send it
 	}
@@ -51,6 +52,9 @@ func (s *Service) actOn(ctx context.Context, v *workView, machine string, c prot
 	case proto.WaitExternal, proto.WaitAgent:
 		if w.ResetsAt != nil {
 			if !actOnLimit(c, e, sw.AutoContinue, l, now) {
+				if sw.Enabled && !sw.AutoContinue && !c.TurnErrorResumes {
+					s.workWould(k, handAutoContinue) // only the switch kept it from being continued at the reset
+				}
 				return
 			}
 			break
@@ -65,6 +69,9 @@ func (s *Service) actOn(ctx context.Context, v *workView, machine string, c prot
 			return // no automatic external action, and no card for a step the agent did not ask about
 		}
 		if !sw.Wake {
+			if sw.Enabled {
+				s.workWould(k, handWake) // a named wait with no risky step: only the switch kept it from being woken
+			}
 			return
 		}
 		if e.Wakes >= maxWakes(cfg) {
@@ -85,6 +92,9 @@ func (s *Service) actOn(ctx context.Context, v *workView, machine string, c prot
 	}
 	// On the user: a card. Without the triage none: the session shows its error and the apps' Retry as before.
 	if w.On != proto.WaitUser || !sw.Enabled || !sw.Decide || v.isMuted(machine, c.SessionID) {
+		if w.On == proto.WaitUser && sw.Enabled && !sw.Decide && w.Link == nil && !v.isMuted(machine, c.SessionID) {
+			s.workWould(k, handDecide) // only the switch kept this stop from being a card
+		}
 		return
 	}
 	if len(w.Questions) == 0 {

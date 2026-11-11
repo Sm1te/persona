@@ -19,7 +19,7 @@ import (
 // it is turned on.
 //
 //   - Computed: every number is counted here from what is recorded anyway (the availability metrics' round events,
-//     the triage's resumed events, review_rework, ask_escalated and owner_decided in session_work_events; the
+//     the triage's resumed events and their `hand`, review_rework, ask_escalated and owner_decided in session_work_events; the
 //     decisions kept on to-dos; the plans; the supervision ledgers). No model writes or changes a number, and there
 //     is no table of its own.
 //   - Conservative: a count takes only what the mechanism certainly covers (setupCount says what, per mechanism), a
@@ -28,7 +28,8 @@ import (
 //   - Never acted on: nothing here writes any setting but setupKey; the owner turns a mechanism on themselves.
 //
 // There is no weekly routine: the block goes with the first briefing (a routine with facts on, briefing.go) that
-// reaches the owner in a week of the owner's time zone, Monday first.
+// reaches the owner in a week of the owner's time zone, Monday first. Reached: the run's turn ended normally, with its
+// `brief` item, which carries the block, in the conversation (briefReached), or its Lark card went out (briefAsked).
 const (
 	// setupWindow is "last week": the time before the run the counts are over.
 	setupWindow = 7 * 24 * time.Hour
@@ -69,10 +70,11 @@ var setupSettings = map[string]string{
 	setupSample: "assistant.review_sample_percent", setupReview: "agents.review.launcher",
 }
 
-// setupPages is the web app's settings page a mechanism is on (web/src/views/settings/nav.ts), for those that have
-// one; the others are named in their line (a chat's menu, the plan card, manager.json).
+// setupPages is the web app's settings page a mechanism is on, for those that have one: the assistant's own page
+// (web/src/views/settings/nav.ts, tab persona) holds Session triage, the standing authorizations and the remembered
+// kinds of task. The others are named in their line (a conversation's menu, asking Persona, the configuration file).
 var setupPages = map[string]string{
-	setupDecide: "/settings?tab=agents", setupAutoContinue: "/settings?tab=agents", setupWake: "/settings?tab=agents",
+	setupDecide: "/settings?tab=persona", setupAutoContinue: "/settings?tab=persona", setupWake: "/settings?tab=persona",
 	setupStanding: "/settings?tab=persona", setupTrust: "/settings?tab=persona",
 }
 
@@ -148,12 +150,12 @@ type setupEvidence struct {
 //   - leaders: the main conversation's rounds that a supervision message started (the round events of
 //     availability.go), and their time: a leader conversation supervises its direction's tasks in its own rounds.
 //   - delegate: question cards a supervisor passed up with a recommendation (ask_escalated) that the owner answered
-//     once, with exactly that recommendation.
-//   - triage_decide: stops the triage read as waiting on the owner for which no card was up, which went on only when
-//     the owner wrote to the agent (resumed, by user, on user, no card).
-//   - triage_auto_continue: stops on a usage limit the owner continued by hand (resumed, by user, limit).
-//   - triage_wake: stops waiting on something else (CI, a deploy, another agent) that went on only when the owner
-//     wrote to the agent (resumed, by user, on external or agent, no usage limit).
+//     once, with exactly that recommendation. Only a leader conversation's supervisor passes a question up
+//     (ask_route.go), so without leader conversations this is always 0.
+//   - triage_decide, triage_auto_continue, triage_wake: stops that only that switch, being off, kept the triage from
+//     going on with (actOn: a stop on the owner that would have been a card; a usage limit whose CLI does not go on by
+//     itself; a named wait with no risky next step), and that then went on by hand: with no message of this manager's
+//     before the turn, and not by the agent itself (a resumed event's hand, workStartedObserved).
 //   - standing_authorizations: the owner's go-aheads for merge, push or deploy-test (ruleAction) in a directory no
 //     grant covers, where they had given the same go-ahead there before within setupLookback and never said no to it.
 //   - task_trust: plans made in the window that the owner started, every startable kind of which (trustKey) they had
@@ -194,15 +196,12 @@ func setupCount(ev setupEvidence, since, now time.Time) map[string]setupNumber {
 				add(setupLeaders, num("seconds"))
 			}
 		case "resumed":
-			if _, told := e.Detail["limit"]; !told || str("by") != "user" || str("phase") != proto.WorkBlocked {
-				continue // told: a row from before limit and card were written does not say which stop it was
-			}
-			switch on := str("on"); {
-			case flag("limit"):
+			switch str("hand") { // a row without it does not say the stop was one a switch would have gone on with
+			case handAutoContinue:
 				add(setupAutoContinue, 0)
-			case on == proto.WaitUser && !flag("card"):
+			case handDecide:
 				add(setupDecide, 0)
-			case on == proto.WaitExternal || on == proto.WaitAgent:
+			case handWake:
 				add(setupWake, 0)
 			}
 		case reviewReworkEvent:
@@ -326,6 +325,7 @@ func setupCount(ev setupEvidence, since, now time.Time) map[string]setupNumber {
 // setupState is which mechanisms are on now.
 type setupState struct {
 	leaders, delegate, review bool
+	helloKnown                bool // the hub's hello could be read: delegate and review are as it says
 	triage                    TriageSwitches
 	triageKnown               bool // the triage's switches could be read
 	samplePercent             int
@@ -340,7 +340,7 @@ func (st setupState) suggests(id string, c setupNumber) bool {
 	case setupLeaders:
 		return !st.leaders && c.n >= setupLeaderMin
 	case setupDelegate:
-		return !st.delegate && c.n >= setupMin
+		return st.helloKnown && !st.delegate && c.n >= setupMin
 	case setupDecide:
 		return st.triageKnown && st.triage.Enabled && !st.triage.Decide && c.n >= setupMin
 	case setupAutoContinue:
@@ -350,7 +350,7 @@ func (st setupState) suggests(id string, c setupNumber) bool {
 	case setupSample:
 		return st.samplePercent >= 100 && c.n >= setupMin
 	case setupReview:
-		return !st.review && c.n >= setupMin
+		return st.helloKnown && !st.review && c.n >= setupMin
 	case setupStanding, setupTrust:
 		return c.n >= setupMin
 	}
@@ -358,9 +358,10 @@ func (st setupState) suggests(id string, c setupNumber) bool {
 }
 
 func (s *Service) setupStateNow(ctx context.Context) setupState {
-	h := s.hello(ctx)
-	st := setupState{leaders: len(s.settings(ctx).Leaders) > 0, delegate: h.Agents.Delegate.On(), review: h.Agents.Review.On(),
-		samplePercent: s.reviewSamplePercent(ctx)}
+	// Not s.hello: a hello that failed reads as everything off, and a mechanism that is on must not be named.
+	h, err := s.hub.Hello(ctx)
+	st := setupState{leaders: len(s.settings(ctx).Leaders) > 0, helloKnown: err == nil, delegate: h.Agents.Delegate.On(),
+		review: h.Agents.Review.On(), samplePercent: s.reviewSamplePercent(ctx)}
 	if sw, err := s.readTriageSwitches(ctx); err == nil {
 		st.triage, st.triageKnown = sw, true
 	}
@@ -461,7 +462,7 @@ func (s *Service) setupFor(ctx context.Context, now time.Time, loc *time.Locatio
 // is turned on.
 func setupWord(l i18n.Lang, web, id string, c setupNumber) setupSuggestion {
 	sg := setupSuggestion{ID: id, Setting: setupSettings[id], Count: c.n}
-	args := i18n.Args{"n": c.n, "setting": sg.Setting}
+	args := i18n.Args{"n": c.n}
 	if id == setupLeaders {
 		sg.Minutes = int(c.seconds/60 + 0.5)
 		args["minutes"] = sg.Minutes
@@ -473,8 +474,8 @@ func setupWord(l i18n.Lang, web, id string, c setupNumber) setupSuggestion {
 	return sg
 }
 
-// setupTold: the briefing whose facts carry block b reached the owner at at (its Lark card went out, or its run ended
-// and was pushed). The week is marked, so no later briefing of it carries a block, and each mechanism it named is
+// setupTold: the briefing whose facts carry block b reached the owner at at (its run's turn ended normally with the
+// `brief` item in its conversation, or its Lark card went out). The week is marked, so no later briefing of it carries a block, and each mechanism it named is
 // quiet for setupQuietFor. This is the only write the block ever makes.
 func (s *Service) setupTold(b *setupBlock, at time.Time) {
 	st := s.store()
@@ -491,7 +492,7 @@ func (s *Service) setupTold(b *setupBlock, at time.Time) {
 		return
 	}
 	if book.Week == b.Week {
-		return // told already: the card and the push both say so
+		return // told already: the run's end and the card both say so
 	}
 	kept := map[string]time.Time{}
 	for id, shown := range book.Shown {

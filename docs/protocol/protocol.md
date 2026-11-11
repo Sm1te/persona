@@ -3215,6 +3215,7 @@ in plan order (a task without `todo_id` did not start and has no link); no extra
 //         setup (#5085, `docs/assistant/assistant.md` ("Recommended setup")): which mechanism that is off would have removed how many (`count`) of the last 7 days' asks or
 //         background rounds (`minutes`: the time of those rounds, for leaders), with its cost and where it is turned on in `text`. Only on the first briefing of a week,
 //         and only when it names something; left out otherwise. Read-only: nothing is turned on, and no route answers it. An app that does not know it skips it.
+//         `link` is absolute and present only when the hub has a public address; an app links to its own settings page by `id` instead.
 //         stage_kind (#3380): also sent on to-dos; general tasks omit the web stage strip, code draws it. Missing or unknown keeps the legacy behavior.
 //         waiting_unknown: the cards waiting for an answer were not read yet (the hub had just started), so `waiting` is empty for want of knowing.
 //         machine_id / session_id (#2320): the chat a waiting card or a question that can wait came from, which the apps open; left out for a card from no chat, and by a hub from before

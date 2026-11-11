@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nwverse/persona/server/internal/db"
@@ -80,27 +81,21 @@ func TestSetupCountDelegateIsRecommendationsTheOwnerTook(t *testing.T) {
 	}
 }
 
-func TestSetupCountTriageReadsTheOwnersHandResumes(t *testing.T) {
-	resumed := func(daysAgo float64, by, on string, more map[string]any) db.WorkEvent {
-		detail := map[string]any{"by": by, "on": on, "phase": proto.WorkBlocked, "limit": false, "card": false}
-		for k, v := range more {
-			detail[k] = v
+func TestSetupCountTriageReadsTheHandResumesASwitchWouldHaveMade(t *testing.T) {
+	resumed := func(daysAgo float64, by, hand string) db.WorkEvent {
+		detail := map[string]any{"by": by, "on": proto.WaitExternal, "phase": proto.WorkBlocked}
+		if hand != "" {
+			detail["hand"] = hand
 		}
 		return setupEvent("resumed", daysAgo, detail)
 	}
 	got := setupCounted(setupEvidence{events: []db.WorkEvent{
-		resumed(1, "user", proto.WaitUser, nil),                               // waited on the owner, no card
-		resumed(1, "user", proto.WaitUser, map[string]any{"card": true}),      // a card was up: decide was on for it
-		resumed(1, "user", proto.WaitExternal, map[string]any{"limit": true}), // a usage limit
-		resumed(1, "user", proto.WaitExternal, map[string]any{"limit": true}),
-		resumed(1, "user", proto.WaitExternal, nil), // waited on CI
-		resumed(1, "user", proto.WaitAgent, nil),    // waited on another agent
-		resumed(1, "user", proto.WaitAgent, nil),
-		resumed(1, "hub", proto.WaitExternal, nil),   // the manager woke it
-		resumed(1, "user", proto.WaitTransient, nil), // transient_retry's, on by default
-		setupEvent("resumed", 1, map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkDone, "limit": false, "card": false}),
-		setupEvent("resumed", 1, map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkBlocked}), // from before limit and card
-		resumed(9, "user", proto.WaitExternal, nil), // before the window
+		resumed(1, "user", handDecide),
+		resumed(1, "user", handAutoContinue), resumed(1, "user", handAutoContinue),
+		resumed(1, "user", handWake), resumed(1, "user", handWake), resumed(1, "user", handWake),
+		resumed(1, "user", ""), // by "user", but nothing says a switch would have gone on with it: a /loop, a rework
+		resumed(1, "hub", ""),  // the triage went on with it
+		resumed(9, "user", handWake), // before the window
 	}})
 	if got[setupDecide].n != 1 || got[setupAutoContinue].n != 2 || got[setupWake].n != 3 {
 		t.Fatalf("triage: decide %+v auto_continue %+v wake %+v", got[setupDecide], got[setupAutoContinue], got[setupWake])
@@ -239,7 +234,7 @@ func TestSetupCountIndependentReviewIsReworksAfterTheJudgesDone(t *testing.T) {
 
 // A mechanism that is on, or whose count is under its threshold, is never named.
 func TestSetupSuggestsOnlyWhatIsOffAndCounted(t *testing.T) {
-	off := setupState{samplePercent: 100, triage: TriageSwitches{Enabled: true}, triageKnown: true}
+	off := setupState{samplePercent: 100, triage: TriageSwitches{Enabled: true}, triageKnown: true, helloKnown: true}
 	for _, id := range setupOrder {
 		enough := setupNumber{n: setupMin}
 		if id == setupLeaders {
@@ -252,7 +247,7 @@ func TestSetupSuggestsOnlyWhatIsOffAndCounted(t *testing.T) {
 			t.Errorf("%s: suggested under its threshold", id)
 		}
 	}
-	on := setupState{leaders: true, delegate: true, review: true, samplePercent: 20, triageKnown: true,
+	on := setupState{leaders: true, delegate: true, review: true, samplePercent: 20, triageKnown: true, helloKnown: true,
 		triage: TriageSwitches{Enabled: true, Decide: true, AutoContinue: true, Wake: true}}
 	many := setupNumber{n: 100}
 	for _, id := range []string{setupLeaders, setupDelegate, setupReview, setupSample, setupDecide, setupAutoContinue, setupWake} {
@@ -266,6 +261,12 @@ func TestSetupSuggestsOnlyWhatIsOffAndCounted(t *testing.T) {
 			if st.suggests(id, many) {
 				t.Errorf("%s: suggested with %+v", id, st)
 			}
+		}
+	}
+	// A hello that could not be read does not say delegate and the independent review are off.
+	for _, id := range []string{setupDelegate, setupReview} {
+		if (setupState{samplePercent: 100}).suggests(id, many) {
+			t.Errorf("%s: suggested without the hub's hello", id)
 		}
 	}
 	if off.suggests("tier_down", many) {
@@ -332,7 +333,7 @@ func TestSetupBlockOncePerWeekAndEachSuggestionOnceAMonth(t *testing.T) {
 	}
 
 	s.setupTold(b, monday)
-	s.setupTold(b, monday.Add(time.Minute)) // the card and the push both say so: one mark
+	s.setupTold(b, monday.Add(time.Minute)) // the run's end and the card both say so: one mark
 	book := setupBookOf(t, s)
 	if book.Week != setupWeek(monday, loc) || !book.Shown[setupDelegate].Equal(monday.UTC()) {
 		t.Fatalf("book after the briefing: %+v", book)
@@ -377,7 +378,7 @@ func TestSetupBlockLeavesOutWhatIsOn(t *testing.T) {
 		at := now.Add(-time.Duration(i+1) * time.Hour)
 		ev.events = append(ev.events,
 			db.WorkEvent{At: at, Kind: reviewReworkEvent, Detail: map[string]any{"todo": "t", "judged_done": true}},
-			db.WorkEvent{At: at, Kind: "resumed", Detail: map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkBlocked, "limit": false, "card": false}})
+			db.WorkEvent{At: at, Kind: "resumed", Detail: map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkBlocked, "hand": handWake}})
 	}
 	loc := s.location(ctx)
 
@@ -390,7 +391,7 @@ func TestSetupBlockLeavesOutWhatIsOn(t *testing.T) {
 		t.Fatalf("leaders: %+v", sg)
 	}
 
-	// With the triage on and wake off, the hand resumes name wake, with its settings page.
+	// With the triage on and wake off, the hand resumes name wake, with the page Session triage is on.
 	if err := s.putTriageSwitches(ctx, TriageSwitches{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +399,7 @@ func TestSetupBlockLeavesOutWhatIsOn(t *testing.T) {
 	if got := setupIDs(b); !slices.Equal(got, []string{setupDelegate, setupWake, setupLeaders, setupReview}) {
 		t.Fatalf("triage on: %v", got)
 	}
-	if sg := b.Suggestions[1]; sg.Setting != "agents.triage.wake" || sg.Link != testWeb+"/settings?tab=agents" {
+	if sg := b.Suggestions[1]; sg.Setting != "agents.triage.wake" || sg.Link != testWeb+"/settings?tab=persona" {
 		t.Fatalf("wake: %+v", sg)
 	}
 	if got := s.setupFor(ctx, now, loc, i18n.En, ""); got.Suggestions[1].Link != "" {
@@ -429,7 +430,7 @@ func TestSetupBlockSwitchesNothingOn(t *testing.T) {
 	}
 	for i := range 4 {
 		ev.events = append(ev.events, db.WorkEvent{At: now.Add(-time.Duration(i+1) * time.Hour), Kind: "resumed",
-			Detail: map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkBlocked, "limit": true, "card": false}})
+			Detail: map[string]any{"by": "user", "on": proto.WaitExternal, "phase": proto.WorkBlocked, "hand": handAutoContinue}})
 	}
 	store := s.store().(ruleStore)
 	snapshot := func() map[string]string {
@@ -473,35 +474,105 @@ func TestSetupBlockSwitchesNothingOn(t *testing.T) {
 	}
 }
 
-// The resumed row says what the block counts by: whether the stop was a usage limit and whether a card was up, and a
-// resume the owner made by hand reads "user".
-func TestResumedRowSaysLimitAndCard(t *testing.T) {
-	s, _ := workService(t)
-	resets := time.Now().Add(time.Hour)
-	turn := time.Now().Add(-10 * time.Minute)
-	s.putWork(context.Background(), db.SessionWork{MachineID: "box", SessionID: "s1", TurnAt: turn,
-		Work: proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, ResetsAt: &resets}})
-	s.putWork(context.Background(), db.SessionWork{MachineID: "box", SessionID: "s2", TurnAt: turn,
-		Work: proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Wait: "CI"}})
-	s.workStarted(context.Background(), "box", "s1", time.Now())
-	s.workStarted(context.Background(), "box", "s2", time.Now())
-	rows := map[string]map[string]any{}
-	var events []db.WorkEvent
-	for _, e := range testEvents(s) {
-		if e.Kind == "resumed" {
-			rows[e.SessionID] = e.Detail
+// The resumed row names the triage action a hand resume replaced (`hand`) only when that switch, being off, was all
+// that kept the triage from going on with the stop, and the turn was neither this manager's nor the agent's own doing.
+func TestResumedRowNamesTheSwitchAHandResumeReplaced(t *testing.T) {
+	ctx := context.Background()
+	s, f := workService(t)
+	s.work.switches = &TriageSwitches{Enabled: true} // decide, auto_continue and wake off
+	reset := time.Now().Add(time.Hour)
+	n := 0
+	// hand: the session stops as c, and what its resumed row says once it works again (before: what happens between).
+	hand := func(c proto.Session, before func(), now func(*proto.Session)) any {
+		t.Helper()
+		n++
+		c.UpdatedAt = turnEnd.Add(time.Duration(n) * time.Minute)
+		f.setSessions("box", c)
+		triage(t, s, c.SessionID)
+		if before != nil {
+			before()
 		}
-		e.At = setupAt(1)
-		events = append(events, e)
+		if now != nil {
+			now(&c)
+			f.setSessions("box", c)
+		}
+		s.workStarted(ctx, "box", c.SessionID, time.Now())
+		var last map[string]any
+		for _, e := range testEvents(s) {
+			if e.Kind == "resumed" && e.SessionID == c.SessionID {
+				last = e.Detail
+			}
+		}
+		if last == nil || last["by"] != "user" {
+			t.Fatalf("turn %d: resumed row %v", n, last)
+		}
+		return last["hand"]
 	}
-	if d := rows["s1"]; d["limit"] != true || d["card"] != false || d["by"] != "user" || d["on"] != proto.WaitExternal {
-		t.Fatalf("a usage limit's resume: %v", d)
+	if got := hand(limitTurn("s1", reset, false), nil, nil); got != handAutoContinue {
+		t.Fatalf("a usage limit continued by hand: %v", got)
 	}
-	if d := rows["s2"]; d["limit"] != false || d["card"] != false || d["by"] != "user" {
-		t.Fatalf("a wait's resume: %v", d)
+	// Its CLI goes on by itself at the reset: auto_continue would have left it alone.
+	if got := hand(limitTurn("s1", reset, true), nil, nil); got != nil {
+		t.Fatalf("a usage limit the CLI resumes itself: %v", got)
 	}
-	if got := setupCounted(setupEvidence{events: events}); got[setupAutoContinue].n != 1 || got[setupWake].n != 1 {
-		t.Fatalf("counted from the rows as recorded: %+v", got)
+	// A message of this manager's that is not the triage's (a supervisor's rework, a follow-up) started the turn.
+	told := func() {
+		_ = s.call(ctx, "box", DeviceSessionSend, map[string]any{"session_id": "s1", "text": "rework"}, nil)
+	}
+	if got := hand(limitTurn("s1", reset, false), told, nil); got != nil {
+		t.Fatalf("a turn the manager's own message started: %v", got)
+	}
+	s.work.mu.Lock()
+	delete(s.work.told, [2]string{"box", "s1"})
+	s.work.mu.Unlock()
+	// A background task's report woke it: the agent's own doing.
+	if got := hand(limitTurn("s1", reset, false), nil, func(c *proto.Session) { c.WokeByTask = true }); got != nil {
+		t.Fatalf("a turn a background task started: %v", got)
+	}
+	// With auto_continue on the triage goes on with it itself: nothing for a hand to replace.
+	s.work.switches = &TriageSwitches{Enabled: true, AutoContinue: true}
+	if got := hand(limitTurn("s1", reset, false), nil, nil); got != nil {
+		t.Fatalf("auto_continue on: %v", got)
+	}
+}
+
+// actOn notes the action a switch alone kept it from: a card for a stop on the owner (decide), a wake for a named
+// wait with no risky next step (wake); never for what the switch would not have acted on either.
+func TestTriageNotesWhatAnOffSwitchWouldHaveDone(t *testing.T) {
+	ctx := context.Background()
+	s, f := workService(t)
+	c := stopped("s1", "waiting")
+	f.setSessions("box", c)
+	k := [2]string{"box", "s1"}
+	would := func(sw TriageSwitches, w proto.WorkState) string {
+		t.Helper()
+		s.work.switches = &sw
+		e := db.SessionWork{MachineID: "box", SessionID: "s1", Work: w}
+		s.actOn(ctx, s.newWorkView(ctx), "box", c, &e)
+		s.work.mu.Lock()
+		defer s.work.mu.Unlock()
+		return s.work.would[k]
+	}
+	on := TriageSwitches{Enabled: true}
+	onUser := proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitUser, Line: "Which database?"}
+	ci := proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Wait: "CI", Then: "read the result"}
+	for name, x := range map[string]struct {
+		sw   TriageSwitches
+		w    proto.WorkState
+		want string
+	}{
+		"a stop on the owner, decide off":  {on, onUser, handDecide},
+		"a stop on the owner, decide on":   {TriageSwitches{Enabled: true, Decide: true}, onUser, ""},
+		"a stop on the owner, triage off":  {TriageSwitches{}, onUser, ""},
+		"a named wait, wake off":           {on, ci, handWake},
+		"a named wait, wake on":            {TriageSwitches{Enabled: true, Wake: true}, ci, ""},
+		"a wait that wakes itself (/loop)": {on, proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal}, ""},
+		"a wait whose next step is risky":  {on, proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Wait: "CI", Then: "git push --force"}, ""},
+		"a turn that is done":              {on, proto.WorkState{Phase: proto.WorkDone}, ""},
+	} {
+		if got := would(x.sw, x.w); got != x.want {
+			t.Errorf("%s: %q, want %q", name, got, x.want)
+		}
 	}
 }
 
@@ -519,8 +590,14 @@ func TestSetupLinesAreLocalized(t *testing.T) {
 				t.Errorf("%s: no setting", id)
 			}
 			sg := setupWord(l, testWeb, id, setupNumber{n: 37, seconds: 41 * 60})
-			if !strings.Contains(sg.Text, "37") || !strings.Contains(sg.Text, setupSettings[id]) || strings.Contains(sg.Text, "{") {
+			if !strings.Contains(sg.Text, "37") || strings.Contains(sg.Text, "{") {
 				t.Errorf("%s %s: %q", l, id, sg.Text)
+			}
+			// A raw key is said only where there is no switch to name (the two set in the configuration file), with what
+			// to write there; the file's own name and the word manager are not user-facing text.
+			inFile := id == setupDelegate || id == setupReview
+			if strings.Contains(sg.Text, setupSettings[id]) != inFile || strings.Contains(strings.ToLower(sg.Text), "manager") {
+				t.Errorf("%s %s: raw setting names in %q", l, id, sg.Text)
 			}
 			if id == setupLeaders && !strings.Contains(sg.Text, "41") {
 				t.Errorf("%s leaders: no minutes in %q", l, sg.Text)
@@ -553,7 +630,7 @@ func TestSetupBlockIsOnTheCardTheItemAndTheFacts(t *testing.T) {
 		!strings.Contains(fallback, f.Setup.Suggestions[1].Text) || !strings.Contains(fallback, i18n.T(f.l, "assistant-setup_suggest.intro")) {
 		t.Fatalf("card without the block: %s\n%s", raw, fallback)
 	}
-	if !strings.Contains(raw, testWeb+"/settings?tab=agents") {
+	if !strings.Contains(raw, testWeb+"/settings?tab=persona") {
 		t.Fatalf("card without the settings link: %s", raw)
 	}
 	body := f.body(e.s, "Morning")
@@ -573,8 +650,10 @@ func TestSetupBlockIsOnTheCardTheItemAndTheFacts(t *testing.T) {
 	}
 }
 
-// The run's finished push is when its briefing reached the owner: the week and the mechanisms are marked then.
-func TestSetupBlockIsMarkedWhenTheBriefingReachesTheOwner(t *testing.T) {
+// The block is told when the run's turn ends normally, whether or not a finished push follows (the owner has the
+// conversation open, it is muted, the task pushes only what its runs send); the push itself marks nothing, and a run
+// that failed leaves the block for its retry or the next briefing.
+func TestSetupBlockIsMarkedWhenTheRunEndsNotWhenItIsPushed(t *testing.T) {
 	ctx := context.Background()
 	s, ev := newRuleService(t)
 	now := time.Now()
@@ -584,17 +663,70 @@ func TestSetupBlockIsMarkedWhenTheBriefingReachesTheOwner(t *testing.T) {
 		t.Fatalf("block: %+v", b)
 	}
 	s.brief.bySession = map[string]*briefRun{"sess1": {facts: &briefFacts{At: now, l: i18n.En, loc: s.location(ctx), Setup: b}}}
-	if s.briefPush("sess1", i18n.En, false) != "" { // a message the owner sent into the conversation later: no briefing
-		t.Fatal("a turn that is not the run's was pushed as a briefing")
-	}
-	if book := setupBookOf(t, s); book.Week != "" {
-		t.Fatalf("marked by a turn that is not the run's: %+v", book)
-	}
 	if s.briefPush("sess1", i18n.En, true) == "" {
 		t.Fatal("no push text")
 	}
+	if book := setupBookOf(t, s); book.Week != "" {
+		t.Fatalf("marked by the push: %+v", book)
+	}
+	s.briefReached("other") // a conversation on no run
+	if book := setupBookOf(t, s); book.Week != "" {
+		t.Fatalf("marked by another conversation's turn: %+v", book)
+	}
+	s.briefReached("sess1")
 	if book := setupBookOf(t, s); book.Week != b.Week || book.Shown[setupDelegate].IsZero() {
-		t.Fatalf("not marked when the briefing reached the owner: %+v", book)
+		t.Fatalf("not marked when the run ended: %+v", book)
+	}
+	if again := s.setupFor(ctx, now.Add(time.Hour), s.location(ctx), i18n.En, testWeb); again != nil {
+		t.Fatalf("the next briefing of the week carries a block: %+v", again)
+	}
+}
+
+// The watcher of a scheduled run tells the block when the run's turn ends normally with no push at all, and not when
+// the turn ends in an error.
+func TestScheduledRunEndTellsTheSetupBlock(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			f := newFakeHub().withMachine()
+			st := ruleStore{&memStore{}}
+			s := New(Options{Hub: f, Logf: testLogf(t), Store: func() Store { return st }})
+			s.turnPoll, s.runRetry = time.Second, time.Hour
+			task := Task{ID: "morning", Title: "Morning", Prompt: "Brief me", Repeat: repeatDaily, Time: "08:00", Enabled: true,
+				MachineID: "server", Facts: true}
+			setTasks(s, task)
+			block := &setupBlock{Week: "2026-W46", Suggestions: []setupSuggestion{{ID: setupDelegate, Count: 4, Text: "line"}}}
+			s.brief.bySession = map[string]*briefRun{"s1": {facts: &briefFacts{At: time.Now(), l: i18n.En, loc: time.UTC, Setup: block}}}
+			f.items = []proto.Item{{ID: "ask", Role: "user", Kind: proto.KindText, Text: "⏰ Brief me"}}
+			f.setSessions("server", proto.Session{SessionID: "s1", Status: proto.StatusWorking, State: proto.StateWorking, Assistant: true})
+			run := ScheduleRun{RefID: task.ID, Status: runOK, SessionID: "s1", Retried: true}
+			run.ID = s.recordRun(run)
+			done := make(chan struct{})
+			go func() {
+				s.watchScheduledRun(run, task, Device{ID: "server", Name: "Example computer"})
+				close(done)
+			}()
+			synctest.Wait()
+			<-time.After(2 * s.turnPoll)
+			ended := proto.Session{SessionID: "s1", Status: proto.StatusDone, State: proto.StateIdle, Assistant: true, UpdatedAt: time.Now()}
+			f.items = append(f.items, proto.Item{ID: "answer", Role: "assistant", Kind: proto.KindText, Text: "Good morning"})
+			if failed {
+				ended.TurnError = "API Error: 503 no eligible upstream"
+			}
+			f.setSessions("server", ended)
+			select {
+			case <-done:
+			case <-time.After(20 * s.turnPoll):
+				t.Fatal("the watch did not end")
+			}
+			synctest.Wait()
+			var book setupBook
+			if _, err := s.store().Setting(context.Background(), setupKey, &book); err != nil {
+				t.Fatal(err)
+			}
+			if told := book.Week == block.Week; told == failed {
+				t.Fatalf("failed %v: book %+v", failed, book)
+			}
+		})
 	}
 }
 

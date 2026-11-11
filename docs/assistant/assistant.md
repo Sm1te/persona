@@ -990,15 +990,26 @@ rounds, what it costs in one sentence, and where it is turned on. Code: `server/
   told not to turn any of them on and not to call the settings tool for it; the owner does it where the line says.
 - **Which briefing.** There is no weekly routine, so the block goes with the first briefing (a routine with `facts`
   on, `docs/extensions/bots.md` ("Morning and evening briefings")) that reaches the owner in a week, Monday first,
-  in the owner's time zone. "Reaches" is the run's Lark card going out or its run ending with its finished push; a
-  run that failed marks nothing, so its retry, or the next briefing, carries the block. Every other briefing of the
-  week has none, also when the first one had nothing to name. Without a briefing routine with `facts` on there is no
-  block.
-- **Where it shows.** A section of the Lark briefing card after "In progress", each line with a link to its settings
-  page in the web app when it has one and hub.json has a `public_url`; the `setup` list of the run's `brief` item
-  (`docs/protocol/protocol.md` ("Tasks and the chat feed")); and the model's facts, which it copies at the end of its
-  answer when no Lark card goes out. No app draws `setup` yet: without the Lark card the owner reads the lines in the
-  model's answer.
+  in the owner's time zone. "Reaches" is the run's turn ending normally, with its `brief` item (which carries the
+  block) in the conversation, or its Lark card going out, whichever comes first. It does not depend on the finished
+  push: that push is dropped when the owner has the conversation open, when it is muted, for a task that pushes only
+  what its runs send and for a health task, and the block was shown all the same. A run that failed marks nothing, so
+  its retry, or the next briefing, carries the block. Every other briefing of the week has none, also when the first
+  one had nothing to name. Without a briefing routine with `facts` on there is no block.
+- **Where it shows.** Two places draw the computed lines themselves: a section of the Lark briefing card after "In
+  progress", each line with a link to its settings page in the web app when it has one and hub.json has a
+  `public_url`; and the web app's briefing card, from the `setup` list of the run's `brief` item
+  (`docs/protocol/protocol.md` ("Tasks and the chat feed")), with an **Open settings** button on the lines that have
+  a page (`docs/web/web.md`). The model is also given the lines and copies them at the end of its answer when no
+  Lark card goes out, as it does the briefing's other rows. The iOS and Android apps do not draw `setup` yet: an
+  owner who uses only those, without the Lark card, reads the lines in the model's answer, which is the model's
+  copy and not checked against the computed lines.
+- **Where a mechanism is turned on.** Session triage's three switches, the standing authorizations and the
+  remembered kinds of task are on the assistant's own settings page in the web app (`/settings?tab=persona`; iOS
+  Settings › General, Android Settings › AI); the lines name the switch by the label it has there. Leader
+  conversations: **Pin** in a conversation's menu. The spot-check share: asking Persona, confirmed on a card. The
+  assistant answering agents' questions and the independent review have no switch in any app: their lines say so and
+  name the key and value for the assistant's configuration file (`docs/operations/config.md`).
 - **Once a month.** A mechanism the block named is not named again for 30 days, whatever its count.
 - **Not named**: a mechanism that is on, and a count under 3 (10 rounds for leader conversations).
 
@@ -1007,12 +1018,12 @@ the work events are kept.
 
 | Mechanism (`id`, setting) | The number | Named when |
 | --- | --- | --- |
-| Assistant answers agents' questions (`delegate`, `agents.delegate`) | Question cards a supervisor passed up to the owner with a recommendation (`ask_escalated`) that the owner answered once last week, with exactly that recommendation | `agents.delegate` is off |
+| Assistant answers agents' questions (`delegate`, `agents.delegate`) | Question cards a supervisor passed up to the owner with a recommendation (`ask_escalated`) that the owner answered once last week, with exactly that recommendation. Only a leader conversation's supervisor passes a question up, so without leader conversations this is always 0 | `agents.delegate` is off |
 | Standing authorizations (`standing_authorizations`, `assistant.standing_authorizations`) | The owner's go-aheads last week for merge, push or deploy-test (read as "A rule after the same answer three times" reads them) in a directory no grant covers, where they had given the same go-ahead before and never said no to it | Always; a covered directory is not counted |
 | Start directly (`task_trust`, `tasks.trust`) | Plans made last week that the owner started, every file-changing kind of which (same computer and directory) they had started before, never dismissed, and `tasks.trust` does not hold | Always; a trusted kind is not counted |
-| Triage: cards for decisions (`triage_decide`, `agents.triage.decide`) | Stops the triage read as waiting on the owner with no card up, which went on only after the owner wrote to the agent (`resumed` by `user`, on `user`, no `card`) | The triage is on and `decide` is off |
-| Triage: continue automatically (`triage_auto_continue`, `agents.triage.auto_continue`) | Stops on a usage limit that the owner continued by hand (`resumed` by `user` with `limit`) | The triage is on and `auto_continue` is off |
-| Triage: wake waiting agents (`triage_wake`, `agents.triage.wake`) | Stops waiting on something else (CI, a deploy, another agent) that went on only after the owner wrote to the agent (`resumed` by `user`, on `external` or `agent`, no `limit`) | The triage is on and `wake` is off |
+| Triage: card for decisions (`triage_decide`, `agents.triage.decide`) | Stops waiting on the owner that only `decide` being off kept from being a card (not muted, no authorization link), and that went on by hand (`resumed` with `hand` `decide`) | The triage is on and `decide` is off |
+| Triage: continue after errors (`triage_auto_continue`, `agents.triage.auto_continue`) | Stops on a usage limit whose CLI does not go on by itself, which only `auto_continue` being off kept from being continued at the reset, and that went on by hand (`resumed` with `hand` `auto_continue`) | The triage is on and `auto_continue` is off |
+| Triage: wake on schedule (`triage_wake`, `agents.triage.wake`) | Stops waiting on something named (CI, a deploy, another agent) with no risky next step, which only `wake` being off kept from being woken, and that went on by hand (`resumed` with `hand` `wake`) | The triage is on and `wake` is off |
 | Leader conversations (`leaders`, `assistant.leaders`) | The main conversation's rounds last week that a supervision message started (the `round` rows of "Availability metrics" above), and their minutes | No leader conversation exists |
 | Spot-check reviews (`review_sample`, `assistant.review_sample_percent`) | Supervised tasks whose first and only review, last week, was the supervisor's own `accepted` with every `done_when` criterion met with evidence, no `user_check`, the work live, and never reopened | The share is 100 |
 | Independent review (`independent_review`, `agents.review.launcher`) | Reworks a supervisor sent last week after the done judge had called the work done (`review_rework` with `judged_done`) | No reviewer launcher is set |
@@ -1029,8 +1040,19 @@ What the numbers do and do not say:
   are counted only while it is on. A stop on a transient model error is not counted either: `transient_retry`
   continues those by default (`docs/assistant/agent-work.md` ("Switches")), so the proposal's example for
   `auto_continue` became the usage-limit count.
-- **`limit` and `card`** on `resumed` rows are written from this version on; a hand resume recorded before it does
-  not say which kind of stop it was and is not counted.
+- **"By hand" is what Persona did not do.** The triage notes, when it leaves a stop alone, the one action that its
+  switch being off kept it from (the same conditions the switch itself checks, so a `/loop`, a background task, a
+  wait whose next step is risky and a usage limit the CLI resumes itself are never noted). When that session works
+  again the `resumed` row carries the action as `hand` only if no message of this manager's went to it in the two
+  minutes before (the triage's own, a supervisor's rework, a task's follow-up, the assistant's session tool) and the
+  node does not say the agent woke itself (a background task's report, a `/loop`). What is left is a message from
+  outside Persona: the owner's, in an app or typed into the agent's terminal. The manager cannot tell the two apart
+  from anything else typed there, which is why the lines say "by hand" and not "you wrote".
+- **The triage's notes are not kept over a restart of the manager.** A stop triaged before a restart and resumed
+  after it is not counted. Rows from before this version carry no `hand` and are not counted either.
+- **A hello that fails names nothing it cannot read.** Whether the delegate and the independent review are on comes
+  from the hub's hello; when it cannot be read neither is named, as the triage's three are not when its switches
+  cannot be read.
 - **A lower tier for supervision is not suggested.** The proposal ties it to K1's numbers (reviews and tokens per
   supervisor model), which are not recorded yet; the block leaves it out until they are.
 

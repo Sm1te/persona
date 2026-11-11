@@ -1968,6 +1968,9 @@ func (s *Service) watchScheduledRun(run ScheduleRun, t Task, m Device) {
 		}
 	}
 	if text == "" {
+		if t.Facts {
+			s.briefReached(run.SessionID) // the briefing is in its conversation, whether or not a push follows
+		}
 		return
 	}
 	full := text

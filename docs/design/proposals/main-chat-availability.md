@@ -178,9 +178,9 @@ As built (R3, #5085; `docs/assistant/assistant.md` "Recommended setup" is author
 there is no weekly briefing, so the block goes with the first briefing with `facts` on that reaches the owner in a
 week. The triage's own switch is never suggested (nothing is recorded about a stopped turn while it is off) and its
 three actions are counted only while it is on; a transient error is continued by `transient_retry` by default, so
-`auto_continue` counts usage-limit stops the owner continued by hand. The tier-down suggestion of section 9c is left
-out until K1's numbers exist. The apps do not draw the block yet: it is on the Lark card, in the `brief` item's
-`setup` and in the model's facts.
+`auto_continue` counts usage-limit stops continued by hand. The tier-down suggestion of section 9c is left out until
+K1's numbers exist. The block is drawn on the Lark card and on the web app's briefing card (the `brief` item's
+`setup`) and given to the model as facts; the iOS and Android apps do not draw it yet.
 
 ## 5. Measurement
 

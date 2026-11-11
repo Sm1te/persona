@@ -34,5 +34,8 @@
   "got_it": "Got it",
   "recommend": "Recommended: {option}",
   "noted": "Noted",
-  "taken": "Recommendation taken"
+  "taken": "Recommendation taken",
+  "setup_head": "Recommended setup",
+  "setup_intro": "From the last 7 days of Persona's own records. Nothing was changed: each of these stays off until you turn it on.",
+  "setup_open": "Open settings"
 }

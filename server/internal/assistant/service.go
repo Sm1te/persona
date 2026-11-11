@@ -346,6 +346,11 @@ func (s *Service) call(ctx context.Context, device, method string, params, out a
 			}
 		}
 	}
+	if p, ok := params.(map[string]any); ok && method == DeviceSessionSend {
+		if id, _ := p["session_id"].(string); id != "" {
+			s.workTold(device, id) // the turn it starts is this manager's doing, not the owner's hand (setup_suggest.go)
+		}
+	}
 	if p, ok := params.(map[string]any); ok && method == DeviceAssistantSend {
 		// The node reads a missing is_main as false, and is_main is part of what a process runs: a relay into the main
 		// conversation (deliverRelay) without it started that conversation, or restarted it when idle, on the ordinary

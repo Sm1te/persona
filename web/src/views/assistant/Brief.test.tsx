@@ -261,4 +261,26 @@ describe("a brief item", () => {
     draw(item(body({ accept: [{ id: "todo_v3", title: "没有轮次", waited_s: 60 }] })));
     expect([...host.querySelectorAll("button")].find((b) => b.textContent === "通过")?.disabled).toBe(true);
   });
+
+  it("draws the week's recommended setup as the hub worded it, and only opens settings", () => {
+    draw(item(body({ setup: [
+      { id: "triage_wake", setting: "agents.triage.wake", count: 3, text: "Session triage, \"Wake on schedule\": 3 times …" },
+      { id: "leaders", setting: "assistant.leaders", count: 12, minutes: 31, text: "Leader conversations: 12 of the main chat's rounds (31 min) …" },
+    ] })));
+    const setup = rows("setup");
+    expect(setup.map((r) => r.querySelector("div")?.textContent)).toEqual([
+      "Session triage, \"Wake on schedule\": 3 times …",
+      "Leader conversations: 12 of the main chat's rounds (31 min) …",
+    ]);
+    // Only a mechanism with a settings page in this app gets a button, and the button calls nothing on the hub.
+    expect(setup.map((r) => r.querySelectorAll("button").length)).toEqual([1, 0]);
+    act(() => setup[0].querySelector("button")!.click());
+    expect(api).not.toHaveBeenCalled();
+    expect(location.search).toBe("?tab=persona");
+  });
+
+  it("has no setup section on a briefing without the block", () => {
+    draw(item(body()));
+    expect(rows("setup")).toEqual([]);
+  });
 });

@@ -6,9 +6,10 @@ import { useRef, useState } from "react";
 import { errorText } from "../../lib/api";
 import { putTodo, refreshTodos } from "../../lib/store";
 import { updateTodo } from "../../lib/todos";
-import { acceptBrief, briefBody, failedKey, handledLater, type BriefBody, type BriefRow, type FeedItem } from "../../lib/feed";
+import { acceptBrief, briefBody, briefSetupPage, failedKey, handledLater, type BriefBody, type BriefRow, type FeedItem } from "../../lib/feed";
 import { shortDuration } from "../../lib/format";
 import { openPanel } from "../../lib/panel";
+import { navigate } from "../../lib/router";
 import { formatDate, t } from "../../i18n";
 import { Button, cx, toast } from "../../ui/atoms";
 import { Icon, type IconName } from "../../ui/icons";
@@ -269,6 +270,22 @@ export function BriefCard({ item }: { item: FeedItem }) {
             </div>
           ))}
           <More n={body.progress_total - body.progress.length} />
+        </Section>
+      )}
+      {/* The week's recommended setup (#5085): the hub's own counts and words, drawn as they came. Opening the settings
+          page is all a row does: nothing is turned on from here. */}
+      {body.setup.length > 0 && (
+        <Section icon="spark" tint="bg-field text-ink-2" title={t("assistant-brief.setup_head")}>
+          <div className="py-1 text-[12px] text-ink-2">{t("assistant-brief.setup_intro")}</div>
+          {body.setup.map((x) => {
+            const page = briefSetupPage(x.id);
+            return (
+              <div key={x.id} className="flex items-center gap-3 py-1.5" data-brief-row="setup">
+                <div className="min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere]">{x.text}</div>
+                {page && <Button onClick={() => navigate(page)}>{t("assistant-brief.setup_open")}</Button>}
+              </div>
+            );
+          })}
         </Section>
       )}
     </div>

@@ -205,7 +205,7 @@ func (s *Service) briefStart(ctx context.Context, t Task, now time.Time) string 
 	// What the briefs say since the last briefing, told once: only a real run moves the mark, not a look at the facts.
 	run.facts.Briefs, run.facts.BriefsDone = s.briefDigest(ctx, now, s.briefDigestSince(ctx, now), run.facts.loc)
 	s.briefDigestTold(ctx, now)
-	// The week's block, on its first briefing; it is marked told when the briefing reaches the owner (setupTold).
+	// The week's block, on its first briefing; it is marked told when the run ends normally (briefReached).
 	run.facts.Setup = s.setupFor(ctx, now, run.facts.loc, run.facts.l, run.facts.web)
 	b := &s.brief
 	b.mu.Lock()
@@ -416,6 +416,15 @@ func (s *Service) briefPush(session string, l i18n.Lang, report bool) string {
 	run.pushed = true
 	b.mu.Unlock()
 	s.briefListed(run.facts)
-	s.setupTold(run.facts.Setup, run.facts.At) // the run's `brief` item carried the week's block
 	return run.facts.countsIn(l)
+}
+
+// briefReached: the turn of the routine run that conversation session is on ended normally (watchScheduledRun). Its
+// `brief` item, written when the run was sent, is in the conversation with the week's setup block, and the model was
+// given the block's lines: the block is told (setup_suggest.go). Not the finished push's to say: that push is dropped
+// for a conversation the owner has open, a muted one, a task that pushes only what its runs send, a health task.
+func (s *Service) briefReached(session string) {
+	if run := s.briefOf(session); run != nil {
+		s.setupTold(run.facts.Setup, run.facts.At)
+	}
 }
