@@ -91,6 +91,20 @@ describe("正文卡片", () => {
     expect(html).not.toMatch(/<iframe|<script|onclick=/i);
   });
 
+  it("a card with html runs it where the hub has the bridge and the card is kept: no fallback, the card's body instead", () => {
+    applyBlock("c1", "m-html/0");
+    Object.assign(getState(), { features: [VIEWS_FEATURE, "assistant_html_bridge"] });
+    const text = fence(example("html"));
+    const html = draw(text, { item: "m-html" });
+    expect(html).not.toContain('data-assistant-card="html-fallback"');
+    expect(html).toContain('data-assistant-card="persona-view"');
+    // without the bridge, or outside an assistant conversation (an agent's chat: no card to keep), its words as before
+    Object.assign(getState(), { features: [VIEWS_FEATURE] });
+    expect(draw(text, { item: "m-html" })).toContain('data-assistant-card="html-fallback"');
+    Object.assign(getState(), { features: [VIEWS_FEATURE, "assistant_html_bridge"] });
+    expect(draw(text, { conversation: "", item: "m-html" })).toContain('data-assistant-card="html-fallback"');
+  });
+
   it("a card with a component the web does not draw shows its fallback, not an empty or partial card", () => {
     const future = { title: "T", fallback: "未来组件的文字", sections: [{ items: [{ type: "metric", label: "a", value: "1" }, { type: "timeline" }] }] };
     const html = draw(fence(future));

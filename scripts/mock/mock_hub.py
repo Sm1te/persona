@@ -6000,6 +6000,13 @@ if MOCK_TASKS:
     # (#4253, kind notice, drawn by the clients since #4305), last in the conversation.
     if os.environ.get("MOCK_TASKS_NOTICE") == "1":
         TASK_FEED[ASK1].append(_feed("feed_notice", 0.5, "notice", None, {"text": "电脑和模型接好了，定时任务恢复运行，这次是「早报」"}))
+    # MOCK_TASKS_ADOPTED=1 (#5096): the main chat took over the /orders agent the user opened by hand (agent_supervise): a
+    # standalone task card whose body says the agent was running already, the web's Already active hand-off card.
+    if os.environ.get("MOCK_TASKS_ADOPTED") == "1":
+        _adopted = _task_todo("todo_task_adopted", "排查 /orders 接口变慢", "", "server", ORDERS, "/home/me/code/shop-api", 4, "")
+        TODOS_INIT.append(_adopted)
+        TODOS.append(copy.deepcopy(_adopted))
+        TASK_FEED[ASK1].append(_feed("feed_adopted", 4, "task", "todo_task_adopted", {"wake": "active"}))
     # MOCK_TASKS_MESSAGE=filed / sent: the message card's inbox item was handled elsewhere (filed_at, #4797), or its reply
     # went out from the card (sent_at): the apps draw it handled / sent, with no Send.
     _msg = os.environ.get("MOCK_TASKS_MESSAGE", "")

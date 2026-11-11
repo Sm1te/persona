@@ -457,7 +457,9 @@ Kimi, DeepSeek V4, Qwen3, MiniMax, Seed and MiMo models cindy runs on Claude Cod
 thinking levels (low, medium, high, xhigh, max) and default level, as the registry states them, reformatted to a flat
 list. The provider settings (the add-a-provider steps, the connection test and the model list it fetches) and the web
 chat's subagent and workflow cards (`web/src/views/chat/TaskCard.tsx`, after cindy's `AgentTaskCard`: layout, states and
-wording) follow cindy's design. No code is copied.
+wording) and the main chat's hand-off cards with the way-back strip on an Agent's page (`web/src/views/assistant/Handoff.tsx`,
+`web/src/views/chat/HandoffBack.tsx`, after cindy's `SessionHandoffCard` and its return pill: layout, states and wording)
+follow cindy's design. No code is copied.
 
 https://github.com/makecindy/cindy
 

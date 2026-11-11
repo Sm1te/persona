@@ -3,19 +3,18 @@
 // A plain `iframe sandbox="allow-scripts"` with a CSP is not a network-denying sandbox (the frame's own navigation,
 // meta refresh and the like are not all stopped by default-src), and a ready timeout cannot stop an endless loop on
 // the page's thread. So the web runs a card's code in QuickJS inside a worker it can terminate, and draws what the
-// code made into a frame that runs no script (lib/html-runtime/, #4215). Until that runtime has passed the network /
-// navigation / loop cases in Chromium and WebKit, WEB_HTML_RUNTIME_VERIFIED stays false and every html card shows its
-// plain-text fallback.
+// code made, checked against an allowlist, into a frame of an opaque origin that runs only its own script
+// (lib/html-runtime/, #4215).
 //
 // What is here is what a card needs to decide (whether to run, whether a view has html), and so is on the first screen.
 // The bridge's rules (which messages count, how often to ask, the request) are lib/html-bridge.ts, loaded with the card.
 
 /**
- * Whether the web's html runtime passed the security cases (web/e2e/html-runtime-security.mjs on Chromium and WebKit).
- * False until then: nothing starts it, whatever the hub's assistant.html_views says. Dev pages turn it on for
- * themselves (ui/AssistantCard.tsx HtmlRuntime).
+ * Whether the web's html runtime passed the security cases: web/e2e/html-runtime-security.mjs in Chromium and WebKit
+ * (#4215, the runs attached to the change that turned this on). A card still runs only where the hub allows it
+ * (assistant_html_bridge: persona_view and html_views on) and has a key.
  */
-export const WEB_HTML_RUNTIME_VERIFIED = false;
+export const WEB_HTML_RUNTIME_VERIFIED = true;
 
 /** The hub's hello feature for the bridge: …/html-actions is there, with persona_view and html_views both on. */
 export const HTML_BRIDGE_FEATURE = "assistant_html_bridge";

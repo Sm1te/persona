@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../../i18n";
 import { getFeedState, loadFeed, type FeedItem, type TaskPlan } from "../../lib/feed";
-import { getPanel, closePanel } from "../../lib/panel";
+import { getPanel } from "../../lib/panel";
 import { putTodo, refresh, refreshTodos, reset, upsertSession } from "../../lib/store";
 import type { Todo } from "../../lib/todos";
 import type { Interaction, Session } from "../../lib/types";
@@ -56,7 +56,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
-  closePanel();
+  history.replaceState(null, "", "/");
   reset();
   delete getFeedState().plans[plan.id];
   delete getFeedState().feeds[conversation];
@@ -67,6 +67,9 @@ const entries = () => [...host.querySelectorAll<HTMLButtonElement>("[data-assist
 const entry = (key: string) => host.querySelector<HTMLButtonElement>(`[data-assistant-actionbar] [data-tray-entry="${key}"]`)!;
 
 const label = { needs: t("assistant-tasks.tray_needs_you"), running: t("assistant-tasks.tray_running") };
+// where a click went: a page of its own (#5096), never a side panel
+const opened = () => location.pathname + location.search;
+const trays = () => host.querySelector("[data-assistant-actionbar]")!.textContent;
 
 describe("Assistant Needs you / In progress trays", () => {
   it("uses the Working mark and live subtitle for background work, with a clock only after all work ends", () => {
@@ -95,11 +98,13 @@ describe("Assistant Needs you / In progress trays", () => {
     expect(writes).toEqual([]);
   });
 
-  it("keeps two entries in order, collapses by default and replaces conversation cards with one hint", () => {
+  it("keeps two entries in order, collapses by default and replaces conversation cards with the dispatch's hand-off card", () => {
     expect(entries().map((button) => button.getAttribute("data-tray-entry"))).toEqual(["needs", "running"]);
     expect(entries().map((button) => button.textContent)).toEqual([label.needs, `${label.running}1`]);
     expect(host.querySelector("section")).toBeNull();
-    expect(host.querySelectorAll("[data-dispatch-hint]")).toHaveLength(1);
+    // the plan's one Agent; the task line of a planned task adds none
+    expect(host.querySelectorAll("[data-handoff-cards]")).toHaveLength(1);
+    expect(host.querySelectorAll("[data-handoff-card]")).toHaveLength(1);
     expect(host.textContent).not.toContain("Demo result");
     act(() => entry("running").click());
     expect(entry("running").getAttribute("aria-expanded")).toBe("true");
@@ -108,21 +113,34 @@ describe("Assistant Needs you / In progress trays", () => {
     expect(host.textContent).toContain("PR #42");
     // the task's agent is in its row, not a row of its own
     expect(host.querySelector("[data-running-agent]")).toBeNull();
-    expect(host.textContent).not.toContain("Demo agent");
+    expect(trays()).not.toContain("Demo agent");
   });
 
-  it("names the one dispatched task and opens its Agent in the side panel, not the In progress tray (#3700)", () => {
-    const hint = host.querySelector<HTMLButtonElement>("[data-dispatch-hint]")!;
-    expect(hint.tagName).toBe("BUTTON");
-    expect(hint.textContent).toBe(`${t("assistant-tasks.dispatch_single", { title: "Demo task" })}· ${t("assistant-tasks.dispatch_open")}`);
-    act(() => hint.click());
-    // the task's own panel, which shows its Agent's chat (TaskPanel), and no tray opened
-    expect(getPanel()).toMatchObject({ kind: "task", todo: "tray-task" });
+  it("draws the dispatched Agent as a hand-off card that opens its page, not the In progress tray (#3700, #5096)", () => {
+    const card = host.querySelector<HTMLButtonElement>('[data-handoff-card="demo/worker"]')!;
+    expect(card.tagName).toBe("BUTTON");
+    // the Agent's own title, New (the plan started it), and its state
+    expect(card.textContent).toContain("Demo agent");
+    expect(card.querySelector('[data-handoff-wake="created"]')?.textContent).toBe(t("assistant-tasks.handoff_wake_created"));
+    expect(card.querySelector('[data-handoff-state="working"]')).not.toBeNull();
+    act(() => card.click());
+    expect(opened()).toBe("/s/demo/worker");
+    expect(getPanel()).toBeNull();
     expect(host.querySelector("section")).toBeNull();
     expect(entry("running").getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("lists each of several dispatched tasks, each opening its own task, and leaves an unstarted one without a link", async () => {
+  it("draws a card for each Agent of several dispatched tasks, and the one that did not start says why", async () => {
+    moreTodos = [{ id: "second-task", title: "Second task", origin: conversation, created_at: at, updated_at: at, agents: [{ machine_id: "demo", session_id: "second", linked_at: at }, { machine_id: "demo", session_id: "third", linked_at: at }] }];
+    moreSessions = [
+      { machine_id: "demo", session_id: "second", title: "Second agent", cwd: "/demo", state: "needs_you", status: "blocked", updated_at: at } as Session,
+      { machine_id: "demo", session_id: "third", title: "", cwd: "/demo", state: "idle", status: "idle", updated_at: at } as Session,
+    ];
+    await act(async () => {
+      await refresh();
+      await refreshTodos();
+      for (const x of moreSessions) upsertSession(x);
+    });
     const many: TaskPlan = { id: "tray-plan-many", conversation, state: "started", created_at: at, tasks: [
       { title: "First task", prompt: "a", cwd: "/demo", machine: "demo", todo_id: "tray-task" },
       { title: "Second task", prompt: "b", cwd: "/demo", machine: "demo", todo_id: "second-task" },
@@ -131,16 +149,21 @@ describe("Assistant Needs you / In progress trays", () => {
     getFeedState().plans[many.id] = many;
     try {
       act(() => root.render(<StrictMode><AssistantActionBar conversation={conversation} /><FeedLineView item={{ id: "many-event", conversation, at, kind: "plan", ref: many.id }} simplified /></StrictMode>));
-      const hint = host.querySelector("[data-dispatch-hint]")!;
-      expect(hint.getAttribute("data-dispatch-hint")).toBe("3");
-      expect(hint.textContent).toContain(t("assistant-tasks.dispatch_many", { count: 3 }));
-      const links = [...hint.querySelectorAll<HTMLElement>("[data-dispatched-task]")];
-      // the to-do's current title wins over the plan's; a task that did not start is shown but cannot be opened
-      expect(links.map((el) => [el.tagName, el.textContent])).toEqual([["BUTTON", "Demo task"], ["BUTTON", "Second task"], ["SPAN", "Failed task"]]);
-      act(() => links[1]!.click());
-      expect(getPanel()).toMatchObject({ kind: "task", todo: "second-task" });
-      act(() => links[0]!.click());
-      expect(getPanel()).toMatchObject({ kind: "task", todo: "tray-task" });
+      // one card per Agent in plan order, no heading over them (cindy stacks cards)
+      const group = host.querySelector("[data-handoff-cards]")!;
+      expect(group.getAttribute("data-handoff-cards")).toBe("4");
+      const cards = [...group.querySelectorAll<HTMLElement>("[data-handoff-card]")];
+      expect(cards.map((el) => [el.tagName, el.getAttribute("data-handoff-card")])).toEqual([["BUTTON", "demo/worker"], ["BUTTON", "demo/second"], ["BUTTON", "demo/third"], ["DIV", "tray-plan-many/2"]]);
+      // an Agent that needs you says so on its card; one without a title of its own takes its task's
+      expect(cards[1]!.querySelector('[data-handoff-state="needs_you"]')).not.toBeNull();
+      expect(cards[1]!.textContent).toContain("Second agent");
+      expect(cards[2]!.textContent).toContain("Second task");
+      expect(cards[3]!.textContent).toContain("Failed task");
+      expect(cards[3]!.textContent).toContain(t("assistant-tasks.start_failed", { error: "machine offline" }));
+      act(() => cards[1]!.click());
+      expect(opened()).toBe("/s/demo/second");
+      act(() => cards[0]!.click());
+      expect(opened()).toBe("/s/demo/worker");
       expect(host.querySelector("section")).toBeNull();
     } finally {
       delete getFeedState().plans[many.id];
@@ -159,8 +182,8 @@ describe("Assistant Needs you / In progress trays", () => {
     expect(row?.textContent).not.toContain("Waiting for a decision");
     expect(host.querySelector('[role="progressbar"] .bg-orange')).not.toBeNull();
     act(() => (host.querySelector("[data-task-slot]") as HTMLButtonElement).click());
-    expect(getPanel()?.kind).toBe("task");
-    expect(getPanel()).toMatchObject({ todo: todo.id });
+    // its Agent's page (#5096)
+    expect(opened()).toBe("/s/demo/worker");
     act(() => putTodo({ ...todo, done_at: at, supervision: { ...todo.supervision!, state: "accepted" } }));
     // finished: in neither entry (the board has it), no fold for it either
     expect(entry("running").textContent).toBe(label.running);
@@ -252,8 +275,8 @@ describe("Assistant Needs you / In progress trays", () => {
     const row = host.querySelector('[data-needs-row="task:tray-task"]')!;
     expect(row.textContent).toContain("Demo task");
     expect(row.textContent).toContain("Which port?");
-    // the agent is not a row of its own anywhere
-    expect(host.textContent).not.toContain("Demo agent");
+    // the agent is not a row of its own in either tray (the chat's hand-off card names it)
+    expect(trays()).not.toContain("Demo agent");
     moreInteractions = [];
     await act(async () => {
       await refresh();
@@ -283,7 +306,7 @@ describe("Assistant Needs you / In progress trays", () => {
     // the task's own agent is still not listed by itself
     expect(host.querySelector('[data-running-agent="demo/worker"]')).toBeNull();
     act(() => (host.querySelector('[data-running-agent="demo/by-hand-works"]') as HTMLButtonElement).click());
-    expect(getPanel()).toMatchObject({ kind: "agent", mid: "demo", sid: "by-hand-works" });
+    expect(opened()).toBe("/s/demo/by-hand-works");
   });
 
   it("draws the entries as the dock's old All / task capsules, with the open tray selected", () => {

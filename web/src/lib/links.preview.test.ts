@@ -50,22 +50,26 @@ describe("a localhost link on an agent's page", () => {
     expect(previewTarget("http://localhost:80/app")).toBeNull();
   });
 
-  it("is not one of this hub's own pages: an agent's chat at this page's origin opens in the agent panel", () => {
+  it("is not one of this hub's own pages: an agent's chat at this page's origin opens as its page (#5096)", () => {
     const own = `${location.origin}/s/m1/s9`;
     expect(new URL(own).hostname).toBe("localhost"); // jsdom serves the page at localhost, as a hub on that computer would
     expect(previewTarget(own)).toBeNull();
     expect(opensInApp(own)).toBe(true);
     openLink(own);
-    expect(getPanel()).toMatchObject({ kind: "agent", mid: "m1", sid: "s9" });
+    expect(getPanel()).toBeNull();
+    expect(location.pathname).toBe("/s/m1/s9");
   });
 
   it("keeps the hub's own pages ahead of an explicit default-port preview", () => {
     vi.stubGlobal("location", { origin: "http://localhost", pathname: "/s/m1/s1", search: "" });
+    const push = vi.spyOn(history, "pushState");
     const own = "http://localhost:80/s/m1/s9";
     expect(previewTarget(own)).toBeNull();
     expect(opensInApp(own)).toBe(true);
     openLink(own);
-    expect(getPanel()).toMatchObject({ kind: "agent", mid: "m1", sid: "s9" });
+    expect(getPanel()).toBeNull();
+    expect(push.mock.calls.at(-1)?.[2]).toBe("/s/m1/s9");
+    push.mockRestore();
   });
 
   it("is nothing on a hub without previews", () => {

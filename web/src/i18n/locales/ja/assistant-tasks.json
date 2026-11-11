@@ -22,9 +22,6 @@
   "tray_shelved_hint": "48 時間進展がなく、動いている Agent もありません。「進行中」には数えません。データは残っています。",
   "tray_empty_progress": "進行中のものはありません",
   "plan_waiting": "開始を待っています",
-  "dispatch_single": "依頼しました：{title}",
-  "dispatch_open": "開く",
-  "dispatch_many_other": "{count}件を依頼",
   "progress_count": "{value}/{total}",
   "progress_stopped": "止まったまま未完了",
   "progress_stopped_reason": "止まったまま未完了 · {reason}",
@@ -210,5 +207,12 @@
   "interrupt_batch_counts": "→ 対応済み {resolved} / 未対応 {pending}",
   "interrupt_batch_all": "→ すべて対応済み",
   "needs_group_another": "別の会話",
-  "new_agent_started": "このタスクのために新しいエージェントを起動しました"
+  "handoff_wake_created": "新規",
+  "handoff_wake_active": "すでに稼働中",
+  "handoff_wake_resumed": "再開済み",
+  "handoff_last_active": "{when}にアクティブ",
+  "handoff_active_now": "たった今アクティブ",
+  "handoff_not_active": "まだ動きがありません",
+  "handoff_gone": "このタスクはもうありません",
+  "handoff_closed": "エージェントの起動前に終了しました"
 }

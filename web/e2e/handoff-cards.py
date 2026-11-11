@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Verify the main conversation's dispatched line (#3700) in a real browser, with synthetic HTTP/WS data only.
+"""Verify the main conversation's hand-off cards (#3700, #5096) in a real browser, with synthetic HTTP/WS data only.
 
 Build web first. Run with a loopback production preview URL and --shots <directory>:
 
-    python3 web/e2e/dispatched-line.py http://127.0.0.1:<port> --shots <directory>
+    python3 web/e2e/handoff-cards.py http://127.0.0.1:<port> --shots <directory>
 
-One dispatched task reads "Dispatched: <title> · Open" and opens that task in the side panel, its Agent's chat; several
-list their titles, each opening its own task. Neither opens the In progress tray. Light and dark, wide; English.
+A dispatch draws a card for each Agent it started (cindy's hand-off card); a card opens that Agent's own page, never a
+side panel, with "Came from Persona · click to return" over its chat, and that strip brings the conversation back. A
+task whose Agent has not started yet is a card that opens its to-do. None of them opens the In progress tray. Light
+and dark, wide and phone width; English.
 """
 import argparse
 import json
@@ -50,7 +52,7 @@ def scenario(name):
     titles = ["Fix the sign-in crash", "Update the release notes", "Check the Android build"]
     plan = {"id": "demo-plan", "conversation": MAIN, "created_at": AT, "state": "started",
             "tasks": [{"title": t, "prompt": "Synthetic task", "machine": "demo", "cwd": "/demo/project", "todo_id": f"demo-task-{i}"} for i, t in enumerate(titles)]}
-    # the third has no Agent yet: it opens its task card
+    # the third has no Agent yet: its card opens the to-do
     todos = [todo(i, t, agent=i < 2) | {"plan_id": plan["id"]} for i, t in enumerate(titles)] + [OTHER]
     sessions = [PERSONA, worker(0, titles[0]), worker(1, titles[1]), OTHER_SESSION]
     feed = [{"id": "demo-plan-event", "conversation": MAIN, "at": AT, "kind": "plan", "ref": plan["id"]}] + \
@@ -64,12 +66,12 @@ def run(args):
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=args.chromium, args=["--no-sandbox"])
         try:
-            for name in ("one", "many"):
+            for name, (width, height) in (("one", (1280, 760)), ("many", (1280, 760)), ("phone", (390, 844))):
                 for theme in ("light", "dark"):
-                    todos, sessions, feed, plans = scenario(name)
+                    todos, sessions, feed, plans = scenario("many" if name == "phone" else name)
                     items = [{"id": "demo-user", "seq": 1, "role": "user", "kind": "text", "text": "Please get this fixed today.", "ts": AT},
                              {"id": "demo-answer", "seq": 2, "role": "assistant", "kind": "text", "text": "Handed it to an Agent; it is on it now.", "ts": AT}]
-                    context = browser.new_context(viewport={"width": 1280, "height": 760}, locale="en-US", color_scheme=theme, reduced_motion="reduce")
+                    context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=theme, reduced_motion="reduce")
                     context.add_init_script(f"localStorage.setItem('persona.token', 'demo'); localStorage.setItem('persona.language', 'en'); localStorage.setItem('persona.theme', '{theme}');")
                     context.add_init_script("const RealDate = Date; globalThis.Date = class extends RealDate { constructor(...args) { super(...(args.length ? args : ['2026-11-10T08:10:00Z'])); } static now() { return new RealDate('2026-11-10T08:10:00Z').getTime(); } };")
 
@@ -112,10 +114,10 @@ def run(args):
                     page.goto(args.url.rstrip("/") + "/")
                     running = page.locator('[data-assistant-actionbar] [data-tray-entry="running"]')
                     expect(running).to_be_visible()
-                    hint = page.locator("[data-dispatch-hint]")
-                    expect(hint).to_have_count(1)
-                    expect(hint).not_to_contain_text("In progress")
-                    expect(hint).not_to_contain_text("Earlier unrelated task")
+                    cards = page.locator("[data-handoff-card]")
+                    expect(cards.first).to_be_visible()
+                    expect(page.locator("[data-handoff-cards]")).to_have_count(1)
+                    expect(page.locator("[data-handoff-cards]")).not_to_contain_text("Earlier unrelated task")
 
                     def capture(step):
                         expect(page.locator("vite-error-overlay")).to_have_count(0)
@@ -123,36 +125,43 @@ def run(args):
                         page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
                         page.screenshot(path=str(shots / f"{name}-{theme}-{step}.png"))
 
-                    def opened(title, agent):
-                        aside = page.get_by_role("complementary", name="Task")
-                        expect(aside).to_be_visible()
-                        expect(aside.locator("header")).to_contain_text(title)
-                        # the Agent's chat (its transcript) when it has one, the task card before it starts
-                        expect(aside.get_by_text("Reproduced it; working on the fix now.")).to_have_count(1 if agent else 0)
+                    def opened(sid):
+                        # the Agent's own page, its transcript in the middle, and the way back over it; no side panel
+                        expect(page).to_have_url(re.compile(rf"/s/demo/{sid}$"))
+                        expect(page.get_by_text("Reproduced it; working on the fix now.")).to_have_count(1)
+                        expect(page.locator("aside[aria-label]")).to_have_count(0)
+                        back = page.locator("[data-handoff-back] button").first
+                        expect(back).to_have_text("Came from Persona · click to return")
+                        capture(f"opened-{sid}")
+                        back.click()
+                        expect(page.locator(f'[data-handoff-card="demo/{sid}"]')).to_be_visible()
                         expect(running).to_have_attribute("aria-expanded", "false")
                         expect(page.locator("[data-assistant-actionbar] section")).to_have_count(0)
 
                     if name == "one":
-                        expect(hint).to_have_text("Dispatched: Fix the sign-in crash· Open")
-                        capture("line")
-                        hint.click()
-                        opened("Fix the sign-in crash", True)
-                        capture("opened")
+                        expect(cards).to_have_count(1)
+                        card = page.locator('[data-handoff-card="demo/worker-1"]')
+                        expect(card).to_contain_text("Fix the sign-in crash")
+                        expect(card.locator('[data-handoff-wake="created"]')).to_have_text("New")
+                        capture("card")
+                        card.click()
+                        opened("worker-1")
                     else:
-                        links = hint.locator("[data-dispatched-task]")
-                        expect(hint).to_contain_text("Dispatched 3")
-                        expect(links).to_have_text(["Fix the sign-in crash", "Update the release notes", "Check the Android build"])
-                        capture("line")
-                        links.nth(1).click()
-                        opened("Update the release notes", True)
-                        capture("opened")
-                        links.nth(2).click()
-                        opened("Check the Android build", False)
+                        expect(cards).to_have_count(3)
+                        expect(cards.nth(0)).to_contain_text("Fix the sign-in crash")
+                        expect(cards.nth(1)).to_contain_text("Update the release notes")
+                        expect(cards.nth(2)).to_contain_text("Check the Android build")
+                        expect(cards.nth(2)).to_contain_text("Starting the agent")
+                        capture("cards")
+                        cards.nth(1).click()
+                        opened("worker-1")
+                        page.locator("[data-handoff-card]").nth(2).click()
+                        expect(page).to_have_url(re.compile(r"/todos\?id=demo-task-2$"))
                     print(f"  {name} {theme}: ok", flush=True)
                     context.close()
         finally:
             browser.close()
-    print("PASS dispatched line browser verification", flush=True)
+    print("PASS hand-off cards browser verification", flush=True)
 
 
 if __name__ == "__main__":

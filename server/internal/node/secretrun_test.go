@@ -227,6 +227,68 @@ func TestSecretRunTimeoutEndsWhatIgnoresSIGTERM(t *testing.T) {
 	}
 }
 
+// A shell that exits at once, leaving a child that holds its output, still has its group stopped at the run's deadline
+// (exec calls Cancel only while the shell runs): the run returns at about its timeout, not when the child would end,
+// the child is gone, and the list stops at that command. The next one never started and is not reported as one that
+// ran out of time (#4363).
+func TestSecretRunTimeoutStopsAChildHoldingTheOutputOfAShellThatExited(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "second")
+	start := time.Now()
+	ans, err, _ := secretRunCall(t, []string{"sleep 4 & echo $!", "echo second > " + marker}, time.Second)
+	took := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took > 3*time.Second { // the run has 1 s; the child would hold it for 4
+		t.Fatalf("the run took %v, want about its 1 s timeout; results = %+v", took, ans.Results)
+	}
+	if len(ans.Results) != 1 || !ans.Results[0].TimedOut || ans.Results[0].ExitCode != -1 {
+		t.Fatalf("results = %+v, want only the first command, timed out with exit -1", ans.Results)
+	}
+	pidLine, _, _ := strings.Cut(ans.Results[0].Output, "\n")
+	child, err := strconv.Atoi(pidLine)
+	if err != nil || child <= 0 {
+		t.Fatalf("output %q: %v", ans.Results[0].Output, err)
+	}
+	if osproc.Alive(child) { // the run returns once the group is empty (endGroup)
+		t.Fatalf("the background child %d outlived the run", child)
+	}
+	if fileExists(marker) {
+		t.Fatal("the command after the deadline ran")
+	}
+}
+
+// A command whose turn comes once the run's time is used up does not start and gets no result (inTime false), not one
+// that says it ran out of time (#4363).
+func TestSecretRunCommandAfterTheDeadlineDoesNotRun(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "late")
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+	defer cancel()
+	if r, inTime := runSecretCommand(ctx, t.TempDir(), "touch "+marker, []byte(testSecret)); inTime {
+		t.Fatalf("result %+v, want none: the run's time was used up", r)
+	}
+	if fileExists(marker) {
+		t.Fatal("the command ran after the deadline")
+	}
+}
+
+// A child that holds the output only briefly and ends within the run's time changes nothing: Wait reads its output to
+// the end, and the next command runs.
+func TestSecretRunWaitsForAChildThatEndsInTime(t *testing.T) {
+	ans, err, _ := secretRunCall(t, []string{"(sleep 0.3; echo late) & echo early", "echo second"}, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ans.Results) != 2 {
+		t.Fatalf("results = %+v, want both commands", ans.Results)
+	}
+	for i, want := range []string{"early\nlate\n", "second\n"} {
+		if r := ans.Results[i]; r.ExitCode != 0 || r.TimedOut || r.Output != want {
+			t.Fatalf("result %d = %+v, want exit 0 with output %q", i, r, want)
+		}
+	}
+}
+
 // Output past what is kept: only its end comes back.
 func TestSecretRunClipsTheOutput(t *testing.T) {
 	ans, err, _ := secretRunCall(t, []string{"yes x | head -n 20000"}, 30*time.Second)

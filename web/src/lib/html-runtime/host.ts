@@ -9,6 +9,7 @@
 import wasmUrl from "@jitl/quickjs-wasmfile-release-sync/wasm?url";
 import { BATCHES_PER_SECOND_MOST, FRAME_EVENTS_PER_SECOND_MOST, FRAME_MESSAGE_BYTES_MOST, PING_MS, RUNNING_NARROW, RUNNING_WIDE, STALL_MS } from "./limits";
 import FRAME_SCRIPT from "./frame.js?raw";
+import { CONTENT_MOST } from "./height";
 import type { CardInfo, FromWorker, GuestEvent, StopReason, ToWorker } from "./protocol";
 import { FRAME_SANDBOX, frameNonce, frameShell, LimitError, Sanitizer, type Clean } from "./sanitize";
 
@@ -39,6 +40,8 @@ export interface RunOptions {
   /** A bridge call the card made: true when the user confirmed it and it went through. */
   onBridge: (kind: "reply" | "open", value: string) => Promise<boolean>;
   onState: (s: RuntimeState) => void;
+  /** How tall what the card draws is, in CSS pixels, whenever that changes (frame.js). */
+  onHeight?: (height: number) => void;
   /** The card's own errors (an exception in its code): what the first one says. */
   onError?: (message: string) => void;
   /** Made for tests: another worker (the same code, another URL). */
@@ -103,6 +106,11 @@ export function runCard(o: RunOptions): RunningCard {
       if (m.ready === true && !frameReady) {
         frameReady = true;
         for (const ops of pending.splice(0)) toFrame({ ops });
+        return;
+      }
+      const h = (m as { h?: unknown }).h;
+      if (typeof h === "number") {
+        if (Number.isFinite(h) && h >= 0 && h <= CONTENT_MOST) o.onHeight?.(h);
         return;
       }
       const event = guestEvent(m.ev, sanitizer);
@@ -181,12 +189,14 @@ export function runCard(o: RunOptions): RunningCard {
 }
 
 const EVENT_TYPES = new Set(["click", "input", "change", "keydown", "toggle", "focus"]);
-const MESSAGE_KEYS = new Set(["n", "ready", "ev"]);
+const MESSAGE_KEYS = new Set(["n", "ready", "ev", "h"]);
 const EVENT_KEYS = new Set(["type", "target", "value", "checked", "open", "selectedIndex", "key", "shiftKey", "ctrlKey", "altKey", "metaKey"]);
 
 /** A frame message's shape and size: only the keys frame.js sends, within FRAME_MESSAGE_BYTES_MOST. */
 export function frameMessageFits(m: object): boolean {
   if (Object.keys(m).some((k) => !MESSAGE_KEYS.has(k))) return false;
+  const h = (m as { h?: unknown }).h;
+  if (h !== undefined && typeof h !== "number") return false;
   const ev = (m as { ev?: unknown }).ev;
   if (ev !== undefined && (!ev || typeof ev !== "object" || Object.keys(ev).some((k) => !EVENT_KEYS.has(k)))) return false;
   try {

@@ -11,7 +11,7 @@ import { postHtmlAction } from "../lib/html-actions";
 import type { UIItem } from "../lib/extension-ui";
 import { uuid } from "../lib/format";
 import { claimSlot, releaseSlot, runCard, type RunningCard } from "../lib/html-runtime/host";
-import { cardHeight } from "../lib/html-runtime/height";
+import { cardHeight, FRAME_MIN, frameHeight } from "../lib/html-runtime/height";
 import { HIDDEN_GRACE_MS } from "../lib/html-runtime/limits";
 import { FRAME_SANDBOX } from "../lib/html-runtime/sanitize";
 import type { StopReason } from "../lib/html-runtime/protocol";
@@ -38,7 +38,8 @@ const REASON: Record<StopReason | "user", string> = {
 export default function HtmlCard({ item, conversation, cardKey, version, page, fallback }: { item: UIItem; conversation: string; cardKey: string; version: number; page: string; fallback: string }) {
   const raw = item as UIItem & { html?: unknown; height?: unknown };
   const html = typeof raw.html === "string" ? raw.html : "";
-  const height = cardHeight(raw.height);
+  // the frame follows what the card draws, up to this; taller content scrolls inside it
+  const most = cardHeight(raw.height);
   const componentKey = item.key ?? "";
   const manager = useLinkManager();
   const answered = useCards((s) => !!conversationCards(conversation, s).actions[cardKey]);
@@ -50,6 +51,8 @@ export default function HtmlCard({ item, conversation, cardKey, version, page, f
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(false);
+  // how tall what the running card draws is (frame.js), null until it says
+  const [content, setContent] = useState<number | null>(null);
   const [asking, setAsking] = useState<Asking | null>(null);
   // the question on screen, set as it is asked (onBridge) and cleared as it is answered
   const askingRef = useRef<Asking | null>(null);
@@ -80,6 +83,7 @@ export default function HtmlCard({ item, conversation, cardKey, version, page, f
       if (!s) return setPhase({ kind: "queued" });
       slot.current = s;
       setFailed(false);
+      setContent(null);
       setPhase({ kind: "loading" });
     },
     [halt],
@@ -151,17 +155,25 @@ export default function HtmlCard({ item, conversation, cardKey, version, page, f
     const card = runCard({
       frame: f,
       html,
-      info: { width: Math.round(f.clientWidth) || 320, height, dpr: window.devicePixelRatio || 1, lang: currentLanguage(), dark: document.documentElement.classList.contains("dark") },
+      info: { width: Math.round(f.clientWidth) || 320, height: most, dpr: window.devicePixelRatio || 1, lang: currentLanguage(), dark: document.documentElement.classList.contains("dark") },
       onBridge: (kind, value) => onBridge(inst, kind, value),
       onState: (s) => {
         if (!alive.current || run.current?.inst.nonce !== inst.nonce) return;
         if (s.kind === "running") setPhase({ kind: "running" });
         if (s.kind === "stopped" && s.reason !== "user") halt({ kind: "stopped", reason: s.reason });
       },
+      onHeight: (h) => alive.current && run.current?.inst.nonce === inst.nonce && setContent(h),
       onError: () => alive.current && setFailed(true),
     });
     run.current = { card, inst };
-  }, [phase.kind, html, height, conversation, cardKey, componentKey, page, version, onBridge, halt]);
+  }, [phase.kind, html, most, conversation, cardKey, componentKey, page, version, onBridge, halt]);
+
+  // a frame that never says how tall its content is (no ResizeObserver) is shown at its most after a second
+  useEffect(() => {
+    if (phase.kind !== "running" || content !== null) return;
+    const t = setTimeout(() => setContent((c) => c ?? most), 1000);
+    return () => clearTimeout(t);
+  }, [phase.kind, content, most]);
 
   const live = phase.kind === "loading" || phase.kind === "running";
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
@@ -183,15 +195,20 @@ export default function HtmlCard({ item, conversation, cardKey, version, page, f
           </Button>
         ) : null}
       </div>
-      <div className="relative" style={{ height }}>
-        {live ? (
-          // the frame's color-scheme as the frame's own document says it: a frame whose scheme differs from the page's gets
-          // an opaque backdrop of its own (black in dark mode) instead of the card's surface
-          <iframe ref={frame} sandbox={FRAME_SANDBOX} referrerPolicy="no-referrer" title={label} style={{ colorScheme: dark ? "dark" : "light" }} className={cx("block size-full border-0 bg-transparent", phase.kind === "loading" && "opacity-0")} />
-        ) : (
-          <p className="size-full overflow-auto px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap break-words text-ink-2 select-text">{fallback}</p>
-        )}
-      </div>
+      {live ? (
+        // As tall as what the card draws, between FRAME_MIN and `most` (taller content scrolls inside the frame); unseen
+        // until the frame first says how tall that is, so it never jumps. The frame's color-scheme as its own document
+        // says it: a frame whose scheme differs from the page's gets an opaque backdrop (black in dark mode) instead of
+        // the card's surface.
+        <div className="relative" style={{ height: content === null ? FRAME_MIN : frameHeight(content, most) }} data-html-frame-height={content === null ? undefined : frameHeight(content, most)}>
+          <iframe ref={frame} sandbox={FRAME_SANDBOX} referrerPolicy="no-referrer" title={label} style={{ colorScheme: dark ? "dark" : "light" }} className={cx("block size-full border-0 bg-transparent", (phase.kind === "loading" || content === null) && "opacity-0")} />
+        </div>
+      ) : (
+        // stopped, waiting or not run: the card's words, as tall as they are, up to the same most
+        <p className="overflow-auto px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap break-words text-ink-2 select-text" style={{ maxHeight: most }}>
+          {fallback}
+        </p>
+      )}
       {failed && live && (
         <p className="border-t border-line px-4 py-1.5 text-[11.5px] text-ink-3" role="status">
           {t("ui-htmlcard.error_line")}

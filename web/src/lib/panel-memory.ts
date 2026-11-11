@@ -59,10 +59,15 @@ export function arriving(memory: PanelMemory, session: string, open: Panel | nul
   return { memory: rest, back };
 }
 
+// The kinds a panel can be now: one kept by an older version of the page (the task and Agent panels before #5096) is
+// not brought back.
+const KINDS = new Set<Panel["kind"]>(["files", "git", "review", "file", "link", "plan", "preview"]);
+
 function load(): PanelMemory {
   try {
     const v = JSON.parse(sessionStorage.getItem(STORE) ?? "{}");
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as PanelMemory) : {};
+    if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+    return Object.fromEntries(Object.entries(v as Record<string, Panel>).filter(([, p]) => p && typeof p === "object" && KINDS.has(p.kind)));
   } catch {
     return {};
   }
@@ -100,9 +105,9 @@ export function useSessionPanels(at: string, pane: { mid: string; sid: string } 
       own = left.pane ? (belongsTo(p, left.pane) ? p : null) : p && p.kind !== "link" ? p : null;
       memory = leaving(memory, left.key, own, own?.kind === "files" ? places.get(directoryPanelKey(own)) : undefined);
     }
-    // a session's terminal / files / Git belong to that conversation: moving to another page closes them (a link, a
-    // task and an agent stay, unless a Persona chat being left owns them)
-    if (p && (own || (p.kind !== "link" && p.kind !== "task" && p.kind !== "agent" && !(p.kind !== "file" && pane && p.mid === pane.mid && p.sid === pane.sid)))) closePanel();
+    // a session's terminal / files / Git belong to that conversation: moving to another page closes them (a link stays,
+    // unless a Persona chat being left owns it)
+    if (p && (own || (p.kind !== "link" && !(p.kind !== "file" && pane && p.mid === pane.mid && p.sid === pane.sid)))) closePanel();
     if (key) {
       const r = arriving(memory, key, getPanel());
       memory = r.memory;

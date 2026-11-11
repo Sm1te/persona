@@ -10,7 +10,8 @@
 //            sandbox, CSP and own script stop by themselves.
 //
 // Then the liveness cases (endless loops, timers, memory, a DOM bomb): stopped or contained within 5 s, the page's thread
-// never held more than 250 ms; and the bridge (a flood of calls, forged messages both ways).
+// never held more than 250 ms; the layout (the frame as tall as what the card draws, within its bounds; a stopped card as
+// tall as its words); and the bridge (a flood of calls, forged messages both ways).
 //
 // Needs the web's dev server (the lab page is dev only), and Edge / Chrome and Playwright's WebKit:
 //
@@ -118,9 +119,12 @@ async function lab(ctx) {
 }
 
 async function cardState(page, timeout = 15_000) {
+  // running and shown: the frame is unseen until it first says how tall the card is (then it takes that height), and a
+  // press before that would land wherever the frame was; stopped as it is
   await page.waitForFunction(() => {
-    const s = document.querySelector('[data-assistant-card="html"]')?.getAttribute("data-html-state");
-    return s === "running" || s === "stopped";
+    const c = document.querySelector('[data-assistant-card="html"]');
+    const s = c?.getAttribute("data-html-state");
+    return (s === "running" && c.querySelector("[data-html-frame-height]")) || s === "stopped";
   }, null, { timeout });
   return page.evaluate(() => {
     const c = document.querySelector('[data-assistant-card="html"]');
@@ -181,9 +185,15 @@ async function runBrowser(name, type, opts) {
   const ctx = await browser.newContext({ viewport: { width: 800, height: 900 } });
   let popups = 0;
   ctx.on("page", () => popups++);
-  const page = await lab(ctx);
-  await page.evaluate(() => window.lab.card("<p>warm up</p>"));
-  await cardState(page, 90_000);
+  let page = await lab(ctx);
+  // a cold dev server may pre-bundle the runtime's dependencies on this first card and reload the page: once more then
+  for (let attempt = 0; ; attempt++) {
+    await page.evaluate(() => window.lab.card("<p>warm up</p>"));
+    if (await cardState(page, 90_000).then(() => true, () => false)) break;
+    if (attempt) throw new Error("the warm-up card never ran");
+    await page.close();
+    page = await lab(ctx);
+  }
   for (const c of pick(CASES)) {
     hits.length = 0;
     const before = connections;
@@ -259,6 +269,46 @@ async function runBrowser(name, type, opts) {
     const gap = await page.evaluate(() => Math.round(window.__gap));
     const ok = (c.stops ? st.state === "stopped" && took <= 8000 : st.state === "running" || st.state === "stopped") && gap <= 250;
     line(name, "liveness", c.name, ok, `${st.state}${st.reason ? ` (${st.reason})` : ""} after ${took} ms, longest page-thread gap ${gap} ms`);
+  }
+
+  // layout: the frame follows what the card draws, between its least and the component's height; a stopped card is as
+  // tall as its words
+  if (!only || only === "layout") {
+    const box = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[data-assistant-card="html"]');
+        const f = c?.querySelector("iframe");
+        const words = c?.querySelector("p.overflow-auto");
+        return { frame: f ? Math.round(f.getBoundingClientRect().height) : 0, words: words ? Math.round(words.getBoundingClientRect().height) : 0 };
+      });
+    const scrolls = async () => (await cardFrame(page))?.evaluate(() => document.scrollingElement.scrollHeight > document.scrollingElement.clientHeight + 1);
+    const LAYOUT = [
+      { name: "one-line", html: "<p>one line</p>", check: (b) => b.frame >= 44 && b.frame <= 90 },
+      { name: "long-scrolls", html: Array.from({ length: 80 }, (_, i) => `<p>row ${i}</p>`).join(""), check: (b, s) => b.frame === 320 && s },
+      { name: "declared-height", html: Array.from({ length: 80 }, (_, i) => `<p>row ${i}</p>`).join(""), height: 200, check: (b, s) => b.frame === 200 && s },
+    ];
+    for (const c of LAYOUT) {
+      await page.evaluate(([h, height]) => window.lab.card(h, height ? { height } : {}), [c.html, c.height ?? 0]);
+      await cardState(page);
+      await page.waitForFunction(() => document.querySelector("[data-html-frame-height]"), null, { timeout: 5000 }).catch(() => {});
+      await settle(300);
+      const b = await box();
+      const s2 = await scrolls();
+      line(name, "layout", c.name, c.check(b, s2), `frame ${b.frame} px${s2 ? ", scrolls inside" : ""}`);
+    }
+    // grows as the card adds rows
+    await page.evaluate(() => window.lab.card(`<div id="d"></div><script>var n=0;var t=setInterval(function(){var p=document.createElement('p');p.textContent='row '+(++n);document.getElementById('d').appendChild(p);if(n>=6)clearInterval(t)},120)</script>`));
+    await cardState(page);
+    await settle(200);
+    const first = (await box()).frame;
+    await settle(1500);
+    const later = (await box()).frame;
+    line(name, "layout", "grows", later > first && later <= 320, `frame ${first} → ${later} px`);
+    // stopped: its words, as tall as they are
+    await page.evaluate(() => window.lab.card("<p>x</p><script>while(true){}</script>"));
+    await page.waitForFunction(() => document.querySelector('[data-assistant-card="html"]')?.getAttribute("data-html-state") === "stopped", null, { timeout: 8000 }).catch(() => {});
+    const stopped = await box();
+    line(name, "layout", "stopped-shrinks", stopped.frame === 0 && stopped.words > 0 && stopped.words <= 90, `words ${stopped.words} px`);
   }
 
   // the bridge

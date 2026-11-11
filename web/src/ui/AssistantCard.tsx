@@ -18,9 +18,9 @@ import { fieldValues, numberProblem, readView, type UIAction, type UIItem, type 
 import { openLink } from "../lib/links";
 import { useLinkManager } from "../lib/manager-choice";
 import { openPanel } from "../lib/panel";
+import { openTask } from "../lib/handoff";
 import { navigate } from "../lib/router";
 import { hubHas, useStore } from "../lib/store";
-import { mediaMatches, NARROW } from "../lib/viewport";
 import { INERT, ViewSections } from "../views/extensions/view-sections-lazy";
 import { t } from "../i18n";
 import { Button, cx, Dialog, toast } from "./atoms";
@@ -40,7 +40,7 @@ export const CardItem = createContext<{ id: string; text: string } | null>(null)
 /** How deep push goes (docs/assistant/assistant-views.md "Actions and multiple pages"). */
 const STACK_MOST = 4;
 
-/** Whether html components run here: WEB_HTML_RUNTIME_VERIFIED, which dev pages may turn on for themselves. */
+/** Whether html components run here: WEB_HTML_RUNTIME_VERIFIED (dev pages and tests may set it for themselves). */
 export const HtmlRuntime = createContext<boolean>(WEB_HTML_RUNTIME_VERIFIED);
 
 const HtmlCard = lazy(() => import("./HtmlCard"));
@@ -388,8 +388,7 @@ export function openTargetOf(target: string, manager?: string) {
       navigate({ name: "session", mid: to.mid, sid: to.sid });
       return;
     case "task":
-      if (mediaMatches(NARROW)) navigate({ name: "todos", id: to.id });
-      else openPanel({ kind: "task", todo: to.id });
+      openTask(to.id);
       return;
     case "kb":
       navigate({ name: "kb", kind: to.path[0], id: to.path.slice(1).join("/") || undefined });

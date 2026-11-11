@@ -15,6 +15,10 @@ final class AttachPhotoEditTests: XCTestCase {
     private var schemes: [String] {
         (ProcessInfo.processInfo.environment["PERSONA_SCHEMES"] ?? "light,dark").split(separator: ",").map(String.init)
     }
+    /// Less than the editor's side margin (`Theme.Space.l`): a row closer to the screen's edge than this has run off it.
+    private let margin: CGFloat = 8
+    /// How bright the panel's header was before the editor opened (`openPanel`).
+    private var panelBefore: CGFloat?
 
     /// A tap on a photo's picture opens the editor on Box, nothing picked; a box drawn and Cancel leave the grid as it was.
     @MainActor func testATapOnAPhotoOpensItAndCancelChangesNothing() throws {
@@ -31,6 +35,14 @@ final class AttachPhotoEditTests: XCTestCase {
             XCTAssertEqual(app.buttons["image-edit-done"].label, "选择", "an unpicked photo's editor offers Select")
             XCTAssertTrue(app.descendants(matching: .any)["image-edit-caption"].exists, "the panel's caption is under the tools")
             XCTAssertFalse(app.buttons["image-edit-undo"].isEnabled, "nothing to undo yet")
+            // The tools keep the page's margin at every text size (they scroll when they don't fit), and every ink can be
+            // reached: at the largest sizes the row of inks scrolls.
+            XCTAssertGreaterThanOrEqual(app.buttons["image-edit-tool-box"].frame.minX, margin, "the tools row keeps its margin")
+            XCTAssertLessThanOrEqual(app.buttons["image-edit-clear"].frame.maxX, app.frame.maxX - margin, "Clear keeps its margin")
+            let lastInk = app.buttons["黑色"].firstMatch
+            for _ in 0..<3 where !lastInk.isHittable { app.buttons["蓝色"].firstMatch.swipeLeft() } // in sight while it scrolls
+            XCTAssertTrue(lastInk.isHittable, "the last ink can be scrolled to and tapped (\(scheme))")
+            XCTAssertTrue(app.buttons["image-edit-width"].isHittable, "the width stays in sight next to the inks")
             shot(app, "attach-edit-box-open-\(scheme)")
             drag(canvas, from: CGVector(dx: 0.3, dy: 0.35), to: CGVector(dx: 0.7, dy: 0.6))
             XCTAssertTrue(app.buttons["image-edit-undo"].isEnabled, "the box drawn can be undone")
@@ -125,6 +137,7 @@ final class AttachPhotoEditTests: XCTestCase {
             if field.waitForExistence(timeout: 5) {
                 field.tap()
                 clear(field)
+                sleep(2) // drafts are saved a moment after the last change: quitting sooner keeps the caption
             }
             app.terminate() // the composer's photos live in memory: the next run starts with none
         }
@@ -162,20 +175,30 @@ final class AttachPhotoEditTests: XCTestCase {
         XCTAssertTrue(pickedCells(app).isEmpty, "a photo is picked before any tap (left by an earlier run?)")
         app.buttons["attach-tab-photos"].firstMatch.tap() // the tab shown: opens the panel all the way
         settle()
+        panelBefore = panelBrightness(app)
         return app
     }
 
-    /// The panel's header is drawn in `scheme`: the editor's own dark look didn't stay on the panel it was opened from.
+    /// The panel's header looks as it did before the editor opened: the editor's own dark look didn't stay on the panel it
+    /// was opened from. At the default text size it is also read as light or dark; at the largest sizes the header's title
+    /// is drawn at the point read.
     @MainActor private func assertPanelLooks(_ scheme: String, _ app: XCUIApplication, line: UInt = #line) {
-        let close = app.buttons["attach-close"].firstMatch.frame
-        guard let light = brightness(at: CGPoint(x: close.maxX + 24, y: close.midY)) else {
+        guard let now = panelBrightness(app), let before = panelBefore else {
             return XCTFail("no screenshot to read the panel's color from", line: line)
         }
+        XCTAssertEqual(now, before, accuracy: 0.15, "the panel's header looks as it did before the editor opened (\(before), now \(now))", line: line)
+        guard ProcessInfo.processInfo.environment["PERSONA_TEXT_SIZE"] == nil else { return }
         if scheme == "dark" {
-            XCTAssertLessThan(light, 0.35, "the panel's header is dark in dark mode (\(light))", line: line)
+            XCTAssertLessThan(now, 0.35, "the panel's header is dark in dark mode (\(now))", line: line)
         } else {
-            XCTAssertGreaterThan(light, 0.75, "the panel's header is light in light mode, not left dark by the editor (\(light))", line: line)
+            XCTAssertGreaterThan(now, 0.75, "the panel's header is light in light mode, not left dark by the editor (\(now))", line: line)
         }
+    }
+
+    /// How bright the panel's header is just right of its close button.
+    @MainActor private func panelBrightness(_ app: XCUIApplication) -> CGFloat? {
+        let close = app.buttons["attach-close"].firstMatch.frame
+        return brightness(at: CGPoint(x: close.maxX + 24, y: close.midY))
     }
 
     /// How bright the screen is at `point` (points), 0 to 1.
@@ -193,11 +216,14 @@ final class AttachPhotoEditTests: XCTestCase {
         return (CGFloat(rgba[0]) + CGFloat(rgba[1]) + CGFloat(rgba[2])) / (3 * 255)
     }
 
-    /// Deletes what a text field holds (its placeholder reads as its value when it is empty).
-    @MainActor private func clear(_ field: XCUIElement) {
+    /// Deletes what a focused text field holds, from its end (its placeholder reads as its value when it is empty).
+    @MainActor private func clear(_ field: XCUIElement, line: UInt = #line) {
         let value = field.value as? String ?? ""
         guard !value.isEmpty, value != field.placeholderValue else { return }
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.9)).tap() // the caret after the last character
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count + 2))
+        let left = field.value as? String ?? ""
+        XCTAssertTrue(left.isEmpty || left == field.placeholderValue, "the field was emptied, but holds \(left)", line: line)
     }
 
     @MainActor private func pickedCells(_ app: XCUIApplication) -> [XCUIElement] {

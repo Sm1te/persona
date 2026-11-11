@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Feishu topic group's cards (#576 G134, iOS LarkTopicCard). -->
+<resources>
+    <plurals name="inbox_lark_topic_earlier">
+        <item quantity="one">以前の返信%1$d件を表示</item>
+        <item quantity="other">以前の返信%1$d件を表示</item>
+    </plurals>
+    <string name="inbox_lark_topic_replies_failed">返信を読み込めませんでした</string>
+    <string name="inbox_lark_topic_react">リアクション</string>
+    <string name="inbox_lark_topic_reply">返信</string>
+    <string name="inbox_lark_topic_image">[画像]</string>
+    <string name="inbox_lark_topic_file">[ファイル] %1$s</string>
+    <string name="inbox_lark_topic_other">[メッセージ]</string>
+</resources>

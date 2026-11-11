@@ -4,7 +4,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 import { directionAgentNodes } from "./direction-agent-tree";
-import { closePanel, getPanel, openPanel } from "./panel";
 import { doneSubagentLink, followSubagentLink, splitSubagentLink, useSubagentLink } from "./subagent-link";
 import type { Session } from "./types";
 
@@ -34,13 +33,6 @@ describe("subagent links", () => {
     act(() => doneSubagentLink("m", "p1"));
     expect(seen).toBeUndefined();
     act(() => root.unmount());
-  });
-
-  it("an agent panel for a subagent opens its parent's chat", () => {
-    openPanel({ kind: "agent", mid: "m", sid: "p9@a9" });
-    expect(getPanel()).toEqual({ kind: "agent", mid: "m", sid: "p9" });
-    closePanel();
-    doneSubagentLink("m", "p9");
   });
 
   it("the sidebar's direction tree draws no in-session subagent rows", () => {

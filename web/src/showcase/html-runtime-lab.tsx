@@ -57,7 +57,7 @@ let n = 0;
 
 lab.card = (html, opts = {}) => {
   const id = `lab-${++n}`;
-  const view = { title: opts.title ?? "Lab", fallback: "The card's words, shown where its page doesn't run.", sections: [{ items: [{ type: "html", key: "page", html, height: opts.height ?? 240 }] }] };
+  const view = { title: opts.title ?? "Lab", fallback: "The card's words, shown where its page doesn't run.", sections: [{ items: [{ type: "html", key: "page", html, ...(opts.height ? { height: opts.height } : {}) }] }] };
   const text = "```persona-view\n" + JSON.stringify(view) + "\n```\n";
   cards.applyBlock(C, `${id}/0`);
   // at once: when this returns, the last card is gone and this one is on the page (the e2e reads its state next)

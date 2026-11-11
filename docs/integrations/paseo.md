@@ -94,7 +94,7 @@ run with `ELECTRON_RUN_AS_NODE=1`. A plain `node` always runs the bridge without
 - **Agents created by another Agent** (#4494): with Paseo's `create_agent` an Agent starts others (an orchestrator and its reviewers). Paseo marks them with the label
   `paseo.parent-agent-id`, shows them under their creator, notifies nobody when they finish (their creator is told what they did) and archives them with their creator. In Persona:
   - Such an Agent's row names its creator's session (`is_subagent`, `parent_session_id`) while the creator is listed in the same workspace, however many Agents created one another
-    in a line; an App that folds subtasks lists it under the creator's row. One created from another workspace is that workspace's own Agent, as in Paseo's sidebar: an ordinary row,
+    in a line; an App that folds subtasks (Android, iOS) lists it under the creator's row. One created from another workspace is that workspace's own Agent, as in Paseo's sidebar: an ordinary row,
     Unread when it stops. Agents that created one another in a ring, and one whose creator is gone, are rows of their own too.
   - While it waits for you (a permission, a question, a plan) it is a row of its own: node lists it without its parent, so every App shows it and counts it under Needs you,
     whatever it folds. Once answered it is under its creator again.

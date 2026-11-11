@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 // router.ts listens to popstate at load (no window in node); links.ts only needs navigate from it.
-vi.mock("./router", () => ({ navigate: vi.fn() }));
+vi.mock("./router", () => ({ navigate: vi.fn(), routeAt: () => null }));
 vi.mock("./api", () => ({ api: vi.fn(), enc: encodeURIComponent, getToken: () => "tok", ApiError: class extends Error {} }));
 
 import { api } from "./api";
 import { parseUserText } from "./turns";
-import { closePanel, getPanel } from "./panel";
+import { getPanel } from "./panel";
 import { navigate } from "./router";
 import { NARROW } from "./viewport";
 import {
@@ -123,25 +123,23 @@ describe("where a link opens", () => {
     expect(linkHref(`${hub}/todos?id=todo_1`)).toBe(`${hub}/todos?id=todo_1`);
   });
 
-  it("opens this hub's agent and task links in the panel on a wide screen, and moves there on a narrow one", () => {
+  it("opens this hub's agent and task links as pages at every width, never in the panel (#5096)", () => {
     const hub = "https://hub.example.com";
-    vi.stubGlobal("location", { origin: hub });
+    vi.stubGlobal("location", { origin: hub, href: `${hub}/persona`, pathname: "/persona", search: "" });
     const narrow = { value: false };
     // viewport.ts keeps the list it got, so `matches` follows `narrow`
     vi.stubGlobal("matchMedia", (q: string) => ({ get matches() { return q === NARROW && narrow.value; }, addEventListener() {}, removeEventListener() {} }));
     try {
       expect(opensInApp(`${hub}/s/m1/abc-1`)).toBe(true);
       expect(opensInApp("https://other.example.com/s/m1/abc-1")).toBe(false);
-      openLink(`${hub}/s/m1/abc-1`);
-      expect(getPanel()).toEqual({ kind: "agent", mid: "m1", sid: "abc-1" });
-      openLink(`${hub}/todos?id=todo_1`);
-      expect(getPanel()).toEqual({ kind: "task", todo: "todo_1" });
-      closePanel();
-      narrow.value = true;
-      openLink(`${hub}/s/m1/abc-1`);
-      openLink(`${hub}/todos?id=todo_1`);
-      expect(getPanel()).toBeNull();
-      expect(vi.mocked(navigate).mock.calls.slice(-2)).toEqual([[{ name: "session", mid: "m1", sid: "abc-1" }], [{ name: "todos", id: "todo_1" }]]);
+      for (const n of [false, true]) {
+        narrow.value = n;
+        openLink(`${hub}/s/m1/abc-1`);
+        // a task the store does not know yet: its to-do's page (with an Agent on it, that Agent's page; lib/handoff.test.ts)
+        openLink(`${hub}/todos?id=todo_1`);
+        expect(getPanel()).toBeNull();
+        expect(vi.mocked(navigate).mock.calls.slice(-2)).toEqual([[{ name: "session", mid: "m1", sid: "abc-1" }], [{ name: "todos", id: "todo_1" }]]);
+      }
       // a conversation moves there on any screen
       narrow.value = false;
       expect(opensInApp(`${hub}/persona/conv-1`)).toBe(true);

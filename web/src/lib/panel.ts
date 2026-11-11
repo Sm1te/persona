@@ -4,7 +4,6 @@
 // a link stays until closed (it is not tied to the conversation it came from).
 import { useSyncExternalStore } from "react";
 import type { DiffScope } from "./comments";
-import { followSubagentLink } from "./subagent-link";
 
 /** A diff opened straight at a line (a comment's card, lib/comments.ts): which diff, which file, which line. */
 export interface GitSpot {
@@ -28,10 +27,6 @@ export type Panel =
   | { kind: "file"; mid: string; path: string; cwd?: string; line?: number; to?: number; sid?: string }
   /** `manager`: the chat's it was opened from, which reads it (none: the default's). */
   | { kind: "link"; url: string; title?: string; manager?: string }
-  /** A task of the assistant's conversation: its agent's chat (docs/assistant/unified-entry.md). */
-  | { kind: "task"; todo: string }
-  /** An agent the main conversation's dock shows that no task stands for (#1113): its chat. */
-  | { kind: "agent"; mid: string; sid: string }
   /** A chat's plan: its latest TodoWrite as a whole list, following the chat (#5602). */
   | { kind: "plan"; mid: string; sid: string }
   /** The session's dev server in a headless browser on its computer (docs/web/preview.md); `port` / `path`: the one to
@@ -48,8 +43,6 @@ let opener: Element | null = null;
 const listeners = new Set<() => void>();
 
 export function openPanel(p: Panel | null) {
-  // a subagent's conversation is not opened (#5030): its parent's chat, at the subagent's card
-  if (p?.kind === "agent") p = { ...p, sid: followSubagentLink(p.mid, p.sid) };
   // what had the focus when the panel opened (its header button): closing gives the focus back to it (#5155). Called
   // from the click, before the panel renders, so it is never something inside the panel; a panel replacing another keeps
   // the first one's.

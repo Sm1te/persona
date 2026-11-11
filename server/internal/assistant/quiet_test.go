@@ -266,6 +266,10 @@ func TestAgentStartFromTheMainConversation(t *testing.T) {
 	if !strings.Contains(res, "a task of this conversation") || feedKinds(s, "conv1") != "task" {
 		t.Fatalf("result %q, feed %q", res, feedKinds(s, "conv1"))
 	}
+	// the task started its agent: its card has no wake (the clients' New, #5096)
+	if got := taskCardWake(s, "conv1", todo.ID); got != "" {
+		t.Fatalf("card wake %q", got)
+	}
 
 	for _, c := range []struct {
 		conv string

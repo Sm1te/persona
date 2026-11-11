@@ -103,6 +103,7 @@ import { Segmented } from "../assistant/parts";
 import { PageBoundary } from "../PageBoundary";
 import { ViewLayer } from "../session/ViewLayer";
 import { conversationTitle } from "../assistant/conversations";
+import { chatPlaceIn, dropChatPlace, firstLineInView, handoffFrom, type ChatPlace, type HandoffFrom } from "../../lib/handoff";
 import { externalOpening } from "../../lib/conversation-origins";
 import { usePersona } from "../assistant/Persona";
 import { voiceCalls, useVoiceCall, useVoiceState } from "../../lib/voice/calls";
@@ -128,6 +129,8 @@ const loadTerminal = () => import("../session/TerminalPanel");
 // Sharing settings load on their first open, outside the first screen (docs/web/web.md "First screen").
 const SharingDialog = lazyOverlay(() => import("../../sharing/SharingDialog").then((m) => m.default));
 const TerminalPanel = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPanel })));
+// only on an Agent's page opened from a conversation's hand-off card (#5096): not part of the first screen
+const HandoffBack = lazy(() => import("./HandoffBack").then((m) => ({ default: m.HandoffBack })));
 
 const NO_FEED: FeedItem[] = [];
 const NO_PANES: Session[] = [];
@@ -192,18 +195,7 @@ async function rewindTo(mid: string, sid: string, draftKey: string, items: Item[
   else toast(tr("rewind.input_kept"), "info");
 }
 
-/** In a side panel (TaskPanel, AgentPanel; #3333, iOS #3255): the chat's header is the panel's only one. It closes the
- *  panel, may stand for the task (its title and subtitle), carries the panel's own rows at the top of ⋯ and, for a task
- *  with several agents, a ⌄ beside the title to switch; the same space's other agents and the pane tabs are left out. */
-export interface PanelChrome {
-  onClose: () => void;
-  title?: string;
-  sub?: string;
-  items?: MenuItem[];
-  agents?: MenuItem[];
-}
-
-export function ChatView({ mid, sid, assistant, starting: launching, onToggleSidebar, topCenter, inPage, terminalAvailable, panel, banner, offline, mainCache, refreshError, onRefresh, headerActions }: {
+export function ChatView({ mid, sid, assistant, starting: launching, onToggleSidebar, topCenter, inPage, terminalAvailable, banner, offline, mainCache, refreshError, onRefresh, headerActions }: {
   mid: string;
   sid: string;
   assistant?: boolean;
@@ -212,11 +204,10 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   /** On a narrow screen, in the header's middle in place of the title (the shell's "Assistant" | "Agents" switch). */
   topCenter?: React.ReactNode;
   /** The agent's own page (`/s/…`, `/t/…`): its terminal is a view of the middle, switched in place with the header's
-   *  "Terminal" | "Chat" and ⌘J (docs/web/web.md "Terminal ⇄ chat"). Elsewhere (a task's panel) the chat is all there is. */
+   *  "Terminal" | "Chat" and ⌘J (docs/web/web.md "Terminal ⇄ chat"). Elsewhere the chat is all there is. */
   inPage?: boolean;
   /** The work browser has verified that this session has an interactive pane. Standalone chats use their existing policy. */
   terminalAvailable?: boolean;
-  panel?: PanelChrome;
   /** Under the header: the assistant page's manager switcher (docs/assistant/managers.md "Clients"). */
   banner?: React.ReactNode;
   /** The conversation's manager is offline: what the box says instead, and nothing can be sent. */
@@ -229,6 +220,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   headerActions?: React.ReactNode;
 }) {
   const { session, detail, retry: retryDetail } = useRuntimeSession(mid, sid);
+  // opened from a conversation's hand-off card (#5096): the way back to it, until put away
+  const [cameFrom, setCameFrom] = useState<HandoffFrom | undefined>(() => (inPage && !assistant ? handoffFrom() : undefined));
   // the main conversation, with a hub that clears its context in place: /clear in its command list (#5095)
   const clears = useStore((s) => Boolean(assistant) && s.assistant?.main === sid && hubHas(s.features, CLEAR_MAIN_FEATURE));
   // an archived agent (lib/agent-archives.ts) is not in the lists: its chat says so and offers Restore
@@ -596,11 +589,39 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   const dragging = useRef(false);
   const before = useRef<{ h: number; top: number } | null>(null);
   const first = useRef(true);
+  // Back from an Agent's page this conversation handed work to (#5096): where the chat was, kept on its history entry
+  // (lib/handoff.ts); it opens there instead of at the end, once, and goes to the end if that line does not come in time.
+  // `back`: this chat opened at a kept place (then the place handling, not the opening below, sets following).
+  const kept = useRef<{ key: string; place?: ChatPlace; back?: boolean }>({ key: "" });
+  if (kept.current.key !== `${mid}/${sid}`) {
+    const place = assistant ? chatPlaceIn() : undefined;
+    const back = Boolean(place && !place.end && place.line);
+    kept.current = { key: `${mid}/${sid}`, place: back ? place : undefined, back };
+  }
+  useEffect(() => {
+    if (assistant) dropChatPlace();
+  }, [assistant, mid, sid]);
 
   useEffect(() => {
+    lastTop.current = 0;
+    if (kept.current.back) {
+      if (kept.current.place) follow(false); // still waiting for its line: not pulled to the end meanwhile
+      return;
+    }
     first.current = true;
     follow(true);
-    lastTop.current = 0;
+  }, [mid, sid, follow]);
+
+  useEffect(() => {
+    if (!kept.current.place) return;
+    const late = window.setTimeout(() => {
+      if (!kept.current.place) return;
+      kept.current.place = undefined;
+      follow(true);
+      const el = scroller.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, GIVE_UP_MS * 2);
+    return () => clearTimeout(late);
   }, [mid, sid, follow]);
 
   const lastId = tr.items[tr.items.length - 1]?.id;
@@ -614,6 +635,18 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     if (before.current) {
       el.scrollTop = before.current.top + (el.scrollHeight - before.current.h);
       before.current = null;
+      return;
+    }
+    const place = kept.current.place;
+    // the line it was at, `offset` under the view's top again; until that line comes in, the chat opens at its end as
+    // it always does (and goes to the line once it is there)
+    const row = place && el.querySelector(`[data-line="${CSS.escape(place.line!)}"]`)?.firstElementChild;
+    if (place && row) {
+      kept.current.place = undefined;
+      el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - place.offset;
+      first.current = false;
+      follow(false);
+      land(row, place.offset);
       return;
     }
     if (atEnd.current || first.current) {
@@ -1198,9 +1231,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     const sc = scroller.current;
     if (sc && !origin.current) {
       // the first line still in view, and how far under the view's top it starts
-      const top = sc.getBoundingClientRect().top;
-      const at = [...sc.querySelectorAll<HTMLElement>("[data-line]")].map((el) => ({ id: el.dataset.line, r: el.firstElementChild?.getBoundingClientRect() })).find((x) => x.r && x.r.bottom > top);
-      origin.current = { atEnd: atEnd.current, line: at?.id, offset: at?.r ? at.r.top - top : 0 };
+      origin.current = { atEnd: atEnd.current, ...firstLineInView(sc) };
     }
     setSearch((x) => ({ ...x, open: true }));
   }, []);
@@ -1336,10 +1367,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // On a phone (#1996): what is under the chat stays within about half of the visible height (dock.ts); the keyboard is
   // up while the composer has the focus on a touch screen alone
   const narrow = useMedia(NARROW);
-  // A task's or an agent's side panel (TaskPanel, AgentPanel) is a phone's width: its cards fold and its dock keeps
-  // to DOCK_MAX as a narrow screen's do. Unbounded there, a plan with a question and a permission stood taller than the
-  // panel, and focusing the composer scrolled the whole page up under it, the panel's header cut off (#1282).
-  const compactDock = narrow || (!inPage && !assistant);
+  // a narrow screen's cards fold and its dock keeps to DOCK_MAX (#1282)
+  const compactDock = narrow;
   const short = useMedia(SHORT);
   const [typing, setTyping] = useState(false);
   const keyboard = typing && !fine;
@@ -1441,14 +1470,14 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         view={switchable ? view : undefined}
         onView={switchable ? setView : undefined}
         viewDot={view === "term" && (interactions.length > 0 || state === "needs_you")}
-        panel={panel}
         actions={headerActions}
       />
-      {!panel && isMain && <MainRuntimeSlot sid={sid} />}
+      {isMain && <MainRuntimeSlot sid={sid} />}
       {banner}
+      {cameFrom && <Suspense fallback={null}><HandoffBack from={cameFrom} onDismiss={() => setCameFrom(undefined)} /></Suspense>}
       {/* a known session keeps its chat: a failed background read is retried quietly (runtime-session.ts) */}
       {archivedHere ? <ArchivedNotice session={archivedHere} /> : noDetails && <SessionDetailNotice error={detail.error} retry={retryDetail} />}
-      {session && !panel && panes.length > 1 && <PaneTabs sessions={panes} current={sid} onSelect={(s) => navigate(withWorkView(paneRoute(s), terminalAvailable !== undefined), true)} />}
+      {session && panes.length > 1 && <PaneTabs sessions={panes} current={sid} onSelect={(s) => navigate(withWorkView(paneRoute(s), terminalAvailable !== undefined), true)} />}
 
       {/* the page's middle: the chat and (once shown) the terminal stacked in one box; without a terminal to show it adds no box */}
       <div className={switchable ? "relative min-h-0 flex-1" : "contents"}>
@@ -1850,7 +1879,6 @@ export const Header = memo(function Header({
   view,
   onView,
   viewDot,
-  panel: chrome,
   subtitle,
   actions,
 }: {
@@ -1876,7 +1904,6 @@ export const Header = memo(function Header({
   onView?: (view: SessionView) => void;
   /** The conversation has something that wants an answer while the terminal is shown. */
   viewDot?: boolean;
-  panel?: PanelChrome;
   /** A conversation still starting has no session to make its subtitle from: what it will say (the new-conversation page, #1697). */
   subtitle?: string;
   /** The page's own buttons, before the permission mode and ⋯ (ChatView `headerActions`). */
@@ -1884,7 +1911,6 @@ export const Header = memo(function Header({
 }) {
   const menu = useMenu();
   const tabs = useMenu();
-  const pick = useMenu();
   const panel = usePanel();
   const mutes = useStore((s) => s.mutes);
   const [closing, setClosing] = useState(false);
@@ -1913,10 +1939,8 @@ export const Header = memo(function Header({
   const awaiting = session ? awaitsReply(session, mutes) : false;
   // a Persona conversation's subtitle ends with its age: the memo keeps pushes from drawing the header again, so a minute
   // tick does (docs/lessons/web.md, SessionRow)
-  useNow(60_000, Boolean(!chrome?.sub && !main && assistant && session?.updated_at));
-  const place = chrome?.sub
-    ? chrome.sub
-    : subtitle !== undefined
+  useNow(60_000, Boolean(!main && assistant && session?.updated_at));
+  const place = subtitle !== undefined
     ? subtitle
     : main
     ? ""
@@ -1929,9 +1953,8 @@ export const Header = memo(function Header({
   const sub = [limitLine, place].filter(Boolean).join(" · ");
   const allowed = session ? sessionMenuActions(session) : [];
   const attach = () => session && attachLive(session);
-  const others = chrome ? [] : siblings.filter((s) => s.session_id !== session?.session_id);
-  // a task's panel stands for the task: its title above, and the agent's own todo line would only repeat it
-  const todoLine = Boolean(session?.todo && !assistant && !chrome?.title);
+  const others = siblings.filter((s) => s.session_id !== session?.session_id);
+  const todoLine = Boolean(session?.todo && !assistant);
   // the session's files and Git open in the side panel (docs/web/web.md "Side panel"); the assistant has none. Its terminal is
   // the page's other view, switched in place (view / onView)
   const here = (p: typeof panel, kind: string) => Boolean(p && p.kind === kind && "sid" in p && session && p.mid === session.machine_id && p.sid === session.session_id);
@@ -2028,8 +2051,7 @@ export const Header = memo(function Header({
         ...(!archived && deleteInsteadOfArchive(features) && sessionDeletable(session) ? [{ key: "delete", label: t("chat-chatview.delete_chat"), icon: "trash" as const, danger: true, onSelect: () => setDialog("delete") }] : []),
       ]
     : [];
-  const panelItems = chrome?.items ?? [];
-  const items: MenuItem[] = panelItems.length > 0 && own.length > 0 ? [...panelItems, { ...own[0], divider: true }, ...own.slice(1)] : [...panelItems, ...own];
+  const items: MenuItem[] = own;
 
   return (
     <header className="@container flex h-14 shrink-0 items-center gap-2 border-b border-line bg-page/85 px-3 backdrop-blur-md sm:px-4">
@@ -2042,13 +2064,9 @@ export const Header = memo(function Header({
           {session && !assistant && <StatusMark state={state} awaiting={awaiting} waiting={Boolean(session && backgroundWaiting(session))} />}
           {assistant && <AssistantFace session={session} last={last} />}
           {/* narrow: the dot before the title says the state; the pill would leave the title a word or two */}
-          <h1 className="truncate text-[14px] font-semibold text-ink">{chrome?.title || title}</h1>
-          {chrome?.agents && chrome.agents.length > 1 && (
-            <IconButton icon="chevron" label={t("chat-chatview.switch_agent")} onClick={pick.open} active={Boolean(pick.anchor)} className="-ml-1.5 shrink-0" />
-          )}
-          {/* a panel is a phone's width: the dot says the state there too. Wide, the pill gives the dot's state its words, not
-              a second dot (#3956: the state is said once) */}
-          {session && !assistant && !chrome && (state !== "idle" || awaiting) && <span className="hidden @min-[800px]:contents"><StatePill state={state} awaiting={awaiting} waiting={Boolean(session && backgroundWaiting(session))} dot={false} /></span>}
+          <h1 className="truncate text-[14px] font-semibold text-ink">{title}</h1>
+          {/* wide, the pill gives the dot's state its words, not a second dot (#3956: the state is said once) */}
+          {session && !assistant && (state !== "idle" || awaiting) && <span className="hidden @min-[800px]:contents"><StatePill state={state} awaiting={awaiting} waiting={Boolean(session && backgroundWaiting(session))} dot={false} /></span>}
           {/* narrow: the context bar gives way to the title too (#3532); "Session info" still has the token count. The header's own
               width decides (a container), so a side panel beside the chat narrows it as a phone does; the pill and the
               bar go below 800px, the chips' words below 640px, so the title keeps room in between (#3670) */}
@@ -2120,20 +2138,18 @@ export const Header = memo(function Header({
         </span>
       )}
       {/* wide screens have New chat at the top of the sidebar; a phone's sidebar is a drawer */}
-      {assistant && !chrome && session?.space !== "health" && <IconButton icon="compose" label={t("chat-chatview.new_chat")} onClick={() => navigate({ name: "persona-new" })} className="lg:hidden" />}
-      {!chrome && actions}
+      {assistant && session?.space !== "health" && <IconButton icon="compose" label={t("chat-chatview.new_chat")} onClick={() => navigate({ name: "persona-new" })} className="lg:hidden" />}
+      {actions}
       {/* the permission mode, always in view and changed here (#3956, iOS #3719): the end of the header's controls, before ⋯,
-          at every width; not in a panel, whose header stays as it was */}
-      {!chrome && showsInHeader(session, assistant) && session && <HeaderModeButton session={session} />}
+          at every width */}
+      {showsInHeader(session, assistant) && session && <HeaderModeButton session={session} />}
       {items.length > 0 && (
         <span className="relative flex shrink-0">
           <IconButton icon="more" label={t("chat-chatview.more")} onClick={menu.open} active={Boolean(menu.anchor)} />
           {othersNeed && <span aria-hidden className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-attention shadow-[0_0_0_2px_var(--page)] sm:hidden" />}
         </span>
       )}
-      {chrome && <IconButton icon="x" label={t("sidepanel.close")} onClick={chrome.onClose} />}
       </div>
-      {pick.anchor && chrome?.agents && <Menu anchor={pick.anchor} onClose={pick.close} items={chrome.agents} width={320} />}
       {menu.anchor && <Menu anchor={menu.anchor} onClose={menu.close} align="right" items={items} />}
       {session && <CloseAgentDialog open={closing} onClose={() => setClosing(false)} onClosed={() => navigate({ name: "home" })} session={session} machineName={machineName} />}
       {session && archiveClosing && <ArchiveCloseDialog open onClose={() => setArchiveClosing(false)} session={session} machineName={machineName} />}

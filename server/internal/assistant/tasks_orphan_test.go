@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
 )
@@ -286,5 +287,93 @@ func TestOrphanedByAnOfflineComputer(t *testing.T) {
 	}
 	if o := listedOrphan(t, s, todo.ID); o != nil {
 		t.Fatalf("a done to-do is orphaned: %+v", o)
+	}
+}
+
+// #5124: a supervised task whose agent waits on its background work reads "waiting". Its process is then killed (with
+// its tab and its background command): the node lists it as cut off (interrupted, no pane, nothing running). Within one
+// pass the task reads stopped, not waiting, and its supervisor is told nobody works on it.
+func TestWaitingTaskWhoseAgentDiedIsToldStopped(t *testing.T) {
+	ctx := context.Background()
+	s, f := newQuietService(t)
+	s.superviseTimes = superviseTimings{gather: time.Hour, every: time.Hour, urgent: time.Hour} // nothing goes out while the test looks
+	todo := orphanTask(t, s)
+	now := time.Now()
+	turnAt := now.Add(-time.Hour)
+	// What triageRules reported when its turn ended with a background command running.
+	reported := proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Line: "1 background task running", TurnAt: turnAt}
+	listed := func(c proto.Session) proto.Session { // as the hub's list decorates the node's row (fleet_sessions.go)
+		c.Work = workOf(i18n.En, c, &reported, nil)
+		return c
+	}
+
+	alive := listed(proto.Session{SessionID: "s1", MachineID: "box", Cwd: "/code/app", Agent: "claude", StartedByPersona: true,
+		Status: proto.StatusDone, State: proto.StateWorking, BackgroundWorking: true, PaneID: "w1:p1", UpdatedAt: turnAt,
+		Background: []proto.BackgroundTask{{ID: "b1", Kind: "shell", Command: "sleep 3600"}}})
+	f.setSessions("box", alive)
+	if st := taskState(todoNow(s, todo.ID), []proto.Session{alive}); st != "waiting" {
+		t.Fatalf("alive, waiting on its background command: %q", st)
+	}
+	s.orphanWatch(ctx, now)
+	if o := listedOrphan(t, s, todo.ID); o != nil {
+		t.Fatalf("orphaned while its agent waits on its background command: %+v", o)
+	}
+
+	killed := listed(proto.Session{SessionID: "s1", MachineID: "box", Cwd: "/code/app", Agent: "claude", StartedByPersona: true,
+		Status: proto.StatusInterrupted, State: proto.StateUnknown, UpdatedAt: turnAt})
+	if killed.Work != nil {
+		t.Fatalf("a dead agent keeps a wait only its process could end: %+v", killed.Work)
+	}
+	f.setSessions("box", killed)
+	if st := taskState(todoNow(s, todo.ID), []proto.Session{killed}); st != "followup" {
+		t.Fatalf("killed: %q, want stopped (followup)", st)
+	}
+	s.orphanWatch(ctx, now.Add(time.Minute)) // one pass
+	if o := listedOrphan(t, s, todo.ID); o == nil || o.Reason != orphanClosed {
+		t.Fatalf("killed, orphaned = %+v", o)
+	}
+	s.superviseWatch(ctx, now.Add(time.Minute))
+	s.supervise.mu.Lock()
+	g, ok := s.supervise.pending[todo.ID+"|"+sigOrphaned]
+	s.supervise.mu.Unlock()
+	if !ok || g.Orphan != orphanClosed || g.Session != "s1" || !g.urgent() {
+		t.Fatalf("supervision signal = %+v %v", g, ok)
+	}
+	e, ok := s.digestEntry(ctx, g, "")
+	if !ok {
+		t.Fatal("the signal does not make it into the message")
+	}
+	if text := prompts.RenderSupervise(prompts.Supervise{Entries: []prompts.SuperviseEntry{e}}); !strings.Contains(text, "没有 Agent 在做了") { // i18n-ignore: the supervisor's prompt
+		t.Fatalf("the message does not say it:\n%s", text)
+	}
+}
+
+// What the lists keep of a stopped turn's wait on an agent the node lists as cut off by a restart (#5124): a wait only
+// its own process ends is dropped; one the manager wakes, or one that names what it waits for, stays.
+func TestWorkOfInterrupted(t *testing.T) {
+	now := time.Now()
+	wake := now.Add(time.Hour)
+	sess := proto.Session{SessionID: "s1", Status: proto.StatusInterrupted, State: proto.StateUnknown, UpdatedAt: now}
+	for _, c := range []struct {
+		name string
+		w    proto.WorkState
+		kept bool
+	}{
+		{"background running", proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal}, false},
+		{"its CLI goes on after a limit", proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, ResetsAt: &wake, Line: "limit resets at 10:00"}, true}, // no TurnErrorResumes: names its wait
+		{"the manager wakes it", proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, WakeAt: &wake}, true},
+		{"waits for CI", proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Wait: "CI"}, true},
+		{"waits for the user", proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitUser}, true},
+		{"done", proto.WorkState{Phase: proto.WorkDone}, true},
+	} {
+		c.w.TurnAt = now
+		if got := workOf(i18n.En, sess, &c.w, nil); (got != nil) != c.kept {
+			t.Errorf("%s: %+v, kept %v", c.name, got, c.kept)
+		}
+		alive := sess
+		alive.Status = proto.StatusDone
+		if got := workOf(i18n.En, alive, &c.w, nil); got == nil {
+			t.Errorf("%s: dropped for a live agent", c.name)
+		}
 	}
 }

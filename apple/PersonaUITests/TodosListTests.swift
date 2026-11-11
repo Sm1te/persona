@@ -36,8 +36,13 @@ final class TodosListTests: XCTestCase {
         week.tap()
         let chip = app.buttons["todos.filter.clear"]
         XCTAssertTrue(chip.waitForExistence(timeout: 10))
-        // the cache decision has no due date: it waits on the user outside This Week, and the line says so
-        XCTAssertTrue(app.descendants(matching: .any)["todos.filter.hiddenWaiting"].waitForExistence(timeout: 10))
+        // the cache decision has no due date: it waits on the user outside This Week, and the line says so. The line sits
+        // over the rows, and the list stays where the swipe to N related left it; a List loads no row off screen (#5039).
+        let line = app.descendants(matching: .any)["todos.filter.hiddenWaiting"]
+        for _ in 0..<3 where !line.waitForExistence(timeout: 2) {
+            app.collectionViews.firstMatch.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(line.waitForExistence(timeout: 10), "the line for what This Week leaves out of Needs you")
         shot("todos-filter-week")
         chip.tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 10))

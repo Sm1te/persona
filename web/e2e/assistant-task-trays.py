@@ -110,7 +110,7 @@ def run(args):
                     page.goto(args.url.rstrip("/") + "/")
                     bar = page.locator("[data-assistant-actionbar]")
                     expect(bar).to_be_visible()
-                    expect(page.locator("[data-dispatch-hint]")).to_have_count(1)
+                    expect(page.locator("[data-handoff-cards]")).to_have_count(1)  # the dispatch is a group of hand-off cards (#5096)
                     expect(page.locator("[data-receipt], [data-task-slot]")).to_have_count(0)
                     expect(page.get_by_text("Synthetic acceptance result", exact=True)).to_have_count(0)
                     expect(page.get_by_text("Synthetic progress report", exact=True)).to_have_count(0)
@@ -157,8 +157,8 @@ def run(args):
                     expect(needs_entry).to_have_attribute("aria-expanded", "false")
                     expect(bar.locator("section")).to_have_count(0)
                     needs_entry.blur()
-                    # #3700: the dispatched line names the plan's tasks, each opening its own task (dispatched-line.py), not this tray
-                    expect(page.locator("[data-dispatch-hint] [data-dispatched-task]")).to_have_count(len(TITLES))
+                    # #3700, #5096: a hand-off card for each of the plan's tasks, each opening its own Agent (handoff-cards.py), not this tray
+                    expect(page.locator("[data-handoff-cards] [data-handoff-card]")).to_have_count(len(TITLES))
                     running_entry.click()
                     expect(running_entry).to_have_attribute("aria-expanded", "true")
                     expect(running_entry).to_have_class(re.compile(r"\bbg-ink\b"))

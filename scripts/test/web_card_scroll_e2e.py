@@ -6,9 +6,9 @@ hit, and scrolling the box (the wheel on a desktop, a finger on a phone) brings 
 can be picked.
 
 Where the cards sit differs: Persona's main chat draws them straight in its tray (MOCK_ASK_LONG=perm or =1, the
-default --path /persona: guards #2026, a card squeezed by the tray); an agent's chat on a phone or in a side panel
-folds them under the composer (MOCK_ASK_LONG=agent with --path /s/macbook/<session> or 'panel:<agent title>': guards
-#3112, a fold that clips and leaves the buttons below it). The agent's chat has two long cards: the second is checked
+default --path /persona: guards #2026, a card squeezed by the tray); an agent's chat on a phone folds them under the
+composer (MOCK_ASK_LONG=agent with --path /s/macbook/<session>: guards #3112, a fold that clips and leaves the buttons
+below it). The agent's chat has two long cards: the second is checked
 too, after tapping "1 more" to open its fold.
 
 Needs a running web page against the fake hub, Playwright for Python and its bundled browsers:
@@ -118,31 +118,20 @@ def check(browser, engine, base, label, w, h, shots, path="/persona", theme="lig
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(base + "/overview?token=mock")
     page.wait_for_selector("aside", state="attached", timeout=20000)
-    if path.startswith("panel:"):
-        # an agent's chat in the side panel over Persona's main chat (from its Agents tray): a phone's width, its cards
-        # folded under the composer as on a phone
-        go(page, "/persona")
-        page.wait_for_selector("[data-chat-dock]", timeout=20000)
-        page.wait_for_timeout(800)
-        page.locator("[data-chat-dock] button").filter(has_text="Agents").first.click()
-        page.wait_for_timeout(600)
-        page.locator("[data-chat-dock]").get_by_text(path[len("panel:"):]).first.click()
-        page.wait_for_timeout(1500)
-    else:
-        go(page, path)
-        page.wait_for_selector("[data-chat-dock]", timeout=20000)
-        page.wait_for_timeout(800)
+    go(page, path)
+    page.wait_for_selector("[data-chat-dock]", timeout=20000)
+    page.wait_for_timeout(800)
     # Persona's main chat keeps what waits on you in the "Pending" tray over the composer: open it
     tray = page.locator("[data-chat-dock] button").filter(has_text="Pending")
     if not page.locator(CARD).count() and tray.count():
         tray.first.click()
     page.wait_for_selector(CARD, timeout=20000)
     what = f"{engine} {label} {w}x{h} {theme}"
-    where = path.split(":")[0].strip("/").split("/")[0] if path != "/persona" else "persona"
+    where = path.strip("/").split("/")[0] if path != "/persona" else "persona"
     cdp = ctx.new_cdp_session(page) if touch else None
     first = check_card(page, cdp, touch, what, shots and os.path.join(shots, f"{where}-{engine}-{w}x{h}-{theme}-1"), [])
     if path != "/persona":
-        # the agent's second long card: behind "1 more" where the cards fold (phone, side panel), else right under
+        # the agent's second long card: behind "1 more" where the cards fold (phone), else right under
         fold = page.locator("[data-chat-cards-fold]")
         if fold.count():
             if touch:
@@ -220,8 +209,7 @@ def main():
     ap.add_argument("--browser", default="chromium", choices=["chromium", "webkit", "all"])
     ap.add_argument("--shots")
     ap.add_argument("--theme", default="light", choices=["light", "dark", "both"])
-    ap.add_argument("--path", default="/persona", help="the chat to open: /persona, an agent's /s/<machine>/<session>, or panel:<agent title> for "
-                    "that agent in the side panel over the main chat (both MOCK_ASK_LONG=agent)")
+    ap.add_argument("--path", default="/persona", help="the chat to open: /persona, or an agent's /s/<machine>/<session> (MOCK_ASK_LONG=agent)")
     a = ap.parse_args()
     if a.shots:
         os.makedirs(a.shots, exist_ok=True)
@@ -230,8 +218,6 @@ def main():
         for engine in engines:
             browser = getattr(p, engine).launch()
             for label, w, h in SIZES:
-                if a.path.startswith("panel:") and w < 640:
-                    continue  # a phone opens the agent full screen: the /s/… run covers it
                 for theme in (["light", "dark"] if a.theme == "both" else [a.theme]):
                     check(browser, engine, a.base.rstrip("/"), label, w, h, a.shots, a.path, theme)
             browser.close()

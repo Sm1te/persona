@@ -18,6 +18,11 @@ const P: Record<string, React.ReactNode> = {
   collapse: <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />,
   plus: <path d="M12 5v14M5 12h14" />,
   x: <path d="M18 6L6 18M6 6l12 12" />,
+  // a hand-off to an Agent (#5096; Lucide's corner-down-right, as cindy's card), the way back from it (corner-up-left),
+  // and the card's "opens a page" mark (arrow-up-right)
+  cornerDownRight: <path d="M15 10l5 5-5 5M4 4v7a4 4 0 0 0 4 4h12" />,
+  cornerUpLeft: <path d="M9 14 4 9l5-5M20 20v-7a4 4 0 0 0-4-4H4" />,
+  arrowUpRight: <path d="M7 7h10v10M7 17 17 7" />,
   check: <path d="M20 6L9 17l-5-5" />,
   search: <g><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></g>,
   // a prompt with no frame: a command run, and the sidebar's mark for a terminal pane (unlike appWindow, it has no box)

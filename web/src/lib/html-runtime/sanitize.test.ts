@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { frameMessageFits, guestEvent } from "./host";
+import { cardHeight, FRAME_MIN, frameHeight, HEIGHT_DEFAULT, HEIGHT_MAX } from "./height";
 import { CSS_BYTES_MOST, NODES_MOST } from "./limits";
 import { BODY_ID, HEAD_ID } from "./protocol";
 import { drawnAttr, FRAME_SANDBOX, frameCsp, frameNonce, frameShell, LimitError, safeCss, Sanitizer } from "./sanitize";
@@ -97,6 +98,38 @@ describe("the sanitizer", () => {
     expect(out).toEqual([["t", BODY_ID, 0, [10, "div", "", [["class", "a"], ["style", "color: red"]], [[11, "#text", "hi"]], {}]]]);
     // the dropped nodes are unknown: what names them does nothing
     expect(s.clean([["a", 20, "src", "https://example.com"], ["t", 12, 0, text(40, "x")], ["d", 13, "y"], ["r", 21]])).toEqual([]);
+  });
+
+  it("never draws meta, base, link, iframe, object or embed, in the head or the body, whatever they carry", () => {
+    const tags: [string, [string, string][]][] = [
+      ["meta", [["http-equiv", "refresh"], ["content", "0;url=https://example.com/"]]],
+      ["meta", [["http-equiv", "Content-Security-Policy"], ["content", "default-src *"]]],
+      ["meta", [["name", "viewport"], ["content", "width=device-width"]]],
+      ["base", [["href", "https://example.com/"]]],
+      ["base", [["target", "_blank"]]],
+      ...["stylesheet", "prefetch", "preload", "dns-prefetch", "preconnect", "modulepreload", "icon", "manifest"].map((rel) => ["link", [["rel", rel], ["href", "https://example.com/x"]]] as [string, [string, string][]]),
+      ["iframe", [["src", "https://example.com/"]]],
+      ["iframe", [["srcdoc", "<script>x()</script>"]]],
+      ["object", [["data", "https://example.com/"], ["type", "text/html"]]],
+      ["embed", [["src", "https://example.com/"], ["type", "image/svg+xml"]]],
+      ["frame", [["src", "https://example.com/"]]],
+      ["frameset", []],
+      ["portal", [["src", "https://example.com/"]]],
+      ["noscript", []],
+      ["template", []],
+      ["slot", []],
+    ];
+    for (const [tag, attrs] of tags) {
+      for (const parent of [HEAD_ID, BODY_ID]) {
+        for (const name of [tag, tag.toUpperCase()]) {
+          const s = new Sanitizer();
+          expect(s.clean([insert(el(10, name, attrs, [text(11, "x")]), parent)]), `${name} in ${parent === HEAD_ID ? "head" : "body"}`).toEqual([]);
+          // nor nested inside something that is drawn, nor in svg
+          expect(s.clean([insert(el(20, "div", [], [el(21, name, attrs)]), parent)])).toEqual([["t", parent, 0, [20, "div", "", [], [], {}]]]);
+          expect(new Sanitizer().clean([insert(el(30, "svg", [], [el(31, name, attrs, [], "svg")], "svg"), parent)])).toEqual([["t", parent, 0, [30, "svg", "svg", [], [], {}]]]);
+        }
+      }
+    }
   });
 
   it("never lets a URL that loads anything through", () => {
@@ -209,5 +242,21 @@ describe("what the frame tells the page", () => {
     expect(frameMessageFits({ n: "a", ev: { type: "click", target: 1, token: "x" } })).toBe(false);
     expect(frameMessageFits({ n: "a", ops: [] })).toBe(false);
     expect(frameMessageFits({ n: "a", ev: { type: "input", target: 1, value: "x".repeat(80 * 1024) } })).toBe(false);
+    // how tall the card's content is: a number, nothing else with it
+    expect(frameMessageFits({ n: "a", h: 120 })).toBe(true);
+    expect(frameMessageFits({ n: "a", h: "120" })).toBe(false);
+    expect(frameMessageFits({ n: "a", h: 120, top: 0 })).toBe(false);
+  });
+  it("sizes the frame to the card's content, between its least and the component's height", () => {
+    expect(frameHeight(12, cardHeight(undefined))).toBe(FRAME_MIN);
+    expect(frameHeight(88.2, cardHeight(undefined))).toBe(89);
+    expect(frameHeight(5000, cardHeight(undefined))).toBe(HEIGHT_DEFAULT);
+    expect(frameHeight(5000, cardHeight(600))).toBe(600);
+    expect(frameHeight(5000, cardHeight(9999))).toBe(HEIGHT_MAX);
+    // frame.js reports its body's height whenever it changes, once a frame at most
+    const src = readFileSync(new URL("./frame.js", import.meta.url), "utf8");
+    expect(src).toContain("new ResizeObserver");
+    expect(src).toContain("requestAnimationFrame(reportHeight)");
+    expect(src).toContain("post({ h: h })");
   });
 });

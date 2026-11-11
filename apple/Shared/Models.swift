@@ -669,9 +669,10 @@ nonisolated struct Session: Codable, Identifiable, Hashable, Sendable {
     var sourceThreadID: String? = nil
     var sourceInstanceID: String? = nil
     var parentThreadID: String? = nil
-    /// A Codex subagent (`thread_spawn`, docs/integrations/codex.md): `is_subagent`, the chat that spawned it
-    /// (`parent_session_id`) and the conversation at the top of its tree (`root_session_id`). The Agents list folds it
-    /// under that chat, as the Codex App and Android do (`CodexTasks`). Nil from older nodes.
+    /// A Codex subagent (`thread_spawn`, docs/integrations/codex.md), or a runtime's session another one started (a Paseo
+    /// agent another agent created, #4494): `is_subagent`, the session that started it (`parent_session_id`) and the
+    /// conversation at the top of its tree (`root_session_id`). The Agents list folds it under that session, as the Codex
+    /// App and Android do (`Session.isSubtask`, `CodexTasks`). Nil from older nodes.
     var isSubagent: Bool? = nil
     var parentSessionID: String? = nil
     var rootSessionID: String? = nil

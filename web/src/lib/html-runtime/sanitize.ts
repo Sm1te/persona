@@ -437,7 +437,7 @@ export function frameShell(dark: boolean, nonce: string, script: string): string
     `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<meta name="color-scheme" content="${dark ? "dark" : "light"}">` +
     `<style>:root{color-scheme:${dark ? "dark" : "light"}}html,body{background:transparent}` +
-    `body{margin:0;padding:12px;font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:${ink};overflow:auto;-webkit-text-size-adjust:100%}` +
+    `body{display:flow-root;margin:0;padding:12px;font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:${ink};overflow:auto;-webkit-text-size-adjust:100%}` +
     `a{color:${link};text-decoration:underline;cursor:pointer}</style></head>` +
     `<body><script nonce="${nonce}">${script}</script></body></html>`
   );

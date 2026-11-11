@@ -172,5 +172,25 @@
   ["input", "change", "keydown", "toggle", "focusin"].forEach(function (t) {
     D.addEventListener(t, forward, true);
   });
+  // What the card draws decides the frame's height: the body's height (a flow-root, so floats count) goes to the page
+  // whenever it changes, once a frame at most. The page holds it between its least and most (ui/HtmlCard.tsx).
+  var lastH = -1;
+  var asked = false;
+  function reportHeight() {
+    asked = false;
+    var h = Math.ceil(D.body.getBoundingClientRect().height);
+    if (h !== lastH) {
+      lastH = h;
+      post({ h: h });
+    }
+  }
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(function () {
+      if (!asked) {
+        asked = true;
+        requestAnimationFrame(reportHeight);
+      }
+    }).observe(D.body);
+  }
   post({ ready: true });
 })();

@@ -163,6 +163,12 @@ class HttpInboxAssistantTransport private constructor(
             after?.let { addQueryParameter("after", it) }
         }.build(),
     )
+    override suspend fun topics(feedId: String, before: String?) = json(
+        url("api", "v1", "lark", "conversations", feedId, "messages").newBuilder().apply {
+            addQueryParameter("topic", "1")
+            before?.let { addQueryParameter("before", it) }
+        }.build(),
+    )
     override suspend fun larkMessage(messageId: String): JsonObject {
         require(messageId.isNotBlank())
         return json(url("api", "v1", "lark", "messages", messageId))

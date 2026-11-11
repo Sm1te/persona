@@ -139,7 +139,7 @@ func (s *Service) putAgentUnder(ctx context.Context, mid, sid, lead, title strin
 			return Todo{}, false, err
 		}
 		if moved {
-			s.taskCard(ctx, lead, t.ID) // its card follows it (the old conversation keeps its history)
+			s.taskCard(ctx, lead, t.ID, wakeActive) // its card follows it (the old conversation keeps its history)
 		}
 		t.Supervision = &v
 		return t, false, nil
@@ -150,7 +150,7 @@ func (s *Service) putAgentUnder(ctx context.Context, mid, sid, lead, title strin
 		return Todo{}, false, err
 	}
 	if made {
-		s.taskCard(ctx, lead, todo.ID)
+		s.taskCard(ctx, lead, todo.ID, wakeActive)
 	}
 	return todo, made, nil
 }

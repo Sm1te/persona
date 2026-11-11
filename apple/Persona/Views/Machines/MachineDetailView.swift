@@ -38,16 +38,20 @@ struct MachineDetailView: View {
         #endif
     }
 
-    /// A machine's agents: live ones, not the Chat tab's assistant conversations (the Agents tab leaves those out too).
+    /// A machine's agents: live ones, not the Chat tab's assistant conversations (the Agents tab leaves those out too),
+    /// nor a subtask, which the Agents list folds under the session that started it and does not count unless it needs
+    /// the user (`Session.isNestedSubtask`, as Android's Machines card).
     static func agents(_ model: AppModel, _ ref: MachineRef) -> [Session] {
-        (model.sessionsByMachine[ref] ?? []).filter { $0.status.isLive && !$0.assistant }
+        (model.sessionsByMachine[ref] ?? []).filter(isListed)
     }
 
     /// Every machine's agents (`agents(_:_:)`), for a page that can be kept hidden behind another: watched only in front
     /// (`AppModel.allSessions(inFront:)`).
     static func agentsByMachine(_ model: AppModel, inFront: Bool) -> [MachineRef: [Session]] {
-        Dictionary(grouping: model.allSessions(inFront: inFront).filter { $0.status.isLive && !$0.assistant }, by: \.machineRef)
+        Dictionary(grouping: model.allSessions(inFront: inFront).filter(isListed), by: \.machineRef)
     }
+
+    private static func isListed(_ s: Session) -> Bool { s.status.isLive && !s.assistant && !s.isNestedSubtask }
 
     /// The agents before Show All: with dozens on one machine its charts would be screens away.
     static let agentsShown = 5

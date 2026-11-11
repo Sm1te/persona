@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Feishu topic group's cards (#576 G134, iOS LarkTopicCard). -->
+<resources>
+    <plurals name="inbox_lark_topic_earlier">
+        <item quantity="one">查看更早 %1$d 条回复</item>
+        <item quantity="other">查看更早 %1$d 条回复</item>
+    </plurals>
+    <string name="inbox_lark_topic_replies_failed">回复没读到</string>
+    <string name="inbox_lark_topic_react">表情回复</string>
+    <string name="inbox_lark_topic_reply">回复</string>
+    <string name="inbox_lark_topic_image">[图片]</string>
+    <string name="inbox_lark_topic_file">[文件] %1$s</string>
+    <string name="inbox_lark_topic_other">[消息]</string>
+</resources>

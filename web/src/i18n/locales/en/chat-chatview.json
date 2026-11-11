@@ -76,7 +76,6 @@
   "route_no_images": "Images can't be sent straight to a task yet. Remove the image and try again.",
   "not_live": "Not live",
   "not_live_reload": "Reload",
-  "switch_agent": "Switch agent",
   "composer_source": "Source",
   "call_not_loaded": "That step is not in the loaded history; scroll up and try again",
   "refresh_failed": "Couldn’t refresh",
@@ -110,5 +109,7 @@
   "closeout_found_deployed_no": "Hub found it isn't deployed",
   "stopped_line": "This Agent has stopped. Its conversation and terminal stay here; it doesn't take messages.",
   "resume": "Resume",
-  "resume_failed": "Couldn't resume this Agent. {error}"
+  "resume_failed": "Couldn't resume this Agent. {error}",
+  "handoff_from": "Came from {title} · click to return",
+  "handoff_dismiss": "Hide the way back"
 }

@@ -109,7 +109,7 @@ func (s *Service) startPlan(ctx context.Context, id string, edits []PlanTask, re
 			if t.Supervisor != "" && s.isLeader(ctx, t.Supervisor) {
 				sup = t.Supervisor
 				if t.ReuseTodo == "" {
-					s.taskCard(ctx, sup, todo.ID) // the leader sees its task's card too; the plan's stays where it was made
+					s.taskCard(ctx, sup, todo.ID, "") // the leader sees its task's card too; the plan's stays where it was made
 				}
 			}
 			s.superviseTodo(ctx, todo.ID, sup, t.DoneWhen, t.ExpectMinutes)
@@ -117,7 +117,7 @@ func (s *Service) startPlan(ctx context.Context, id string, edits []PlanTask, re
 			// Any other conversation's task is its own to supervise: its signals go to the conversation that planned it,
 			// which also sees its card and reviews it. No second card when that is the planning conversation itself.
 			if t.ReuseTodo == "" && sup != p.Conversation {
-				s.taskCard(ctx, sup, todo.ID)
+				s.taskCard(ctx, sup, todo.ID, "")
 			}
 			s.superviseTodo(ctx, todo.ID, sup, t.DoneWhen, t.ExpectMinutes)
 		}
