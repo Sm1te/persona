@@ -2,9 +2,11 @@ package node
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/screen"
 )
 
@@ -99,4 +101,26 @@ func (n *Node) forgetDialogs(live map[string]bool) {
 		}
 	}
 	n.dialogs.mu.Unlock()
+}
+
+// waitsOnUser: session id waits for the user the way its row says (sessionListIn): its host calls it blocked, or it is
+// a resting Claude whose terminal shows a dialog herdr does not report (a /permissions picker, #4941). The screen is
+// read now, not taken from the list's last read: a forced close must not act on a dialog already gone. A dialog too
+// tall to read whole is still a dialog. A working Agent is never read and never waits.
+func (n *Node) waitsOnUser(ctx context.Context, id string) bool {
+	a, ok := n.agent(id)
+	if !ok {
+		return false
+	}
+	if a.AgentStatus == proto.StatusBlocked {
+		return true
+	}
+	n.mu.Lock()
+	onList := n.onAgentsList[id]
+	n.mu.Unlock()
+	if !restingClaude(a, a.AgentStatus) || onList || n.isDriving(id) {
+		return false
+	}
+	text, err := n.dialogScreen(ctx, a.PaneID)
+	return errors.Is(err, errDialogCut) || err == nil && screen.DialogHead(text) != ""
 }
