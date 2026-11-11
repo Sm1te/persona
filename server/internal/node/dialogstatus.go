@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 
@@ -105,8 +104,8 @@ func (n *Node) forgetDialogs(live map[string]bool) {
 
 // waitsOnUser: session id waits for the user the way its row says (sessionListIn): its host calls it blocked, or it is
 // a resting Claude whose terminal shows a dialog herdr does not report (a /permissions picker, #4941). The screen is
-// read now, not taken from the list's last read: a forced close must not act on a dialog already gone. A dialog too
-// tall to read whole is still a dialog. A working Agent is never read and never waits.
+// read now, not taken from the list's last read: a forced close must not act on a dialog already gone. A working Agent
+// is never read and never waits.
 func (n *Node) waitsOnUser(ctx context.Context, id string) bool {
 	a, ok := n.agent(id)
 	if !ok {
@@ -122,5 +121,5 @@ func (n *Node) waitsOnUser(ctx context.Context, id string) bool {
 		return false
 	}
 	text, err := n.dialogScreen(ctx, a.PaneID)
-	return errors.Is(err, errDialogCut) || err == nil && screen.DialogHead(text) != ""
+	return err == nil && screen.DialogHead(text) != ""
 }

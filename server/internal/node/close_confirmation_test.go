@@ -59,16 +59,21 @@ const permissionsPicker = `⏺ Done.
 // #4941: the row is blocked because the terminal shows a dialog herdr does not report. The first forced close goes
 // through without herdr being told; a working Agent with the same screen is still refused and left alone.
 func TestForceCloseDialogHerdrCallsIdle(t *testing.T) {
-	for _, status := range []string{proto.StatusIdle, proto.StatusWorking} {
-		t.Run(status, func(t *testing.T) {
+	for name, agent := range map[string]map[string]any{
+		proto.StatusIdle:    claudeAgent(sidA, proto.StatusIdle, "w1:p1", "w1:t1", "w1", "/tmp", ""),
+		proto.StatusWorking: claudeAgent(sidA, proto.StatusWorking, "w1:p1", "w1:t1", "w1", "/tmp", ""),
+		// herdr says idle, Claude Code's spinner in the title says it works (agent_status.go).
+		"idle spinning": claudeAgent(sidA, proto.StatusIdle, "w1:p1", "w1:t1", "w1", "/tmp", "◐ Fixing the tests"),
+	} {
+		t.Run(name, func(t *testing.T) {
 			n, f, _ := herdrNode(t)
-			f.reply("session.snapshot", snapshot(nil, nil, []any{claudeAgent(sidA, status, "w1:p1", "w1:t1", "w1", "/tmp", "")}, nil))
+			f.reply("session.snapshot", snapshot(nil, nil, []any{agent}, nil))
 			f.setScreen("w1:p1", permissionsPicker)
 			listSessions(t, n)
 			f.reset()
 			_, err := request(t, n, "session.close", map[string]any{"session_id": sidA, "force": true})
 			got := withoutAgentReports(f.trace())
-			if status == proto.StatusWorking {
+			if name != proto.StatusIdle {
 				if code, _ := refusalOf(t, err); code != "agent_busy" {
 					t.Fatalf("working close: %v", err)
 				}
