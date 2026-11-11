@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/nwverse/persona/server/internal/host"
+	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/screen"
@@ -80,7 +80,7 @@ var (
 var errCodexBoxLate = errors.New("codex box late")
 
 // codexLoadingRE: Codex 0.153 draws its input box before its model is known ("model:     loading" in the header).
-var codexLoadingRE = regexp.MustCompile(`(?m)^\W*(model|directory):\s+loading\b`)
+var codexLoadingRE = lazyre.New(`(?m)^\W*(model|directory):\s+loading\b`)
 
 // codexBusyStarting: Codex starts its MCP servers after the model ("• Starting MCP servers (1/3): …"), and herdr
 // shows the pane working meanwhile.
