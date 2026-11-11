@@ -103,7 +103,8 @@ final class MessageMenuTests: XCTestCase {
     @MainActor func testBarAtTheLargestText() throws {
         let names: [String: [String]] = ["zh-Hans": ["复制", "选择文本", "引用", "编辑"], "en": ["Copy", "Select Text", "Quote", "Edit"],
                                          "ja": ["コピー", "テキストを選択", "引用", "編集"]]
-        let runs: [(String, String, String, Bool)] = [("zh-Hans", "zh_CN", "light", false), ("zh-Hans", "zh_CN", "dark", false)]
+        let runs: [(String, String, String, Bool)] = [("zh-Hans", "zh_CN", "light", false), ("zh-Hans", "zh_CN", "dark", false),
+                                                      ("ja", "ja_JP", "light", false)]
             + ["zh-Hans", "en", "ja"].flatMap { language in
                 ["light", "dark"].map { (language, ["zh-Hans": "zh_CN", "en": "en_US", "ja": "ja_JP"][language]!, $0, true) }
             }
@@ -114,6 +115,7 @@ final class MessageMenuTests: XCTestCase {
             let want = names[language]!
             for (whose, message) in [("own", question), ("reply", answer)] {
                 let copy = app.buttons[want[0]]
+                if large { reveal(message, in: app) }
                 for _ in 0..<3 where !copy.exists {
                     point(of: message, in: app).press(forDuration: 0.6)
                     _ = copy.waitForExistence(timeout: 3)
@@ -126,12 +128,35 @@ final class MessageMenuTests: XCTestCase {
                     XCTAssertTrue(app.frame.contains(item.frame), "\(label) \(whose): \(name) off the screen at \(item.frame)")
                 }
                 shot(named: "message-bar-\(label)-\(whose)")
-                // A tap on the list away from the bar closes it (Select Text, on the bar, would not).
-                let away = copy.frame.midY > app.frame.midY ? 0.15 : 0.6
-                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: away)).tap()
+                // A tap on the list away from the bar closes it (Select Text, on the bar, would not); at the largest text a
+                // drag does, since a tap there can land on the away recap, which is a button.
+                if large {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+                        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+                } else {
+                    let away = copy.frame.midY > app.frame.midY ? 0.15 : 0.6
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: away)).tap()
+                }
                 XCTAssertTrue(copy.waitForNonExistence(timeout: 3), "\(label) \(whose): the bar stayed")
             }
             app.terminate()
+        }
+    }
+
+    /// At the largest text the recap of what happened while away fills the screen and pushes both messages above it:
+    /// drag the list down (to older messages) until the bubble sits between the title bar and the composer. Frames are
+    /// read as `point(of:in:)` reads them (rows of the flipped list may report flipped ones).
+    @MainActor private func reveal(_ message: String, in app: XCUIApplication) {
+        let text = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", message)).firstMatch
+        guard text.waitForExistence(timeout: 15) else { return }
+        let window = app.windows.firstMatch.frame
+        for _ in 0..<8 {
+            let f = text.frame
+            let mid = window.contains(CGPoint(x: f.midX, y: f.midY)) ? f.midY : window.height - f.midY
+            if mid > window.height * 0.15, mid < window.height * 0.8 { return }
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+            sleep(1)
         }
     }
 
