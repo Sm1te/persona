@@ -496,6 +496,7 @@ nonisolated extension Launcher {
         agent = try c.decodeIfPresent(String.self, forKey: .agent)
         assistant = try c.decodeIfPresent(Bool.self, forKey: .assistant)
         health = (try? c.decodeIfPresent(LauncherHealth.self, forKey: .health)) ?? nil
+        promptOptional = try c.decodeIfPresent(Bool.self, forKey: .promptOptional)
     }
 }
 
