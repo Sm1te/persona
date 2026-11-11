@@ -398,6 +398,8 @@ type BriefFacts struct {
 	Briefs, BriefsDone []BriefTask
 	// Day: the evening routine's today's all-day recording (#4741), for the model only; nil leaves the section out.
 	Day *BriefDay
+	// Setup: the lines of the weekly recommended-setup block (#5085), ready to read; none leaves the section out.
+	Setup []string
 }
 
 // BriefDay is today's all-day recording in the evening routine's facts (#4741), the day's parts merged by time; the

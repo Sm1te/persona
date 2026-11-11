@@ -82,6 +82,9 @@ type briefFacts struct {
 	// Day: the evening routine's today's all-day recording (briefing_day.go), for the model only; nil for any other
 	// run, or without one today.
 	Day *prompts.BriefDay
+	// Setup: the recommended-setup block (setup_suggest.go), on the first briefing of a week only; nil on any other
+	// run. It may name nothing.
+	Setup *setupBlock
 }
 
 // briefFactsAt works out the facts for a run that starts at now. self is the routine that is running: its own earlier
@@ -202,6 +205,8 @@ func (s *Service) briefStart(ctx context.Context, t Task, now time.Time) string 
 	// What the briefs say since the last briefing, told once: only a real run moves the mark, not a look at the facts.
 	run.facts.Briefs, run.facts.BriefsDone = s.briefDigest(ctx, now, s.briefDigestSince(ctx, now), run.facts.loc)
 	s.briefDigestTold(ctx, now)
+	// The week's block, on its first briefing; it is marked told when the briefing reaches the owner (setupTold).
+	run.facts.Setup = s.setupFor(ctx, now, run.facts.loc, run.facts.l, run.facts.web)
 	b := &s.brief
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -295,6 +300,7 @@ func (s *Service) briefMirror(ctx context.Context, machine, session, label strin
 func (s *Service) briefAsked(f *briefFacts, shown []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // not the mirror's: this may run on its retry
 	defer cancel()
+	s.setupTold(f.Setup, f.At) // the card carried the week's block
 	asked := map[string]time.Time{}
 	for _, r := range f.Accept {
 		asked[r.id] = r.asked
@@ -383,6 +389,7 @@ func (f *briefFacts) modelText() string {
 	b.Confirmations = f.ConfirmationLines
 	b.ProgressTotal, b.Leaders = f.ProgressTotal, f.Leaders
 	b.Briefs, b.BriefsDone, b.Day = f.Briefs, f.BriefsDone, f.Day
+	b.Setup = f.Setup.lines()
 	for _, p := range f.Progress {
 		b.Progress = append(b.Progress, prompts.BriefProgress{Title: clip(oneLine(p.Title), 60), Stage: p.Stage})
 	}
@@ -409,5 +416,6 @@ func (s *Service) briefPush(session string, l i18n.Lang, report bool) string {
 	run.pushed = true
 	b.mu.Unlock()
 	s.briefListed(run.facts)
+	s.setupTold(run.facts.Setup, run.facts.At) // the run's `brief` item carried the week's block
 	return run.facts.countsIn(l)
 }

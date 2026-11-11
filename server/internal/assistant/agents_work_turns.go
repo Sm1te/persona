@@ -114,8 +114,10 @@ func (s *Service) workStartedObserved(ctx context.Context, machine, sid string, 
 		s.workEvent(machine, sid, "withdrawn", map[string]any{"by": by})
 	}
 	if prev.Work.Phase != "" {
+		// limit, card: the stop was a usage limit; a card was up for it. The weekly setup block counts by them
+		// (setup_suggest.go), and not at all from a row that has neither (one from before them).
 		s.workEvent(machine, sid, "resumed", map[string]any{"after": now.Sub(prev.TurnAt).Seconds(), "phase": prev.Work.Phase,
-			"on": prev.Work.On, "by": by})
+			"on": prev.Work.On, "by": by, "limit": prev.Work.ResetsAt != nil, "card": card != ""})
 	}
 	s.saveWork(saved)
 	if changed {

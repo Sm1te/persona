@@ -975,6 +975,65 @@ do not collide with the north star's, so they can be served from that read later
 starts when the hub takes the owner's message (`session.user_spoke`), before the node accepts it; the hub's message
 outcome (`session.assistant_sent`) only takes back the wait of a message that was not sent.
 
+## Recommended setup (#5085)
+
+Step R3 (section 4c) of `docs/design/proposals/main-chat-availability.md`. The mechanisms that cut asks and
+background rounds ship off or empty, because each spends tokens or acts for the owner. Once a week a briefing says,
+from this install's own records, which of them would have removed how many of the last 7 days' asks or background
+rounds, what it costs in one sentence, and where it is turned on. Code: `server/internal/assistant/setup_suggest.go`.
+
+- **Computed, not written.** Every number is counted by the manager from what is recorded anyway; no model call makes
+  or changes one, and there is no table of its own. The model is given the finished lines and told to copy them
+  unchanged (`prompts/assistant/routine_facts.md`).
+- **Nothing is turned on.** The block only reads. Its one write is its own book (setting
+  `assistant.setup_suggestions`: the week it was last told in, and when each mechanism was last named). The model is
+  told not to turn any of them on and not to call the settings tool for it; the owner does it where the line says.
+- **Which briefing.** There is no weekly routine, so the block goes with the first briefing (a routine with `facts`
+  on, `docs/extensions/bots.md` ("Morning and evening briefings")) that reaches the owner in a week, Monday first,
+  in the owner's time zone. "Reaches" is the run's Lark card going out or its run ending with its finished push; a
+  run that failed marks nothing, so its retry, or the next briefing, carries the block. Every other briefing of the
+  week has none, also when the first one had nothing to name. Without a briefing routine with `facts` on there is no
+  block.
+- **Where it shows.** A section of the Lark briefing card after "In progress", each line with a link to its settings
+  page in the web app when it has one and hub.json has a `public_url`; the `setup` list of the run's `brief` item
+  (`docs/protocol/protocol.md` ("Tasks and the chat feed")); and the model's facts, which it copies at the end of its
+  answer when no Lark card goes out. No app draws `setup` yet: without the Lark card the owner reads the lines in the
+  model's answer.
+- **Once a month.** A mechanism the block named is not named again for 30 days, whatever its count.
+- **Not named**: a mechanism that is on, and a count under 3 (10 rounds for leader conversations).
+
+Each number, in one line. "Last week" is the 7 days before the run starts; "before" looks back 30 days, as long as
+the work events are kept.
+
+| Mechanism (`id`, setting) | The number | Named when |
+| --- | --- | --- |
+| Assistant answers agents' questions (`delegate`, `agents.delegate`) | Question cards a supervisor passed up to the owner with a recommendation (`ask_escalated`) that the owner answered once last week, with exactly that recommendation | `agents.delegate` is off |
+| Standing authorizations (`standing_authorizations`, `assistant.standing_authorizations`) | The owner's go-aheads last week for merge, push or deploy-test (read as "A rule after the same answer three times" reads them) in a directory no grant covers, where they had given the same go-ahead before and never said no to it | Always; a covered directory is not counted |
+| Start directly (`task_trust`, `tasks.trust`) | Plans made last week that the owner started, every file-changing kind of which (same computer and directory) they had started before, never dismissed, and `tasks.trust` does not hold | Always; a trusted kind is not counted |
+| Triage: cards for decisions (`triage_decide`, `agents.triage.decide`) | Stops the triage read as waiting on the owner with no card up, which went on only after the owner wrote to the agent (`resumed` by `user`, on `user`, no `card`) | The triage is on and `decide` is off |
+| Triage: continue automatically (`triage_auto_continue`, `agents.triage.auto_continue`) | Stops on a usage limit that the owner continued by hand (`resumed` by `user` with `limit`) | The triage is on and `auto_continue` is off |
+| Triage: wake waiting agents (`triage_wake`, `agents.triage.wake`) | Stops waiting on something else (CI, a deploy, another agent) that went on only after the owner wrote to the agent (`resumed` by `user`, on `external` or `agent`, no `limit`) | The triage is on and `wake` is off |
+| Leader conversations (`leaders`, `assistant.leaders`) | The main conversation's rounds last week that a supervision message started (the `round` rows of "Availability metrics" above), and their minutes | No leader conversation exists |
+| Spot-check reviews (`review_sample`, `assistant.review_sample_percent`) | Supervised tasks whose first and only review, last week, was the supervisor's own `accepted` with every `done_when` criterion met with evidence, no `user_check`, the work live, and never reopened | The share is 100 |
+| Independent review (`independent_review`, `agents.review.launcher`) | Reworks a supervisor sent last week after the done judge had called the work done (`review_rework` with `judged_done`) | No reviewer launcher is set |
+
+What the numbers do and do not say:
+
+- **They are lower bounds of what was certain, not forecasts.** A go-ahead counts only as a repeat, a plan only when
+  all of its kinds were started before, a review only when the judge's own conditions held; the delegate, the judge
+  and an independent reviewer still decide case by case once they are on, so a mechanism may remove fewer.
+- **Leader conversations move rounds, they do not remove them.** The number is the main conversation's time spent on
+  follow-ups; a leader spends that time in its own conversation, for the tasks of its direction only.
+- **The triage's own switch (`enabled`) is never named.** With the triage off nothing about a stopped turn is
+  recorded (reading one is the model call the switch costs), so there is no number to give, and its three actions
+  are counted only while it is on. A stop on a transient model error is not counted either: `transient_retry`
+  continues those by default (`docs/assistant/agent-work.md` ("Switches")), so the proposal's example for
+  `auto_continue` became the usage-limit count.
+- **`limit` and `card`** on `resumed` rows are written from this version on; a hand resume recorded before it does
+  not say which kind of stop it was and is not counted.
+- **A lower tier for supervision is not suggested.** The proposal ties it to K1's numbers (reviews and tokens per
+  supervisor model), which are not recorded yet; the block leaves it out until they are.
+
 ## Chat titles
 
 Requested: "Generate titles after starting new chats; standardize as ‘MMDD | Type | Topic’." Implemented as follows:

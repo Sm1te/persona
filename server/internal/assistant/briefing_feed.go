@@ -42,6 +42,10 @@ type briefBody struct {
 	// Progress are the tasks being worked on, the longest running first (at most 8); stage is plan / develop / review / merge / deploy / verify, "" when not known.
 	Progress      []briefBodyProgress `json:"progress"`
 	ProgressTotal int                 `json:"progress_total"`
+	// Setup is the recommended-setup block (setup_suggest.go): which mechanism that is off would have removed how many
+	// of the last 7 days' asks or background rounds. Only on the first briefing of a week, and only when it names
+	// something; left out otherwise (a client that does not draw it skips it).
+	Setup []setupSuggestion `json:"setup,omitempty"`
 }
 
 // briefBodyNorthStar is a `brief` item's north star: the lines as the report says them, and today's and yesterday's
@@ -134,6 +138,9 @@ func (f *briefFacts) body(s *Service, title string) briefBody {
 		b.Later = append(b.Later, chatRow(r))
 	}
 	b.LaterTotal = f.LaterTotal
+	if f.Setup != nil {
+		b.Setup = f.Setup.Suggestions
+	}
 	for _, d := range f.Done {
 		b.Done = append(b.Done, briefBodyDone{ID: d.ID, Title: d.Title, At: d.At})
 	}

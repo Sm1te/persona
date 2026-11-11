@@ -28,4 +28,6 @@ Persona 算好的事实（这次开跑时的快照，数字以此为准，别改
   - 时间线（只有标题，按时间）{{if $.Day.Left}}，中间省略了 {{$.Day.Left}} 段{{end}}：{{range .}}
     - {{.From}}–{{.To}} {{if .Meeting}}会议{{else}}会议以外{{end}}：{{.Title}}{{end}}{{end}}{{with .Actions}}
   - 还没确认的建议待办{{if $.Day.ActionsLeft}}（另有 {{$.Day.ActionsLeft}} 条没列）{{end}}：{{range .}}
-    - {{if .Who}}{{.Who}}：{{end}}{{.What}}{{end}}{{end}}{{end}}
+    - {{if .Who}}{{.Who}}：{{end}}{{.What}}{{end}}{{end}}{{end}}{{with .Setup}}
+- 建议的设置（Persona 按过去 7 天的记录算出来的：哪个还没开的机制本可以让用户少被问几次、或让对话少跑几轮后台任务，后面是代价和在哪里开。{{if $.Card}}飞书卡片里已经原样列出，你不用再列。{{else}}请在回答的最后把这几行原样列出来，数字和措辞都不要改。{{end}}开不开由用户自己决定：你不要替用户打开其中任何一项，也不要为此调用设置工具）：{{range .}}
+  - {{.}}{{end}}{{end}}

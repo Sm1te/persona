@@ -145,6 +145,17 @@ func (s *Service) briefCard(f *briefFacts, label, answer string) (card *feishubo
 		room.section(c, &plain, l, i18n.T(l, "assistant-briefing.head_progress", i18n.Args{"n": f.ProgressTotal}), working, f.ProgressTotal)
 	}
 
+	// The recommended setup, on the week's first briefing when the numbers name something (setup_suggest.go): what each
+	// mechanism would have removed, its cost and where it is turned on. Nothing is turned on from here.
+	if f.Setup != nil && len(f.Setup.Suggestions) > 0 {
+		intro := i18n.T(l, "assistant-setup_suggest.intro")
+		setup := []briefBlock{{md: feishubot.EscapeMarkdown(intro), plain: intro}}
+		for _, sg := range f.Setup.Suggestions {
+			setup = append(setup, briefBlock{md: feishubot.EscapeMarkdown(sg.Text) + briefLink(l, sg.Link), plain: sg.Text})
+		}
+		room.section(c, &plain, l, i18n.T(l, "assistant-setup_suggest.heading"), setup, len(setup))
+	}
+
 	c.Note(i18n.T(l, "assistant-briefing.note", i18n.Args{"time": f.clock(f.At)}))
 	return c, clip(strings.Join(plain, "\n"), reportFallbackMax), shown
 }

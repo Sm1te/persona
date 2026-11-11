@@ -287,25 +287,14 @@ func ruleDecisionRuns(rows []db.TodoDecisionRow, passed map[string]ruleEscalatio
 	byCard := map[string][]db.TodoDecisionRow{}
 	var cards []string // in the order they were answered
 	for _, row := range rows {
-		switch row.Source {
-		case db.DecisionCard:
-		case db.DecisionManual:
-			if why, chosen := decided[row.ID]; !chosen || neverDefault(why) {
-				continue
-			}
-		default:
+		if !ruleOwnAnswer(row, passed, decided) {
 			continue
 		}
-		if e, up := passed[row.SourceMessage]; up && row.Source == db.DecisionCard {
-			if !e.question {
-				continue
+		if e, up := passed[row.SourceMessage]; up && row.Source == db.DecisionCard && e.recommend != "" {
+			if len(byCard[row.SourceMessage]) == 0 {
+				cards = append(cards, row.SourceMessage)
 			}
-			if e.recommend != "" {
-				if len(byCard[row.SourceMessage]) == 0 {
-					cards = append(cards, row.SourceMessage)
-				}
-				byCard[row.SourceMessage] = append(byCard[row.SourceMessage], row)
-			}
+			byCard[row.SourceMessage] = append(byCard[row.SourceMessage], row)
 		}
 		action, yes, ok := ruleAction(row.Question, row.Choice)
 		if !ok {
@@ -334,6 +323,21 @@ func ruleDecisionRuns(rows []db.TodoDecisionRow, passed map[string]ruleEscalatio
 		}
 	}
 	return runs, recommended
+}
+
+// ruleOwnAnswer: decision row is an answer of the owner's own that a count may read: a card they answered (a card a
+// supervisor passed up only when it is a question), or a decision's option they chose (kept as manual, named in
+// decided) unless they were asked because it cannot be undone or others will see it.
+func ruleOwnAnswer(row db.TodoDecisionRow, passed map[string]ruleEscalation, decided map[string]string) bool {
+	switch row.Source {
+	case db.DecisionCard:
+		e, up := passed[row.SourceMessage]
+		return !up || e.question
+	case db.DecisionManual:
+		why, chosen := decided[row.ID]
+		return chosen && !neverDefault(why)
+	}
+	return false
 }
 
 func ruleSameAnswer(choice, recommend string) bool {

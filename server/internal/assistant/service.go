@@ -95,6 +95,8 @@ type Service struct {
 
 	// rules: the answers to suggested rules, and the last count of what earns one (rule_suggest.go).
 	rules ruleSuggestState
+	// setupMu serializes the reads and the one write of the weekly setup block's book (setup_suggest.go).
+	setupMu sync.Mutex
 
 	// prepared is what this hub last gave a machine's node for a directory (key: machine id NUL directory), the
 	// CLAUDE.md and the plugin skills, by prepareSpaceIf; refreshInstructions gives again what differs.

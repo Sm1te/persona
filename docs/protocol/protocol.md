@@ -3209,7 +3209,12 @@ in plan order (a task without `todo_id` did not start and has no link); no extra
 //          "done":[{"id":"<to-do id>","title","at"}],"done_total":12,                                           // to-dos closed in that window, newest first, at most 10 (those waiting to be verified are under accept only)
 //          "accept":[{"id":"<to-do id>","title","detail"?:"what changed","from"?,"link"?,"waited_s","asked_at":"…","verdict"?:"the verdict line","outcome"?:"done|cannot|decide","recommend"?:"…"}],  // to-dos waiting to be verified, or whose conclusion waits for the owner, the longest waiting first
 //          "later"?:[{"id":"<question id>","title":"what was asked (a line)","from"?,"link"?:"<the Agent's chat>","machine_id"?,"session_id"?,"waited_s"}],"later_total"?:3,  // questions Agents left for a briefing (urgent false), the oldest first, at most 10; both left out when the queue is empty; the Handled button posts the id to POST /api/v1/later/{id}/handled
-//          "progress":[{"id":"<to-do id>","title","stage"?:"plan|develop|review|merge|deploy|verify","stage_kind"?:"code|general"}],"progress_total":2}  // open to-dos whose Agents are working, the longest open first, at most 8
+//          "progress":[{"id":"<to-do id>","title","stage"?:"plan|develop|review|merge|deploy|verify","stage_kind"?:"code|general"}],"progress_total":2,  // open to-dos whose Agents are working, the longest open first, at most 8
+//          "setup"?:[{"id":"delegate|standing_authorizations|task_trust|triage_decide|triage_auto_continue|triage_wake|leaders|review_sample|independent_review",
+//                     "setting":"agents.delegate","count":4,"minutes"?:31,"text":"the whole line, in the hub's language","link"?:"<its settings page in the web app>"}]}
+//         setup (#5085, `docs/assistant/assistant.md` ("Recommended setup")): which mechanism that is off would have removed how many (`count`) of the last 7 days' asks or
+//         background rounds (`minutes`: the time of those rounds, for leaders), with its cost and where it is turned on in `text`. Only on the first briefing of a week,
+//         and only when it names something; left out otherwise. Read-only: nothing is turned on, and no route answers it. An app that does not know it skips it.
 //         stage_kind (#3380): also sent on to-dos; general tasks omit the web stage strip, code draws it. Missing or unknown keeps the legacy behavior.
 //         waiting_unknown: the cards waiting for an answer were not read yet (the hub had just started), so `waiting` is empty for want of knowing.
 //         machine_id / session_id (#2320): the chat a waiting card or a question that can wait came from, which the apps open; left out for a card from no chat, and by a hub from before
