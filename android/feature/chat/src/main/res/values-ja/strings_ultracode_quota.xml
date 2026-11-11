@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ultracode's quota line (#582, iOS Ultracode.quotaLine): the account, then its windows -->
+    <string name="chat_ultracode_quota">%1$s の使用量：%2$s</string>
+    <string name="chat_ultracode_quota_5h">5時間 %1$s</string>
+    <string name="chat_ultracode_quota_week">週 %1$s</string>
+    <string name="chat_ultracode_quota_age">古いデータ · %1$s</string>
+    <string name="chat_ultracode_quota_warning">使用量が上限に近づいています。ultracode をオンにするとさらに早く消費します</string>
+    <!-- ultracode in the session info card (iOS Ultracode.stateWord); unknown is chat_modes_unknown -->
+    <string name="chat_ultracode_info_on">オン</string>
+    <string name="chat_ultracode_info_off">オフ</string>
+</resources>

@@ -667,8 +667,8 @@ nonisolated enum Theme {
         /// A compositor request, not a guaranteed upper bound on rendering frequency.
         static let breathMinimumFPS: Float = 10
         static let breathPreferredFPS: Float = 30
-        /// What opens in the chat shows itself (a mask growing down from its header, and a fade); its height does not
-        /// animate (`unfolding`). Closing folds it away first, quicker, then removes it.
+        /// What opens in the chat fades in over the space it takes; its height does not animate (`unfolding`). What
+        /// closes there goes at once (#3005); `conceal` is for what fades away elsewhere (a menu, an inbox event).
         static let revealTime = 0.28
         static let concealTime = 0.2
         static let reveal = Animation.easeOut(duration: revealTime)

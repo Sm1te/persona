@@ -14,5 +14,20 @@
   "todo_update": "To-do change",
   "todo_complete": "Task completion",
   "todo_reopen": "Task reopening",
-  "todo_delete": "To-do deletion"
+  "todo_delete": "To-do deletion",
+  "report_to_supervisor": "Report to supervisor",
+  "report_to_supervisor_progress": "Progress",
+  "report_to_supervisor_question": "Question",
+  "report_to_supervisor_blocked": "Blocked",
+  "report_to_supervisor_done": "Done",
+  "todo_decisions": "The task's decisions",
+  "todo_decision_add": "Note a decision",
+  "todo_bind_thread": "Link the task to a thread",
+  "task_review": "Worker review",
+  "dispatch_start": "Hand off to another computer",
+  "dispatch_read": "Handed-off subtask",
+  "iphone_look": "iPhone view",
+  "iphone_status": "iPhone status",
+  "family_phone": "iPhone",
+  "family_mail": "Mail"
 }

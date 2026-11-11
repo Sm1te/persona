@@ -59,8 +59,9 @@ func (n *Node) mergePiRow(s *proto.Session) {
 		return
 	}
 	if r.Title != "" {
-		s.Title = r.Title
+		s.Title, s.TitleManual, s.TitleSource = r.Title, r.TitleManual, r.TitleSource
 	}
+	s.OutputTokens = r.OutputTokens
 	s.LastText, s.Model, s.UpdatedAt, s.Rev = r.LastText, r.Model, r.UpdatedAt, r.Rev
 	if r.Status == proto.StatusBlocked {
 		s.Status = proto.StatusBlocked

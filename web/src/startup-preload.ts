@@ -114,10 +114,29 @@ export async function brotliCopies(dir: string, files: string[]): Promise<{ file
  * (#4518, allocated in #4597), and 128 B for sending an edit of the last message safely (#4605 added 115 B to ja:
  * ChatView's wait for Claude's box after the rewind, the send's clear_draft and the give-back of a refused edit), and
  * 1,664 B for Forward (#3899 added 1,588 B: the action, the forward's card in a sent bubble and over the box, and its
- * strings; the picker loads on the first Forward).
- * Raise it on purpose, in the change that needs it.
+ * strings; the picker loads on the first Forward), and 1,152 B for task cards (#5030 added 1,105 B to ja: the shared
+ * task card head, a workflow call's card with its progress line and agent strip, the chat's Background dialog opened
+ * from it, the old subagent links' redirect and the background-subtasks line, their words; the subagent card itself
+ * loads when a summary is opened). Then 9,614 B less for the extension view renderer leaving the first screen (#3614:
+ * ViewBody.tsx and what only it imports became a chunk of its own; ja went from 598,940 B on main 52b3fae6f to 589,326 B).
+ * main was already 732 B over its budget at 52b3fae6f (ja 598,940 B against 598,208 B); that overage is kept here, not
+ * new room. And 3,072 B for the composer's model pill (#5032 added 2,600 B to ja, 589,326 B to 591,926 B: the pill, the
+ * session's model lists it reads for its name, the composer card's width modes and their words; the model panel, its
+ * data and its words load on the pill's first tap). And 192 B for provider display names (#5029 added 165 B to ja:
+ * plan task chips name their launcher by the provider's display name through lib/provider-names.ts, the shared cache of
+ * the providers' names and the hook that reads them again after a rename). And 448 B for clearing the main chat's context
+ * (#5095 added 405 B to ja, 593,185 B to 593,590 B: /clear in the main chat's command list, its ⋯ row, the cleared page's
+ * state in lib/main-clear.ts and their words); main was already 595 B over its budget at 286d88fb2 (ja 593,185 B against
+ * 592,590 B), and that overage is kept here, not new room. And 672 B for the main chat's hand-off cards (#5096 added 1,166
+ * B to ja, 593,124 B at 7ff35f2e9 to 594,290 B, 509 B of it in the room left: a card for each dispatched Agent, a task's
+ * or an Agent's page opened from the chat with the chat's place kept, their words; the task side panel and the
+ * dispatched line they replace go, and the way-back strip on the Agent's page loads on its own; #5136: measured first
+ * against 9d3f343d3, which came 17 B short). Then 1,939 B less for the image editor's geometry leaving the first screen
+ * (#5142: ja 594,290 B at 5d97a6e77 to 592,351 B, the 15 B of room kept): the image viewer imported fitRect from
+ * lib/image-edit.ts, which put that whole module, otherwise only the lazy editor's, on the first screen; fitIn and
+ * fitRect now live in lib/image-zoom.ts. Raise it on purpose, in the change that needs it.
  */
-export const FIRST_SCREEN_BUDGET = 597_056;
+export const FIRST_SCREEN_BUDGET = 592_366;
 
 /** What the built-in hub sends for `files` (paths below `dir`) to a browser that takes br: each one's brotli copy, or
  *  the file itself when it has none. Build time only. */
@@ -131,10 +150,12 @@ export async function sentBytes(dir: string, files: string[]): Promise<number> {
  * import beyond the first screen), in bytes as gzipBytes counts them (vite.config.ts startupPreload fails the build past
  * it): 29,143 B at #2798 plus 3% (28,085 B at #2880; #2798 moved ModelIdField, which the model popover now shares with
  * the idle ModelPicker, out of the first screen into a chunk of its own), and 64 B for managing launchers from the
- * pickers (#4389's controls took the idle tier 8 B over; take it back if those controls get lighter). Every other lazy
- * page loads on intent, not at idle; raise it on purpose, in the change that needs it.
+ * pickers (#4389's controls took the idle tier 8 B over; take it back if those controls get lighter), and 13,113 B for
+ * the extension view renderer (#3614: it left the first screen for the idle tier, which went from 18,615 B to 31,728 B;
+ * 31,802 B after merging main).
+ * Every other lazy page loads on intent, not at idle; raise it on purpose, in the change that needs it.
  */
-export const IDLE_TIER_BUDGET = 30_081;
+export const IDLE_TIER_BUDGET = 43_194;
 
 const gzip = promisify(gzipCompress);
 

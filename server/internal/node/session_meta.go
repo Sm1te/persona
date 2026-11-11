@@ -14,20 +14,24 @@ import (
 
 // quickMeta is a cheap summary of a transcript read from its head and tail only.
 type quickMeta struct {
-	size     int64
-	mtime    time.Time
-	title    string
-	first    string
-	activity time.Time // last real exchange; zero when unknown
-	queue    []string
-	loop     *proto.LoopInfo
-	toolLoop toolLoopScan
-	goal     *proto.GoalInfo        // from backgroundTasks too: a goal is often set at the start of a long transcript
-	plan     *proto.PlanInfo        // from the same scan (bgPlan): a TodoWrite is often far back in a long turn
-	bg       []proto.BackgroundTask // from backgroundTasks: the tail alone misses tasks started earlier in a long turn
-	bgWait   bool                   // bg and loop are not known yet (a big first read is running)
-	wf       []proto.Workflow       // workflow runs, as the transcript tells them (bgWorkflows)
-	wfScript map[string]string      // their script files by run id
+	size         int64
+	mtime        time.Time
+	title        string
+	titleManual  bool
+	titleSource  string
+	outputTokens int
+	codex        bool
+	first        string
+	activity     time.Time // last real exchange; zero when unknown
+	queue        []string
+	loop         *proto.LoopInfo
+	toolLoop     toolLoopScan
+	goal         *proto.GoalInfo        // from backgroundTasks too: a goal is often set at the start of a long transcript
+	plan         *proto.PlanInfo        // from the same scan (bgPlan): a TodoWrite is often far back in a long turn
+	bg           []proto.BackgroundTask // from backgroundTasks: the tail alone misses tasks started earlier in a long turn
+	bgWait       bool                   // bg and loop are not known yet (a big first read is running)
+	wf           []proto.Workflow       // workflow runs, as the transcript tells them (bgWorkflows)
+	wfScript     map[string]string      // their script files by run id
 	// cwd: where the session runs. An agent's latest directory (Claude Code writes the shell's directory after each
 	// Bash `cd` into every line), but where it started when that latest one is an assistant or health directory; for
 	// a conversation that started in an assistant or health directory, that directory, wherever its `cd`s took it
@@ -142,6 +146,7 @@ func (n *Node) meta(path string, st os.FileInfo) quickMeta {
 			m.ultracode, m.ultracodeAt = n.bgUltracode(path)
 			m.plan = n.bgPlan(path)
 			n.mergeModelFallback(path, &m)
+			n.mergeNamingMetadata(path, &m)
 			n.mu.Lock()
 			current := n.metas[path]
 			m.toolLoop = current.toolLoop
@@ -171,6 +176,7 @@ func (n *Node) meta(path string, st os.FileInfo) quickMeta {
 	m.ultracode, m.ultracodeAt = n.bgUltracode(path)
 	m.plan = n.bgPlan(path)
 	n.mergeModelFallback(path, &m)
+	n.mergeNamingMetadata(path, &m)
 	n.mu.Lock()
 	current := n.metas[path]
 	m.toolLoop = current.toolLoop
@@ -193,6 +199,9 @@ func readQuickMetaSince(path string, st os.FileInfo, prev quickMeta) quickMeta {
 	}
 	defer f.Close()
 	var tm transcript.Meta
+	if prev.titleManual && prev.size <= st.Size() {
+		tm.Title, tm.TitleManual, tm.TitleSource = prev.title, true, "manual"
+	}
 	start := "" // the first cwd: tm.Cwd moves with every `cd` the head's lines record, and the tail's overwrite it
 	// The first prompt is usually in the first 32 KB. A Codex rollout puts its instructions first (the assistant's
 	// AGENTS.md and snapshot: 74 KB in), so up to 256 KB is read while it has not turned up.
@@ -276,6 +285,16 @@ func readQuickMetaSince(path string, st os.FileInfo, prev quickMeta) quickMeta {
 	if tm.LastText != "" {
 		m.answer = tm.TurnAnswer()
 	}
+	m.codex = tm.Codex
+	m.titleManual, m.titleSource = tm.TitleManual, tm.TitleSource
+	if off == 0 {
+		m.outputTokens = tm.OutputTokens // a whole-file tail; the incremental scan supplies larger files' totals
+		if !tm.Codex && m.titleSource == "" {
+			m.titleSource = "prompt"
+		}
+	} else if !m.titleManual {
+		m.titleSource = "" // a historical custom-title may be outside this bounded read
+	}
 	m.start = start
 	if identity.IsAssistantDir(start) || start != "" && identity.IsAssistantDir(m.cwd) {
 		// An assistant or health conversation is where it started: its space, CLAUDE.md, memory and resume project.
@@ -325,6 +344,36 @@ func readQuickMetaSince(path string, st os.FileInfo, prev quickMeta) quickMeta {
 		m.contextTokens, m.contextWindow = prev.contextTokens, prev.contextWindow // no reply in the tail: the last read's stands
 	}
 	return m
+}
+
+// mergeNamingMetadata reuses the existing incremental scan, including when a cold scan finishes without another
+// file append. Never publish a partial tail's automatic provenance before historical manual titles are checked.
+func (n *Node) mergeNamingMetadata(path string, m *quickMeta) {
+	n.mu.Lock()
+	sc := n.bgScans[path]
+	n.mu.Unlock()
+	if sc == nil {
+		return
+	}
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.pending || sc.off != m.size {
+		if !m.titleManual {
+			m.titleSource = ""
+		}
+		return
+	}
+	m.outputTokens = sc.meta.OutputTokens
+	if sc.meta.TitleManual {
+		m.title, m.titleManual, m.titleSource = sc.meta.Title, true, "manual"
+	} else if sc.meta.TitleSource != "" {
+		m.title, m.titleManual, m.titleSource = sc.meta.Title, false, sc.meta.TitleSource
+	} else if m.codex {
+		// Rollouts do not distinguish a manually chosen thread name from an automatic one.
+		m.titleSource = ""
+	} else if m.titleSource == "" {
+		m.titleSource = "prompt"
+	}
 }
 
 // lastWordsReach: how far before the tail lastWordsBefore looks for an agent's last words.
@@ -433,5 +482,8 @@ func untitled(s *proto.Session, m quickMeta) {
 			r = append(r[:40], '…')
 		}
 		s.Title = string(r)
+		if m.titleSource == "prompt" {
+			s.TitleSource = proto.TitleSourcePrompt
+		}
 	}
 }

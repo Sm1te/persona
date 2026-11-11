@@ -76,6 +76,7 @@ func (s *Service) taskPlanFrom(ctx context.Context, machine, sessionID string, a
 		t.normalizeReadonlyPermission()
 		t.TodoID, t.Error, t.ErrorCode, t.ErrorArgs = "", "", "", nil
 		t.WorkspaceResolved, t.ReservedTodoID, t.WorkspaceInferred = nil, "", false
+		t.OwnerStarted = false // the hub's: only the owner's Start on the card sets it (startPlan)
 		// Reroute is hub-owned: drop any reroute a model passes in task_plan args, so healthyPlace seeds it only from a
 		// real health detour and its first-detour guard keeps the true original machine (#2271).
 		t.Reroute = nil
@@ -206,7 +207,7 @@ func (s *Service) taskPlanFrom(ctx context.Context, machine, sessionID string, a
 		return b.String(), nil
 	}
 	if health || !s.planStartsAtOnce(ctx, p.Tasks) {
-		s.event(ctx, map[string]any{"type": "task_plan", "plan": p})
+		s.event(ctx, map[string]any{"type": "task_plan", "plan": s.planWithSuggestion(ctx, p, s.lang(ctx))})
 		// A card below the answer is easy to miss: push it as well.
 		titles := make([]string, 0, len(p.Tasks))
 		for _, t := range p.Tasks {

@@ -682,7 +682,8 @@ func TestRuntimeSubagentsAndBackground(t *testing.T) {
 	_ = host.peer.Notify("runtime.sessions", map[string]any{"sessions": []map[string]any{{
 		"session_id": "session-7", "status": "done",
 		"subagents": []map[string]any{
-			{"id": "child-1", "session_id": "whatever", "description": "Map the code", "running": true, "tool_use_id": "call-1", "started_at": started},
+			{"id": "child-1", "session_id": "whatever", "description": "Map the code", "running": true, "tool_use_id": "call-1", "started_at": started,
+				"model": strings.Repeat("m", maxRuntimeTaskText+1), "tokens": 1234},
 			{"id": "../bad", "description": "not a valid id", "running": true},
 			{"id": "child-1", "description": "the same child twice"},
 			{"id": "child-2", "description": "done already", "running": false},
@@ -698,6 +699,9 @@ func TestRuntimeSubagentsAndBackground(t *testing.T) {
 	if len(s.Subagents) != 2 || s.Subagents[0].SessionID != "session-7@child-1" || !s.Subagents[0].Running ||
 		s.Subagents[0].ToolUseID != "call-1" || !s.Subagents[0].StartedAt.Equal(started) || s.Subagents[1].SessionID != "session-7@child-2" {
 		t.Fatalf("subagents %+v", s.Subagents)
+	}
+	if a := s.Subagents[0]; a.Model != strings.Repeat("m", maxRuntimeTaskText)+"…" || a.Tokens != 1234 { // #5030: its model clipped like its text
+		t.Fatalf("subagent model %q tokens %d", a.Model, a.Tokens)
 	}
 	if len(s.Background) != 2 || s.Background[0].Kind != "agent" || s.Background[0].OutputFile != "" || s.Background[1].Kind != "shell" {
 		t.Fatalf("background %+v", s.Background)

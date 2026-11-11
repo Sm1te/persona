@@ -55,3 +55,19 @@ it("updates a stopped engine's computer name without restarting its poll", async
   expect(host.querySelector('[data-testid="herdr-notice"]')?.textContent).toContain("Back online");
   expect(read).toHaveBeenCalledTimes(2);
 });
+
+it("asks once a minute while shown, and at once when the tab comes back", async () => {
+  const read = vi.fn(async () => ({ autostart: false, running: true, known: true }));
+  const watch = new HerdrWatch({ read, start: read });
+  await act(async () => root.render(<Notices watch={watch} />));
+  expect(read).toHaveBeenCalledTimes(1);
+
+  await act(async () => vi.advanceTimersByTime(59_000));
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTime(1_000));
+  expect(read).toHaveBeenCalledTimes(2);
+
+  // coming back to the tab still reads right away, without waiting for the next minute
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  expect(read).toHaveBeenCalledTimes(3);
+});

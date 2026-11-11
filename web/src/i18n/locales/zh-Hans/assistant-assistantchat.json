@@ -22,6 +22,8 @@
   "compact_start_failed": "没开始压缩：{error}",
   "compacted": "已压缩上下文",
   "compact_failed": "压缩失败：{error}",
+  "clear": "清理上下文",
+  "clear_failed": "没能清理上下文：{error}",
   "close": "关闭",
   "new_main_done_carried": "已新建主对话，会带上旧对话的摘要",
   "new_main_done": "已新建主对话",

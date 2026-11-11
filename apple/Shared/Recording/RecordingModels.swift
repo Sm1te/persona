@@ -133,9 +133,10 @@ nonisolated struct RecordingEntry: Codable, Identifiable, Hashable, Sendable {
 
     var duration: Double { segments.map { $0.start + $0.duration }.max() ?? 0 }
     var isMeeting: Bool { meeting != nil }
-    /// A meeting being recorded on this phone that Persona attends: asking is open, live lines go to the hub.
+    /// A meeting being recorded on this phone that Persona attends: asking is open, live lines go to the hub. Only with
+    /// someone chosen to attend (`RecordingAttendance.sentRole`, #3862).
     var attended: Bool {
-        active && isMeeting && source == .phone && attendance?.role.attends == true && attendance?.stopped != .unsupported
+        active && isMeeting && source == .phone && attendance?.sentRole.attends == true && attendance?.stopped != .unsupported
     }
     var displayTitle: String {
         guard title.isEmpty else { return title }
@@ -157,6 +158,11 @@ nonisolated struct RecordingEntry: Codable, Identifiable, Hashable, Sendable {
         return all.filter { !attendance.spokenBy($0) }
     }
     var transcript: String { sentences.map { "[\(RecordingFormat.clock($0.start))] \($0.text)" }.joined(separator: "\n") }
+}
+
+nonisolated extension RecordingEntry {
+    /// A meeting recorded on this phone as a room meeting (#3862).
+    var roomMeeting: Bool { isMeeting && source == .phone && attendance?.room == true }
 }
 
 nonisolated struct RecordingTransfer: Codable, Sendable {
@@ -219,6 +225,22 @@ nonisolated enum RecordingAudioSpec {
 }
 
 nonisolated enum RecordingFormat {
+    /// A meeting's span in the date style of the recording page's header ("Jan 15, 17:00–18:00"): the end's time alone on
+    /// the same day, its date too on another (#4875).
+    static func span(_ start: Date, _ end: Date, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .autoupdatingCurrent) -> String {
+        var style = Date.IntervalFormatStyle.interval.month().day().hour().minute()
+        style.locale = locale
+        style.timeZone = timeZone
+        return (start..<max(end, start)).formatted(style)
+    }
+
+    /// The hub's `start` / `end` (RFC 3339) as `span`; `fallback`, the hub's fixed-format `when`, when either is missing or
+    /// unreadable (a hub from before them). nil when there is nothing to show.
+    static func span(start: String?, end: String?, fallback: String?) -> String? {
+        if let s = start.flatMap(JSON.parseDate), let e = end.flatMap(JSON.parseDate) { return span(s, e) }
+        return fallback?.isEmpty == false ? fallback : nil
+    }
+
     static func clock(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return "0:00" }
         let value = Int(seconds)

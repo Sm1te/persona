@@ -131,7 +131,7 @@ func TestImportDropsATrailingV1AndMatchesAStoredV1Provider(t *testing.T) {
 	// Stored before saving dropped the /v1: the same gateway and key, so the import adds its model there.
 	putLaunchers(t, s, storedLauncher{KeySealed: sealed, ManagedLauncher: proto.ManagedLauncher{Name: "relay", BaseURL: "https://gw.example.com/v1", Model: "kept"}})
 	r := importRequest(mux, "POST", `{"machine":"m1","providers":["rcc"]}`)
-	if want := `{"created":[],"updated":["relay"]}`; r.Code != 200 || strings.TrimSpace(r.Body.String()) != want {
+	if want := `{"created":[],"updated":["relay"],"hidden":[],"kept":[]}`; r.Code != 200 || strings.TrimSpace(r.Body.String()) != want {
 		t.Fatalf("%d %s", r.Code, r.Body.String())
 	}
 }

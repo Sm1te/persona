@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -68,9 +69,12 @@ func (n *Node) secretRun(ctx context.Context, params json.RawMessage) (any, erro
 	defer cancel()
 	results := make([]proto.SecretRunResult, 0, len(p.Commands))
 	for _, c := range p.Commands {
-		r := runSecretCommand(rctx, n.home, c, p.Password)
+		r, inTime := runSecretCommand(rctx, n.home, c, p.Password)
 		if ctx.Err() != nil { // the caller went away (the connection ended): nobody is left to answer
 			return nil, errors.New("secret.run: interrupted, the commands were stopped")
+		}
+		if !inTime { // it did not run, so it is left out like the ones after it (proto.SecretRunAnswer)
+			break
 		}
 		results = append(results, r)
 		if r.ExitCode != 0 || r.TimedOut {
@@ -107,9 +111,10 @@ func checkSecretRun(p proto.SecretRunParams) error {
 }
 
 // runSecretCommand runs one command until it exits or ctx ends (endGroup), the password on its stdin when it runs
-// sudo -S (proto.SecretRunSudo.GetsPassword).
-func runSecretCommand(ctx context.Context, home, command string, password []byte) proto.SecretRunResult {
-	res := proto.SecretRunResult{Command: command, ExitCode: -1}
+// sudo -S (proto.SecretRunSudo.GetsPassword). inTime is false when ctx's deadline had passed before the command could
+// start: the commands before it used up the run's time, and nothing ran.
+func runSecretCommand(ctx context.Context, home, command string, password []byte) (res proto.SecretRunResult, inTime bool) {
+	res = proto.SecretRunResult{Command: command, ExitCode: -1}
 	out := newSecretRedactor(password, secretRunKeep)
 	defer out.zero()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
@@ -119,12 +124,17 @@ func runSecretCommand(ctx context.Context, home, command string, password []byte
 	// When ctx ends the group gets SIGTERM: sudo passes it on to the command it runs as root, which this user cannot
 	// signal (SIGKILL would end sudo alone). Wait gives it secretRunGrace, then endGroup kills what is left.
 	var stopped atomic.Int64
+	stop := func() error { // once: exec's Cancel and the watch after Start both see the deadline
+		if !stopped.CompareAndSwap(0, time.Now().UnixNano()) {
+			return nil
+		}
+		return osproc.StopGroup(cmd.Process.Pid, false)
+	}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		stopped.Store(time.Now().UnixNano())
-		return osproc.StopGroup(cmd.Process.Pid, false)
+		return stop()
 	}
 	cmd.WaitDelay = secretRunGrace
 	cmd.Stdout, cmd.Stderr = out, out
@@ -137,13 +147,24 @@ func runSecretCommand(ctx context.Context, home, command string, password []byte
 		err = cmd.Start()
 	}
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) { // the commands before it used up the run's time
-			res.TimedOut = true
-			return res
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) { // exec checks ctx before it starts anything
+			return res, false
 		}
 		res.Output = "could not start: " + err.Error()
-		return res
+		return res, true
 	}
+	// exec calls Cancel only while the shell runs. A shell that exited and left a child holding its output has Wait
+	// reading until that child ends (or WaitDelay after the shell's exit), past the deadline: its group is stopped at
+	// the deadline all the same (#4363).
+	waited := make(chan struct{})
+	var watch sync.WaitGroup
+	watch.Go(func() {
+		select {
+		case <-ctx.Done():
+			_ = stop()
+		case <-waited:
+		}
+	})
 	if stdin != nil {
 		// A small write fits the pipe's buffer whether or not the command reads it; one that exits first makes it
 		// fail, which changes nothing.
@@ -152,6 +173,8 @@ func runSecretCommand(ctx context.Context, home, command string, password []byte
 		_ = stdin.Close()
 	}
 	_ = cmd.Wait() // the exit code is the process state's; ErrWaitDelay (a child kept the output open) changes nothing
+	close(waited)
+	watch.Wait() // stopped is settled
 	if at := stopped.Load(); at != 0 {
 		endGroup(cmd.Process.Pid, time.Unix(0, at).Add(secretRunGrace))
 	}
@@ -163,7 +186,7 @@ func runSecretCommand(ctx context.Context, home, command string, password []byte
 	}
 	out.release(true) // Wait read the output to its end
 	res.Output, res.Truncated, res.OutputWithheld = out.result()
-	return res
+	return res, true
 }
 
 // endGroup ends what is left of process group pid, sent SIGTERM at the run's deadline: until its grace ends

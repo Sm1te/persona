@@ -123,7 +123,9 @@ internal fun userBubbleTime(ts: String, locale: java.util.Locale, zone: java.tim
  */
 @Composable
 internal fun MergedUserBubble(items: List<Item>, updates: Map<String, ChatTextUpdate> = emptyMap(),
-    onLastLine: ((Int) -> Unit)? = null, images: (@Composable () -> Unit)? = null, menu: Boolean = true) {
+    onLastLine: ((Int) -> Unit)? = null, images: (@Composable () -> Unit)? = null, menu: Boolean = true,
+    /** A message only in the outbox, in this state: its menu offers what fits one not sent ([MessageTarget.pending]). */
+    pending: persona.core.contracts.api.DeliveryState? = null) {
     // Keyed on this bubble's own texts: [updates] is the whole chat's, and changes with every streamed chunk of a reply.
     val texts = bubbleTexts(items, updates)
     val models = remember(items, texts) { items.mapIndexed { index, item -> messageModel(texts[index], item.from, user = true) } }
@@ -132,9 +134,9 @@ internal fun MergedUserBubble(items: List<Item>, updates: Map<String, ChatTextUp
     val photos = remember(models) { models.flatMap { it.images }.distinct() }
     val files = remember(models) { models.flatMap { it.files }.distinct().take(6) }
     val attached = remember(models) { models.flatMap { it.attached }.distinctBy { it.path } }
-    val target = remember(models, items) {
+    val target = remember(models, items, pending) {
         MessageTarget(items.firstOrNull()?.id.orEmpty(), models.joinToString("\n\n") { it.plain }.trim(), true,
-            models.joinToString("\n\n") { it.editText() }.trim())
+            models.joinToString("\n\n") { it.editText() }.trim(), pending)
     }
     val timestamp = items.lastOrNull()?.ts
     val locale = currentLocale

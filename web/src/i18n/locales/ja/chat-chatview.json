@@ -76,7 +76,6 @@
   "route_no_images": "タスクへの直接送信では画像はまだ使えません。画像を外してもう一度お試しください。",
   "not_live": "リアルタイムではありません",
   "not_live_reload": "再読み込み",
-  "switch_agent": "Agent を切り替え",
   "composer_source": "ソース",
   "call_not_loaded": "このステップは読み込まれた履歴にありません。上にスクロールしてもう一度お試しください",
   "refresh_failed": "更新できませんでした",
@@ -112,5 +111,7 @@
   "resume": "再開",
   "resume_failed": "このエージェントを再開できませんでした。{error}",
   "codex_waiting": "Codex は {computer} で開いています。下で最初のメッセージを送るか、ターミナルに直接入力してください。",
-  "codex_first_placeholder": "Codex への最初のメッセージ"
+  "codex_first_placeholder": "Codex への最初のメッセージ",
+  "handoff_from": "{title} から移動しました · クリックして戻る",
+  "handoff_dismiss": "戻るヒントを閉じる"
 }

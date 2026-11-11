@@ -1,14 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Item, Subagent } from "../../lib/types";
+import type { Item } from "../../lib/types";
 import type { Step } from "../../lib/turns";
 import { planProgress, type ToolStep, type WorkGroupNode } from "../../lib/work-groups";
 import { ActionRow, argumentLines, DIFF_FOLD_LINES, diffStats, editDiffs, foldDiffs, inlineInput, lineDiff, presentAction, truncateParam } from "./ActionRow";
-import { ChatContext } from "./chat-context";
-import { emptyTaskIndex } from "../../lib/tasks";
 import { latestPlan, PlanCard, PlanList, PlanPill, planSummary } from "./PlanCard";
 import { Answer, bubbleLines, SegmentView, UserBubble } from "./SegmentView";
-import { reportOf, SubagentCard, subagentLine } from "./SubagentCard";
+import { SubagentCard } from "./SubagentCard";
 import { ThinkingCard } from "./ThinkingCard";
 import { WorkGroup, type WorkProps } from "./WorkGroup";
 
@@ -175,44 +173,6 @@ describe("ThinkingCard", () => {
     expect(html.match(/size-1 rounded-full/g)).toHaveLength(3);
     expect(renderToStaticMarkup(<ThinkingCard live={{ thinking: false }} />)).toBe("");
     expect(renderToStaticMarkup(<ThinkingCard live={null} />)).toBe("");
-  });
-});
-
-describe("SubagentCard", () => {
-  const sub: Subagent = { id: "sa1", session_id: "s@sa1", type: "general-purpose", tool_use_id: "c-a1", running: true };
-  const card = (status: "running" | "completed" | "failed") =>
-    renderToStaticMarkup(
-      <ChatContext.Provider value={{ tasks: emptyTaskIndex(), subagents: [sub, { id: "sa2", session_id: "s@sa2", parent_id: "sa1" }], scope: "" }}>
-        <SubagentCard step={tool("a1", "Agent", { description: "回归：结算", prompt: "跑结算回归", subagent_type: "general-purpose" })} status={status} mid="m" />
-      </ChatContext.Provider>,
-    );
-
-  it("says what it is and how it is going, folded", () => {
-    const html = card("running");
-    expect(html).toContain('data-subagent-card="running"');
-    expect(html).toContain(">回归：结算<");
-    // running with no call yet: starting (#5602); with one: what it does now
-    expect(html).toContain("启动中…");
-    expect(html).toContain(">general-purpose<");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("查看完整过程");
-    expect(card("failed")).toContain(">失败");
-  });
-
-  it("says what it does now while it runs, its outcome and steps once it ended (#5602)", () => {
-    const meta = { id: "sa1", session_id: "s@sa1", running: true, steps: 4, last_tool: { id: "t9", name: "Bash", summary: "跑结算回归" } };
-    expect(subagentLine("running", meta)).toEqual({ text: "跑结算回归", live: true });
-    expect(subagentLine("running", { ...meta, last_tool: undefined })).toEqual({ text: "启动中…", live: true });
-    expect(subagentLine("completed", meta)).toEqual({ text: "已完成 · 4 步", live: false });
-    expect(subagentLine("failed", { ...meta, steps: 0 })).toEqual({ text: "失败", live: false });
-  });
-
-  it("takes a background subagent's report from its notice, not its launch receipt", () => {
-    const receipt: Item = { id: "r#0", seq: 2, role: "user", kind: "tool_result", tool_use_id: "c", text: "Async agent launched successfully." };
-    const notes = [{ kind: "agent", status: "completed", detail: "120 个用例都过了。" }];
-    expect(reportOf(receipt, notes)).toBe("120 个用例都过了。");
-    expect(reportOf({ ...receipt, text: "done" }, notes)).toBe("");
-    expect(reportOf(receipt, [])).toBe("");
   });
 });
 

@@ -185,6 +185,8 @@ describe("while the agent works", () => {
 describe("subagents", () => {
   const items = () => [user("u1", 0), ...tool("pre", "Bash", 500), ...tool("task1", "Agent", 1000, 9000, { description: "回归", prompt: "跑回归" }), say("final", "都做完了。", 10000)];
 
+  // Super rule 2 keeps every tool call in the exchange's one summary, a running subagent's too (cindy keeps a running
+  // one in the open; that waits on an amendment of the rule).
   it("a running subagent stays inside the execution summary", () => {
     const b = blocks(items(), false, () => "running");
     expect(topSteps(b)).toEqual(["final"]);

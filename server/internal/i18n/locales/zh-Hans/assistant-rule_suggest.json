@@ -1,0 +1,10 @@
+{
+  "plan_start": "这类任务你已经点了 {n} 次开始。以后在 {machine} 的 {directory} 里改文件的任务都直接开始吗？",
+  "merge": "这件事你已经同意了 {n} 次。以后 {machine} 的 {directory} 在检查通过且没有冲突时都允许合并吗？",
+  "push": "这件事你已经同意了 {n} 次。以后 {machine} 的 {directory} 都允许推送吗？",
+  "deploy_test": "这件事你已经同意了 {n} 次。以后 {machine} 的 {directory} 都允许部署到测试环境吗？",
+  "delegate": "你已经 {n} 次采纳了建议。以后 Agent 自己能定的问题由 Persona 替你回答吗？可以在设置里开启。",
+  "source": "建议的规则：14 天内 {n} 次相同的回答，点「总是」确认。",
+  "full_access": "回应建议的规则需要完整访问权限。",
+  "gone": "这条建议已经不可用。"
+}

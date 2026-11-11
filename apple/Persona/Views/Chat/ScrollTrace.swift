@@ -46,6 +46,7 @@ final class ScrollTrace: NSObject {
         self.state = state
         guard !started else { return }
         started = true
+        Self.keepEarlier(url)
         try? Data().write(to: url)
         #if os(iOS) || os(visionOS)
         let link = CADisplayLink(target: self, selector: #selector(tick))
@@ -54,6 +55,16 @@ final class ScrollTrace: NSObject {
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { _ in MainActor.assumeIsolated { ScrollTrace.shared.tick() } }
         RunLoop.main.add(timer, forMode: .common)
         #endif
+    }
+
+    /// The traces of the launches before this one stay beside it, `.1` the one just before, up to 8: a UI test run
+    /// launches the app once per test, and only the last test's was left to read.
+    private static func keepEarlier(_ url: URL) {
+        let fm = FileManager.default, ext = url.pathExtension
+        func earlier(_ n: Int) -> URL { url.deletingPathExtension().appendingPathExtension("\(n)").appendingPathExtension(ext) }
+        try? fm.removeItem(at: earlier(8))
+        for n in stride(from: 7, through: 1, by: -1) { try? fm.moveItem(at: earlier(n), to: earlier(n + 1)) }
+        try? fm.moveItem(at: url, to: earlier(1))
     }
 
     @objc private func tick() {

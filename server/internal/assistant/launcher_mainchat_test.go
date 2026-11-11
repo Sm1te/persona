@@ -95,14 +95,14 @@ func TestSendRefusesOrReplacesALauncherThatCannotRunTheAssistant(t *testing.T) {
 
 func TestSendValidatesTheResolvedAssistantLauncher(t *testing.T) {
 	ctx := context.Background()
-	t.Run("old managed Codex default on the main conversation", func(t *testing.T) {
+	t.Run("old managed Codex default on the main conversation", func(t *testing.T) { // gives way to a Codex launcher, never to Claude (#4659)
 		s, f := mainChatFixture(t)
 		setModel(t, s, "assistant", ModelBinding{Provider: "launcher.codex-gw", Model: "old-model"})
 		setSettings(t, s, func(v *Settings) { v.Main = "main" })
 		f.setSessions("server", proto.Session{SessionID: "main", Assistant: true})
 		p, err := s.SendParams(ctx, SendParams{MachineID: "server", SessionID: "main", Params: map[string]any{"text": "hi"}})
-		if err != nil || p["launcher"] != "claude" || p["model"] != nil {
-			t.Fatalf("resolved default was not replaced with a verified compatible launcher: %v %v", p, err)
+		if err != nil || p["launcher"] != "cx" || p["model"] != "old-model" { // cx's list can't be read: kept (launcherHasModel)
+			t.Fatalf("resolved default was not replaced with a verified compatible launcher of its kind: %v %v", p, err)
 		}
 	})
 	t.Run("legacy side falls back to the same incompatible default", func(t *testing.T) {

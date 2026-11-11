@@ -4,5 +4,9 @@
   "main_busy": "The main chat is answering or compacting. Start a new one once it stops.",
   "guest_node_too_old": "The personad on this computer is too old for guest conversations; update it and try again.",
   "work_machine": "Assistant conversations cannot run on a work computer. Choose a personal computer.",
-  "launcher_not_main_chat": "{launcher} can start Agents on {machine} but can’t run assistant chats, so this message wasn’t sent. Pick another launcher in the menu and send again."
+  "launcher_not_main_chat": "{launcher} can start Agents on {machine} but can’t run assistant chats, so this message wasn’t sent. Pick another launcher in the menu and send again.",
+  "launcher_other_kind": "{launcher} runs {launcher_agent}, but this conversation runs on {conversation_agent} and can't change it, so this message wasn't sent. Pick a {conversation_agent} launcher, or start a new conversation on {launcher}.",
+  "launcher_no_substitute": "{launcher} isn’t on {machine} any more, and no other launcher of the same kind there can run assistant chats, so this message wasn’t sent. Choose one in Model configuration › Main chat.",
+  "launcher_swapped": "{launcher} can’t run assistant chats on {machine}, so this runs on {to}",
+  "launcher_swapped_model": "{launcher} can’t run assistant chats on {machine}, so this runs on {to} with its default model ({model} isn’t in its list)"
 }

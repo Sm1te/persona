@@ -26,7 +26,7 @@
     <string name="settings_extension_market_unavailable">拡張機能マーケットを利用できません。復元して再試行してください。</string>
     <string name="settings_extension_market_missing">この拡張機能はマーケットに掲載されていません。</string>
     <string name="settings_extension_market_removed">マーケットが削除されたため自動更新は一時停止中です。保存した設定は保持されます。</string>
-    <string name="settings_extension_global_off">このアシスタントの自動更新はオフです。拡張機能の設定は保持されます。</string>
+    <string name="settings_extension_global_off">このアシスタントで拡張機能の自動アップデートがオフのため、自動アップグレードは一時停止しています。設定は保持され、自動アップデートをオンに戻すと再び適用されます。</string>
     <string name="settings_extension_global_unknown">このアシスタントの全体の自動更新設定を読み取れません。</string>
     <string name="settings_extension_rollback">ロールバック</string>
     <string name="settings_extension_rollback_unavailable">このアシスタントはロールバックの確認プレビューを提供していません。このページからは実行しません。</string>

@@ -4,5 +4,9 @@
   "err_nothing_named": "読み込める{name}はありません",
   "err_machine_required": "machineが必要です",
   "err_machine_providers_required": "machineとprovidersが必要です",
-  "err_no_machine": "そのマシンはありません"
+  "err_no_machine": "そのマシンはありません",
+  "use_task": "定期タスク「{name}」",
+  "use_profile": "モデルプロファイル「{name}」",
+  "use_tier": "モデルプロファイル「{profile}」の Agent プリセット「{tier}」",
+  "err_not_hidden": "プロバイダーは読み込みましたが、エイリアスを非表示にできませんでした。一覧から非表示にするか、もう一度読み込んでください。"
 }

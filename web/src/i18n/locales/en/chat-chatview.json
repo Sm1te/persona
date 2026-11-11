@@ -76,7 +76,6 @@
   "route_no_images": "Images can't be sent straight to a task yet. Remove the image and try again.",
   "not_live": "Not live",
   "not_live_reload": "Reload",
-  "switch_agent": "Switch agent",
   "composer_source": "Source",
   "call_not_loaded": "That step is not in the loaded history; scroll up and try again",
   "refresh_failed": "Couldn’t refresh",
@@ -112,5 +111,7 @@
   "resume": "Resume",
   "resume_failed": "Couldn't resume this Agent. {error}",
   "codex_waiting": "Codex is open on {computer}. Send its first message below, or type it in its terminal.",
-  "codex_first_placeholder": "First message to Codex"
+  "codex_first_placeholder": "First message to Codex",
+  "handoff_from": "Came from {title} · click to return",
+  "handoff_dismiss": "Hide the way back"
 }

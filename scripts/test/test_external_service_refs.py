@@ -38,6 +38,11 @@ ALLOWED_REPOS = {
 ALLOWED_IN_FILE = {
     ("server/internal/hub/persona_tiers_test.go", "tiers"),
     ("server/internal/hub/persona_tiers_test.go", "dot"),
+    # pet: the built-in Milk Frog's art in the organisation's persona package, which the watch's answer-only token reads
+    # (#4910, #5069).
+    ("server/internal/hub/devicetokens.go", "pet"),
+    ("server/internal/hub/devicetokens_test.go", "pet"),
+    ("docs/protocol/protocol.md", "pet"),
 }
 
 
@@ -93,6 +98,12 @@ class ExternalServiceRefTests(unittest.TestCase):
         self.assertEqual([], hits('"publisher": "' + org + '"'))
         self.assertEqual([], hits("github.com/" + org + "/persona/server"))
         self.assertEqual([], hits("see #1420 and the service's public API reference"))
+
+    def test_a_persona_store_key_passes_only_where_it_is_listed(self):
+        org = "nwverse"
+        route = "GET /api/v1/personas/" + org + "/pet/pet.json"
+        self.assertEqual([], hits(route, path="server/internal/hub/devicetokens.go"))
+        self.assertEqual([(1, org + "/pet")], hits(route, path="server/internal/hub/other.go"))
 
     def test_existing_local_paths_are_not_repository_references(self):
         org = "nwverse"

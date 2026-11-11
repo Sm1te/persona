@@ -160,6 +160,14 @@ in Needs you at once, and the 24-hour default for reversible decisions applies u
 that can wait" (`docs/extensions/bots.md`) from agents' questions to supervisors' decisions; it needs a briefing
 routine with facts on, and without one every decision is pushed as today.
 
+As built (R2, #4930; `docs/assistant/todos.md` "Decisions that can wait" is authoritative): the supervisor marks the
+decision with `can_wait: true` on `task_review`. A held decision is listed under the briefing's "To verify" block, where
+every open decision already is, not under "Waiting for you" (the rows that hold an Agent up), and it stays the to-do's
+ask instead of joining the `assistant.later` queue, so its default, recheck and fixed answers are unchanged. Because
+the 24-hour default still counts from when the decision is raised, it is held only when a briefing is due within 24
+hours and at least 12 hours before its deadline, and it is pushed after all when no briefing reached the owner with it
+by 11 hours before the deadline, or within 24 hours.
+
 ### 4c. A recommended setup, said once
 
 The weekly briefing gains one block when the numbers support it: which switch in 2b would have removed how many of last
@@ -181,6 +189,11 @@ what the main chat spends its time on. All of it is written as `session_work_eve
 Read through `GET /api/v1/assistant/north-star` next to #4601's two numbers, and shown in the daily briefing only when
 a value crosses its threshold in section 1. Each number has its one-line definition in `docs/assistant/assistant.md`
 (PRINCIPLES 3).
+
+As built (step M1, #4924): the four metrics are recorded and read through `GET /api/v1/assistant/availability`, a
+route of its own because the north-star read covers one day from the database alone; the reply wait starts at the
+manager's `session.user_spoke`. `docs/assistant/assistant.md` ("Availability metrics") has the definitions and their
+limits.
 
 ## 6. Steps
 

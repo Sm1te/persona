@@ -2,7 +2,7 @@ import { type CSSProperties, Fragment, memo, type ReactNode, useContext, useLayo
 import { clock } from "../../lib/format";
 import { stripCloseout } from "../../lib/closeout";
 import { getSession, getState } from "../../lib/store";
-import { agentStatus, subagentFor } from "../../lib/tasks";
+import { agentStatus, isNestedSubagentStep, nestedSubagentStatus, nestingKey, subagentFor, withNestedSubagents } from "../../lib/tasks";
 import { turnImages } from "../../lib/turn-images";
 import { TurnImages } from "./TurnImages";
 import { exchangeSteps, segmentIdentity, isLoopTick, isOwnMessage, type Context, type Segment, type UserMessage } from "../../lib/turns";
@@ -18,6 +18,7 @@ import { Markdown } from "../../ui/Markdown";
 import { CardConversation, CardItem } from "../../ui/AssistantCard";
 import { cardReply } from "../../lib/assistant-blocks";
 import { InjectedHint, LoopTick, MergedBubble, PeerMessage } from "./Messages";
+import { ModelChangeDivider } from "./ModelChangeDivider";
 import { SourceMessage } from "./SourceMessage";
 import { ContextGroup } from "./ContextGroup";
 import { ForwardBlock } from "./ForwardCard";
@@ -52,16 +53,22 @@ export function bubbleLines(text: string, perLine = CHARS_PER_LINE): number {
   return text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil([...l].length / perLine)), 0);
 }
 
+/** ModelChangeDivider's height as drawn (Chrome, 2026-11-12): its 8 px above and below, the chip's 4 px padding, 1 px
+ *  border and 16.5 px line (11 px text, the inherited 1.5). The exchange's 12 px gap comes on top. */
+export const MODEL_DIVIDER_HEIGHT = 42.5;
+
 /** A finished exchange's height in px before it is first drawn (content-visibility, docs/web/web.md "Long chats"), by
  *  its text the way bubbleLines counts it: its bubble (folded past BUBBLE_MAX_LINES), its words at 2.5 times the
  *  bubble's characters to a line (the column is wider, and Markdown's short and blank lines take less than a line), a
- *  row for each other block. Once drawn it keeps its own height. */
-export function segmentHeight(user: UserMessage | undefined, nodes: WorkNode[]): number {
+ *  row for each other block, and the model change divider when it has one (`modelChange`). Once drawn it keeps its
+ *  own height. */
+export function segmentHeight(user: UserMessage | undefined, nodes: WorkNode[], modelChange = false): number {
   const line = 24, gap = 12, row = 28;
   const lines = user ? bubbleLines(user.text) : 0;
   let h = user ? (lines > BUBBLE_MAX_LINES ? 10 : lines) * line + 20 + (user.images.length ? 102 : 0) : 0;
   for (const n of nodes) h += n.kind === "step" && n.step.kind === "text" ? bubbleLines(n.step.item.text ?? "", CHARS_PER_LINE * 2.5) * line : row;
-  return Math.round(h + gap * Math.max(0, nodes.length + (user ? 1 : 0) - 1));
+  if (modelChange) h += MODEL_DIVIDER_HEIGHT;
+  return Math.round(h + gap * Math.max(0, nodes.length + (user ? 1 : 0) + (modelChange ? 1 : 0) - 1));
 }
 
 /** `sendState`: a message not in the transcript yet (a sending bubble, the outbox's), marked for the sync scenarios
@@ -271,11 +278,17 @@ export const SegmentView = memo(function SegmentView({
   offscreen?: (section: HTMLElement) => () => void;
 }) {
   const { subagents, tasks, scope, workflowCalls = NO_WORKFLOW_CALLS, lineStyle, closeoutSegment } = useChatContext();
-  const steps = useMemo(() => exchangeSteps(seg), [seg]);
+  const own = useMemo(() => exchangeSteps(seg), [seg]);
+  // the subagents its subagents launched, each a card of its own by when it started (#5030); a trace shows the calls only.
+  // Keyed by what places them, not the list: that changes with every subagent's tokens and steps.
+  const nesting = trace ? "" : nestingKey(subagents);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const steps = useMemo(() => (nesting ? withNestedSubagents(own, subagents) : own), [own, nesting]);
   const turnStart = seg.user?.ts ?? seg.start;
   const thinking = useMemo(() => thinkingDurations(steps, turnStart), [steps, turnStart]);
   const p = useMemo<WorkProps>(() => {
-    const agent = (s: ToolStep) => agentStatus(s.result, subagentFor(subagents, s.use), live, s.use.tool_use_id ? tasks.notes.get(s.use.tool_use_id) : undefined);
+    const agent = (s: ToolStep) =>
+      isNestedSubagentStep(s) ? nestedSubagentStatus(subagentFor(subagents, s.use)) : agentStatus(s.result, subagentFor(subagents, s.use), live, s.use.tool_use_id ? tasks.notes.get(s.use.tool_use_id) : undefined);
     return { mid, sid, scope, expandFold, agentStatus: agent, thinking, segment: seg.id, workflowCalls, trace, lineStyle, turnLive: live };
   }, [mid, sid, scope, expandFold, subagents, tasks, live, thinking, seg.id, workflowCalls, trace, lineStyle]);
   const identity = segmentIdentity(seg);
@@ -304,10 +317,13 @@ export const SegmentView = memo(function SegmentView({
     const el = box.current;
     return offscreen && el ? offscreen(el) : undefined;
   }, [offscreen]);
-  const guess = useMemo(() => (offscreen ? ({ "--seg-est": `${segmentHeight(seg.user, nodes)}px` } as CSSProperties) : undefined), [offscreen, seg.user, nodes]);
+  const divided = Boolean(seg.modelChange);
+  const guess = useMemo(() => (offscreen ? ({ "--seg-est": `${segmentHeight(seg.user, nodes, divided)}px` } as CSSProperties) : undefined), [offscreen, seg.user, nodes, divided]);
   return (
     <section ref={box} className={offscreen ? "seg-cv flex flex-col gap-3" : "flex flex-col gap-3"} style={guess} data-segment>
       {trace && seg.user?.rawInput && !seg.user.promptHidden && !seg.user.sourceInTrace ? <RawInjectedInput items={seg.user.rawInput} mid={mid} sid={sid} /> : seg.user && (seg.user.source ? <SourceMessage msg={seg.user} mid={mid} sid={sid} /> : seg.user.injected ? <InjectedHint msg={seg.user} sid={sid} /> : seg.user.parts ? <MergedBubble msg={seg.user} mid={mid} sid={sid} /> : seg.user.from ? <PeerMessage msg={seg.user} /> : isLoopTick(seg.user) ? <LoopTick msg={seg.user} /> : <UserBubble msg={seg.user} mid={mid} sid={sid} />)}
+      {/* the reply below came from another model than the one before it (cindy: after the message that started it) */}
+      {seg.modelChange && <ModelChangeDivider from={seg.modelChange.from} to={seg.modelChange.to} />}
       {/* Work stays collapsed above the single latest-text slot. */}
       {live && <Fragment key="before-words">{beforeWords}</Fragment>}
       <WorkNodes nodes={nodes.slice(0, cut)} p={p} live={live} fade />

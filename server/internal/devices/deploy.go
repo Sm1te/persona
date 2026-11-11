@@ -142,7 +142,8 @@ func (m *Machine) startDeployOf(auto bool) error {
 }
 
 // deployScript is the remote command that installs the gzipped binary on stdin as bin and stops a resident node so
-// launchd restarts it. The pkill pattern is written so it does not match this ssh session's own command line.
+// launchd restarts it. The staged binary must run `version` before it can replace the installed one or stop the node.
+// The pkill pattern is written so it does not match this ssh session's own command line.
 // personaNode: the binary is persona-node, which never replaces a file that is not persona-node already (a personad,
 // which may run a hub or a manager too, put there since the node said what it runs). The file says which it is in
 // node-update-check; a build that does not say is personad.
@@ -157,6 +158,7 @@ func deployScript(bin string, personaNode bool) string {
 			`echo "$b is personad, which may run a hub or a manager too: not replacing it with persona-node" >&2; exit 3; fi; `
 	}
 	return posixCommand("set -e; b=" + target + `; mkdir -p "$(dirname "$b")"; gzip -dc > "$b.new"; chmod 755 "$b.new"; ` + keep +
+		`if ! "$b.new" version >/dev/null; then rm -f "$b.new"; echo "$b failed its staged version check: keeping the current binary and node" >&2; exit 4; fi; ` +
 		`mv "$b.new" "$b"; pkill -f '` + residentNodePattern + `' || true`)
 }
 

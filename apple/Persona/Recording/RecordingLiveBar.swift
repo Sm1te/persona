@@ -155,8 +155,8 @@ struct RecordingLiveBar: View {
     }
 
     /// The typed question, in the bar (#4486): the hint, then the composer's field (it grows to a few lines) and its round
-    /// send button, which waits for words. Return sends too. At accessibility sizes the field takes the full width, with
-    /// Cancel and send under it.
+    /// send button, which waits for words (`MeetingQuestionField`, which the meeting page's bar shares). Return sends too.
+    /// At accessibility sizes the field takes the full width, with Cancel and send under it.
     private var questionRow: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             // At accessibility sizes the hint is several lines: while the keyboard is up it gives the room back to the
@@ -168,58 +168,18 @@ struct RecordingLiveBar: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("meeting-ask-hint")
             }
-            if size.isAccessibilitySize {
-                questionField
-                HStack(spacing: Theme.Space.m) {
-                    Button { closeQuestion() } label: {
-                        Label("Cancel", systemImage: Theme.Icon.close).lineLimit(1)
-                    }
-                    .themedButton()
-                    .accessibilityIdentifier("meeting-ask-cancel")
-                    Spacer(minLength: Theme.Space.s)
-                    sendButton
+            MeetingQuestionField(text: $question, focus: $questionFocused, placeholder: String(localized: "Ask about this meeting"),
+                                 sendLabel: String(localized: "Ask [Meeting Ask]"), canSend: canSend, largeTypeHint: questionHint,
+                                 // Opened by the keyboard button or More: the keyboard comes up with it.
+                                 focusOnAppear: true, send: send) {
+                // At accessibility sizes the row under the field has its own Cancel, the keyboard button being away.
+                Button { closeQuestion() } label: {
+                    Label("Cancel", systemImage: Theme.Icon.close).lineLimit(1)
                 }
-            } else {
-                HStack(alignment: .bottom, spacing: Theme.Space.xs) {
-                    questionField
-                    sendButton
-                }
+                .themedButton()
+                .accessibilityIdentifier("meeting-ask-cancel")
             }
         }
-    }
-
-    private var questionField: some View {
-        TextField(String(localized: "Ask about this meeting"), text: $question, axis: .vertical)
-            .font(Theme.Font.body)
-            .lineLimit(1...(size.isAccessibilitySize ? Theme.Recording.askLinesLargeType : Theme.Recording.askLines))
-            .focused($questionFocused)
-            .submitLabel(.send)
-            .onSubmit { send() }
-            // A multi-line field takes Return as a new line rather than a submit: one typed at the end sends instead
-            // (blank or busy, it is dropped). A pasted question keeps its lines.
-            .onChange(of: question) { old, new in
-                guard new == old + "\n" else { return }
-                question = old
-                send()
-            }
-            .padding(.horizontal, Theme.Space.l)
-            .padding(.vertical, Theme.Space.s)
-            .scaledFrame(minHeight: Theme.Size.tapTarget)
-            .modifier(ComposerSurface())
-            .contentShape(.rect(cornerRadius: Theme.Shell.composerRadius))
-            .onTapGesture { questionFocused = true }
-            .accessibilityHint(size.isAccessibilitySize ? Text(questionHint) : Text(verbatim: ""))
-            .accessibilityIdentifier("meeting-ask-field")
-            // Opened by the keyboard button or More: the keyboard comes up with it.
-            .onAppear { questionFocused = true }
-    }
-
-    private var sendButton: some View {
-        ComposerRoundButton(symbol: Theme.Icon.send, label: String(localized: "Ask [Meeting Ask]"), id: "meeting-ask-send", pressScales: true) {
-            send()
-        }
-        .disabled(!canSend)
-        .opacity(canSend ? 1 : Theme.Recording.askSendIdle)
     }
 
     private var pauseButton: some View {

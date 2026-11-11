@@ -77,13 +77,18 @@ class ChatDeliveryStateTest {
         assertTrue(actions.perform("message", DeliveryAction.Edit, composer::restoreMessage))
         assertEquals("草稿\n\n原消息", composer.value.text)
         assertTrue(sender.outbox.value.isEmpty())
+        // Turned down by the hub (#4645): it reached nothing either, so it can be deleted too.
+        sender.outbox.value = listOf(sender.message.copy(state = DeliveryState.Rejected))
+        val typed = composer.value.text
+        assertTrue(actions.perform("message", DeliveryAction.Delete, composer::restoreMessage))
+        assertEquals(typed, composer.value.text)
         // Whatever may have reached the computer, or is still on its way, is not deleted this way.
-        DeliveryState.entries.filter { it != DeliveryState.Refused }.forEach { state ->
+        DeliveryState.entries.filter { it != DeliveryState.Refused && it != DeliveryState.Rejected }.forEach { state ->
             assertFalse("$state", state.allows(DeliveryAction.Delete))
             sender.outbox.value = listOf(sender.message.copy(state = state))
             assertFalse("$state", actions.perform("message", DeliveryAction.Delete, composer::restoreMessage))
         }
-        assertEquals(listOf("cancel:message", "cancel:message"), sender.calls)
+        assertEquals(listOf("cancel:message", "cancel:message", "cancel:message"), sender.calls)
         // Confirmed as never delivered becomes refused, and so can be deleted.
         sender.outbox.value = listOf(sender.message.copy(state = DeliveryState.NeedsConfirmation))
         assertTrue(actions.perform("message", DeliveryAction.ConfirmNotDelivered, composer::restoreMessage))
@@ -91,6 +96,26 @@ class ChatDeliveryStateTest {
         assertTrue(actions.perform("message", DeliveryAction.Delete, composer::restoreMessage))
         assertTrue(sender.outbox.value.isEmpty())
         assertTrue(actions.busyIds.isEmpty())
+    }
+
+    @Test fun cancelAndDeleteHandBackTheMessageAsItWasForUndo() = runTest {
+        val sender = FakeSender()
+        val actions = ChatDeliveryActions(sender)
+        val composer = ChatComposerState(ChatComposerDraft("草稿"))
+        val removed = mutableListOf<OutboxMessage>()
+        val refused = sender.message.copy(state = DeliveryState.Refused, error = "input_draft")
+        sender.outbox.value = listOf(refused)
+        assertTrue(actions.perform("message", DeliveryAction.Delete, composer::restoreMessage) { removed += it })
+        sender.outbox.value = listOf(sender.message)
+        assertTrue(actions.perform("message", DeliveryAction.Cancel, composer::restoreMessage) { removed += it })
+        assertEquals(listOf(refused, sender.message), removed)
+        // Edit puts the words in the box instead: nothing to undo.
+        sender.outbox.value = listOf(sender.message)
+        assertTrue(actions.perform("message", DeliveryAction.Edit, composer::restoreMessage) { removed += it })
+        // Refused by the sender (it moved on meanwhile): nothing removed.
+        sender.outbox.value = listOf(sender.message); sender.accept = false
+        assertFalse(actions.perform("message", DeliveryAction.Cancel, composer::restoreMessage) { removed += it })
+        assertEquals(2, removed.size)
     }
 
     @Test fun onlyMessagesOfUnknownDeliveryCanBeDiscarded() = runTest {

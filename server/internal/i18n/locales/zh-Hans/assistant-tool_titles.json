@@ -14,5 +14,20 @@
   "todo_update": "修改待办",
   "todo_complete": "完成任务",
   "todo_reopen": "重新打开任务",
-  "todo_delete": "删除待办"
+  "todo_delete": "删除待办",
+  "report_to_supervisor": "向督办汇报",
+  "report_to_supervisor_progress": "进展",
+  "report_to_supervisor_question": "提问",
+  "report_to_supervisor_blocked": "受阻",
+  "report_to_supervisor_done": "完成",
+  "todo_decisions": "查看任务的决定",
+  "todo_decision_add": "记下一个决定",
+  "todo_bind_thread": "把任务关联到对话",
+  "task_review": "验收子任务",
+  "dispatch_start": "交给另一台电脑",
+  "dispatch_read": "查看交出的子任务",
+  "iphone_look": "查看 iPhone",
+  "iphone_status": "iPhone 状态",
+  "family_phone": "iPhone",
+  "family_mail": "邮件"
 }

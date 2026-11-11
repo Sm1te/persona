@@ -37,28 +37,39 @@ final class MeetingAttendanceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["recording-meeting-start"].isHittable)
     }
 
-    /// The role comes from the hub's default and is changed for this one meeting; the main chat attends until another
-    /// session is picked.
+    /// The role is changed for this one meeting and someone is picked to attend it. Nobody is by default (#3862: the main
+    /// chat never attends unless picked, and nothing was picked before): the role shows Off whatever the hub's default,
+    /// and Listen or Take Part asks who attends (Choose) until the main chat or another session is picked.
     @MainActor func testRoleAndAttendeeAtTheStart() throws {
         let hub = try mockHub()
         try attendance(hub, on: true, default: "listener")
         let app = launch(hub, ["-openShellPage", "recordings"])
         let role = app.descendants(matching: .any)["meeting-attendance-role"].firstMatch
         XCTAssertTrue(role.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(waitFor { roleText(role).contains("旁听") }, "the hub's default: \(app.debugDescription)")
+        XCTAssertTrue(waitFor { roleText(role).contains("关") }, "nobody chosen to attend: off, not the hub's default: \(roleText(role))")
         let attendee = app.buttons["meeting-attendee"]
-        scrollTo(attendee, in: app)
-        XCTAssertTrue(attendee.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(waitFor { attendee.label.contains("主对话") }, "the main chat attends until another is picked: \(attendee.label)")
+        XCTAssertFalse(attendee.exists, "no one attends while Persona is off")
 
         role.tap(); app.buttons["参会"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "出声回答")).firstMatch.waitForExistence(timeout: 5),
                       app.debugDescription)
-
         scrollTo(attendee, in: app)
+        XCTAssertTrue(attendee.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(waitFor { attendee.label.contains("选择") }, "Choose until someone is picked: \(attendee.label)")
+        XCTAssertFalse(attendee.label.contains("主对话"), "never the main chat by default: \(attendee.label)")
+
         attendee.tap()
-        XCTAssertTrue(app.buttons["meeting-attendee-main"].waitForExistence(timeout: 10), "the main chat can attend too")
+        let main = app.buttons["meeting-attendee-main"]
+        XCTAssertTrue(main.waitForExistence(timeout: 10), "the main chat can attend when picked")
+        XCTAssertFalse(main.label.contains("已选"), "nothing is chosen in the picker yet: \(main.label)")
         try shot(app, "attendee-picker")
+        main.tap()
+        XCTAssertTrue(app.buttons["recording-meeting-start"].waitForExistence(timeout: 10), app.debugDescription)
+        scrollTo(attendee, in: app)
+        XCTAssertTrue(waitFor { attendee.label.contains("主对话") }, "picked for this meeting, the main chat attends: \(attendee.label)")
+
+        attendee.tap()
+        XCTAssertTrue(main.waitForExistence(timeout: 10), app.debugDescription)
         let agent = app.buttons["meeting-attendee-agent"].firstMatch
         scrollTo(agent, in: app)
         XCTAssertTrue(agent.waitForExistence(timeout: 10), app.debugDescription)
@@ -244,9 +255,18 @@ final class MeetingAttendanceUITests: XCTestCase {
         XCTAssertTrue(limits.exists, "what Persona may say in front of others")
     }
 
+    /// The mock lists `meeting_conversation` beside attending (#3862), which replaces the attending session with the meeting's
+    /// room: off here, so these keep covering the attending session (#3746).
+    override func setUpWithError() throws {
+        if let hub = ProcessInfo.processInfo.environment["PERSONA_MOCK_HUB"] { try conversation(hub, on: false) }
+    }
+
     /// The shared mock goes back to how it starts (attending on, the default off), so the next class sees what it always did.
     override func tearDownWithError() throws {
-        if let hub = ProcessInfo.processInfo.environment["PERSONA_MOCK_HUB"] { try attendance(hub, on: true, default: "off") }
+        if let hub = ProcessInfo.processInfo.environment["PERSONA_MOCK_HUB"] {
+            try attendance(hub, on: true, default: "off")
+            try conversation(hub, on: true)
+        }
     }
 
     // MARK: Helpers
@@ -266,6 +286,16 @@ final class MeetingAttendanceUITests: XCTestCase {
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let done = expectation(description: "attendance")
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.fulfill() }.resume()
+        wait(for: [done], timeout: 5)
+    }
+
+    /// The mock hub's `meeting_conversation` (#3862), before the app launches (its next `hello` says it).
+    private func conversation(_ hub: String, on: Bool) throws {
+        var request = URLRequest(url: URL(string: hub + "/mock/meeting_conversation")!)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["on": on])
+        let done = expectation(description: "conversation")
         URLSession.shared.dataTask(with: request) { _, _, _ in done.fulfill() }.resume()
         wait(for: [done], timeout: 5)
     }

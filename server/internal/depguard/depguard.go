@@ -29,7 +29,7 @@ var HubOwn = []string{"cmd/persona-hub", "internal/hub", "internal/hubcli", "int
 var Shared = []string{"internal/acceptloop", "internal/aiwire", "internal/apierr", "internal/assistantwire",
 	"internal/bus", "internal/channel", "internal/clitext", "internal/compat", "internal/connectorwire", "internal/db",
 	"internal/devicewire", "internal/dialogwire", "internal/errreport", "internal/extwire", "internal/i18n",
-	"internal/identity", "internal/kbwire", "internal/lazyre", "internal/link", "internal/managerconf", "internal/netaddr",
+	"internal/identity", "internal/kbwire", "internal/lazyre", "internal/link", "internal/managerconf", "internal/memtrim", "internal/netaddr",
 	"internal/netproxy", "internal/nodeproto", "internal/osproc", "internal/pgdocker", "internal/preview", "internal/procinfo", "internal/prompts",
 	"internal/proto", "internal/rpc", "internal/screen", "internal/secretkey", "internal/sessionlist", "internal/sessionorigin", "internal/streams",
 	"internal/textfmt", "internal/transcript", "internal/update", "internal/workspaceboard"}

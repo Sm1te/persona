@@ -310,9 +310,11 @@ struct ImageEditor: View {
         VStack(spacing: Theme.Space.m) {
             options
             HStack(spacing: Theme.Space.s) {
+                // At the largest text sizes even the icons are wider than the page: they scroll, Clear staying put.
                 ViewThatFits(in: .horizontal) {
                     toolButtons(labeled: true)
                     toolButtons(labeled: false)
+                    ScrollView(.horizontal, showsIndicators: false) { toolButtons(labeled: false) }
                 }
                 Spacer(minLength: 0)
                 if tool != .crop {

@@ -32,6 +32,17 @@ func RenderQuestionDefaulted(q QuestionDefaulted) string {
 	return render("agents/question_defaulted", q)
 }
 
+// QuestionAskedLater is what ask_user returns with wait false (#4928): the card is up (interaction ID) until Until
+// (MM-DD HH:MM in the user's zone), and how it ends comes later as a new message.
+type QuestionAskedLater struct {
+	ID    string
+	Until string
+}
+
+func RenderQuestionAskedLater(q QuestionAskedLater) string {
+	return render("agents/question_asked_later", q)
+}
+
 // RenderSettingUnanswered is what persona_settings returns when its approval card ended without the user's own allow
 // or deny: it expired, was closed, or someone else answered it (#3722).
 func RenderSettingUnanswered() string { return render("agents/setting_unanswered", nil) }

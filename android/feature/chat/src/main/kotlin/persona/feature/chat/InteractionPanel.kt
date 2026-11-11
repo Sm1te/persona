@@ -157,6 +157,7 @@ internal fun InteractionForm(
     }
     val expired = RequestExpiry.expired(interaction.expiresAt, now)
     var password by rememberTransientSecret(interaction.id, clearWhen = expired || uncertain)
+    var fieldValues by rememberTransient(interaction.id, clearWhen = expired || uncertain, empty = emptyMap<String, String>())
     // A session whose source cannot approve (blockedReason) shows the request but answers nothing, not even "Handle on computer".
     val blocked = blockedReason != null
     val context = AnswerContext(state = if (expired || uncertain || readOnly || linkVisible || blocked) "unknown" else "pending", sending = busy,
@@ -167,7 +168,7 @@ internal fun InteractionForm(
         val result = AnswerBuilder.build(interaction, action, value, context)
         if (!result.allowed) return
         if (result.resolution == null) update(result.draft)
-        else { password = ""; onAnswer(action, result.draft, planRead) }
+        else { password = ""; fieldValues = emptyMap(); onAnswer(action, result.draft, planRead) }
     }
     fun enabled(action: AnswerAction) = AnswerBuilder.build(interaction, action, draft, context).allowed
     val questions = interaction.questions.orEmpty()
@@ -191,6 +192,12 @@ internal fun InteractionForm(
                 canRun = AnswerBuilder.build(interaction, AnswerAction.Allow, AnswerDraft(password = password), context).allowed,
                 onDecline = { act(AnswerAction.Deny) }, onRun = { act(AnswerAction.Allow, AnswerDraft(password = password)) },
                 // Room between the dock's divider and the field's label.
+                modifier = Modifier.padding(top = Tokens.Space.s))
+            // A card with fields (#4641): its form, Deny and Fill In & Allow, no Always.
+            else if (interaction.hasFieldsForm) PermissionFieldsActions(interaction.fields.orEmpty(), fieldValues, { fieldValues = it }, editable,
+                canDeny = enabled(AnswerAction.Deny),
+                canAllow = AnswerBuilder.build(interaction, AnswerAction.Allow, draft.copy(values = fieldValues), context).allowed,
+                onDeny = { act(AnswerAction.Deny) }, onAllow = { act(AnswerAction.Allow, draft.copy(values = fieldValues)) },
                 modifier = Modifier.padding(top = Tokens.Space.s)) else {
                 // "Always" is Claude's, or another agent's when its TUI says what it would allow (as on iOS).
                 DecisionButtons(
@@ -201,10 +208,6 @@ internal fun InteractionForm(
                 )
                 interaction.alwaysScopeDetail?.takeIf { interaction.offersAlways }?.let {
                     Text(stringResource(R.string.chat_request_always_allows, it.text()), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2)
-                }
-                // Allow needs its fields filled in, which this app has no form for yet (#4987).
-                if (interaction.needsFieldValues) {
-                    Text(stringResource(R.string.chat_request_fields_elsewhere), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2)
                 }
             }
             "plan" -> {
@@ -292,9 +295,10 @@ internal fun InteractionForm(
                     JTextButton(stringResource(if (showInput) R.string.chat_permission_hide_input else R.string.chat_permission_show_input), { showInput = !showInput })
                     if (showInput) JCodeBlock(input.toString())
                 }
-                JTextField(draft.message, { if (it.length <= 4000) update(draft.copy(message = it)) },
+                // A card with fields is denied plainly, as on iOS: its form is the only thing to type into (#4641).
+                if (!interaction.hasFieldsForm) JTextField(draft.message, { if (it.length <= 4000) update(draft.copy(message = it)) },
                     label = stringResource(R.string.chat_permission_deny_reason), modifier = Modifier.fillMaxWidth(), enabled = editable)
-                if (draft.message.isNotEmpty()) Text(stringResource(R.string.chat_permission_clear_reason), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2)
+                if (draft.message.isNotEmpty() && !interaction.hasFieldsForm) Text(stringResource(R.string.chat_permission_clear_reason), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2)
             }
             "plan" -> {
                 if (full) ChatMarkdown(interaction.plan.orEmpty())

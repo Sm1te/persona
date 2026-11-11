@@ -8,6 +8,7 @@ import SwiftUI
 struct PreviewChooser: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     let key: SessionKey
     var open: (PreviewOption) -> Void
     @State private var preview: PreviewModel
@@ -154,20 +155,26 @@ struct PreviewChooser: View {
     }
 
     /// One server: a running one opens on a tap; a stopped one with a command has Start…; one being started says what
-    /// it waits for and can be cancelled; one with a url and no command is started by hand.
+    /// it waits for and can be cancelled; one with a url and no command is started by hand. At the accessibility sizes
+    /// the row's end goes on a line under the name and port, which get more lines: beside them Start… was cut to its
+    /// icon and the words to "…" (#5114).
     @ViewBuilder private func row(_ o: PreviewOption) -> some View {
         let starting = preview.starting?.option.id == o.id
-        let label = HStack(spacing: Theme.Space.m) {
+        let large = typeSize.isAccessibilitySize
+        let label = HStack(alignment: large ? .top : .center, spacing: Theme.Space.m) {
             IconTile(o.from == .agent ? Theme.Icon.agents : o.command == nil && !o.listening ? Theme.Icon.document : o.listening ? Theme.Icon.servedPage : Theme.Icon.server,
                      tint: o.from == .agent ? Theme.Hue.purple : o.listening ? Theme.Hue.green : Theme.Hue.gray)
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                Text(o.name).font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(1)
-                Text(detail(o, starting: starting)).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(starting ? 2 : 1)
+                Text(o.name).font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(large ? 2 : 1)
+                Text(detail(o, starting: starting)).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(large ? 4 : starting ? 2 : 1)
+                if large { trailing(o, starting: starting) }
             }
             // the separator starts under the name, not under a Start… button's words
             .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
-            Spacer(minLength: Theme.Space.s)
-            trailing(o, starting: starting)
+            if !large {
+                Spacer(minLength: Theme.Space.s)
+                trailing(o, starting: starting)
+            }
         }
         if o.listening {
             Button { Haptics.tap(); open(o) } label: { label.contentShape(.rect) }

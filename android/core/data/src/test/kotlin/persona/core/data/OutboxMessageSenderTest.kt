@@ -487,6 +487,45 @@ class OutboxMessageSenderTest {
         sender.close()
     }
 
+    @Test fun undoPutsADeletedMessageBackAsItWas() = runTest {
+        val store = MemoryOutboxStore()
+        val transport = FakeTransport(online = true)
+        val sender = OutboxMessageSender(scope, store, transport, backgroundScope)
+        transport.answers += MessageTransportResult.HubError(code = "input_draft", delivered = "none")
+        sender.send(session, "refused", "refused")
+        runCurrent()
+        val refused = sender.outbox.value.single { it.clientMessageId == "refused" }
+        assertEquals("input_draft", refused.error)
+        assertTrue(sender.cancel("refused"))
+        runCurrent()
+        assertTrue(sender.outbox.value.none { it.clientMessageId == "refused" })
+        // Back as it was, its refusal too, and nothing sent for it.
+        sender.restore(refused)
+        runCurrent()
+        assertEquals(refused, sender.outbox.value.single { it.clientMessageId == "refused" })
+        // A second Undo, or one for a message no longer deleted, changes nothing.
+        sender.restore(refused.copy(state = DeliveryState.Queued))
+        runCurrent()
+        assertEquals(OutboxState.Refused, store.state("refused"))
+        assertEquals(listOf("refused"), transport.requests.map { it.clientMessageId })
+
+        // One still waiting comes back waiting and goes once the link is up.
+        transport.readyToSend.value = false
+        sender.send(session, "waiting", "waiting")
+        runCurrent()
+        val waiting = sender.outbox.value.single { it.clientMessageId == "waiting" }
+        assertEquals(DeliveryState.WaitingForNetwork, waiting.state)
+        assertTrue(sender.cancel("waiting"))
+        sender.restore(waiting)
+        runCurrent()
+        assertEquals(OutboxState.WaitingForNetwork, store.state("waiting"))
+        transport.answers += MessageTransportResult.Accepted
+        transport.readyToSend.value = true
+        runCurrent()
+        assertEquals(listOf("refused", "waiting"), transport.requests.map { it.clientMessageId })
+        sender.close()
+    }
+
     @Test fun interruptedAndUnknownRequestsOnlyRetryWithDurableHubDeduplication() = runTest {
         val store = MemoryOutboxStore()
         store.enqueue(OutboxEntry("message-a", session, "hello", state = OutboxState.Sending, createdAt = 100))

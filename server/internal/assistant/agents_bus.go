@@ -14,9 +14,13 @@ func (b *BusHub) agentRequest(ctx context.Context, s *Service, method string, de
 		if err := decode(&p); err != nil {
 			return nil, err
 		}
+		ctx, note := withLauncherNote(ctx)
 		params, err := s.AgentStartParams(ctx, p)
 		if err != nil {
 			return nil, err
+		}
+		if *note != "" {
+			return map[string]any{"params": params, "launcher_note": *note}, nil
 		}
 		return map[string]any{"params": params}, nil
 	case assistantwire.MethodAgentResumeParams:

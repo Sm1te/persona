@@ -38,16 +38,20 @@ struct MachineDetailView: View {
         #endif
     }
 
-    /// A machine's agents: live ones, not the Chat tab's assistant conversations (the Agents tab leaves those out too).
+    /// A machine's agents: live ones, not the Chat tab's assistant conversations (the Agents tab leaves those out too),
+    /// nor a subtask, which the Agents list folds under the session that started it and does not count unless it needs
+    /// the user (`Session.isNestedSubtask`, as Android's Machines card).
     static func agents(_ model: AppModel, _ ref: MachineRef) -> [Session] {
-        (model.sessionsByMachine[ref] ?? []).filter { $0.status.isLive && !$0.assistant }
+        (model.sessionsByMachine[ref] ?? []).filter(isListed)
     }
 
     /// Every machine's agents (`agents(_:_:)`), for a page that can be kept hidden behind another: watched only in front
     /// (`AppModel.allSessions(inFront:)`).
     static func agentsByMachine(_ model: AppModel, inFront: Bool) -> [MachineRef: [Session]] {
-        Dictionary(grouping: model.allSessions(inFront: inFront).filter { $0.status.isLive && !$0.assistant }, by: \.machineRef)
+        Dictionary(grouping: model.allSessions(inFront: inFront).filter(isListed), by: \.machineRef)
     }
+
+    private static func isListed(_ s: Session) -> Bool { s.status.isLive && !s.assistant && !s.isNestedSubtask }
 
     /// The agents before Show All: with dozens on one machine its charts would be screens away.
     static let agentsShown = 5
@@ -256,7 +260,28 @@ struct MachineDetailView: View {
                 .card(padding: 0)
             }
             engineRow(machine)
+            if machine.online { terminalsRow }
         }
+    }
+
+    /// This computer's terminals, plain ones too (#4754): a leaf like the engine row, so a view push is fine here.
+    private var terminalsRow: some View {
+        NavigationLink {
+            TerminalsView(only: ref.path)
+        } label: {
+            HStack(spacing: Theme.Space.s) {
+                ThemedIcon(Theme.Icon.terminal).font(Theme.Font.body).foregroundStyle(Theme.accent).scaledFrame(width: Theme.Size.icon)
+                Text("Terminals").font(Theme.Font.body).lineLimit(1)
+                Spacer(minLength: Theme.Space.s)
+                ThemedIcon(Theme.Icon.disclosure).font(Theme.Font.labelStrong).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.vertical, Theme.Space.m)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("machine.terminals")
+        .card(padding: 0)
     }
 
     /// Which engine's sessions the machine shows (herdr, Herdr App…): it decides the list above.

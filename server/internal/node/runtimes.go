@@ -198,7 +198,7 @@ func runtimeWork(s *proto.Session) {
 		}
 		seen[a.ID] = true
 		a.SessionID = s.SessionID + "@" + a.ID
-		a.Description, a.LastText, a.Type = clip(a.Description), clip(a.LastText), clip(a.Type)
+		a.Description, a.LastText, a.Type, a.Model = clip(a.Description), clip(a.LastText), clip(a.Type), clip(a.Model)
 		subs = append(subs, a)
 	}
 	s.Subagents = subs

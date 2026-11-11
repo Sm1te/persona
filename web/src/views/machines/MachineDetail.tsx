@@ -40,10 +40,11 @@ import { classifyConnection } from "../../lib/node-health";
 import { screenPath, showsScreen } from "../../lib/computer";
 import { href, onLinkClick } from "../../lib/router";
 import { getState, refresh, useStore } from "../../lib/store";
-import type { Session } from "../../lib/types";
+import type { Launcher, Session } from "../../lib/types";
 import { Button, cx, EASE, IconButton, Loading, toast } from "../../ui/atoms";
 import { AgentRow } from "./AgentRow";
 import { Icon } from "../../ui/icons";
+import { ProviderName } from "../../ui/ProviderName";
 import { MetricChart, type ChartSeries } from "./MetricChart";
 import { MachineDeploy } from "./MachineDeploy";
 import { BrowserSection } from "./BrowserSection";
@@ -101,12 +102,7 @@ function RenameMachine({ m, onDone }: { m: DetailMachine; onDone: () => void }) 
   );
 }
 
-interface MachineLauncher {
-  name: string;
-  model?: string;
-  agent?: string;
-  agent_type?: string;
-}
+type MachineLauncher = Pick<Launcher, "name" | "display_name" | "model" | "agent" | "agent_type">;
 
 const NO_SESSIONS: Session[] = [];
 
@@ -452,7 +448,8 @@ export function MachineDetail({ mid, onToggleSidebar }: { mid: string; onToggleS
                 const kind = l.agent_type || l.agent || "claude";
                 return (
                   <div key={l.name} className="flex items-center gap-3 px-4 py-2">
-                    <span className="min-w-0 truncate font-mono text-[12.5px] text-ink">{l.name}</span>
+                    {/* a provider's display name, its startup ID beside it (#5029); an rc alias's ID in mono, as before */}
+                    <ProviderName of={l} className="min-w-0 truncate text-[12.5px] text-ink" idClassName="min-w-0 shrink-[2] truncate text-[11.5px] text-ink-3" />
                     {kind !== "claude" && <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full bg-inset px-1.5 text-[11px] font-medium text-ink-2 shadow-hairline">{kind === "codex" ? "Codex" : kind === "traex" ? "TRAEX" : kind}</span>}
                     <span className="flex-1" />
                     {l.model && <span className="shrink-0 truncate font-mono text-[11.5px] text-ink-3">{l.model}</span>}

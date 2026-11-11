@@ -443,7 +443,7 @@ func TestClaudeResumeArgv(t *testing.T) {
 		Model: "opus[1m]", Hooks: "/Users/me/my hooks"}, startID)
 	want := inAgentEnv(n.dir, "HERDR_AGENT=claude /Users/me/.persona/bin/personad launch work_gw --resume "+startID+
 		" --settings /Users/me/.persona/launcher-settings/work_gw.json --mcp-config "+filepath.Join(n.dir, "mcp.json")+
-		` --model "opus[1m]" --plugin-dir "/Users/me/my hooks"`, dquote)
+		" --allowedTools "+ownToolsRule+` --model "opus[1m]" --plugin-dir "/Users/me/my hooks"`, dquote)
 	if !ok || len(argv) != 2 || argv[0] != "eval" || argv[1] != want {
 		t.Fatalf("argv %q\nwant eval %q", argv, want)
 	}
@@ -488,7 +488,7 @@ func TestPersonaClaudeIsNotResumedBare(t *testing.T) {
 	launch := n.hosts.Get(host.Herdr).(*herdrHost)
 	spec := claudeLaunch{Launcher: "work_claude", Settings: filepath.Join(personaDir(home), "claude-settings.json")}
 	n.holdResume(context.Background(), launch, "w1:p2", startID, spec)
-	cmd := func(id string) string { return startCmd("work_claude", "--resume "+id, personaDir(home)) }
+	cmd := func(id string) string { return resumeCmd("work_claude", "--resume "+id, personaDir(home)) }
 	held := resumeHeld("w1:p2", startID, cmd(startID))
 	assertTrace(t, f.trace(), held[:])
 	for _, c := range f.calls() {

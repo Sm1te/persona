@@ -219,6 +219,23 @@
     <string name="designsystem_editor_picture">Image to edit</string>
     <string name="designsystem_editor_undo">Undo</string>
     <string name="designsystem_editor_clear">Clear</string>
+    <!-- The image editor's crop, turn, widths and redo (#4992, iOS ImageEditor) -->
+    <string name="designsystem_markup_crop">Crop</string>
+    <string name="designsystem_editor_rotate">Rotate</string>
+    <string name="designsystem_editor_reset">Reset</string>
+    <string name="designsystem_editor_redo">Redo</string>
+    <string name="designsystem_editor_shape">Aspect Ratio</string>
+    <string name="designsystem_editor_shape_free">Freeform</string>
+    <string name="designsystem_editor_shape_original">Original</string>
+    <string name="designsystem_editor_shape_square">Square</string>
+    <string name="designsystem_editor_width">Line Width</string>
+    <string name="designsystem_editor_width_thin">Thin</string>
+    <string name="designsystem_editor_width_medium">Medium</string>
+    <string name="designsystem_editor_width_thick">Thick</string>
+    <string name="designsystem_editor_shape_4x3" translatable="false">4:3</string>
+    <string name="designsystem_editor_shape_3x4" translatable="false">3:4</string>
+    <string name="designsystem_editor_shape_16x9" translatable="false">16:9</string>
+    <string name="designsystem_editor_shape_9x16" translatable="false">9:16</string>
     <string name="designsystem_viewer_load_failed">Couldn\'t load the image</string>
     <string name="designsystem_viewer_action_failed">That didn\'t finish. Try again.</string>
     <!-- Formulas and diagrams in Markdown -->

@@ -81,48 +81,51 @@ internal fun ShellChat(route: ChatRoute, session: ShellSession, navigator: Navig
     fun open(p: FilesPane, path: String? = null, line: Int? = null) {
         insertionFocused = composer.focused; focus.clearFocus(); openedPath = path; openedLine = line; pane = p
     }
-    Box(Modifier.fillMaxSize()) {
-        // Keep the composer and conversation mounted while browsing the session directory.
-        ChatScreen(key, session.chats, session.sender, session.interactions, session.sessions, { if (!closed) navigator.back() },
-            onTerminal = if (session.terminal != null && !assistant) ({ navigator.navigate(TerminalRoute(it.machineId, it.sessionId)) }) else null,
-            chrome = ChatChromeBindings(
-                onFiles = if (filesAvailable) ({ open(FilesPane.Files) }) else null,
-                onGit = if (filesAvailable && git?.isRepo == true) ({ open(FilesPane.Git) }) else null,
-                gitLabel = "Git${git?.files?.size?.takeIf { it > 0 }?.let { " · $it" }.orEmpty()}",
-                actions = actions, connection = wiring?.connection ?: session.connection, requestId = requestId, covered = pane != null,
-                worktrees = wiring?.worktrees,
-                onOpenSession = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) },
-                waiting = waiting,
-                onOpenRequest = { chat, request ->
-                    val target = waitingRoute(chat, request)
-                    if (target.card != null) onOpenCard(target) else navigator.navigate(target.key)
-                },
-                onOpenAssistant = { navigator.navigate(persona.feature.chat.conversationRoute(it, assistant = true)) },
-                onConnectionDetails = { navigator.navigate(SettingsPageRoute(SettingsPage.Diagnostics)) },
-                files = session.files, ports = wiring?.ports, onOpenPath = if (filesAvailable) ({ path, line -> open(FilesPane.Files, path, line) }) else null,
-                onHandToPersona = if (assistant) null else handToPersona,
-                onOpenTodo = { todoId -> navigator.navigate(persona.core.navigation.TodoDetailRoute(todoId)) },
-                // A model error the hub named on Persona's turn: Fix It opens what the home's readiness card would (MainReadiness.kt).
-                onFixModel = { action, launcher, manager ->
-                    navigator.navigate(if (action == persona.core.designsystem.ReadinessActionId.EditProvider)
-                        launcher?.takeIf(String::isNotBlank)?.let { persona.core.navigation.ModelProviderRoute(it) } ?: SettingsPageRoute(SettingsPage.Providers)
-                    else persona.core.navigation.ModelPurposeRoute("assistant", manager))
-                }),
-            renderStyle = if (assistant) ChatRenderStyle.Assistant else ChatRenderStyle.Agent,
-            composerState = composer, composerService = wiring?.composer,
-            onDraftChanged = editor?.let { it::changed },
-            statusBindings = ChatStatusBindings(recovery = wiring?.recovery, draftSaveError = draftError?.let { androidx.compose.ui.res.stringResource(it) }),
-            onContextCleared = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) })
-        if (pane != null && filesAvailable) {
-            BackHandler { pane = null; openedPath = null; openedLine = null }
-            SessionFilesScreen(route, cwd, requireNotNull(session.files), { pane = null; openedPath = null; openedLine = null }, { path ->
-                composer.value = insertFilePath(composer.value, path, insertionFocused)
-                pane = null
-                openedPath = null
-                openedLine = null
-                composer.focusRequest++
-            }, initialPane = pane!!, initialPath = openedPath, initialLine = openedLine,
-                connection = connectionState)
+    // ultracode's quota line (#582) reads this chat's hub
+    androidx.compose.runtime.CompositionLocalProvider(persona.feature.chat.LocalUsageRead provides wiring?.usage) {
+        Box(Modifier.fillMaxSize()) {
+            // Keep the composer and conversation mounted while browsing the session directory.
+            ChatScreen(key, session.chats, session.sender, session.interactions, session.sessions, { if (!closed) navigator.back() },
+                onTerminal = if (session.terminal != null && !assistant) ({ navigator.navigate(TerminalRoute(it.machineId, it.sessionId)) }) else null,
+                chrome = ChatChromeBindings(
+                    onFiles = if (filesAvailable) ({ open(FilesPane.Files) }) else null,
+                    onGit = if (filesAvailable && git?.isRepo == true) ({ open(FilesPane.Git) }) else null,
+                    gitLabel = "Git${git?.files?.size?.takeIf { it > 0 }?.let { " · $it" }.orEmpty()}",
+                    actions = actions, connection = wiring?.connection ?: session.connection, requestId = requestId, covered = pane != null,
+                    worktrees = wiring?.worktrees,
+                    onOpenSession = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) },
+                    waiting = waiting,
+                    onOpenRequest = { chat, request ->
+                        val target = waitingRoute(chat, request)
+                        if (target.card != null) onOpenCard(target) else navigator.navigate(target.key)
+                    },
+                    onOpenAssistant = { navigator.navigate(persona.feature.chat.conversationRoute(it, assistant = true)) },
+                    onConnectionDetails = { navigator.navigate(SettingsPageRoute(SettingsPage.Diagnostics)) },
+                    files = session.files, ports = wiring?.ports, onOpenPath = if (filesAvailable) ({ path, line -> open(FilesPane.Files, path, line) }) else null,
+                    onHandToPersona = if (assistant) null else handToPersona,
+                    onOpenTodo = { todoId -> navigator.navigate(persona.core.navigation.TodoDetailRoute(todoId)) },
+                    // A model error the hub named on Persona's turn: Fix It opens what the home's readiness card would (MainReadiness.kt).
+                    onFixModel = { action, launcher, manager ->
+                        navigator.navigate(if (action == persona.core.designsystem.ReadinessActionId.EditProvider)
+                            launcher?.takeIf(String::isNotBlank)?.let { persona.core.navigation.ModelProviderRoute(it) } ?: SettingsPageRoute(SettingsPage.Providers)
+                        else persona.core.navigation.ModelPurposeRoute("assistant", manager))
+                    }),
+                renderStyle = if (assistant) ChatRenderStyle.Assistant else ChatRenderStyle.Agent,
+                composerState = composer, composerService = wiring?.composer,
+                onDraftChanged = editor?.let { it::changed },
+                statusBindings = ChatStatusBindings(recovery = wiring?.recovery, draftSaveError = draftError?.let { androidx.compose.ui.res.stringResource(it) }),
+                onContextCleared = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) })
+            if (pane != null && filesAvailable) {
+                BackHandler { pane = null; openedPath = null; openedLine = null }
+                SessionFilesScreen(route, cwd, requireNotNull(session.files), { pane = null; openedPath = null; openedLine = null }, { path ->
+                    composer.value = insertFilePath(composer.value, path, insertionFocused)
+                    pane = null
+                    openedPath = null
+                    openedLine = null
+                    composer.focusRequest++
+                }, initialPane = pane!!, initialPath = openedPath, initialLine = openedLine,
+                    connection = connectionState)
+            }
         }
     }
 }

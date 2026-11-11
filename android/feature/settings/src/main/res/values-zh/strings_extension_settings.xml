@@ -26,7 +26,7 @@
     <string name="settings_extension_market_unavailable">扩展市场不可用，请恢复市场后重试。</string>
     <string name="settings_extension_market_missing">此扩展已不在其市场中。</string>
     <string name="settings_extension_market_removed">扩展市场已移除，自动升级已暂停，已保存的偏好会保留。</string>
-    <string name="settings_extension_global_off">此助手的自动升级已关闭，扩展已保存的偏好会保留。</string>
+    <string name="settings_extension_global_off">这个助手已关闭自动升级扩展，此扩展的自动升级暂停。你的设置会保留，重新打开后恢复。</string>
     <string name="settings_extension_global_unknown">无法读取此助手的全局自动升级设置。</string>
     <string name="settings_extension_rollback">回滚</string>
     <string name="settings_extension_rollback_unavailable">此助手未提供回滚确认预览，此页面不会发送回滚请求。</string>

@@ -418,7 +418,7 @@ func TestDayRecapAskTodosAndPush(t *testing.T) {
 	l := d.s.lang(context.Background())
 	if len(pushes) != 1 || pushes[0].ID != "ntf_dayrecap_"+r.Day || pushes[0].Kind != NotifyPush || pushes[0].SessionID != "c-main" ||
 		pushes[0].Title != i18n.T(l, "assistant-day-recap.ready_title") ||
-		pushes[0].Body != i18n.T(l, "assistant-day-recap.ready_body", i18n.Args{"day": r.Day, "meetings": 1, "actions": 1}) {
+		pushes[0].Body != i18n.T(l, "assistant-day-recap.ready_body", i18n.Args{"day": r.Day, "meetings": 0, "actions": 1}) { // its meeting matches none the hub knows (#5051)
 		t.Fatalf("pushes %+v", pushes)
 	}
 	// A later version, and the day's second part, push nothing more.
@@ -817,7 +817,8 @@ func TestDayRecapPushRefPerChannel(t *testing.T) {
 	}
 }
 
-// The push counts the day's meetings and suggested to-dos across its parts' recaps.
+// The push counts the day's meetings and suggested to-dos across its parts' recaps; a meeting only when the hub knows
+// of it, which neither part's is (#5051, TestDayRecapCountsOnlyKnownMeetings).
 func TestDayRecapPushCountsEveryPart(t *testing.T) {
 	d := newDayFixture(t)
 	for i, id := range []string{dayRec, dayPart2} {
@@ -835,7 +836,7 @@ func TestDayRecapPushCountsEveryPart(t *testing.T) {
 	setEvening(t, d.s, "06:30", false)
 	d.engine().WriteDayRecaps(context.Background(), 1)
 	_, day := today8(d.owner)
-	want := i18n.T(d.s.lang(context.Background()), "assistant-day-recap.ready_body", i18n.Args{"day": day, "meetings": 2, "actions": 2})
+	want := i18n.T(d.s.lang(context.Background()), "assistant-day-recap.ready_body", i18n.Args{"day": day, "meetings": 0, "actions": 2})
 	if p := d.f.pushed(); len(p) != 1 || p[0].Body != want {
 		t.Fatalf("pushes %+v, want %q", p, want)
 	}
@@ -946,5 +947,22 @@ func TestEveningFactsDayBoundsEverything(t *testing.T) {
 	if len(d.Gaps) != briefDayReasons || d.GapReasonsLeft != 494 || !strings.HasPrefix(d.Gaps[0].Reason, "reason-049-") ||
 		!strings.HasPrefix(d.Gaps[5].Reason, "reason-299-") {
 		t.Errorf("gaps %d listed, %d left: %s … %s", len(d.Gaps), d.GapReasonsLeft, d.Gaps[0].Reason, d.Gaps[len(d.Gaps)-1].Reason)
+	}
+}
+
+// The push counts only meetings the hub knows of (#5051): a day with one recorded meeting, and a one-to-one, a hallway
+// chat and lunch the model still called meetings, reads "1 meeting"; the same meeting in a second entry counts once.
+func TestDayRecapCountsOnlyKnownMeetings(t *testing.T) {
+	known := &kb.MeetingRef{Kind: kb.KindRecording, ID: "rec-standup", Name: "Standup"}
+	d := kb.DayRecap{Timeline: []kb.DayRecapEntry{
+		{Kind: kb.RecapMeeting, Title: "Standup", Meeting: known},
+		{Kind: kb.RecapMeeting, Title: "One-to-one about the release"},
+		{Kind: kb.RecapMeeting, Title: "Hallway chat"},
+		{Kind: kb.RecapMeeting, Title: "Lunch", Meeting: &kb.MeetingRef{}},
+		{Kind: kb.RecapOutside, Title: "Writing the report"},
+		{Kind: kb.RecapMeeting, Title: "Standup, after the break", Meeting: known},
+	}, Actions: []kb.MinutesAction{{What: "send the notes"}}}
+	if meetings, actions := dayRecapCounts(nil, "2026-11-11", "r1", d); meetings != 1 || actions != 1 {
+		t.Fatalf("meetings %d actions %d, want 1 and 1", meetings, actions)
 	}
 }

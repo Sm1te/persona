@@ -73,6 +73,9 @@ func newAssistantNode(t *testing.T, h *Hub) *assistantNode {
 		case "session.interrupt":
 			n.sends = append(n.sends, map[string]any{"interrupt": p["session_id"]})
 			return map[string]any{"ok": true}, nil
+		case "session.close":
+			n.sends = append(n.sends, map[string]any{"close": p["session_id"]})
+			return map[string]any{"ok": true}, nil
 		case "assistant.send":
 			n.sends = append(n.sends, p)
 			id, _ := p["session_id"].(string)

@@ -415,6 +415,19 @@ Use an invalidation revision as the task key and handle the flag after completio
 - After `scrollTo(id)` far from latest, the bottom sentinel may never report invisible through `onScrollVisibilityChange` (lazy loading removes it entirely), leaving `atBottom` true:
   restoration resumes following and the next reply drags the reader to latest (#597). On landing more than one screen from latest, set `atBottom` false (within one screen the sentinel remains alive and callbacks are reliable).
 - Do not wrap potentially many rows into one child view (a `VStack` inside `LazyVStack`): hundreds lay out at once, blocking the main thread and blanking the page; make independent lazy rows.
+- One very long finished answer is the same mistake inside a single row (2026-11-12, #4970): a 33,000-character report (9 tables, 12 code blocks) was
+  one `Markdown` row. MarkdownUI's `BlockSequence` keeps the space between blocks in `@State` filled from `onPreferenceChange`, keyed by each block's deep
+  `hashValue`: the whole document is laid out, then evaluated and laid out again, hashing every block (a 1.2–3 s frame on opening the chat). Every
+  table's border and row backgrounds are a `GeometryReader` over anchor preferences, re-run on each scrolled frame for every table of the row. Agent
+  chats draw such answers as parts (`AnswerParts`): cut only between blocks whose margins the theme fixes, since MarkdownUI spaces blocks by
+  `max(bottom of one, top of the next)` and a list or quote takes the largest margins inside it. Check spacing by pixels against the whole answer in a
+  window (`AnswerPartsLookTests`), not `ImageRenderer`: one pass of it draws the blocks before their margins arrive.
+  - Parts trade the opening freeze for drawing as they come into view: the lazy stack drops a part's layers once it scrolls far away, and drawing
+    many distinct CJK glyphs the first time is most of the main thread's work in fast programmatic jumps (#5076). Finger scrolling stays in budget.
+- Check that a scroll measurement moved the list before trusting it (#4970). `-showPagePerf`'s glide and `-showListOffset` move the `UIScrollView`
+  themselves; a chat not told a finger is on it keeps following its newest end and puts its stored `ScrollPosition` back as rows size themselves, so
+  the list barely moves and the numbers look excellent. Chats register a per-list hook (`PagePerf.touchers`): a single static one was taken by Persona's
+  own conversation, mounted in the shell at the same time. `-scrollTrace YES` writes the list's offset per frame; screenshots at two moments show it too.
 - Lists whose rows expand themselves (topic-card **Expand**) must not use `LazyVStack` + `scrollPosition` (2026-11-04, #1087): after expanding the app never idles
   (no UI snapshot for 60 seconds on iPhone simulator; iPad or shorter cards happen to settle), only after the chat was previously opened (cached, all topics shown immediately).
   Eliminating animation, bottom anchoring, following, `.alignment` and position writes changed nothing; removing the `scrollPosition` binding or using `VStack` fixed it.
@@ -1694,6 +1707,48 @@ DEBUG 的代码可能在 `Persona.debug.dylib` 中，40 KiB 的 `Persona` 只是
 
 下拉关闭的闸门不能用 `isTracking` 表示「已开始拖动」：手指按下即 tracking，方向尚未确定。用 `isDragging`、`isDecelerating` 判断；外层分页 pan 拒绝以向下为主的起手，避免抢走下拉关闭。
 
+
+## Opening and closing tool rows in the running turn (2026-11-10, #3005)
+
+- **Read the recording by what was pressed**: a tapped row's title dims for a frame or two. In the user's 21 s recording every row that "closed by itself"
+  had a dimmed title just before: the user closed it. What made it look like a reset was the list moving: the rows were pushed off the screen.
+- **A fold that keeps its space while it fades leaves a blank and a ghost**: `toggleInPlace` changed the height at once (the flipped lazy list cannot
+  animate a height without sliding everything above it), so opening revealed the content with a mask growing down over space already taken (a blank
+  band), and closing faded the content out for 0.2 s with its space held, then dropped it (a fading copy, then the rows under it jumping up). Close at
+  once; open with a plain fade over the whole space. The height is the layout's, so whatever animates must cover all of it from the first frame.
+- **A short pin hold is not a follow decision**: the pin's hold for a tapped row ends as soon as the row is back in place. Following was still on, so the
+  next push (`contentArrived`) scrolled to the newest end. Any toggle in the chat goes through `ChatFollow.toggledRow` (anchored, kept pin hold), runs of
+  chips and work lines opened while anchored included.
+- **A tap in a scroll view has a scroll phase**: SwiftUI reports a tap on a row as `tracking` → `idle`. Read as "the user's scrolling ended",
+  it ran `released()`, which ends any anchor and decides by "within 100 pt of the newest": every tap on a row near the bottom switched the chat
+  back to following. Only `interacting` / `decelerating` → `idle` is a scroll; `tracking` → `idle` is `tapped()`, which decides nothing. And the
+  row's action runs while the finger is still down (`touching`), so a rule that waits for no finger never applies to a tapped row.
+- **The list's bottom edge is part of "holding still"**: the pin corrects by the content alone, but the upside-down list is drawn from its bottom edge,
+  so when the footer under it changes (the queue strip leaving as its message is taken, the plan pill coming back as a work line folds) everything
+  moves by that much. Watch where that edge is on screen (`onGeometryChange` of the list's global frame, its `maxY`) and put the held row back
+  (`ChatPin.resized`), except for the keyboard. Not the scroll geometry's container height: its top edge moving (the chrome) moves nothing on the
+  list, and corrected by the height the pin moved a work line's header 40 pt by itself.
+- **UIKit's animated scroll and SwiftUI share the offset**: `setContentOffset(_:animated:)` started from where SwiftUI had moved the offset in the
+  same pass (about the height just folded) and ran its whole way from there: a header folded at the newest end went 209 → 619 → 1013 → 591 pt.
+  The pin's glide sets the offset itself every display frame (`CADisplayLink`) and puts back any other move at once (KVO on `contentOffset`).
+- **What moves the list's edge mid-glide moves the glide too**: a fold is reported a pass before the footer settles, so the glide started from where
+  the header was over the old edge; the plan pill came in, the edge went 40 pt up, and the header showed 40 pt up for a frame before it glided down.
+  `resized` shifts the glide's way by as much as it shifts the hold.
+- **SwiftUI's global frame can stay stale after the pin moves the list**: the pin sets the offset inside the header's geometry callback. Opening
+  a work line just above the newest end, the screen showed the header still (UIKit's layers, the simulator's screenshot) while its
+  `frame(in: .global)` said 40 pt up, for as long as it stayed open: a later part of that move never reached SwiftUI's geometry. Measure what
+  the screen shows from the layers: `DrawnProbe` in the header's background, read from the presentation layers on the display link
+  (`UnfoldTrace.Result.drawn`). Read from the views during the pass, it caught the new offset with the old layout, a state never drawn.
+- **A moved offset can be set back without a geometry report**: as a step came in under a held row, the pin moved the list by the step's height, and
+  now and then the list was back at the old offset before the next frame, the row 56 pt up, while the row's `onGeometryChange` still said it was
+  in place, so nothing asked the pin again. A kept hold now watches the offset itself (KVO on `contentOffset`, as the glide does) and puts it back
+  in the same pass. Only kept holds: those always end when the user or the app moves the list (↓, sending, a jump), a moment's hold does not.
+- **A delayed "back to following" is a jump too**: folding a work line anchored a moment before went back to following 1.5 s later and scrolled
+  to the newest end, 61 pt short of it, after the fold itself had held still. A fold stays anchored unless it took the list to the newest end.
+- **XCUITest scrolls an element into view before tapping it**: the "middle" tap of `UnfoldTests` dragged the header just off the screen, so the tap
+  scrolled it back first and ran 61 pt from the newest end, following. To test a row in the middle, tap a coordinate on one already there.
+- **Test it with a mock that pushes one step at a time** (`MOCK_TOOL_TURN=1`, `/mock/tool_turn?step=…`, `ToolFoldTests`): a step, the answer and the
+  next turn each as its own push, and `UnfoldTrace`'s per-frame `heights` to tell "gone in this frame" from "gone after a fade".
 
 ## A live card inside an `Equatable` work step (2026-11-07, #3436)
 

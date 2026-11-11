@@ -150,6 +150,17 @@ class OutboxMessageSender(
     override suspend fun cancel(clientMessageId: String): Boolean =
         change(clientMessageId, dispatchable + OutboxState.Refused, OutboxState.Cancelled)
 
+    override fun restore(message: OutboxMessage) {
+        val to = when (message.state) {
+            DeliveryState.Queued -> OutboxState.Queued
+            DeliveryState.WaitingForNetwork -> OutboxState.WaitingForNetwork
+            DeliveryState.Refused, DeliveryState.Rejected -> OutboxState.Refused
+            else -> return
+        }
+        // The sender's own scope: the toast's Undo can come after the chat page that showed it has gone.
+        scope.launch { if (job.isActive) change(message.clientMessageId, setOf(OutboxState.Cancelled), to, message.error) }
+    }
+
     override suspend fun discard(clientMessageId: String): Boolean =
         change(clientMessageId, undecided, OutboxState.Cancelled)
 
@@ -160,9 +171,9 @@ class OutboxMessageSender(
         clientMessageId, undecided,
         if (delivered) OutboxState.Sent else OutboxState.Refused)
 
-    private suspend fun change(id: String, from: Set<OutboxState>, to: OutboxState): Boolean = lifecycle.withLock {
+    private suspend fun change(id: String, from: Set<OutboxState>, to: OutboxState, error: String? = null): Boolean = lifecycle.withLock {
         check(job.isActive) { "Pairing scope is closed" }
-        store.transition(id, from, to).also { if (it) wake.trySend(Unit) }
+        store.transition(id, from, to, error).also { if (it) wake.trySend(Unit) }
     }
 
     /** Looks at the queue again: messages were written into the store directly (GroupMerge.kt). */

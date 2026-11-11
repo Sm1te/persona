@@ -17,14 +17,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
  * answer's delivery is unknown). Callers empty it themselves once it is sent.
  */
 @Composable
-fun rememberTransientSecret(key: Any, clearWhen: Boolean): MutableState<String> {
-    val secret = remember(key) { mutableStateOf("") }
-    LaunchedEffect(key, clearWhen) { if (clearWhen) secret.value = "" }
+fun rememberTransientSecret(key: Any, clearWhen: Boolean): MutableState<String> = rememberTransient(key, clearWhen, "")
+
+/** [rememberTransientSecret] for any value: [empty] is what it starts as and goes back to (a fields card's values, #4641). */
+@Composable
+fun <T> rememberTransient(key: Any, clearWhen: Boolean, empty: T): MutableState<T> {
+    val secret = remember(key) { mutableStateOf(empty) }
+    LaunchedEffect(key, clearWhen) { if (clearWhen) secret.value = empty }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, key) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) secret.value = "" }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) secret.value = empty }
         lifecycle.addObserver(observer)
-        onDispose { secret.value = ""; lifecycle.removeObserver(observer) }
+        onDispose { secret.value = empty; lifecycle.removeObserver(observer) }
     }
     return secret
 }

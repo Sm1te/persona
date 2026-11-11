@@ -106,7 +106,7 @@ struct MeetingAttendeePicker: View {
     static func text(_ entry: RecordingEntry, live: MeetingLive, sync: RecordingSync) -> String? {
         let attendance = entry.attendance ?? RecordingAttendance(role: .off)
         if attendance.stopped == .unsupported { return String(localized: "This hub can't follow meetings, so Persona stopped attending this one.") }
-        guard attendance.role.attends else { return nil }
+        guard attendance.sentRole.attends else { return nil }
         if attendance.stopped == .liveFull { return String(localized: "The hub takes no more of this meeting's lines. Questions still work.") }
         if sync.attendanceProblem[entry.id] != nil { return String(localized: "The hub didn't take Persona's part in this meeting. Choose the role again.") }
         switch live.state(entry.id).problem {

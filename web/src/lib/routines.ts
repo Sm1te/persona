@@ -2,6 +2,7 @@
 // how a task is said in words (the iOS app's AssistantScheduleText), what the editor checks, and the body it saves.
 // Pure functions of their arguments (`now` passed in), so they are tested without a DOM.
 import { currentLanguage, formatDate, t } from "../i18n";
+import { launcherTitle, type Named } from "./provider-names";
 
 export type Repeat = "once" | "daily" | "interval" | "cron";
 
@@ -261,9 +262,10 @@ export function effortLabel(id?: string): string {
   return EFFORTS.find((e) => e.id === id)?.title ?? id;
 }
 
-/** What it runs with when that isn't the default, in a few words: "claude-fast · Auto · Low thinking"; `danger` for "Allow all". */
-export function runsWith(task: Pick<Task, "launcher" | "permission_mode" | "effort">): { text: string; danger: boolean } | null {
-  const parts = [task.launcher, modeLabel(task.permission_mode), task.effort ? t("lib-routines.effort", { effort: effortLabel(task.effort) }) : ""].filter(Boolean);
+/** What it runs with when that isn't the default, in a few words: "claude-fast · Auto · Low thinking"; `danger` for "Allow all".
+ *  The launcher by its display name from `names` (#5029). */
+export function runsWith(task: Pick<Task, "launcher" | "permission_mode" | "effort">, names?: readonly Named[]): { text: string; danger: boolean } | null {
+  const parts = [task.launcher && launcherTitle(task.launcher, names), modeLabel(task.permission_mode), task.effort ? t("lib-routines.effort", { effort: effortLabel(task.effort) }) : ""].filter(Boolean);
   return parts.length ? { text: parts.join(" · "), danger: task.permission_mode === BYPASS } : null;
 }
 

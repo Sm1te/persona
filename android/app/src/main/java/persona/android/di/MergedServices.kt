@@ -197,6 +197,7 @@ internal fun mergedMachineManagement(
     override suspend fun setBrowser(machineId: String, enabled: Boolean) = routes.on(machineId) { it.setBrowser(machineId, enabled) }
     override suspend fun browserJob(machineId: String, action: String) = routes.on(machineId) { it.browserJob(machineId, action) }
     override suspend fun usageWindows() = groups.read(usage?.invoke().orEmpty())
+    override suspend fun usageWindows(machineId: String) = routes.on(machineId) { it.usageWindows() }
     override suspend fun moveToManager(machineId: String, manager: String) = routes.on(machineId) { it.moveToManager(machineId, manager) }
 }
 

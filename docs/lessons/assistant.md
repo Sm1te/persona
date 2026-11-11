@@ -1,5 +1,11 @@
 # Lessons: assistant (headless Claude / Codex)
 
+- Automatic Agent names need title provenance, not a string heuristic alone (#4812). A user can deliberately choose
+  a tool-looking name, and an old custom-title record can fall outside a quick tail window. Treat native custom titles
+  as protected and unknown provenance as ineligible. Keep automatic names in the manager's own ledger, persist manual
+  intent before dispatching a rename, and decorate both list and single-session reads. Count cumulative output tokens,
+  never changing input-context size or transcript bytes, for periodic naming; request a bounded Responses output too.
+
 - A task trust key combines a machine and directory with an unescaped delimiter (#4421). Either field can contain
   that delimiter, and an old ID need not obey current registration rules, so a split can assign the rule to the wrong
   place. Keep its exact key for matching and deletion; mark an ambiguous listing and give older clients the key as a

@@ -1244,12 +1244,18 @@ struct AssistantSidebar: View {
     @ViewBuilder private func conversations(_ all: [Session], archived: Int) -> some View {
         let main = model.assistantMain
         // The leader conversations are the Directions group, in the hub's order, under each direction's name
-        // (docs/assistant/unified-entry.md "Leader conversations"). They are the only Persona chats listed here
-        // besides the main one's own first row: everything else is one tap away in All Chats (#4331).
+        // (docs/assistant/unified-entry.md "Leader conversations"); then Recent, the newest few of the user's other
+        // chats (#4873); everything else is one tap away in All Chats (#4331).
         let directions = AssistantSidebarGroups.directions(all, leaders: model.assistantLeaders, main: main)
         if !directions.isEmpty {
             heading(String(localized: "Directions")) { EmptyView() }
             ForEach(directions) { row($0, named: model.directionNames[$0.sessionID]) }
+        }
+        let recent = AssistantSidebarGroups.recent(all, leaders: model.assistantLeaders, main: main, tasks: taskChats.known(on: model.api),
+                                                   hubSays: model.hubFeatures.contains(AutoConversationSource.feature))
+        if !recent.isEmpty {
+            heading(String(localized: "Recent")) { EmptyView() }
+            ForEach(recent) { row($0) }
         }
         allChatsRow
         archivedRow(archived)
@@ -1727,6 +1733,19 @@ nonisolated enum AssistantSidebarGroups {
     /// a leader the list does not hold (archived, another manager's) is left out.
     static func directions(_ sessions: [Session], leaders: [String], main: SessionKey?) -> [Session] {
         leaders.compactMap { id in sessions.first { $0.sessionID == id && $0.key != main } }
+    }
+
+    /// How many conversations the sidebar's Recent lists (#4873); the rest are in All Chats.
+    static let recentLimit = 5
+
+    /// The sidebar's Recent (#4873): the newest `recentLimit` conversations that are not the main one and not a direction
+    /// (those are listed above it), and not ones Persona opened by itself (Auto Chats: the inbox's AI twin, scheduled tasks…,
+    /// left in All Chats as Recent left them out before #4331). `leaders`: the directions' session ids.
+    static func recent(_ sessions: [Session], leaders: [String], main: SessionKey?, tasks: AssistantTaskChats, hubSays: Bool) -> [Session] {
+        let lead = Set(leaders)
+        let rest = sessions.filter { $0.key != main && !lead.contains($0.sessionID) }
+        let mine = AutoConversations(rest, tasks: tasks, current: nil, hubSays: hubSays).mine
+        return Array(newestFirst(mine).prefix(recentLimit))
     }
 
     /// Newest first, a fixed order for equal times (the sidebar's Recent).

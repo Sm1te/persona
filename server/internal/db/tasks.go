@@ -78,6 +78,17 @@ func (d *DB) TaskPlans(ctx context.Context, conversation string) ([]TaskPlanRow,
 	return scanTaskPlans(rows)
 }
 
+// TaskPlansMadeSince lists the plans made at or after since that were started or dismissed, oldest first: what the
+// owner did with the plan cards lately, counted when a standing rule is suggested (assistant/rule_suggest.go, #4929).
+func (d *DB) TaskPlansMadeSince(ctx context.Context, since time.Time) ([]TaskPlanRow, error) {
+	rows, err := d.pool.Query(ctx, `SELECT id, conversation, tasks, state, created_at, updated_at FROM task_plans
+		WHERE created_at >= $1 AND state IN ('started', 'dismissed') ORDER BY created_at, id`, since)
+	if err != nil {
+		return nil, err
+	}
+	return scanTaskPlans(rows)
+}
+
 func scanTaskPlans(rows pgx.Rows) ([]TaskPlanRow, error) {
 	defer rows.Close()
 	var out []TaskPlanRow

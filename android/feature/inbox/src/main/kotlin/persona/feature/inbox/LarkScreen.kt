@@ -417,6 +417,27 @@ private fun LarkConversationScreen(repository: InboxRepository, route: LarkRoute
                     val date = larkDate(message.time)
                     val dateBoundary = date != null && date != previous?.let { larkDate(it.time) }
                     DisposableEffect(message.listKey()) { onDispose { bounds.remove(message.listKey()) } }
+                    // A topic group lists topics (#576 G134): each its own card with its time, never run together like a
+                    // chat's messages; a system line stays a line, and one of mine still on its way stays a bubble.
+                    if (conversation.isTopic && !message.system && message.delivery == LarkDelivery.Sent && message.pendingDelivery == null) {
+                        LarkTopicCard(message, repository, onlineSince, route.feedId,
+                            onThread = { thread = message }, onError = { error = it },
+                            modifier = Modifier.padding(vertical = Tokens.Space.xs).onGloballyPositioned { bounds[message.listKey()] = it.boundsInWindow() },
+                            onProfile = { profilePerson = it },
+                            onReact = { msg, key, isMine ->
+                                scope.launch {
+                                    try {
+                                        repository.react(msg.id, key, remove = isMine)
+                                        repository.refreshConversation(route.feedId)
+                                    } catch (e: Exception) {
+                                        error = e.message ?: res.getString(R.string.inbox_lark_react_failed)
+                                    }
+                                }
+                            },
+                            onOpenReactionPicker = { reactionPickerMessage = it }, onOpenForward = { forwardedDetail = it },
+                            onPlayVideo = { videoPlayerUrl = it }, onAddPin = if (changingPin) null else ({ addingPin = it }))
+                        return@itemsIndexed
+                    }
                     Column {
                         if (dateBoundary) TimelineMark(LocalizedFormats.formatter(LocalizedFormats.DATE, currentLocale).format(date))
                         if (boundary) TimelineMark(stringResource(R.string.inbox_lark_starts_here), emphasized = true)

@@ -4,12 +4,12 @@
 // "Other…", which opens the task to answer in words. The answers that are no option — "You decide", "This isn't what I
 // asked for", "Tell me the background first" — and the options that do not fit the row are in its ⋯ menu. Every answer
 // goes through POST /todos/{id}/accept (lib/feed acceptBrief), as the recommendation's OK always did.
+import { openTask } from "../../lib/handoff";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../../i18n";
 import { errorText } from "../../lib/api";
 import { acceptBrief, type AskAnswer } from "../../lib/feed";
 import { clock } from "../../lib/format";
-import { openPanel } from "../../lib/panel";
 import { refreshTodos } from "../../lib/store";
 import { askOptions, type AskOption, type AskResponse, type Todo, type TodoAsk } from "../../lib/todos";
 import { Button, IconButton, Menu, toast, useMenu } from "../../ui/atoms";
@@ -97,7 +97,7 @@ export function DecisionRow({ todo, ask, rowKey, admission, onBusyChange, blocke
   const { row, fit } = useFitting(options.length, ask.asked_at);
   const busy = answering.state === "busy";
   const disabled = busy || blocked;
-  const open = () => openPanel({ kind: "task", todo: todo.id });
+  const open = () => openTask(todo.id);
 
   const answer = (key: string, body: AskAnswer, done: string) => {
     if (admitted.current || answering.state !== "idle") return;

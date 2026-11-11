@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Feishu topic group's cards (#576 G134, iOS LarkTopicCard). -->
+<resources>
+    <plurals name="inbox_lark_topic_earlier">
+        <item quantity="one">View %1$d earlier reply</item>
+        <item quantity="other">View %1$d earlier replies</item>
+    </plurals>
+    <string name="inbox_lark_topic_replies_failed">Couldn\'t load replies</string>
+    <string name="inbox_lark_topic_react">Add reaction</string>
+    <string name="inbox_lark_topic_reply">Reply</string>
+    <string name="inbox_lark_topic_image">[Image]</string>
+    <string name="inbox_lark_topic_file">[File] %1$s</string>
+    <string name="inbox_lark_topic_other">[Message]</string>
+</resources>

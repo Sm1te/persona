@@ -28,12 +28,34 @@ import java.util.UUID
 /**
  * The drawer's Persona chats (#4331): [main] the main conversation (its own row, above the search), [directions] the
  * leader conversations under their [names] ("常驻", in the hub's order), and [others] every other conversation, which
- * "All chats" lists and a search narrows. [counts] each leader's open tasks, by session id.
+ * "All chats" lists and a search narrows. [counts] each leader's open tasks, by session id. [recent] the user's own newest
+ * chats between 常驻 and All chats (#4922), none while searching.
  */
 internal data class ConversationGroups(
     val main: Session?, val directions: List<Session> = emptyList(), val others: List<Session> = emptyList(),
     val names: Map<String, String> = emptyMap(), val counts: Map<String, LeaderCounts> = emptyMap(),
+    val recent: List<Session> = emptyList(),
 )
+
+/** How many chats the drawer's Recent lists (#4922, the web's `RECENT_LIMIT`, iOS). */
+internal const val RECENT_LIMIT = 5
+
+/** Origins of the user's own chats (docs/protocol/protocol.md "Origin of assistant chats"): the app, a channel's /new, or none from an older hub. */
+private val USER_ORIGINS = setOf("", "user", "channel")
+
+/**
+ * The drawer's Recent (#4922, web `recentConversations`, iOS `AssistantSidebarGroups.recent`): the conversations that are
+ * not the main one, not a leader, not archived and not opened by Persona itself (the inbox, a task, Lark /agent, a spawned
+ * chat, an extension: those stay in All chats only), newest first, equal times by session id, at most [limit].
+ */
+internal fun recentConversations(snapshot: AssistantSnapshot, limit: Int = RECENT_LIMIT): List<Session> {
+    val leaders = snapshot.leaders.toSet()
+    return snapshot.conversations.distinctBy { it.key }
+        .filter { it.key != snapshot.mainSession && it.sessionId !in leaders && !it.archived && it.origin?.trim().orEmpty() in USER_ORIGINS }
+        .map { it to it.updated }
+        .sortedWith(compareByDescending<Pair<Session, java.time.Instant?>> { it.second }.thenBy { it.first.sessionId })
+        .take(limit).map { it.first }
+}
 
 internal fun conversationGroups(
     snapshot: AssistantSnapshot,
@@ -57,6 +79,7 @@ internal fun conversationGroups(
     return ConversationGroups(
         snapshot.conversations.firstOrNull { it.key == snapshot.mainSession && !it.archived },
         directions, others, names, snapshot.leaderCounts,
+        recent = if (query.isBlank()) recentConversations(snapshot) else emptyList(),
     )
 }
 

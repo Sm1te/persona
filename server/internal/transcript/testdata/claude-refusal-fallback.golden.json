@@ -14,7 +14,8 @@
       "ts": "2026-01-01T00:00:01Z",
       "role": "assistant",
       "kind": "text",
-      "text": "Checking the sample."
+      "text": "Checking the sample.",
+      "model": "primary-model"
     },
     {
       "id": "synthetic-fallback#0",

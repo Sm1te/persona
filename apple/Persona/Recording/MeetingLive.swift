@@ -26,6 +26,13 @@ final class MeetingLive {
         var next: Int
         var fed: Int?
         var problem: String?
+        /// A room meeting's room, the private mark and the follow-up as the hub has them now (#3862,
+        /// docs/assistant/meeting-minutes.md「Fields on `GET …/live` and `detail.meta`」).
+        var room: MeetingRoom? = nil
+        var privateMark: Bool? = nil
+        var followup: RecordingUpload.SessionRef? = nil
+
+        enum CodingKeys: String, CodingKey { case next, fed, problem, room, privateMark = "private", followup }
     }
 
     struct Deps {
@@ -37,6 +44,8 @@ final class MeetingLive {
         /// The stretch Persona is saying now (`MeetingSpeaker.openSpan`).
         var openSpan: (UUID) -> RecordingSpan?
         var wait: (Duration) async -> Void
+        /// Every `200` of `…/live`: the meeting conversation keeps what it says of the room (`MeetingConversation.applyLive`).
+        var report: (UUID, Answer) -> Void = { _, _ in }
     }
 
     /// Lines in one request at most (the contract's limit).
@@ -116,8 +125,9 @@ final class MeetingLive {
 
     private func sendAll(_ id: UUID) async {
         while let entry = library.entry(id), let attendance = entry.attendance, attendance.stopped == nil {
-            // Off for now: the hub refuses lines (`not_attending`); they wait in the log until it is on again.
-            guard attendance.role.attends else { return }
+            // Off for now (or sent as off: nobody chosen to attend, #3862): the hub refuses lines (`not_attending`); they
+            // wait in the log until it is on again.
+            guard attendance.sentRole.attends else { return }
             guard deps.settled(entry) else { return } // the upload that names the attendance goes first; it calls back
             let log = attendance.live
             let from = min(states[id]?.next ?? 0, log.count)
@@ -127,6 +137,7 @@ final class MeetingLive {
             do {
                 let answer = try await deps.post(id, from, chunk)
                 failures[id] = nil
+                deps.report(id, answer)
                 var state = states[id] ?? State()
                 state.next = answer.next
                 state.fed = answer.fed
@@ -198,7 +209,10 @@ extension MeetingLive.Deps {
              settled: { RecordingSync.shared.attendanceSettled($0) },
              upload: { RecordingSync.shared.reupload($0) },
              openSpan: { MeetingSpeaker.shared.openSpan(for: $0) },
-             wait: { try? await Task.sleep(for: $0) })
+             wait: { try? await Task.sleep(for: $0) },
+             report: { id, answer in
+                 MeetingConversation.shared.applyLive(id, room: answer.room, privateMark: answer.privateMark, followup: answer.followup)
+             })
     }
 }
 #endif

@@ -1,6 +1,7 @@
 package persona.feature.chat
 
 import android.graphics.Bitmap
+import persona.core.designsystem.ImageEditState
 import persona.core.contracts.api.DraftUploadState
 import kotlinx.coroutines.CancellationException
 
@@ -12,8 +13,17 @@ import kotlinx.coroutines.CancellationException
 internal val ComposerAttachment.editable: Boolean
     get() = image && uri.isNotEmpty() && path != null && error == null && uploadState != DraftUploadState.Invalid
 
-/** One photo open in the composer's editor: the attachment it marks up and the picture the editor works on. */
-internal class ComposerPhotoEdit(val original: ComposerAttachment, val source: Bitmap)
+/**
+ * An edited photo's way back into the editor (#4992, iOS `EditedImage`): its untouched source and the edits with their
+ * history, so a tap brings back its crop, turn and marks, all still undoable. Kept beside the attachment, dropped with it.
+ */
+internal data class PhotoEdits(val sourceUri: String, val state: ImageEditState)
+
+/**
+ * One photo open in the composer's editor: the attachment it replaces, the picture the editor works on ([sourceUri]'s,
+ * the photo before any edit) and the edits it carries on from ([prior]; null for a photo never edited).
+ */
+internal class ComposerPhotoEdit(val original: ComposerAttachment, val source: Bitmap, val sourceUri: String = original.uri, val prior: PhotoEdits? = null)
 
 /** How putting a marked-up photo in the draft ended. */
 internal sealed interface PhotoEditOutcome {
@@ -37,6 +47,8 @@ internal fun replaceEdited(attachments: List<ComposerAttachment>, originalId: St
 internal suspend fun ChatComposerState.replaceWithEdited(
     original: ComposerAttachment,
     edited: ComposerAttachment,
+    /** What the edited photo keeps to be edited again; null: nothing (all its edits were undone). */
+    kept: PhotoEdits? = null,
     upload: suspend (ComposerAttachment) -> String,
 ): PhotoEditOutcome {
     val path = try {
@@ -49,5 +61,7 @@ internal suspend fun ChatComposerState.replaceWithEdited(
     // Read again after the upload: the draft may have changed while it went up.
     if (attachments.none { it.id == original.id }) return PhotoEditOutcome.Gone
     attachments = replaceEdited(attachments, original.id, edited.copy(path = path, error = null, uploadState = DraftUploadState.Uploaded))
+    photoEdits = photoEdits.filterKeys { id -> id != original.id && attachments.any { it.id == id } } +
+        listOfNotNull(kept?.let { edited.id to it })
     return PhotoEditOutcome.Replaced
 }

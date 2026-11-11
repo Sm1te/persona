@@ -22,6 +22,47 @@ nonisolated enum SecretRun {
 nonisolated extension Interaction {
     /// The password card. Its raw tool name is never shown: its title names it, its summary says what it runs.
     var isSecretRun: Bool { kind == .permission && toolName == SecretRun.tool }
+    /// The hand-off card (`SecretHandoff`): approved on the card only, never from a quick path.
+    var isSecretHandoff: Bool { kind == .permission && toolName == SecretHandoff.tool }
+}
+
+/// The hand-off card (`secret_handoff`, docs/extensions/secret-providers.md "Who may approve a hand-off"): secret values
+/// a provider holds, handed to one Agent run once the user approves on the card. Its approval says so on its own request
+/// (`feature`), the hub's condition for letting it through; every quick path is off (`Interaction.requiresInput`).
+nonisolated enum SecretHandoff {
+    static let tool = "secret_handoff"
+    /// What the card's own approval declares (`X-Persona-Features`), and nothing else does.
+    static let feature = "secret_handoff"
+}
+
+/// What a hand-off card hands over and where (its `tool_input`): never a reference or a value.
+nonisolated struct SecretHandoffRequest: Sendable {
+    nonisolated struct Variable: Sendable, Identifiable {
+        var name: String
+        /// The item as its provider describes it, after the provider's name ("1Password › GitHub token").
+        var item: String
+        var id: String { name }
+    }
+    var variables: [Variable]
+    var agent: String
+    var machine: String
+    var cwd: String
+    var prompt: String
+
+    init(_ input: JSONValue?) {
+        func text(_ v: JSONValue?) -> String { v?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+        variables = (input?["variables"]?.array ?? []).compactMap { v in
+            let name = text(v["name"])
+            guard !name.isEmpty else { return nil }
+            let provider = text(v["provider_name"]).isEmpty ? text(v["provider"]) : text(v["provider_name"])
+            let title = text(v["title"])
+            return Variable(name: name, item: title.isEmpty ? provider : provider + " › " + title)
+        }
+        agent = text(input?["agent"])
+        machine = text(input?["machine_name"])
+        cwd = text(input?["cwd"])
+        prompt = text(input?["prompt"])
+    }
 }
 
 nonisolated extension Interaction {

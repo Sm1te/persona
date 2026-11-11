@@ -7,8 +7,8 @@ Except where a section states otherwise, conclusions were tested with Claude Cod
 Node's `session.start`:
 
 1. Find a herdr workspace whose label equals the directory name (one workspace per project). If present, `tab create --label persona` inside it; otherwise `workspace create --label <directory name>`. Both use `--cwd <directory>` and `--no-focus`, without stealing focus on the computer.
-2. `pane run <pane> "<launcher> --session-id <uuid> --mcp-config ~/.persona/mcp.json --plugin-dir ~/.persona/agent-plugin --plugin-dir ~/.persona/claude-hooks --plugin-dir ~/.persona/claude-live-replies"`
-   (local Claude Code ≥ 2.1; the last plugin only while the computer's live replies setting is on, see "Live replies (MessageDisplay)"; older or unreadable versions use `<launcher> --session-id <uuid> --settings ~/.persona/claude-settings.json --mcp-config ~/.persona/mcp.json`; see Hooks below). Launchers are functions in `~/.zshrc` (`<launcher-a>`, `<launcher-b>`, etc.) ending in `claude … "$@"`, so arguments pass through. Resume uses `--resume <id>`.
+2. `pane run <pane> "<launcher> --session-id <uuid> --mcp-config ~/.persona/mcp.json --allowedTools <the Agent's own Persona tools>,<office rule> --plugin-dir ~/.persona/agent-plugin --plugin-dir ~/.persona/claude-hooks --plugin-dir ~/.persona/claude-live-replies"`
+   (local Claude Code ≥ 2.1; the last plugin only while the computer's live replies setting is on, see "Live replies (MessageDisplay)"; older or unreadable versions use `<launcher> --session-id <uuid> --settings ~/.persona/claude-settings.json --mcp-config ~/.persona/mcp.json --allowedTools <the Agent's own Persona tools>`; see Hooks below and "Persona tools Agents call without a card"). Launchers are functions in `~/.zshrc` (`<launcher-a>`, `<launcher-b>`, etc.) ending in `claude … "$@"`, so arguments pass through. Resume uses `--resume <id>`.
    A non-running session is read-only (#4754, `docs/integrations/engines.md` "Agents run in a terminal"): a message is refused (`agent_stopped`), and the user's Resume on its terminal page resumes it, in the shell it left when that is still there. A branch nothing has run yet is started by its first message. Launcher choice for both follows this order (`resumeLauncher` in `node/sendsafe.go`, #411):
    launcher recorded when Persona started it → inferred from transcript gateway address and model (`inferLauncher`, externally started sessions) → New Agent launcher and model supplied by hub (only for non-running Claude sessions with unknown launchers, `hub/send.go`) → bare `claude`.
    The first two retain the original model. Previously, failure to infer meant bare `claude`; on computers normally authenticated through launchers, the session showed only “Not logged in” and could not send.
@@ -41,6 +41,34 @@ value that is not an object is refused rather than replaced). It offers Persona'
 Claude Code starts in it when no `--permission-mode` is given: an Agent started from the Agents page with Follow, and,
 through the hub, a planned task the assistant left unset (`docs/assistant/todos.md`, "Permission of a planned task").
 A mode picked when starting an Agent, and the assistant's default permission mode, still come first.
+
+## Persona tools Agents call without a card
+
+An Agent Persona starts has Persona's MCP tools (`~/.persona/mcp.json`) and, in Claude Code's default mode, would ask
+before each call. Its own tools run without asking (#4966): `report_to_supervisor`, `todo_decisions`,
+`todo_decision_add`, `todo_bind_thread`, and a task leader's `task_plan` and `task_review`
+(`assistantwire.AgentOwnTools`). They act only inside Persona and for the Agent calling them (the node names the session
+of its pane, `callerTools`), the manager bounds them (a report is rate limited; a leader's `task_plan` adds workers only
+below its own task, its `task_review` reaches only its direct workers), and a card for each one would ask the user about
+the Agent's own bookkeeping.
+
+- **How**: the start and herdr's resume command of every Claude Agent Persona starts carry `--allowedTools` with exactly
+  these tools under both names `mcp.json` registers (`node/agentplugin.go` `agentAllowedTools`, beside the office
+  skill's rule). It is Claude Code's own rule for that process only: nothing is written to the machine's Claude settings
+  or to the files every session shares, so Claude sessions the user starts themselves ask as before, and a deny rule
+  of the user's still wins. The Paseo bridge is given the same names (`--allow-tools`) and answers them itself for the
+  Agents it created (`docs/integrations/paseo.md`); an agent made in Paseo's own app still asks.
+- **Still asked**: the phone's tools (`phone_*`) and the connectors' (mail and others), which act outside Persona, and
+  `dispatch_start` / `dispatch_read`, which start an Agent on another computer on its model and read that computer's
+  work: their effects reach past the calling Agent's own task, so they keep the card by default. Every other tool and
+  MCP server is unchanged. Codex Agents have none of these tools.
+- **The card's title**: whenever a card is shown for one of Persona's own MCP tools (the ones still asked, or any in a
+  session started elsewhere), the manager titles it with the tool's name for people in the user's language
+  (`tool_title`, `assistant-tool_titles`: "Report to supervisor · Done", "Note a decision"; the phone's tools as the
+  chat's rows name them, "iPhone · contacts search"), never the raw `mcp__persona__…` name, and names the tool alone
+  for the "Always allow" line (`tool_name_title`: every report, not only this "Done"; `docs/protocol/protocol.md`
+  "Always allow"). The title is in the hub's language, like other text the hub writes. Agents already running pick
+  the rule up when they are next started or resumed.
 
 ## Independent ultracode switch (#3427)
 

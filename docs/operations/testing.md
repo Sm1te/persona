@@ -254,6 +254,7 @@ xcrun simctl launch --terminate-running-process $SIM <bundle id> \
 ```
 
 - **Create a new simulator**, not one paired to a real hub: App disk caches (chats/Inbox) can leak real data into screenshots.
+- **A system alert over every screenshot** ("Persona Would Like to Send You Notifications", #5089): a notification request the App made earlier on that simulator and nobody answered (a test run, `-showTestNotification`) stays pending, and the alert comes back on every later launch, reinstalled or not, even one that asks for nothing (`-pairURL` already skips the App's own push request, `PushRegistrar`). Only a reboot clears it: `scripts/app/sim-boot.sh --reslim "<name>"` on your own simulator. The slim profile is not the cause (the same build shows no alert on a freshly slimmed boot). If a system alert still covers the screenshots, take them on `--profile stock`.
 - Mock item ids are fixed; after changing mock data or ids, uninstall/reinstall the App or old caches merge with new data and duplicate steps.
 - Agent chat work is collapsed to one line by default; `-openAllWork YES` expands it. `-tab` has no chat tab and stays on the last tab:
   uninstall/reinstall to photograph the chat tab (the fresh-install default).
@@ -303,7 +304,7 @@ xcrun simctl launch --terminate-running-process $SIM <bundle id> \
   The hub's notice line (#4305): `MOCK_TASKS=1 MOCK_TASKS_NOTICE=1 MOCK_TASKS_NO_ASKS=1` adds "电脑和模型接好了，定时任务恢复运行，这次是「早报」" as the conversation's last line, small and centered.
   What didn't go through overnight on the Today card (#4124): `MOCK_TODAY_FAILED=1` (with `MOCK_TASKS=1`) adds a task whose Agent didn't start, a failed scheduled run and a skipped one, with `failed_total` 5, so the row says how many in all and "2 more"; without it the card is as before.
   Message card states (#4797): `MOCK_TASKS_MESSAGE=filed` marks the card about the widget task as handled elsewhere (`filed_at`): no Send, the draft greyed out with a line saying it wasn't sent. `MOCK_TASKS_MESSAGE=sent` marks it as replied from the card (`sent_at`).
-- Typing a model ID (#1644, `docs/assistant/model-config.md` "Typing a model ID"): `MOCK_CUSTOM_MODELS=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py` lists IDs typed before after the Claude Code / Codex lists (`custom: true`), takes Forget (`DELETE …/models/custom?model=`) and remembers a start's or a `…/modes` typed model; `=forgetfail` makes Forget answer 500 (the row comes back), `=empty` gives Claude Code an empty list ("Enter Model ID…"), `=fail` a 502 for every list; `GET /mock/custom_models` shows what is remembered (`?reset=1` puts the first IDs back). `TEST_RUNNER_PERSONA_CUSTOM_MODELS_HUB=http://127.0.0.1:<port> xcodebuild test … -only-testing:PersonaUITests/CustomModelUITests` walks New Agent (typed IDs, Forget, the reason under a bad ID, the pick in the start), a running session's "Other Model…" (`POST …/modes`, then the menu ticking it with the ID once the session runs it) and the Persona chat's launcher menu (against `=1`), New Agent's "Enter Model ID…" beside a list that couldn't be read and its clear button (against `=fail`), the empty list (`=empty`) and a refused Forget (`=forgetfail`); each test skips the other modes. `TEST_RUNNER_PERSONA_SHOTS` / `TEST_RUNNER_PERSONA_SHOTS_APPEARANCE` save the screenshots. The mock lists `typed_models` in its features in every mode (the chat's "Other Model…" needs it). The web's: `node web/e2e/custom-model.mjs <web URL> --hub <mock URL> [--shots <dir>]` follows the mock's mode: New Agent, a session's popover and the chat's launcher menu (`=1`), a refused Forget in New Agent and the popover (`=forgetfail`), New Agent without a list (`=empty`, `=fail`); light and dark.
+- Typing a model ID (#1644, `docs/assistant/model-config.md` "Typing a model ID"): `MOCK_CUSTOM_MODELS=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py` lists IDs typed before after the Claude Code / Codex lists (`custom: true`), takes Forget (`DELETE …/models/custom?model=`) and remembers a start's or a `…/modes` typed model; `=forgetfail` makes Forget answer 500 (the row comes back), `=empty` gives Claude Code an empty list ("Enter Model ID…"), `=fail` a 502 for every list; `GET /mock/custom_models` shows what is remembered (`?reset=1` puts the first IDs back). `TEST_RUNNER_PERSONA_CUSTOM_MODELS_HUB=http://127.0.0.1:<port> xcodebuild test … -only-testing:PersonaUITests/CustomModelUITests` walks New Agent (typed IDs, Forget, the reason under a bad ID, the pick in the start), a running session's "Other Model…" (`POST …/modes`, then the menu ticking it with the ID once the session runs it) and the Persona chat's launcher menu (against `=1`), New Agent's "Enter Model ID…" beside a list that couldn't be read and its clear button (against `=fail`), the empty list (`=empty`) and a refused Forget (`=forgetfail`); each test skips the other modes. `TEST_RUNNER_PERSONA_SHOTS` / `TEST_RUNNER_PERSONA_SHOTS_APPEARANCE` save the screenshots. The mock lists `typed_models` in its features in every mode (the chat's "Other Model…" needs it). The web's: `node web/e2e/custom-model.mjs <web URL> --hub <mock URL> [--shots <dir>]` follows the mock's mode: New Agent, a session's model panel (the composer's model pill: the IDs typed before with Forget, "Use “…”" from the search, #5032) and the chat's launcher menu (`=1`), a refused Forget in New Agent and the model panel (`=forgetfail`), New Agent without a list (`=empty`, `=fail`); light and dark.
 - Claude Code ultracode (#1307, `docs/apple/ios.md` "Claude Code ultracode"): `MOCK_ULTRACODE=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py` (the states are listed in the mock's help: on, queued, turned off by a resume, the node's reason, off, offline, Codex at `ultra`, Mac Studio's old Claude Code). `TEST_RUNNER_PERSONA_ULTRACODE_HUB=http://127.0.0.1:<port> xcodebuild test … -only-testing:PersonaUITests/UltracodeUITests` checks the model menu's switch and its line, the marks on the model button and the Agents rows, the requests (`GET /mock/ultracode`; each test resets the states with `?reset=1`), the resume line's Turn Back On and ×, a refusal, and New Agent (off each time, grayed for a too-old Claude Code). `TEST_RUNNER_PERSONA_SHOTS=<directory>` and `TEST_RUNNER_PERSONA_SHOTS_APPEARANCE=light|dark` save the screenshots; switch the simulator's appearance with `simctl ui`.
 - Launcher health in New Agent (#1643, `docs/server/launcher-health.md` "In the App"): `MOCK_LAUNCHER_HEALTH=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py` gives every computer's launcher list `work_gw` blocked as not in the terminal and `team_gw` blocked on its key (claude checked fine),
   a start that runs `work_gw` fails with the hub's coded sentence, and `macbook/f1643000-0000-4000-8000-000000000001` is a chat that already failed so. `MOCK_LAUNCHER_HEALTH=default` also makes `work_gw` Model Settings' New Agent default.
@@ -355,7 +356,7 @@ xcrun simctl launch --terminate-running-process $SIM <bundle id> \
   `GET /mock/terminal_input` inspects bytes); `MOCK_TERMINAL_BUSY=1` shows "Another program on the computer is using this terminal"; `-terminalSize phone|mirror` selects mode.
   `TerminalTypingTests/testDrivingTheTerminalSendsItsBytes` needs this mock; other terminal UI tests fix `-terminalSize mirror`.
 - Attending a meeting (#2981, `docs/assistant/meeting-minutes.md` "Attending a meeting"): `PORT=<dedicated port> python3 scripts/mock/mock_hub.py` lists `meeting_attendance`, has `meeting_attendance_default` in `GET /api/v1/assistant` (`MOCK_MEETING_ATTENDANCE_DEFAULT=listener` starts there; a bad value is 400, an answer-only device 403), takes `attendance` / `attending_session` on uploads (the `200` says the role in effect and `attendance_problem`; `detail.meta` has both) and answers `POST`/`GET …/live` and `POST …/ask` with the contract's errors in its order. The attending session takes every live line at once, and a question gets a made-up answer at once (`speak` for a participant, a heard question from the live lines of the 45 s before `at`, the same answer for the same `id`). `POST /mock/meeting_attendance` with `{"feed": "busy"|"unavailable"|"not_allowed", "answer": "slow"|"fail", "answer_seconds": 3, "kb_read_only": true}` changes that (only the keys sent; `"ok"` puts one back), and `GET /mock/meeting_attendance` shows every recording's role, live log and asks; `POST /mock/recording_minutes` forgets them with the recordings. `MOCK_NO_MEETING_ATTENDANCE=1` is a hub without it (no feature or setting; `…/live` and `…/ask` are 404 without `recording_not_found`). `python3 scripts/mock/test_meeting_attendance_mock.py` checks it.
-- Meeting minutes as to-dos (#4062, `docs/apple/recording.md` "Minutes"): `MOCK_RECORDING_MINUTES=ready PORT=<dedicated port> python3 scripts/mock/mock_hub.py` gives a meeting's minutes a `version` and action ids, makes to-dos from `POST …/minutes/todos` (`409 minutes_stale` for an old version), keeps the minutes shown while `POST …/minutes` writes the next version (3 s), and `POST /mock/recording_minutes_rewrite {"id"}` writes it at once. `python3 scripts/mock/test_recording_minutes_todos_mock.py` checks it. `TEST_RUNNER_PERSONA_MOCK_HUB=http://127.0.0.1:<port>` runs `MeetingRecordingUITests/testMinutesActionsBecomeTodosAndRegenerate`: Add to To-Dos, Added, Add All and Regenerate → Updating, in light and dark and at the largest text (`TEST_RUNNER_PERSONA_SHOTS` keeps `meeting-<look>-minutes-*.png`).
+- Meeting minutes as to-dos (#4062, `docs/apple/recording.md` "Minutes"): `MOCK_RECORDING_MINUTES=ready PORT=<dedicated port> python3 scripts/mock/mock_hub.py` gives a meeting's minutes a `version` and action ids, makes to-dos from `POST …/minutes/todos` (`409 minutes_stale` for an old version), keeps the minutes shown while `POST …/minutes` writes the next version (3 s), and `POST /mock/recording_minutes_rewrite {"id"}` writes it at once. `python3 scripts/mock/test_recording_minutes_todos_mock.py` checks it. `TEST_RUNNER_PERSONA_MOCK_HUB=http://127.0.0.1:<port>` runs `MeetingRecordingUITests/testMinutesActionsBecomeTodosAndRegenerate`: Add to To-Dos, Added, Add All and Regenerate → Updating, in light and dark and at the largest text (`TEST_RUNNER_PERSONA_SHOTS` keeps `meeting-<look>-minutes-*.png`). The same hub runs `testMinutesTimeInTheAppsDateStyle` (#4875): the minutes' time from their `start` / `end` in the app's date style, in Chinese and Japanese, light and dark (`meeting-<look>-minutes-when-<language>.png`).
 - Meeting conversation (#3862, `docs/assistant/meeting-minutes.md` "Phase 1: the meeting conversation"): the same mock also lists `meeting_conversation`. An upload with `room` makes a room meeting (its `200` carries `room`, at least `{"state": "none"}`; the top-level `attendance` / `attending_session` are ignored beside it, and `private` is taken only while there is no mark); while it attends, its room conversation (an assistant conversation, origin `meeting`, the header first) comes up a moment after the upload, each `POST …/live` with new lines is a batch to it, and `…/ask` goes to it (`via`, `heard`, `spoken`; a made-up reply in the room). Earlier meetings are an answer's material only once marked `private: false`, and the next batch tells the room what the material answered. The first upload with `ended_at` and `complete` sends the end batch and turns the room `ended` (`409 meeting_ended` for asks and for messages into it). `PUT …/private`, `POST …/just-me` (to the main chat) and `POST …/followup` (a conversation of origin `meeting_followup` seeded with the meeting) answer in the contract's order, Just me and the follow-up behind the hub's operation receipts keyed by the body's `id`; `GET …/live` has `revs` and takes `parts`, `detail.meta` has `private`, `room` and `followup`, and a content-free `meeting_live` event goes out at most once a second per recording. `/mock/recording_trim` deletes the room. `POST /mock/meeting_conversation` with `{"room": "slow"|"unavailable", "problem": "node_too_old", "room_seconds": 2, "end_seconds": 180}` changes how rooms come up and how long an upload with `ended_at` alone waits for the end; `GET` shows every meeting's state. `MOCK_NO_MEETING_CONVERSATION=1` is a manager without it (no feature, `room` and `private` ignored, the three routes 404 without a code). `python3 scripts/mock/test_meeting_conversation_mock.py` checks it.
 - Meeting photos (#3862, `docs/assistant/meeting-minutes.md` "Phase 3: photos"): beside `meeting_conversation` the same mock lists `meeting_photos` and answers `POST …/photos`, `GET …/photos`, `GET …/photos/{n}` (the image) and `DELETE …/photos/{n}` with the contract's limits and errors in its order (1 MiB decoded, 4096 px on the long side, `text` 8000 and `caption` 200 characters, the same `id` returns the stored photo and another body under it is `409 op_id_reused`, a deleted photo's `id` is `410 photo_deleted`, `413 photos_full` at 50, `409 transcript_expired` once trimmed, `404 photo_not_found`; deleting a photo already deleted answers `{"deleted": false}`). A photo of a meeting whose room attends goes into the room (once it is `ready`, when it is still coming up; the image and a line from the meeting, both with `client_msg_id` `photo-<id>`; `forwarded: true`), and the room's `note` arrives a moment later as a `meeting_photo_note` call; deleting a forwarded photo sends the room the withdrawn line (`client_msg_id` `photo-withdrawn-<id>`). Minutes cite each photo that has words (`"photo": n`) and are made again when one is added or deleted, `/mock/recording_trim` keeps only the cited photos, the follow-up's seed lists the photos still there (a trimmed recording's has its minutes only), search finds a recording by its photos' words (`photos.md`), and `photos` moves in `meeting_live` and in `GET …/live`'s `revs` (`?parts=photos`). `POST /mock/meeting_photos` with `{"note": "none", "note_seconds": 1, "on": false}` leaves photos without a note, changes how long the note takes, or turns the feature off; `GET` shows every recording's photos. `MOCK_NO_MEETING_PHOTOS=1` is a manager without it (no feature, the routes 404 without a code). `python3 scripts/mock/test_meeting_photos_mock.py` checks it.
 - Voice mode (docs/assistant/voice.md 6.8, #3508): `MOCK_VOICE=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py` (`scripts/mock/voice_mock.py`: `/info` at protocol 2 and a scripted socket; a protocol 1 `start` still gets the old Android script; `MOCK_VOICE=setup|p1` for an extension that is not set up / too old; `GET /mock/voice2` shows what the app sent).
@@ -436,7 +437,7 @@ xcrun simctl launch --terminate-running-process $SIM <bundle id> \
 ### Readiness scenarios (`MOCK_READINESS`, #287)
 
 New-user onboarding states ([onboarding.md](../assistant/onboarding.md) 4.4–4.6, section 5) share these fixtures across web Playwright, Android and iOS / Mac screenshots. Start with `MOCK_READINESS=<scenario>`:
-adds `assistant_readiness`, `machines_add`, `machine_trust`, `builtin_presets` to `features`; `GET /api/v1/assistant/readiness[?probe=1]`, `POST …/readiness/dismiss`,
+adds `assistant_readiness`, `machines_add`, `machine_trust`, `builtin_presets`, `launcher_auto_name` to `features`; `GET /api/v1/assistant/readiness[?probe=1]`, `POST …/readiness/dismiss`,
 `POST /api/v1/assistant/warm` (with `readiness`) return hub-shaped data/text (read `server/internal/i18n/locales`, using `Accept-Language`, Chinese if absent).
 `POST /api/v1/assistant/conversations` rejects with scenario codes; `GET /api/v1/launchers/presets` lists built-in providers (directly from `server/internal/assistant/presets_builtin.json`), then mock plugin presets.
 Add/confirm computer (`MOCK_ADD_COMPUTER`) is enabled too; readiness follows machines: in `zero`, add, wait for connection, confirm, then `computer` becomes `ok`.
@@ -459,7 +460,7 @@ Add/confirm computer (`MOCK_ADD_COMPUTER`) is enabled too; readiness follows mac
 
 Except `demo`, only `mbp`, no Agents or other assistant chats (new-user state). `MOCK_START_ERROR=<code>` overrides scenario and rejects every start
 (`no_machine`, `machine_pending`, `claude_missing`, `launcher_missing`, `node_unreachable`, `node_outdated`, `assistant_offline`) for each error card;
-`MOCK_BUILTIN_PRESETS=1` only adds built-in providers and `builtin_presets`. In these cases, `MOCK_PROVIDERS=1` Test Connection returns Anthropic's region-block message and `code: "region_blocked"` for keys containing `region` (#4482, text from hub). Like hub, at most 3 pending computers (fourth 429 `too_many_pending`).
+`MOCK_BUILTIN_PRESETS=1` only adds built-in providers, `builtin_presets` and `launcher_auto_name`. `MOCK_PROVIDERS=1` also advertises `launcher_auto_name`: a custom provider added with no startup ID gets one by the hub's rule (#5029), and New Agent lists the managed providers with their display names. In these cases, `MOCK_PROVIDERS=1` Test Connection returns Anthropic's region-block message and `code: "region_blocked"` for keys containing `region` (#4482, text from hub). Like hub, at most 3 pending computers (fourth 429 `too_many_pending`).
 `MOCK_INBOX_SOURCES=none` leaves no Inbox sources (no items/mail accounts, Lark unconfigured, GitHub signed out); combine `zero` for zero-computer/zero-source empty states (#4485, #4480). `mock_scenarios.py` names them `readiness-<scenario>` for live switching.
 For the probe's client boundaries (#1892), `MOCK_READINESS_PROBE_DELAY=<seconds>` delays only `?probe=1`, and `MOCK_READINESS_PROBE_ERROR=<HTTP status>` refuses it with a localized reason. With `MOCK_READINESS=not_logged_in`, run `ReadinessUITests/testTryMessageWaitsForAnAnswerOrShowsFailure` using `TEST_RUNNER_PERSONA_PROBE_EXPECT=slow` and a 35-second delay: the failed probe appears after the old 30-second client timeout, its reason remains beside an enabled Try a message button, and the test checks the elapsed time. Use `TEST_RUNNER_PERSONA_PROBE_EXPECT=error` with `MOCK_READINESS_PROBE_ERROR=502` to check the HTTP failure reason. With `MOCK_READINESS=bad_key`, `TEST_RUNNER_PERSONA_PROBE_EXPECT=model_error` clicks the model row's alternative Try button and requires the 502 reason on that row, not the first-message row. The usual mock-hub and screenshot runner variables apply.
 Gmail sign-in (#2442): `GET /api/v1/mail/oauth/google/config` says `configured: false` and `google/start` answers 400 `google_not_configured` (text contains "not configured"), so the add-Gmail page offers the app-password form; `MOCK_GOOGLE=1` says `configured: true` and `start` answers with a made-up URL, so the page shows Sign In with Google.
@@ -597,7 +598,7 @@ Dev server preview on the iPhone (`PreviewUITests`, #150, `docs/web/preview.md` 
 Agent's Storybook port; web opens in the link card (the mock forwards a running preview port to its own page server), the bar goes back, attaches a
 screenshot, and picks the Save button into an Element comment card; api's Start… shows `env 'PORT=8080' go run ./cmd/api` and opens once its port answers:
 `MOCK_PREVIEW=1 PORT=<dedicated port> python3 scripts/mock/mock_hub.py &`, `TEST_RUNNER_PERSONA_MOCK_HUB=http://127.0.0.1:<port> xcodebuild test … -only-testing:PersonaUITests/PreviewUITests`,
-`TEST_RUNNER_PERSONA_SHOTS=<dir>` keeps each screen, `TEST_RUNNER_PERSONA_LOOKS=light,dark` runs it in both appearances in one go. `-openPreviewServers YES` opens the list as the chat appears, `-showPreviewPicking YES` starts picking in a forwarded page (screenshots).
+`TEST_RUNNER_PERSONA_SHOTS=<dir>` keeps each screen, `TEST_RUNNER_PERSONA_LOOKS=light,dark` runs it in both appearances in one go, and `ax` in that list adds a pass at the largest text size (the list, the page, picking and the comment panel, #5114). `-openPreviewServers YES` opens the list as the chat appears, `-showPreviewPicking YES` starts picking in a forwarded page (screenshots).
 
 Own-hub links open in App (`HubPageLinkUITests`, #2696): mock `/s/…?at=…` opens Agent chat with target message visible, `/todos?id=…` opens to-do details;
 external links remain web cards. `MOCK_HUB_LINKS=1 PORT=18796 python3 scripts/mock/mock_hub.py &`,
@@ -1058,10 +1059,14 @@ Independent of local config/private words, reports file/line/type only, never UR
 
 ## Expand / collapse (`UnfoldTests`, #1123)
 
-DEBUG `-unfoldTrace YES` measures each unfold/fold (`UnfoldTrace`, `toggleInPlace`, work `toggleWork` / `toggleRun`): for 1.6 s after tap,
+DEBUG `-unfoldTrace YES` measures each unfold/fold (`UnfoldTrace`, `toggleInPlace`, work `toggleWork` / `toggleRun`): for 3 s after tap (a folded work line's steps come from the hub in that time, #3757),
 per-frame tapped-row position (`ChatPin`), late frames, longest frame, and drawn views with `-perfCounts YES`, in `probe.unfold`.
 Cases toggle work at latest/middle, thinking/tools/BeautifulUI tool capsules inside work; logs `UNFOLD <scenario> <what>: moved … step …`.
 At 6 s after launch also measures untapped `idle` control. Mock `MOCK_LONG_HISTORY=1 MOCK_AGENTS=1`.
+Each measurement also has the list's content height per frame (`heights`): the frame what opened or closed went in or out.
+`ToolFoldTests` (#3005, mock `MOCK_TOOL_TURN=1`, `GET /mock/tool_turn?step=call|result|answer|next|reset` pushes one step of a running agent's turn
+at a time) opens the last turn's tool rows and checks they stay open and still as a step, the answer and the next turn arrive, and that a closed
+row's space goes within two frames of the tap.
 
 - Don't query App during measurement: each XCUITest accessibility snapshot occupies main thread; polling 0.1 s makes taps "drop" 15–20 frames, quiet 2.2 s then reading gives 0–3.
   Disable `probe.chat-rows` 10 Hz too (`-unfoldTrace` only draws `probe.unfold`).
@@ -1159,6 +1164,11 @@ DEBUG `-showPagePerf YES`: after 10 s measures 8 s idle (`frames-page-idle.json`
 then script `GET /mock/churn?n=12&ms=500` keeps pushes in segment), largest visible scroll view glides down 3 s/back 3 s at 2000 pt/s,
 `frames-page-glide.json`. Target args: Work `-tab dev -app.tab chats`, Inbox/Machines `-openShellPage inbox|machines`,
 Agent chat `-openSession <machine>/<session>`. `MOCK_AGENTS=1` ~130 Agents reveals list cost.
+The first 10 s are measured too (`frames-page-open.json`: launch, the page opening, its first layout). `-showPagePerfSpeed <pt/s>` and
+`-showPagePerfSeconds <s>` change the glide, `-showPagePerfRepeat <n>` glides n times (`frames-page-glide-2.json`, …: the first pass lays rows
+out, later ones come back to them). `-showListOffset <pt>` puts the main scroll view that far from its start 8 s after launch and writes
+`Documents/list-offset-set` (screenshots of one place in two builds). A chat is told a finger is on its list for both (`PagePerf.touchers`);
+without that it keeps following its newest end and the list does not move (#4970): check moves with `-scrollTrace YES`.
 
 2026-11-01 iPhone 17 Pro simulator, 2 runs/page:
 
@@ -1171,6 +1181,32 @@ Agent chat `-openSession <machine>/<session>`. `MOCK_AGENTS=1` ~130 Agents revea
 
 Work change: hub pushes sessions separately per machine, previously each recalculated session-reading pages. Coalesce arrivals within 25 ms
 (`AppModel.applyPendingSessions`), ~4 SwiftUI updates→1 per round.
+
+### Long Agent answer (#4970)
+
+`MOCK_LONG_REPORT=1`: an Agent chat (`-openSession macbook/a1f3c2d4-0000-4000-8000-000000000090`) ending in one ~33,000-character report
+(nine tables of 115 rows, a dozen code blocks, headings, lists, a quote) after 120 folded tool calls and eight subagent cards, the shape of a
+real planning session that scrolled badly. `MOCK_LONG_REPORT=<items.json>` serves a transcript's items instead (kept outside the repository; long
+tool outputs cut to the page's 4 KB as the hub does). DEBUG `-showAnswerWhole YES` draws every answer as one row, as before #4970, so one
+optimized build measures before and after; `-showAnswerPartLines <n>` changes the part size. Measure with `-showPagePerf` (open, first glide,
+glide back) and the chat's own `-showAutoScroll` (its sweep is programmatic animated jumps, its glide moves the chat's list).
+
+2026-11-12, iPhone 17 Pro simulator (iOS 27), optimized Debug build, one build measured both ways (`-showAnswerWhole YES` is
+before); median / worst. Opening was measured under the heavy-job lock, scrolling was not (other builds ran, load 18–105; runs interleaved).
+
+| Scenario | Metric | Before (one row) | After (parts) |
+| --- | --- | --- | --- |
+| Opening the chat, synthetic (6 runs) | longest frame | 1266 / 1757 ms | 448 / 1053 ms (launch's own frame) |
+| Opening the chat, synthetic | hitch time | 193 / 225 ms/s | 79 / 133 ms/s |
+| Opening the chat, real report (1 run locked, 3 not) | longest frame | 2229 ms; 2040–3156 ms | 551 ms; 590–663 ms |
+| Glide 2000 pt/s, real report (3 runs) | hitch time | 347 / 393 ms/s | 12 / 27 ms/s |
+| Glide, real report | longest frame; frames > 50 ms; blocks ≥ 100 ms | 262 ms; 12; 12 | 33 ms; 0; 0 |
+| Glide, synthetic | hitch time; p95 frame | 205 ms/s; 50 ms | 2 ms/s; 16.7 ms |
+| Sweep (8 animated jumps), real report | hitch time; longest frame; blocks ≥ 100 ms | 538 ms/s; 1459 ms; 21 | 434 ms/s; 374 ms; 6 |
+| Sweep, synthetic | hitch time; longest frame | 184 ms/s; 567 ms | 62 ms/s; 244 ms |
+
+The glide is `-showAutoScroll`'s, after its sweep. The sweep is the first pass over parts not laid out yet; there drawing many distinct CJK
+glyphs the first time is about 55% of the main thread (#5076).
 
 ### Lark pages (chat/Inbox, #674)
 
@@ -1347,6 +1383,34 @@ go run ./internal/fleetsoak -compare <base directory>/report.json <head director
   base's in the same minute, for the manager and for the hub. When the change leaves the hub's work as it was, the
   hub's row shows how much is noise.
 - It ends with one line: `PASS`, `FAIL` or `TIMEOUT`.
+
+## A relayed upload's memory (`scripts/diag/relay_body_rss.py`, #3199)
+
+What a large request body costs the hub's slot and the manager it is relayed to, and how long they keep it.
+
+- `python3 scripts/diag/relay_body_rss.py --binary base=<personad built from main> --binary head=<personad built from the branch> --rounds 3`
+  starts, for every run, a throwaway hub (`<binary> hub run`: edge, slot and built-in manager) on a free loopback port,
+  with its own directory under `/tmp` as `HOME` and `PERSONA_HOME` and its own database in a `postgres:18-alpine`
+  container named `persona-ci-db-relay-rss-<random>`; it removes all of them at the end. It never reads the real
+  `~/.persona`, whatever the caller's environment says. Docker is the only thing it needs besides the binaries.
+  With `--database-url <server>` it uses that Postgres server instead of a container (each run gets a database of
+  its own there when `psql` is installed): that is how it runs inside a Linux container, next to a Postgres one
+  (`docker run --network container:<postgres container> … python3 relay_body_rss.py --database-url …`, with
+  linux binaries mounted in).
+- Each run posts a 22.4 MB JSON body (16 MiB as one image's base64, `--body-mib`) to
+  `POST /api/v1/assistant/conversations` for a machine that does not exist: the hub relays the whole body, the manager
+  decodes the whole body and answers 400, and no conversation starts. It reads each process's RSS just before the
+  post, at its peak, 10 s and `--settle` (60) seconds after the answer. Binaries alternate from round to round; the
+  tables give the median and the range. `--posts 2 --gap 5` sends a second body inside the trim's 30 s window,
+  `--chunked` one without a Content-Length, `--env GODEBUG=gctrace=1 --logs <dir>` keeps each hub's log with its
+  collections.
+- On Linux the peak is the kernel's (`VmHWM`). On macOS it is the highest of the samples (every 50 ms), and the
+  script also prints the physical footprint: when the Mac is short of memory it compresses the pages of an idle
+  process, RSS falls though the process gave nothing back, and only the footprint still counts them. Compare builds
+  by the footprint there.
+- The micro benchmarks behind it: `go test -run '^$' -bench 'Relay|ReadRelayed' -benchmem ./internal/hub`,
+  `-bench 'Decode(22MB|1K)' ./internal/assistant`, `-bench CallLarge ./internal/rpc`; compare two builds' test
+  binaries in alternating rounds with `benchstat`.
 
 ## Live Activity screenshots (`LiveActivityShots`)
 

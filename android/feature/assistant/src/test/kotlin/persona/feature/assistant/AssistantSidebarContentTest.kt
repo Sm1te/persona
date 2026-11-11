@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -65,17 +67,20 @@ class AssistantSidebarContentTest {
                 }
             }
         }
-        // Every chat but the main one and the leaders waits under one All chats row (#4331).
-        rule.onNodeWithText("全部对话（1）").performClick()
+        // The user's own newest chats are listed under Recent (#4922); every chat but the main one and the leaders also
+        // waits under one All chats row (#4331).
+        rule.onNodeWithText("最近").assertExists()
         rule.onNodeWithText("Saved conversation").assertExists()
+        rule.onNodeWithText("全部对话（1）").performClick()
+        rule.onAllNodesWithText("Saved conversation").assertCountEquals(2)
         rule.onNodeWithContentDescription("设置").performClick()
         assertTrue(settings)
         assertEquals(listOf(AssistantRoute, TodoDetailRoute("unsaved-draft")), hidden)
-        rule.onNodeWithText("Saved conversation").performClick()
+        rule.onAllNodesWithText("Saved conversation")[0].performClick()
         assertEquals(chat.key, opened)
         snapshot = initial.copy(conversations = listOf(chat.copy(title = "Fresh conversation")))
         rule.waitForIdle()
-        rule.onNodeWithText("Fresh conversation").assertExists()
+        rule.onAllNodesWithText("Fresh conversation").assertCountEquals(2)
         rule.onNodeWithText("Saved conversation").assertDoesNotExist()
     }
 }

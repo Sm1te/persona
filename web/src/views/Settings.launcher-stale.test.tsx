@@ -71,4 +71,13 @@ describe("the provider detail dialog", () => {
     expect(document.body.textContent).toContain("model-b");
     expect(document.body.textContent).not.toContain("check of a failed");
   });
+
+  it("lists what still names an rc-file launcher when its hide is confirmed (#4661)", async () => {
+    show("wrap");
+    await answer("/launchers/wrap", "GET", { launcher: { name: "wrap", source: "zshrc", model: "" } });
+    act(() => button("在 Persona 里隐藏").click());
+    await answer("/launchers/wrap/uses", "GET", { uses: ["主对话", "档位 review"] });
+    expect(document.body.textContent).toContain("仍在使用它的有：主对话, 档位 review");
+    expect(button("确认隐藏")).toBeTruthy();
+  });
 });

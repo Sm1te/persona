@@ -24,10 +24,10 @@ export function canShowTerminal(s: Session | undefined): boolean {
 }
 
 /** What sits where an agent chat's composer goes: the composer, or a stopped Agent's read-only line (#4754) with
- *  Terminal and Resume. Not for a side panel's read-only transcript, the assistant's chats, or while the computer is
- *  offline (the composer's offline line says that, and Resume could not reach it). */
-export function composerSlot(s: Session | undefined, o: { readOnly?: boolean; assistant?: boolean; offline?: boolean } = {}): "composer" | "stopped" {
-  return !o.readOnly && !o.assistant && !o.offline && isStoppedAgent(s) ? "stopped" : "composer";
+ *  Terminal and Resume. Not for the assistant's chats, or while the computer is offline (the composer's offline line
+ *  says that, and Resume could not reach it). */
+export function composerSlot(s: Session | undefined, o: { assistant?: boolean; offline?: boolean } = {}): "composer" | "stopped" {
+  return !o.assistant && !o.offline && isStoppedAgent(s) ? "stopped" : "composer";
 }
 
 /** The composer says "view-only": a row whose source or capabilities refuse sending. A native row from an older node

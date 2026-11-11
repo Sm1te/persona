@@ -7,11 +7,11 @@ import { t } from "../../i18n";
 
 /** Whether the note shows: a notice the session can be retried from (not working, not on a card, not view-only),
  *  and not the one "Retry" was already pressed on (`retried`: the chat keeps it while the hub catches up). */
-export function showsFailureNote(session: Session, o: { readOnly?: boolean; retried?: string } = {}): boolean {
+export function showsFailureNote(session: Session, o: { retried?: string } = {}): boolean {
   const reason = failureReason(session);
   if (!reason || reason === o.retried) return false;
   if (attentionReason(session) || stateOf(session) === "needs_you") return false;
-  return !o.readOnly && sessionCan(session, "send");
+  return sessionCan(session, "send");
 }
 
 export function FailureNote({ session, onRetry }: { session: Session; onRetry: () => void }) {

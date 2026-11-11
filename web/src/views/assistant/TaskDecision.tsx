@@ -1,12 +1,12 @@
 // Task-review decisions use the existing row and draft actions, including legacy reviews without an acceptance ask.
 // Dismissal is round-bound and persisted by the manager; Later only defers this browser session, as on reply drafts.
+import { openTask } from "../../lib/handoff";
 import { useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, credentialOwner, enc, errorText } from "../../lib/api";
 import { decisionLaterKey, decisionRound } from "../../lib/assistant-entries";
 import { later } from "../../lib/feed";
 import { defaultManager, MANAGER_HEADER, shownManager } from "../../lib/manager-choice";
-import { openPanel } from "../../lib/panel";
 import { getState, putTodo, refreshTodos } from "../../lib/store";
 import { latestReview } from "../../lib/supervision";
 import { askOptions, openAsk, type Todo } from "../../lib/todos";
@@ -27,7 +27,7 @@ export function TaskDecision({ todo, rowKey }: { todo: Todo; rowKey: string }) {
   const manager = todo.manager || defaultManager();
   const selection = shownManager();
   const current = () => owner === credentialOwner() && selection === shownManager();
-  const open = () => openPanel({ kind: "task", todo: todo.id });
+  const open = () => openTask(todo.id);
   const apply = (state: Review) => {
     if (!current()) return;
     const now = getState().todos.find((t) => t.id === todo.id && (t.manager || defaultManager()) === manager);

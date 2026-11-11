@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Subagent disclosures only download when a reader manually opens their work summary.
+// Subagent cards only download when a reader opens the work summary they sit in (super rule 2).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 

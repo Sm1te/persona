@@ -300,6 +300,10 @@ A custom `http.Transport.DialContext` conservatively disables Go's automatic HTT
 A failing step reports what it actually changed: `copyFile` writes `.new` and renames, so a failed swap changed nothing (the zero `Swapped`, which `RestoreAll` skips) or only wrote `.prev` (putting that back is harmless).
 Don't add a `pending.json` field for it: older edges and watchdogs read the same file and know only `Prev == ""`.
 
+## Test a staged node before stopping the resident one (#5097)
+
+A completed gzip stream and `chmod 755` prove that bytes arrived, not that the target machine can execute them. The SSH deploy therefore runs the staged binary's `version` command before the atomic rename and before `pkill`: an `exec format error` or another failed self-test removes `.new`, preserves the installed binary, and leaves the working node running. Package selection still validates GOOS / GOARCH through Go build info; the remote self-test is the final target-side guard, not a duplicate package check. Exercise this boundary through the real login-shell deploy script with an isolated HOME and a fake `pkill`, never by replacing or stopping a development machine's resident node.
+
 ## Migrating a long-poll channel without duplicate consumers (#2020)
 
 A connector switch alone does not free a built-in extension ID for installation: the registry must explicitly
@@ -1637,6 +1641,16 @@ A connector that folds several notifications into one thread (GitHub CI failures
 - Over a real network the takeover is still not worth it (#3506): Persona Link streams kept the same 0.85 MB per end to send a sixth fewer bytes. All four stream ends now ask for no context takeover (`link.StreamCompression`): a replay of 180 s of 10 computers' node traffic took 2.64 MB on the wire instead of 2.18 MB at the same CPU, and an idle pair keeps about 40 KiB instead of 1.7 MiB. Either end asking for no context takeover decides it (RFC 7692, and coder/websocket honours it as acceptor and as dialer), so an old end paired with a new one saves on both; check every old/new pairing, not only new with new (`TestStreamCompressionInterop`). That mode leaves messages under 512 B uncompressed, so measure the wire bytes of a link that carries mostly small messages (the remote bus, mesh peers) before switching it.
 - A smaller first buffer sends the lines just past it through growth on every read (#3506): with `rpc.lineReader` at 16 KiB, a computer's session list of a few dozen rows (16-64 KiB) grew 16 -> 32 -> 64 KiB each time, and reading captured node traffic took 10% longer than with the 64 KiB start. Growing out of the first buffer straight to 64 KiB and not searching the bytes already searched for a newline (`seen`) read it as fast, and an idle connection keeps 18 KiB instead of 68 KiB. Measure the line lengths a reader really gets before choosing its sizes.
 
+## A large upload on its way: read by doubling, encoded three times, decoded twice, kept for minutes (2026-11-12, #3199)
+
+- One 22.4 MB request body relayed to the manager cost the slot 107 MiB of allocation and the manager's route 85 MiB to decode; the slot went from 45 to 180 MB resident and the manager from 56 to 192 MB, and an idle pair still held it all a minute later. `io.ReadAll` grows its buffers by half again and copies them into a final one (49 MiB): with the Content-Length known and within the limit, read into a buffer of exactly that size through the same `MaxBytesReader` (21 MiB), and give anything that differs (more bytes, fewer, an error) the results `io.ReadAll` gives, compared case by case (`TestReadRelayedIsReadAll`).
+- An encoder given a struct with a `[]byte` field writes the base64 into a pooled buffer and copies it out; the envelope's encoder then checks and copies it again, and json keeps the grown buffer in its pool until the second collection (30 MB in the slot). When the large field is the struct's last and has nothing to escape, encode the rest without it, drop the closing brace and append the field straight into the line (`rpc.Appended`, `httpParams`: 58 to 28 MiB and a third of the time per call), sized up front so the frame budget is checked before anything is built. Pin the field order with a test of its own (`TestHTTPRequestBodyIsLast`).
+- A line built by hand must come from the encoder the value would go through, and its oracle must be the code that writes the line today. The first version made the head with `json.Marshal` and one test compared with `json.Marshal` too; meanwhile #2907 had stopped `Call` from escaping `< > &`, so every query with an `&` would have gone out as other bytes, and only the test that compares with a real `Call` of the whole value saw it (`TestHTTPParamsAreJSONMarshals`). `rpc.Marshal` is that encoder; a copy of the old code as oracle proves what the code was, not what it is.
+- In Go 1.27 `encoding/json`'s `Decoder` is jsontext underneath but hides a `*bytes.Buffer` from it, so a body already in memory is read again through growing buffers (85 MiB for 22.4 MB). Decoding the bytes where they are takes what `Decode` does by hand: `jsontext.NewDecoder(bytes.NewBuffer(b), json.DefaultOptionsV1()).ReadValue()` then `jsonv2.Unmarshal` with the same options (21 MiB: the decoded strings). Its errors are not always the Decoder's words, so on any error put the value back to zero and decode the same bytes the old way (`decodeLargeBody`); without `DefaultOptionsV1` field names stop matching case-insensitively, duplicate keys and invalid UTF-8 are refused, which the equivalence table catches (`TestDecodeLargeBodyIsDecodeBody`).
+- After the request nothing allocates in an idle process, so no collection runs (`GODEBUG=gctrace=1` shows none in the minute after) and the pages stay. `debug.FreeOSMemory` a second after a body of 8 MiB or more returns them (`memtrim`); the second lets the request's own buffers become garbage first. A rate limit the first body claims leaves a second upload inside the window with nothing: schedule instead. Each body asks for a trim a second after it, trims run 30 s apart at the closest, and one asked for inside the window gets the next turn (`TestEveryLargeBodyGetsATrim`, on a clock moved by hand).
+- Fewer bytes allocated is not a lower peak. The manager's route allocates 64 MiB less, and its peak stayed (192 to 188 MB): what sets it comes before the route, the bus line read by doubling (64 MiB for a 30 MB line) and the envelope's `json.RawMessage` copying the params once more (30 MB), and the last collection before the peak runs at the same heap size either way. Measure the process end to end (`scripts/diag/relay_body_rss.py`), beside the function's benchmark.
+- RSS means different things per system. On Linux the runtime returns pages with `MADV_DONTNEED` and RSS falls at once. On macOS it marks them reusable: the physical footprint (Activity Monitor's Memory, `proc_pid_rusage`) falls at once, RSS only when the kernel takes the pages; and when the Mac is short of memory it compresses an idle process's pages, so RSS falls though nothing was given back (an unchanged build went from 192 to 70 MB by itself in one round of three). Compare builds by RSS and `VmHWM` on Linux and by the footprint on macOS.
+
 ## Hot paths: a node list copied three times, a list marshalled only to be compared (2026-11-10, #2826)
 
 - A `proto.Session` is 1,520 bytes, so every copy of a node's list is a megabyte-scale allocation and slices grown by
@@ -1895,3 +1909,24 @@ computer every 2 s): the manager allocated 555 MB and used about 2.1 s of CPU a 
   minute is then the same machine for all of them, and the head's CPU time over the base's in the same minute came
   out at 0.943 with every one of the 20 minutes below 1, the unchanged hub's at 0.983 (`pairedCPU`). Measure a noisy
   quantity against a reference that sees the same noise at the same moment.
+
+## `http.DefaultTransport` drops a push connection after 90 s idle (2026-11-11, #4800)
+
+- The hub's relay client and `apns.Client` were `&http.Client{Timeout: …}` with no transport, so they ran on
+  `http.DefaultTransport`, whose `IdleConnTimeout` is 90 s. Two thirds of one hub's pushes came more than 90 s after the
+  previous one and paid a new TCP + TLS handshake (0.2-0.3 s to the relay; APNs wants one long-lived HTTP/2 connection).
+  Both now use `apns.NewTransport`: their own clone of the default transport with a one-hour idle timeout and HTTP/2
+  health pings (`http.HTTP2Config.SendPingTimeout` / `PingTimeout`).
+- A client that talks to one service often gets its own transport with the idle timeout chosen for that service. The
+  default one is shared with every other client in the process, and its 90 s fits none of them in particular.
+- Test connection reuse with `testing/synctest`: serve TLS on an in-memory `net.Pipe` listener (loopback sockets do not
+  let the bubble go idle), dial it from a clone of the client's real transport, count `http.StateNew` in the server's
+  `ConnState`, and move the gaps with `synctest.Sleep`. The transport's idle timer and pings then run on the fake clock
+  (`TestRelayPushesKeepOneConnection`, `TestSendsKeepOneConnection`). Register the server's and transport's shutdown
+  with `t.Cleanup`, or a failed assertion ends in a synctest deadlock panic.
+
+## `exec.CommandContext` cancels only while the process runs (2026-11-11, #4363)
+
+- `cmd.Cancel` runs only when the context ends before the process exits. A shell that exits at once and leaves a background child holding its stdout or stderr (`sleep 4 & echo $!`) keeps `Wait` reading the pipe until that child exits or `WaitDelay`, counted from the shell's exit, closes it: the deadline passes unnoticed. `secret.run` held a 1-second run for 4 seconds, and the next command, which could no longer start, came back as timed out.
+- Watch the context for as long as `Wait` runs and stop the group at the deadline, sharing one "stopped" flag with `Cancel` so the group gets one SIGTERM (`runSecretCommand`). Classify the result by that flag, not the exit status: the shell exited 0.
+- A command that never started because the time was used up gets no result. A timed-out result for it reads as a command that ran and was stopped, and makes the Agent check the computer for one that never ran.

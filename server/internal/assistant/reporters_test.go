@@ -163,3 +163,37 @@ func TestStopNotAReportingConversation(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
+
+// Clearing the main conversation's context (#5095) closes its own process only: a Feishu request it reports on is not
+// stopped, so the Agents working on the tasks it handed out go on (unlike the Stop button above).
+func TestClearMainLeavesItsTasksRunning(t *testing.T) {
+	s, f := reportingWithTask(t)
+	ctx := context.Background()
+	if _, err := s.updateSettings(ctx, func(v *Settings) error {
+		v.MachineID, v.Main, v.MainMachineID = "server", "lark1", "server"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := serve(s, "POST", "/api/v1/assistant/main/clear", `{"expect":"lark1"}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"archived":"lark1"`) {
+		t.Fatalf("clear: %d %s", w.Code, w.Body)
+	}
+	if got := f.interrupted(); len(got) != 0 {
+		t.Fatalf("interrupted %q", got)
+	}
+	if s.reporterStopped(ctx, "lark1") {
+		t.Fatal("the reporting conversation was stopped")
+	}
+	f.mu.Lock()
+	closed := 0
+	for _, c := range f.calls {
+		if c.Method == "session.close" && strings.Contains(string(c.Params), `"lark1"`) {
+			closed++
+		}
+	}
+	f.mu.Unlock()
+	if closed != 1 {
+		t.Fatalf("session.close for lark1: %d", closed)
+	}
+}

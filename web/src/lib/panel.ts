@@ -27,10 +27,6 @@ export type Panel =
   | { kind: "file"; mid: string; path: string; cwd?: string; line?: number; to?: number; sid?: string }
   /** `manager`: the chat's it was opened from, which reads it (none: the default's). */
   | { kind: "link"; url: string; title?: string; manager?: string }
-  /** A task of the assistant's conversation: its agent's chat (docs/assistant/unified-entry.md). */
-  | { kind: "task"; todo: string }
-  /** An agent the main conversation's dock shows that no task stands for (#1113): its chat. */
-  | { kind: "agent"; mid: string; sid: string }
   /** A chat's plan: its latest TodoWrite as a whole list, following the chat (#5602). */
   | { kind: "plan"; mid: string; sid: string }
   /** The session's dev server in a headless browser on its computer (docs/web/preview.md); `port` / `path`: the one to

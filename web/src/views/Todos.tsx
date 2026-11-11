@@ -6,6 +6,7 @@ import { byTime } from "../lib/times";
 import { launchAgent } from "../lib/new-agent";
 import { initialLauncher, launcherBlock, usableFirst } from "../lib/launcher-health";
 import { defaultLabel, machineLaunchers, type LauncherDefault } from "../lib/launcher-models";
+import { providerLabel } from "../lib/provider-names";
 import { navigate } from "../lib/router";
 import { settingsHref } from "./settings/nav";
 import { interactionAsk } from "../lib/inbox";
@@ -2729,7 +2730,7 @@ export function HandoverDialog({
   }, [todo]);
   // the default is held to what it runs here
   const pickedBlock = launcherBlock(launchers.find((l) => l.name === (launcher || hubDefault?.provider)));
-  const defaultChoice = hubDefault ? defaultLabel(hubDefault) : t("newagent.follow_model_settings");
+  const defaultChoice = hubDefault ? defaultLabel(hubDefault, "", launchers) : t("newagent.follow_model_settings");
 
   const submitNew = async () => {
     if (!mid) return;
@@ -2852,7 +2853,7 @@ export function HandoverDialog({
                     // still a choice (a start that works clears it), with why, after the ones that can start (#1643)
                     return (
                       <option key={l.name} value={l.name}>
-                        {block ? `${l.name} · ${block.reason}` : l.name}
+                        {block ? `${providerLabel(l)} · ${block.reason}` : providerLabel(l)}
                       </option>
                     );
                   })}

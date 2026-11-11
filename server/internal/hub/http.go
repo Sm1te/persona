@@ -843,7 +843,8 @@ func (h *Hub) startSession(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(parent, startBudget(async && !p.WorkSession))
 	defer cancel()
 	var res struct {
-		Session proto.Session `json:"session"`
+		Session      proto.Session `json:"session"`
+		LauncherNote string        `json:"launcher_note,omitempty"` // a default it lacks gave way to another (#4661)
 	}
 	raw, _ := json.Marshal(p)
 	params := map[string]any{}
@@ -854,7 +855,8 @@ func (h *Hub) startSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// The manager says what it runs on (Models › Agents, a model picked for this start) and names its tab
 	// (agents_link.go).
-	if err := h.agentStartParams(ctx, m, params, name); err != nil {
+	note, err := h.agentStartParams(ctx, m, params, name)
+	if err != nil {
 		var refused *startRefused
 		if errors.As(err, &refused) {
 			writeErr(w, 400, err)
@@ -919,6 +921,7 @@ func (h *Hub) startSession(w http.ResponseWriter, r *http.Request) {
 			res.Session.Todo = &proto.TodoRef{ID: p.TodoID, Title: linked.Title}
 		}
 	}
+	res.LauncherNote = note
 	writeJSON(w, res)
 	if async && p.TabName == "" {
 		// The name takes a model call (seconds): the tab opens as agent-<n> and is renamed when it comes.

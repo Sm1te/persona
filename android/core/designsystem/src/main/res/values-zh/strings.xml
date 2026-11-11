@@ -195,6 +195,19 @@
     <string name="designsystem_editor_picture">要编辑的图片</string>
     <string name="designsystem_editor_undo">撤销</string>
     <string name="designsystem_editor_clear">清除</string>
+    <!-- The image editor's crop, turn, widths and redo (#4992, iOS ImageEditor) -->
+    <string name="designsystem_markup_crop">裁剪</string>
+    <string name="designsystem_editor_rotate">旋转</string>
+    <string name="designsystem_editor_reset">还原</string>
+    <string name="designsystem_editor_redo">重做</string>
+    <string name="designsystem_editor_shape">比例</string>
+    <string name="designsystem_editor_shape_free">自由</string>
+    <string name="designsystem_editor_shape_original">原始比例</string>
+    <string name="designsystem_editor_shape_square">正方形</string>
+    <string name="designsystem_editor_width">粗细</string>
+    <string name="designsystem_editor_width_thin">细</string>
+    <string name="designsystem_editor_width_medium">中</string>
+    <string name="designsystem_editor_width_thick">粗</string>
     <string name="designsystem_viewer_load_failed">图片加载失败</string>
     <string name="designsystem_viewer_action_failed">操作没有完成，请重试</string>
     <string name="designsystem_render_too_slow">画得太久</string>

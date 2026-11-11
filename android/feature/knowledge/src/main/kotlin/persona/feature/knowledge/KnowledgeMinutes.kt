@@ -48,6 +48,9 @@ import persona.core.designsystem.icons.PhIcon
 import persona.core.designsystem.icons.PhIcons
 import persona.core.designsystem.rowPadding
 import persona.core.designsystem.text
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.util.Locale
 
 // A recording's meeting minutes on its page (#2738, docs/assistant/meeting-minutes.md): the layout of iOS
 // RecordingMinutesSections (above the transcript; when and where, who was there; key points, decisions, action items and
@@ -102,6 +105,19 @@ internal fun minutesView(detail: KnowledgeDetail, facts: RecordingFacts): Minute
 }
 
 /** The transcript line an item's [at] points at: the last line starting at or before it (the first when none does). */
+/**
+ * When the meeting was (#4877): `start` in the recording header's date style, then `end`, its time only when it is the same
+ * day; the hub's preformatted `when` only from an older hub that sends no `start` / `end`.
+ */
+internal fun minutesTime(minutes: RecordingMinutes, locale: Locale, zone: ZoneId = ZoneId.systemDefault()): String? {
+    fun instant(value: String?) = value?.let { runCatching { OffsetDateTime.parse(it).toInstant() }.getOrNull() }
+    val start = instant(minutes.start) ?: return minutes.time
+    val end = instant(minutes.end) ?: return minutes.time
+    val from = LocalizedFormats.format(start, LocalizedFormats.DATE_TIME, locale, zone)
+    return if (start.atZone(zone).toLocalDate() == end.atZone(zone).toLocalDate()) "$from–${LocalizedFormats.format(end, LocalizedFormats.TIME, locale, zone)}"
+    else "$from – ${LocalizedFormats.format(end, LocalizedFormats.DATE_TIME, locale, zone)}"
+}
+
 internal fun segmentAt(segments: List<KnowledgeSegment>, at: Double): Int? {
     if (segments.isEmpty()) return null
     return segments.indexOfLast { it.start <= at + 0.5 }.coerceAtLeast(0)
@@ -172,7 +188,9 @@ internal fun LazyListScope.recordingMinutes(view: MinutesView, actions: MinutesA
         JGroupItem(GroupPosition.Single) {
             Column(Modifier.fillMaxWidth().padding(horizontal = rowPadding, vertical = Tokens.Space.m), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                 minutes.title?.takeIf { it.isNotBlank() }?.let { Text(it, style = PersonaTheme.type.headline, color = PersonaTheme.palette.ink) }
-                listOfNotNull(minutes.time, minutes.where).filter { it.isNotBlank() }.joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                val locale = currentLocale
+                val time = remember(minutes.start, minutes.end, minutes.time, locale) { minutesTime(minutes, locale) }
+                listOfNotNull(time, minutes.where).filter { it.isNotBlank() }.joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                     About(PhIcons.CalendarBlank, it)
                 }
                 if (minutes.attendees.isNotEmpty()) About(PhIcons.User, minutes.attendees.joinToString(" · "))

@@ -1,4 +1,5 @@
-// The session header's model name and context bar (#2430): always shown, whatever "Show details in Agent rows" says.
+// The session header's context bar (#2430): always shown, whatever "Show details in Agent rows" says. The model is the
+// composer's model pill (#5032), not the header's.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setAgentDetails, setContextAsUsed } from "../../lib/context-usage";
@@ -23,10 +24,10 @@ describe("ContextMeter", () => {
     setAgentDetails(false);
     expect(renderToStaticMarkup(<ContextMeter session={s} />)).toContain("61%");
   });
-  it("shows the model, a bar and the share left, with the tooltip", () => {
+  it("shows a bar and the share left, with the tooltip, and no model name (#5032)", () => {
     setAgentDetails(true);
     const html = renderToStaticMarkup(<ContextMeter session={s} />);
-    expect(html).toContain("opus 5.5");
+    expect(html).not.toContain("opus");
     expect(html).toContain("61%");
     expect(html).toContain("还剩 61% 上下文");
     expect(html).toContain('aria-valuenow="61"');
@@ -49,11 +50,9 @@ describe("ContextMeter", () => {
     const left = renderToStaticMarkup(<ContextMeter session={{ ...s, context_tokens: 178000 }} />);
     expect(left).toContain("bg-orange"); // 89% used: still the warning
   });
-  it("shows the model alone when the window is unknown, and nothing when neither is", () => {
+  it("shows nothing while the window is unknown, the model alone included", () => {
     setAgentDetails(true);
-    const alone = renderToStaticMarkup(<ContextMeter session={{ ...s, context_window: undefined }} />);
-    expect(alone).toContain("opus 5.5");
-    expect(alone).not.toContain("progressbar");
+    expect(renderToStaticMarkup(<ContextMeter session={{ ...s, context_window: undefined }} />)).toBe("");
     expect(renderToStaticMarkup(<ContextMeter session={{ ...s, model: undefined, context_window: undefined }} />)).toBe("");
   });
   it("says what the share is from lg up, keeps the bare number below, and tells what to do near full (#3668)", () => {
@@ -68,11 +67,11 @@ describe("ContextMeter", () => {
     setContextAsUsed(true);
     expect(renderToStaticMarkup(<ContextMeter session={s} />)).toContain("上下文已用 39%");
   });
-  it("is a button that opens the same words (#4054), keeping the hover tooltip; the model alone is not", () => {
+  it("is a button that opens the same words (#4054), keeping the hover tooltip", () => {
     const html = renderToStaticMarkup(<ContextMeter session={s} />);
     expect(html).toMatch(/^<button type="button" aria-haspopup="dialog" aria-expanded="false"/);
-    expect(html).toContain('aria-label="opus 5.5 · 上下文剩 61%"'); // holds the visible words, wide or narrow
-    expect(html).toMatch(/title="opus 5.5 · 还剩 61% 上下文\n上下文是 Agent/);
+    expect(html).toContain('aria-label="上下文剩 61%"'); // holds the visible words, wide or narrow
+    expect(html).toMatch(/title="还剩 61% 上下文\n上下文是 Agent/);
     expect(html).toContain('aria-description="上下文是 Agent 在这段对话里能记住的量'); // read out while it is open, too
     expect(html).toContain("touch-hit");
     expect(html).not.toContain("<div"); // a button holds phrasing content only

@@ -19,5 +19,7 @@
   "reply_reminder": "看过没回时提醒",
   "reply_reminder_hint": "Agent 问了你、你看过 {minutes} 分钟还没回，就提醒一次；只按规则判断，不花 token",
   "closeout": "要收尾记录",
-  "closeout_hint": "Agent 干了活却没交代做完没有、合没合、部署没有、还缺什么就停下时，拦它一次让它补上这份记录；会多花它自己模型的一小轮"
+  "closeout_hint": "Agent 干了活却没交代做完没有、合没合、部署没有、还缺什么就停下时，拦它一次让它补上这份记录；会多花它自己模型的一小轮",
+  "closeout_ask": "事后问一次进展",
+  "closeout_ask_hint": "没人督办的 Agent 干了活停下来，却没交收尾记录、也看不出做完没有时，Persona 问它一次已做工作的进展；会花它自己模型的一轮"
 }

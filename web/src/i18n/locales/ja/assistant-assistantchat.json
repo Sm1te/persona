@@ -22,6 +22,8 @@
   "compact_start_failed": "圧縮を開始できませんでした：{error}",
   "compacted": "コンテキストを圧縮しました",
   "compact_failed": "圧縮に失敗しました：{error}",
+  "clear": "コンテキストをクリア",
+  "clear_failed": "コンテキストをクリアできませんでした：{error}",
   "close": "閉じる",
   "new_main_done_carried": "新しいメインチャットを作成しました。以前のチャットの要約を引き継ぎます",
   "new_main_done": "新しいメインチャットを作成しました",

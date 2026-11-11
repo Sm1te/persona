@@ -609,6 +609,22 @@ type AskTodoChoice struct {
 
 func RenderAskTodoAnswer(a AskTodoAnswer) string { return render("assistant/ask_answer", a) }
 
+// AskLater is the message to the conversation that asked with ask_user and wait false (#4928) once its card ended:
+// the user's answers (Answers; Missing: some of the questions got none), that it expired (Expired: what became of
+// it, as a waiting ask_user would have been told), that its time ran out after the user wrote in the conversation
+// (Spoke: no to-do, no default), or, with none of them, that the card ended unanswered. The questions and answers
+// are escaped by the caller.
+type AskLater struct {
+	When      string // when it was asked, MM-DD HH:MM in the user's zone
+	Questions []string
+	Answers   []AskTodoChoice
+	Missing   bool
+	Expired   string
+	Spoke     bool
+}
+
+func RenderAskLater(a AskLater) string { return render("assistant/ask_later", a) }
+
 // Supervise is a supervise message: the tasks the main conversation handed out that need it now (#3124), what waits on a
 // decision first.
 type Supervise struct {

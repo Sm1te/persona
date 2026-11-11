@@ -29,6 +29,8 @@
     <string name="chat_delivery_edit">撤回编辑</string>
     <string name="chat_delivery_retry">重试</string>
     <string name="chat_delivery_delete">删除</string>
+    <string name="chat_delivery_deleted">消息已删除</string>
+    <string name="chat_delivery_undo">撤销</string>
     <string name="chat_delivery_discard">丢弃</string>
     <string name="chat_delivery_check">核对消息</string>
     <string name="chat_delivery_resend_title">重发这条消息？</string>

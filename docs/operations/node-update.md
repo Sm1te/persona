@@ -11,6 +11,8 @@ An update brings the kind of program the node runs (`node.info` `program`, [link
 - A node that runs from the device's own file (`bin/persona-node`) gets persona-node of its build ("Node packages" below), else `personad-<os>-<arch>` into that same file, which does everything and is replaced by persona-node again once there is one. Any other node gets `personad-<os>-<arch>`, over ssh to `remote_bin`.
 - A node never takes persona-node over personad outside the device's file, whatever the hub sends (over the node RPC and tailcat it checks the files' Go build info, over ssh the deploy script asks the installed file's `node-update-check`). An update never switches a node from personad to persona-node: that is `persona-link node switch` on the computer.
 
+The old SSH deploy has the same replacement boundary: it runs the staged `.new` file's `version` command before renaming it over the installed program. A failed check removes the staged file and leaves both the current binary and the resident node process untouched. Uploading `personad-<os>-<arch>` and `persona-node-<os>-<arch>` into the hub's node binary directory likewise uses a temporary file and an atomic rename, so a reader never receives a partially written executable.
+
 ## Node packages
 
 Which build a computer's node gets, for its OS, architecture and kind of program (`server/internal/devices/packages.go`), in order:

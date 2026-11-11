@@ -143,7 +143,7 @@
     <string name="chat_request_allow">許可</string>
     <string name="chat_request_deny">拒否</string>
     <string name="chat_request_always_allows">常に許可すると次を通します：%1$s</string>
-    <string name="chat_request_fields_elsewhere">このリクエストは許可する前に入力が必要です。Web または iPhone で許可してください。ここでは拒否のみできます。</string>
+    <string name="chat_request_fill_in_allow">入力して許可</string>
     <string name="chat_request_secret_run_commands">順に実行するコマンド</string>
     <string name="chat_request_secret_run_password">パスワード</string>
     <string name="chat_request_secret_run_note">1回だけ使い、保存しません。アシスタントにも見えません。</string>

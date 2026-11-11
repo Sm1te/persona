@@ -8,11 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../../i18n";
 import { getFeedState, loadFeed, type FeedItem, type TaskPlan } from "../../lib/feed";
 import { clock } from "../../lib/format";
-import { closePanel, getPanel } from "../../lib/panel";
 import { decisionLaterKey } from "../../lib/assistant-entries";
 import { putTodo, refresh, refreshTodos, reset } from "../../lib/store";
 import type { Todo, TodoAsk } from "../../lib/todos";
 import { AssistantActionBar } from "./Tasks";
+
+// where a click went: a page of its own (#5096), never a side panel
+const opened = () => location.pathname + location.search;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const at = "2026-11-10T08:00:00Z";
@@ -93,7 +95,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
-  closePanel();
+  history.replaceState(null, "", "/");
   reset();
   delete getFeedState().plans[plan.id];
   delete getFeedState().feeds[conversation];
@@ -192,7 +194,8 @@ describe("a decision in the Needs you tray", () => {
     await mount();
     const other = [...row().querySelectorAll("button")].find((b) => b.textContent === t("assistant-decisionrow.another"))!;
     act(() => other.click());
-    expect(getPanel()).toMatchObject({ kind: "task", todo: "decision-task" });
+    // its Agent's page (#5096)
+    expect(opened()).toBe("/s/demo/worker");
     expect(posts).toEqual([]);
   });
 

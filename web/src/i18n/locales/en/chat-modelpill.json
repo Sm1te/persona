@@ -1,0 +1,11 @@
+{
+  "aria": "Select model. Current: {model}",
+  "aria_effort": "Select model. Current: {model}, thinking effort: {effort}",
+  "aria_pending": "Select model. Next message: {agent} · {model}",
+  "aria_pending_effort": "Select model. Next message: {agent} · {model}, thinking effort: {effort}",
+  "current_and_next": "Current: {current}\nNext message: {next}",
+  "loading": "Loading model…",
+  "failed": "Model loading failed",
+  "default_model": "Default model",
+  "effort_xhigh_short": "Extra"
+}

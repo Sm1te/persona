@@ -1,21 +1,27 @@
-// A Claude Code workflow run (#2935, #3434; docs/protocol/agent-states.md "Background workflows and Monitor") as a card: in the chat,
-// where the Workflow call that launched it was (WorkflowCallCard), and in the chat's background dialog (WorkflowCard).
-// Both draw the same parts:
+// A Claude Code workflow run (#2935, #3434; docs/protocol/agent-states.md "Background workflows and Monitor") as a card.
+// In the chat, where the Workflow call that launched it was (WorkflowCallCard, #5030 after cindy's AgentTaskCard): the
+// shared task card (TaskCard.tsx), its title the run's name, its status word, "Workflow · tokens · tool uses · time"
+// ("Running for …" while it runs), "{phase} · done/started agents" and a strip of one square per agent. It opens the
+// chat's Background dialog at its run (lib/background-dialog.ts); where the chat has no such dialog (the assistant's
+// chat) it opens in place to the run's phases instead. Like every tool call it sits in the folded work (super rule 2).
+// In the background dialog (WorkflowCard), always open:
 // - a head: the mark, its name, its status, "169/185+" agents done of those started (the "+" while it runs: the script
 //   starts more as it goes), how long it has run;
 // - while it runs "Now Verify: verify:chat-rich", once it has ended what it was for (and a failed run's error);
 // - a progress bar in parts (done, running, failed, stopped), moving by transform: scaleX, never by width;
 // - one block per phase: "done/started" (with "+" while more may start there), its agents in the order they started,
 //   at most PHASE_ROWS of them with the quiet rest folded into "n more" (where they are left out), the earliest ones the
-//   hub no longer lists said above the first row; a row opens the agent's conversation.
+//   hub no longer lists said above the first row. The rows only say how each agent stands: a workflow agent never opens
+//   as a conversation of its own.
 // Things move only when a value changes, never on the first draw, and not at all with reduced motion: counts roll,
 // the lit phase moves on and the one before it gets its ✓, a new agent fades in, a finished run's chip changes color.
-import { memo, useState } from "react";
+import { memo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t } from "../../i18n";
-import { openPanel } from "../../lib/panel";
+import { canOpenBackgroundDialog, openBackgroundDialog, subscribeBackgroundDialogs } from "../../lib/background-dialog";
 import { useStore } from "../../lib/store";
+import { compactTokens } from "../../lib/tokens";
 import type { Workflow, WorkflowAgent } from "../../lib/types";
-import type { ToolStep } from "../../lib/work-groups";
+import { workDuration, type ToolStep } from "../../lib/work-groups";
 import {
   agentDetail,
   agentElapsed,
@@ -27,14 +33,19 @@ import {
   tallyParts,
   workflowCounts,
   workflowCurrent,
+  workflowDurationMs,
   workflowElapsed,
   workflowName,
   workflowPhaseBlocks,
+  workflowProgress,
   workflowStatus,
+  workflowStrip,
   workflowTally,
+  workflowTaskStatus,
   type AgentRunState,
   type PhaseBlock,
   type PhaseState,
+  type StripCell,
   type WorkflowStatus,
 } from "../../lib/workflows";
 import { Collapse, cx, EASE, useNow } from "../../ui/atoms";
@@ -44,6 +55,7 @@ import { Fading, Rolling } from "../../ui/Rolling";
 import { StatusMark } from "../../ui/StatusMark";
 import { ActionRow } from "./ActionRow";
 import { useExpanded } from "./expanded";
+import { RunningFor, TaskCard, taskStatusWord } from "./TaskCard";
 
 /** A color, a highlight or a fill going to its new value: the design system's curve, MOVE_MS. */
 const MOVE: React.CSSProperties = { transitionDuration: `${MOVE_MS}ms`, transitionTimingFunction: EASE };
@@ -56,69 +68,126 @@ const CHIP: Record<WorkflowStatus, string> = {
   stalled: "bg-orange-tint text-orange",
 };
 
-const PART: Record<"done" | "running" | "failed" | "stopped", string> = {
+const PART: Record<AgentRunState, string> = {
   done: "bg-ai",
   running: "bg-ai/35",
   failed: "bg-red",
   stopped: "bg-ink-3/45",
 };
 
-/** Opens an agent's conversation read-only in the side panel, as a subagent's. */
-function openAgent(mid: string, a: WorkflowAgent) {
-  openPanel({ kind: "agent", mid, sid: a.session_id });
-}
+/** A strip square's fill: the bar's part colors; an agent the counts do not account for, the plain chip fill. */
+const CELL: Record<StripCell["state"], string> = { ...PART, unknown: "bg-field" };
 
-/** The run a Workflow call launched, in the chat in that call's place (#3434), out of the folded work while the hub
- *  lists the run. Open while it runs, folded in place to its head and what it was for once it has ended; what the reader
- *  chose stays for the page's life. The hub listing no such run (an older hub, a run over a day old, one not read yet):
- *  the call's row as it always was. */
+/** An agent's state in the task cards' words (Running, Completed, Failed, Stopped). */
+const CELL_WORD: Record<AgentRunState, Parameters<typeof taskStatusWord>[0]> = { running: "running", done: "completed", failed: "failed", stopped: "stopped" };
+
+/** The run a Workflow call launched, in the chat in that call's place (#3434) while the hub lists the run, drawn as a
+ *  task card (#5030). Its head opens the chat's Background dialog at the run; with no dialog listing it, it opens in
+ *  place to the run's phases (closed at first; what the reader chose stays for the page's life). The hub listing no
+ *  such run (an older hub, a run over a day old, one not read yet): the call's row as it always was. */
 export const WorkflowCallCard = memo(function WorkflowCallCard({ step, mid, sid, scope }: { step: ToolStep; mid: string; sid: string; scope: string }) {
   const call = step.use.tool_use_id ?? "";
   const run = useStore((s) => {
     const session = (s.sessions[mid] ?? []).find((x) => x.session_id === sid) ?? s.assistant?.conversations.find((c) => c.session_id === sid);
     return session?.workflows?.find((w) => w.tool_use_id === call);
   });
-  const [open, setOpen] = useExpanded(`${scope}workflow:${call}`, Boolean(run?.running));
-  // the clock goes each second only on an open card of a run that runs; folded, at the rows' pace
-  const now = useNow(open ? 1000 : 30_000, Boolean(run?.running));
+  const task = run?.task_id;
+  // the same read on the server: a page drawn to markup has no dialog yet, and opens in place
+  const reach = () => Boolean(task) && canOpenBackgroundDialog(mid, sid, task);
+  const inDialog = useSyncExternalStore(subscribeBackgroundDialogs, reach, reach);
+  const [open, setOpen] = useExpanded(`${scope}workflow:${call}`);
+  // the agents' clocks go each second only while their rows show
+  const now = useNow(1000, Boolean(run?.running) && open && !inDialog);
   if (!run) return <ActionRow step={step} mid={mid} sid={sid} />;
-  const status = workflowStatus(run);
+  const name = workflowName(run);
   const ids = [step.use.id, ...(step.result ? [step.result.id] : [])].join(" ");
   return (
-    <div data-workflow-call={status} data-tool-use={call} data-items={ids} className="@container w-full min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label={t(open ? "lib-workflows.collapse_run" : "lib-workflows.expand_run", { name: workflowName(run) })}
-        className="flex w-full min-w-0 items-center gap-2 px-3 pt-2 pb-1 text-left [@media(pointer:coarse)]:min-h-10"
-      >
-        <Head run={run} now={now} kind />
-        <Icon name="chevronRight" size={14} stroke={2.2} className="shrink-0 text-ink-3 transition-transform duration-150 motion-reduce:transition-none" style={{ transform: open ? "rotate(90deg)" : "none" }} />
-      </button>
-      <div className="pr-3 pb-2 pl-10">
-        <Sub run={run} open={open} />
-      </div>
-      <Collapse open={open} lazy>
-        <Body run={run} mid={mid} scope={scope} now={now} />
-      </Collapse>
-    </div>
+    <TaskCard
+      icon="workflow"
+      title={name}
+      status={workflowTaskStatus(run)}
+      meta={meta(run)}
+      extra={<Overview run={run} />}
+      onClick={inDialog ? () => void openBackgroundDialog(mid, sid, run.task_id) : () => setOpen((o) => !o)}
+      ariaLabel={inDialog ? t("chat-subagentcard.open_in_background", { name }) : t(open ? "lib-workflows.collapse_run" : "lib-workflows.expand_run", { name })}
+      expanded={inDialog ? undefined : open}
+      trailing={inDialog ? <Icon name="sidebar" size={14} className="mt-1 shrink-0 text-ink-3" /> : undefined}
+      data={{ "data-workflow-call": workflowStatus(run), "data-tool-use": call, "data-items": ids, "data-workflow-opens": inDialog ? "dialog" : "inline" }}
+    >
+      {!inDialog && (
+        <Collapse open={open} lazy className="-mx-3">
+          <div className="@container flex flex-col pt-2" data-workflow-inline>
+            <div className="flex flex-col px-3 pb-2 empty:hidden">
+              {/* a run without a name has its summary for a title already */}
+              <About run={run} summary={Boolean(run.name?.trim())} />
+            </div>
+            <Body run={run} scope={scope} now={now} />
+          </div>
+        </Collapse>
+      )}
+    </TaskCard>
   );
 });
 
-/** A run in the chat's background dialog: always open. `onOpen`: an agent is about to open (the dialog closes);
- *  `onJump`: "Show in chat", to the call that launched it. */
-export function WorkflowCard({ run, mid, scope, onOpen, onJump }: { run: Workflow; mid: string; scope: string; onOpen?: () => void; onJump?: (call: string) => void }) {
+/** The second line's pieces: what ran it, the tokens and tool uses its agents used (left out when the hub does not
+ *  say), and how long it ran ("Running for …", each second, while it runs). */
+function meta(run: Workflow): ReactNode[] {
+  const parts: ReactNode[] = [<span key="harness">{t("chat-subagentcard.harness_workflow")}</span>];
+  if (run.tokens) parts.push(<span key="tokens" data-task-tokens>{t("chat-subagentcard.tokens", { value: compactTokens(run.tokens) })}</span>);
+  if (run.calls) parts.push(<span key="calls" data-task-calls>{t("chat-subagentcard.tool_uses", { count: run.calls })}</span>);
+  const start = Date.parse(run.started_at ?? "");
+  const took = workflowDurationMs(run);
+  if (run.running && Number.isFinite(start)) parts.push(<RunningFor key="time" since={start} />);
+  else if (took !== null) parts.push(<span key="time" className="tabular-nums" data-task-duration>{workDuration(took)}</span>);
+  return parts;
+}
+
+/** Under the second line: "{phase} · done/started agents", then a square per agent, the first STRIP_CELLS of them. */
+function Overview({ run }: { run: Workflow }) {
+  const progress = workflowProgress(run);
+  if (!progress) return null;
+  const { cells, more } = workflowStrip(run);
+  return (
+    <>
+      <span className="mt-0.5 block truncate text-[12px] leading-4 text-ink-3" data-workflow-progress-line>
+        {progress.phase
+          ? t("chat-subagentcard.workflow_progress_line", { phase: progress.phase, done: progress.done, total: progress.total })
+          : t("chat-subagentcard.workflow_progress_count", { done: progress.done, total: progress.total })}
+      </span>
+      {cells.length > 0 && (
+        <span aria-hidden className="mt-1 flex flex-wrap items-center gap-1" data-workflow-strip>
+          {cells.map((c, i) => (
+            <span
+              key={i}
+              data-cell={c.state}
+              title={c.state === "unknown" ? c.label : [c.label, taskStatusWord(CELL_WORD[c.state])].filter(Boolean).join(" · ")}
+              className={cx("size-2 rounded-[2px] transition-colors", CELL[c.state])}
+              style={MOVE}
+            />
+          ))}
+          {more > 0 && (
+            <span className="text-[11px] leading-4 text-ink-3 tabular-nums" data-strip-more>
+              +{more}
+            </span>
+          )}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** A run in the chat's background dialog: always open. `onJump`: "Show in chat", to the call that launched it. */
+export function WorkflowCard({ run, scope, onJump }: { run: Workflow; scope: string; onJump?: (call: string) => void }) {
   const now = useNow(1000, run.running);
   const status = workflowStatus(run);
   return (
-    <div data-workflow-card={status} className="@container flex flex-col overflow-hidden rounded-card bg-surface shadow-hairline">
+    <div data-workflow-card={status} data-workflow-task={run.task_id} className="@container flex flex-col overflow-hidden rounded-card bg-surface shadow-hairline">
       <div className="flex min-w-0 items-center gap-2 px-3 pt-2.5 pb-1">
         <Head run={run} now={now} />
       </div>
       <div className="flex min-w-0 items-start gap-2 pr-3 pb-2 pl-10">
         <div className="flex min-w-0 flex-1 flex-col">
-          <Sub run={run} open />
+          <Sub run={run} />
         </div>
         {onJump && run.tool_use_id && (
           <button
@@ -132,7 +201,7 @@ export function WorkflowCard({ run, mid, scope, onOpen, onJump }: { run: Workflo
           </button>
         )}
       </div>
-      <Body run={run} mid={mid} scope={scope} now={now} onOpen={onOpen} />
+      <Body run={run} scope={scope} now={now} />
     </div>
   );
 }
@@ -146,16 +215,14 @@ function StatusChip({ status }: { status: WorkflowStatus }) {
   );
 }
 
-/** The head's pieces: the mark, the name, the status, the counts and the time. `kind`: say it is a workflow (in the
- *  chat, among other kinds of cards), where there is room. */
-function Head({ run, now, kind }: { run: Workflow; now: number; kind?: boolean }) {
+/** The head's pieces: the mark, the name, the status, the counts and the time. */
+function Head({ run, now }: { run: Workflow; now: number }) {
   const elapsed = workflowElapsed(run, now);
   return (
     <>
       <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai">
         <Icon name="workflow" size={12} stroke={2.1} />
       </span>
-      {kind && <span className="hidden shrink-0 text-[11px] whitespace-nowrap text-ink-2 @min-[420px]:inline">{t("lib-workflows.kind")}</span>}
       <span className="min-w-0 flex-1 truncate text-[length:var(--chat-secondary)] leading-[1.428571] font-medium text-ink" title={run.summary}>
         {workflowName(run)}
       </span>
@@ -176,31 +243,35 @@ function Head({ run, now, kind }: { run: Workflow; now: number; kind?: boolean }
   );
 }
 
-/** The line under the head: where it is now while it runs; once ended, what it was for and why it stopped. One line
- *  each on a folded card; an open one shows them whole (a touch screen has no hover for the title). */
-function Sub({ run, open }: { run: Workflow; open: boolean }) {
+/** The line under the head: where it is now while it runs; once ended, what it was for and why it stopped. */
+function Sub({ run }: { run: Workflow }) {
   const now = workflowCurrent(run);
-  if (now) {
-    const text = now.phase && now.agent
-      ? t("lib-workflows.now_phase_agent", { phase: now.phase, agent: now.agent })
-      : now.phase
-        ? t("lib-workflows.now_phase", { phase: now.phase })
-        : t("lib-workflows.now_agent", { agent: now.agent });
-    return (
-      <p className="truncate text-[12.5px] leading-5 text-ink-2" data-workflow-now title={text}>
-        <Fading text={text} />
-      </p>
-    );
-  }
+  if (!now) return <About run={run} />;
+  const text = now.phase && now.agent
+    ? t("lib-workflows.now_phase_agent", { phase: now.phase, agent: now.agent })
+    : now.phase
+      ? t("lib-workflows.now_phase", { phase: now.phase })
+      : t("lib-workflows.now_agent", { agent: now.agent });
+  return (
+    <p className="truncate text-[12.5px] leading-5 text-ink-2" data-workflow-now title={text}>
+      <Fading text={text} />
+    </p>
+  );
+}
+
+/** What the run is for (unless `summary` is false), and once it has ended without completing why it stopped, whole (a
+ *  touch screen has no hover for a title). */
+function About({ run, summary = true }: { run: Workflow; summary?: boolean }) {
   const status = workflowStatus(run);
   const error = status !== "completed" && status !== "running" ? (run.error ?? "") : "";
-  if (!run.summary && !error) return null;
-  const fit = open ? "break-words whitespace-pre-line" : "truncate";
+  const about = summary ? (run.summary ?? "") : "";
+  if (!about && !error) return null;
+  const fit = "break-words whitespace-pre-line";
   return (
     <>
-      {run.summary && (
-        <p className={cx(fit, "text-[12.5px] leading-5 text-ink-2")} data-workflow-summary title={run.summary}>
-          <Fading text={run.summary} />
+      {about && (
+        <p className={cx(fit, "text-[12.5px] leading-5 text-ink-2")} data-workflow-summary title={about}>
+          <Fading text={about} />
         </p>
       )}
       {error && (
@@ -213,11 +284,11 @@ function Sub({ run, open }: { run: Workflow; open: boolean }) {
 }
 
 /** What opens below the head: the progress bar and the phases. */
-function Body({ run, mid, scope, now, onOpen }: { run: Workflow; mid: string; scope: string; now: number; onOpen?: () => void }) {
+function Body({ run, scope, now }: { run: Workflow; scope: string; now: number }) {
   return (
     <div className="flex flex-col" data-workflow-body>
       <Progress run={run} />
-      <Phases run={run} mid={mid} scope={scope} now={now} onOpen={onOpen} />
+      <Phases run={run} scope={scope} now={now} />
     </div>
   );
 }
@@ -268,13 +339,13 @@ function Progress({ run }: { run: Workflow }) {
 }
 
 /** One block per phase. */
-function Phases({ run, mid, scope, now, onOpen }: { run: Workflow; mid: string; scope: string; now: number; onOpen?: () => void }) {
+function Phases({ run, scope, now }: { run: Workflow; scope: string; now: number }) {
   const blocks = workflowPhaseBlocks(run);
   if (!blocks.length) return null;
   return (
     <div className="flex flex-col border-t border-line" data-workflow-phases>
       {blocks.map((b, i) => (
-        <PhaseView key={`${i}:${b.title}`} b={b} run={run} mid={mid} scope={scope} now={now} onOpen={onOpen} />
+        <PhaseView key={`${i}:${b.title}`} b={b} run={run} scope={scope} now={now} />
       ))}
     </div>
   );
@@ -283,7 +354,7 @@ function Phases({ run, mid, scope, now, onOpen }: { run: Workflow; mid: string; 
 /** A phase: its head (lit while the run is in it), and its agents. Open while the run is in it or any of them runs
  *  (not folding between one agent and the next of a phase that runs them one at a time), folded once it is behind the
  *  run with all back; a phase the reader opened or folded stays so. */
-function PhaseView({ b, run, mid, scope, now, onOpen }: { b: PhaseBlock; run: Workflow; mid: string; scope: string; now: number; onOpen?: () => void }) {
+function PhaseView({ b, run, scope, now }: { b: PhaseBlock; run: Workflow; scope: string; now: number }) {
   const [open, setOpen] = useExpanded(`${scope}workflow:${run.task_id}:phase:${b.title}`, b.running > 0 || b.current);
   const [all, setAll] = useState(false);
   const opens = b.agents.length > 0;
@@ -291,18 +362,7 @@ function PhaseView({ b, run, mid, scope, now, onOpen }: { b: PhaseBlock; run: Wo
   const fewer = all && phaseRows(b).folded > 0;
   // a new agent fades in where it started (in start order: nothing above it moves)
   const fresh = useArrivals(rows.map((a) => a.id));
-  const row = (a: WorkflowAgent) => (
-    <AgentRow
-      key={a.id}
-      a={a}
-      now={now}
-      fresh={fresh.has(a.id)}
-      onOpen={() => {
-        onOpen?.();
-        openAgent(mid, a);
-      }}
-    />
-  );
+  const row = (a: WorkflowAgent) => <AgentRow key={a.id} a={a} now={now} fresh={fresh.has(a.id)} />;
   return (
     <section data-phase={b.title} data-phase-state={b.state} data-phase-current={b.current || undefined} className="border-t border-line first:border-t-0">
       <button
@@ -382,28 +442,27 @@ function PhaseMark({ state, current, failed }: { state: PhaseState; current: boo
 
 const AGENT_MARK: Record<Exclude<AgentRunState, "failed">, "working" | "idle" | "offline"> = { running: "working", done: "idle", stopped: "offline" };
 
-/** An agent: how it stands, its label, (wide) its model and latest tool, how long it ran. Opens its conversation. */
-function AgentRow({ a, now, fresh, onOpen }: { a: WorkflowAgent; now: number; fresh: boolean; onOpen: () => void }) {
+/** An agent: how it stands, its label, (wide) its model and latest tool, how long it ran; its last words on hover. Only
+ *  a line to read (as in cindy's workflow tree): a workflow agent does not open as a conversation of its own. */
+function AgentRow({ a, now, fresh }: { a: WorkflowAgent; now: number; fresh: boolean }) {
   const state = agentRunState(a);
   const label = agentLabel(a);
   const detail = agentDetail(a);
   const took = agentElapsed(a, now);
   return (
-    <li data-agent={a.id} data-agent-state={state} style={fresh ? fadeInStyle() : undefined}>
-      <button
-        type="button"
-        onClick={onOpen}
-        title={a.last_text?.trim() || label}
-        aria-label={t("lib-workflows.open_agent", { label })}
-        className="flex h-7 w-full min-w-0 items-center gap-2 pr-3 pl-9 text-left transition-colors hover:bg-hover [@media(pointer:coarse)]:h-9"
-      >
-        <span className="flex size-3 shrink-0 items-center justify-center">
-          {state === "failed" ? <span role="img" aria-label={t("lib-workflows.agent_failed")} className="size-1.5 rounded-full bg-red" /> : <StatusMark state={AGENT_MARK[state]} size="sm" />}
-        </span>
-        <span className={cx("min-w-0 flex-1 truncate text-[12.5px]", state === "running" ? "text-ink" : "text-ink-2")}>{label}</span>
-        {detail && <span className="hidden max-w-[45%] min-w-0 truncate text-[11.5px] text-ink-3 @min-[520px]:inline" data-agent-detail>{detail}</span>}
-        {took && <span className="shrink-0 text-[11.5px] whitespace-nowrap text-ink-3 tabular-nums">{took}</span>}
-      </button>
+    <li
+      data-agent={a.id}
+      data-agent-state={state}
+      title={a.last_text?.trim() || label}
+      style={fresh ? fadeInStyle() : undefined}
+      className="flex h-7 w-full min-w-0 items-center gap-2 pr-3 pl-9"
+    >
+      <span className="flex size-3 shrink-0 items-center justify-center">
+        {state === "failed" ? <span role="img" aria-label={t("lib-workflows.agent_failed")} className="size-1.5 rounded-full bg-red" /> : <StatusMark state={AGENT_MARK[state]} size="sm" />}
+      </span>
+      <span className={cx("min-w-0 flex-1 truncate text-[12.5px]", state === "running" ? "text-ink" : "text-ink-2")}>{label}</span>
+      {detail && <span className="hidden max-w-[45%] min-w-0 truncate text-[11.5px] text-ink-3 @min-[520px]:inline" data-agent-detail>{detail}</span>}
+      {took && <span className="shrink-0 text-[11.5px] whitespace-nowrap text-ink-3 tabular-nums">{took}</span>}
     </li>
   );
 }

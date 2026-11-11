@@ -1,7 +1,10 @@
 {
   "launcher_agent": "{launcher} runs {agent}. The assistant can only use a launcher that starts Claude Code, Codex, or a runtime that can act as the assistant.",
-  "manager_required": "Choose an assistant before changing its default permission mode.",
+  "manager_required": "Choose an assistant before changing its settings.",
   "other_manager": "This request names a different assistant. Reload its settings and try again.",
   "manager_conflict": "The header and URL name different assistants. Choose one target and try again.",
+  "agent_names_unavailable": "Couldn't read the saved Agent names. Your name hasn't been changed. Try again.",
+  "bad_agent_naming_max": "Choose a whole number of name changes from 1 to 1000.",
+  "bad_agent_naming_interval": "Choose a whole number of hours from 1 to 8760, or turn periodic updates off.",
   "bad_minutes_days": "minutes_days must be 0 (forever) or a whole number of days from 1 to 3650."
 }

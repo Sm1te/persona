@@ -9,6 +9,9 @@ struct ReplyCodeBlock: View {
     var config: CodeBlockConfiguration
 
     var body: some View {
+        #if DEBUG || PERF_SIGNPOST
+        let _ = PerfTrace.body("ReplyCodeBlock")
+        #endif
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Theme.Space.s) {
                 if let language = config.language?.trimmingCharacters(in: .whitespaces), !language.isEmpty {

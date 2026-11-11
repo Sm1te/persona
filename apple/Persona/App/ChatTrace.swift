@@ -1,4 +1,5 @@
 import Foundation
+import PersonaKit
 
 /// What a chat last went through, in its structure only (#3783): the batches that came in (how many, which lines, what
 /// the store did with them), when the streamed text started and was cleared, and how the end of the chat was drawn
@@ -98,6 +99,7 @@ final class ChatTrace {
         case .agents(_, let calls, _, _): "agents\(calls.count)"
         case .toolRun(_, let calls, _, _): "run\(calls.count)"
         case .workEnd: "end"
+        case .answerPart(let item, _, let index, _): "a\(item.seq).\(index)"
         case .apiError(let item, _, let count): "err\(item.seq)x\(count)"
         case .feed(let f): "feed:\(f.kind.rawValue)"
         case .quick: "quick"

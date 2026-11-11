@@ -203,6 +203,8 @@ wrongly and all are rebuilt. `AnyView` hides the type, so SwiftUI cannot diff th
 - `apple/Persona/Views/Chat/ComposerParts.swift:168`: the composer's attached images, which can be removed, use `id: \.offset`.
 - `apple/Persona/Views/Inbox/Lark/LarkCard.swift:305-335`: Lark cards inside chat rows are trees of `AnyView`.
 - Fixed before: one `VStack` of all rows inside a `LazyVStack` laid out hundreds of rows at once and blanked the page (`docs/lessons/ios.md`, "Chat lists and scrolling").
+- Fixed before: an Agent's 33,000-character report was one row (one MarkdownUI document laid out whole, twice, with every table's decoration
+  re-run per scrolled frame); long finished answers are now lazy rows of about 24 lines (`AnswerParts`, #4970).
 
 **Do.** Give each element an `Identifiable` id from the hub (`SessionKey`, item ids). `\.offset` is fine only over a
 constant array built in the same expression (a fixed set of chips).

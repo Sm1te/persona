@@ -23,6 +23,16 @@ export function formatTokens(n: number): string {
   }
 }
 
+/** A count of tokens on one line (a subagent card's "23.4k tokens", #5030): under 1,000 the number itself, then one
+ *  decimal with k, M or B, moving up a unit where rounding would reach 1,000 (999,960 → 1.0M, not 1000.0k). */
+export function compactTokens(n: number): string {
+  const v = Math.max(0, Math.round(n));
+  if (v < 1000) return String(v);
+  const units: [number, string][] = [[1e3, "k"], [1e6, "M"], [1e9, "B"]];
+  for (const [div, unit] of units) if (v / div < 999.95 || unit === "B") return `${(v / div).toFixed(1)}${unit}`;
+  return String(v);
+}
+
 export type UsageKind = "in" | "out" | "cache_write" | "cache_read";
 /** The kinds in the order a stacked chart puts them from the bottom. */
 export const USAGE_KINDS: UsageKind[] = ["in", "out", "cache_write", "cache_read"];

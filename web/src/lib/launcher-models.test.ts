@@ -203,6 +203,15 @@ describe("启动器的默认值 (#2455)", () => {
     expect(defaultLabel(undefined)).toBe("默认");
     expect(oneOff()).toBe("仅这一次");
   });
+  it("titles the default's provider by its display name (#5029)", () => {
+    const names = [{ name: "relay-example-com", display_name: "我的中转 站" }, { name: "kcc" }];
+    expect(defaultLabel({ provider: "relay-example-com", model: "glm-5.3" }, "", names)).toBe("默认：我的中转 站 · glm-5.3");
+    expect(defaultLabel(null, "relay-example-com", names)).toBe("默认：我的中转 站");
+    // an rc alias, or one not in the list: its ID as before
+    expect(defaultLabel({ provider: "kcc", model: "" }, "", names)).toBe("默认：kcc");
+    expect(defaultLabel({ provider: "gone", model: "" }, "", names)).toBe("默认：gone");
+    expect(defaultLabel(undefined, "", names)).toBe("默认");
+  });
   it("asks for a purpose's default", async () => {
     vi.stubGlobal("localStorage", { getItem: () => "mock" });
     const body = { launchers: [{ name: "kcc" }], default: { provider: "kcc", model: "kimi-k2.6", runtime: "agentsdk" } };

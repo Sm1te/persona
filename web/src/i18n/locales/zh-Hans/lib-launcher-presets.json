@@ -1,8 +1,9 @@
 {
   "kind_api": "直接 API",
   "kind_launcher": "Claude Code 启动器",
-  "name_invalid": "名字只能用字母、数字、_ 和 -，以字母或 _ 开头",
+  "name_invalid": "启动 ID 只能用字母、数字、_ 和 -，以字母或 _ 开头",
   "name_reserved": "不能叫 {name}",
+  "display_name_invalid": "显示名最多 64 个字，不能换行",
   "purpose_assistant": "主对话",
   "purpose_agent_new": "新开的 Agent",
   "assigned": "现在用它：{purposes}。",

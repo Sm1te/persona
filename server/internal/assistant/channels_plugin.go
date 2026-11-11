@@ -549,7 +549,9 @@ func (s *Service) channelAnsweredElsewhere(ctx context.Context, id string, m cha
 }
 
 // channelAnswerAsk takes the owner's message as the answer to the latest thing asked in the channel; false when
-// nothing waits (or what waited was answered elsewhere): the message is then an ordinary one.
+// nothing waits (or what waited was answered elsewhere): the message is then an ordinary one. A question asked
+// without waiting (channel.Ask.Later) holds no turn and may be up for hours, so it takes only a reply that reads as
+// its answer (an option's number or name); other words answer what was asked before it, else are an ordinary message.
 func (s *Service) channelAnswerAsk(ctx context.Context, id string, m channel.Message, text, action string) bool {
 	if text == "" {
 		return false
@@ -578,8 +580,8 @@ func (s *Service) channelAnswerAsk(ctx context.Context, id string, m channel.Mes
 	})
 	var a *channel.Ask
 	for _, x := range c.st.Asks {
-		if x.Channel == id {
-			a = x // the latest one asked
+		if x.Channel == id && (!x.Later || channel.ReadsAsAnswer(x, text)) {
+			a = x // the latest one asked that this reply may answer
 		}
 	}
 	if len(c.st.Asks) != n {

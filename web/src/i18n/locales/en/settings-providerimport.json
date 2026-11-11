@@ -1,13 +1,22 @@
 {
-  "title": "Import from ~/.zshrc",
+  "title": "Import from your computer's aliases",
   "import_count_one": "Import {count}",
   "import_count_other": "Import {count}",
   "import": "Import",
   "computer": "Computer",
-  "computer_hint": "Reads the aliases in this computer's ~/.zshrc that run claude. Aliases with the same URL and key become one provider.",
+  "computer_hint": "Reads the aliases that run claude in this computer's ~/.zshrc, ~/.bashrc and ~/.bash_aliases, grouped by URL and key. The hub reads the keys from the computer; they never pass through the browser.",
   "offline_suffix": " (offline)",
-  "empty": "No claude aliases to import in this computer's ~/.zshrc.",
+  "empty": "No claude aliases to import in this computer's ~/.zshrc, ~/.bashrc or ~/.bash_aliases.",
   "list_label": "Providers to import",
-  "from_aliases": "From {aliases}",
-  "merge_note": "Merging only adds new models to the existing provider. Other settings stay the same."
+  "merge_note": "Merging only adds new models to the existing provider. Other settings stay the same.",
+  "no_computers": "No computer is connected yet. Importing reads the aliases on one of your computers, so add one under Machines first.",
+  "choice_label": "How to import {name}",
+  "split": "A provider for each alias",
+  "split_hint": "Keeps each alias's own settings.",
+  "merge": "One provider",
+  "merge_hint": "Uses {alias}'s settings. The others add only their model.",
+  "variants_label": "Providers from {name}",
+  "hide": "Hide the imported aliases in Persona",
+  "hide_hint": "Your shell files aren't changed. Hidden aliases can be restored under Hidden.",
+  "hide_which": "Hides {aliases}."
 }

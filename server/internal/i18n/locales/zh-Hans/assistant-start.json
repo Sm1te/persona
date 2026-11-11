@@ -4,5 +4,9 @@
   "main_busy": "主对话正在回答或压缩，等它停下再新建",
   "guest_node_too_old": "这台电脑上的 personad 版本太旧，不支持访客对话；更新后再试。",
   "work_machine": "助手对话不能在工作电脑上运行，请选择个人电脑。",
-  "launcher_not_main_chat": "「{launcher}」能在 {machine} 上开 Agent，但跑不了助手对话，这条消息没有发出。在启动器菜单里换一个再发。"
+  "launcher_not_main_chat": "「{launcher}」能在 {machine} 上开 Agent，但跑不了助手对话，这条消息没有发出。在启动器菜单里换一个再发。",
+  "launcher_other_kind": "「{launcher}」跑的是 {launcher_agent}，但这个对话跑在 {conversation_agent} 上，中途换不了，这条消息没有发出。换一个 {conversation_agent} 的启动器，或者用「{launcher}」开一个新对话。",
+  "launcher_no_substitute": "「{launcher}」已经不在 {machine} 上了，那台电脑上也没有同类的启动器能跑助手对话，这条消息没有发出。请在模型配置 › 主对话里换一个。",
+  "launcher_swapped": "「{launcher}」在 {machine} 上跑不了助手对话，改用 {to}",
+  "launcher_swapped_model": "「{launcher}」在 {machine} 上跑不了助手对话，改用 {to}（它的默认模型；它的列表里没有 {model}）"
 }

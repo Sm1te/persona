@@ -19,6 +19,8 @@ final class UnfoldTests: XCTestCase {
         var step: Int?
         var ys: [Int?]
         var bodies: [String]?
+        /// The header's top as drawn (`DrawnProbe`), beside `ys`, what SwiftUI reports; `moved` and `step` go by it.
+        var drawn: [Int?]?
     }
 
     override func setUpWithError() throws {
@@ -53,12 +55,16 @@ final class UnfoldTests: XCTestCase {
     @discardableResult
     private func measure(_ label: String, _ e: XCUIElement, still: Bool = true, step: Int = 160) -> Result? {
         let before = seq()
+        // Before and after, never while it measures (a screenshot waits for the app to idle).
+        shot("\(label)-\(before)-before")
         e.tap()
         // Nothing asked of the app while it measures: every query of its accessibility tree costs it frames.
-        Thread.sleep(forTimeInterval: 2.2)
+        Thread.sleep(forTimeInterval: 3.6) // `UnfoldTrace.window`
         guard seq() != before, let r = results().last else { print("UNFOLD \(label): the tap measured nothing"); return nil }
         print("UNFOLD \(label) \(r.what) at \(String(format: "%.3f", r.at ?? 0)): moved \(r.moved) end \(r.end) step \(r.step ?? -1) hitches \(r.hitches)/\(r.frames) worst \(r.worstMS) ms bodies \((r.bodies ?? []).joined(separator: ", ")) ys "
-              + r.ys.map { $0.map(String.init) ?? "-" }.joined(separator: " "))
+              + r.ys.map { $0.map(String.init) ?? "-" }.joined(separator: " ")
+              + " drawn " + (r.drawn ?? []).map { $0.map(String.init) ?? "-" }.joined(separator: " "))
+        shot("\(label)-\(before)-after")
         if still {
             XCTAssertLessThanOrEqual(r.moved, 1, "\(label) \(r.what): the tapped row moved \(r.moved) pt")
         } else {
@@ -66,6 +72,12 @@ final class UnfoldTests: XCTestCase {
         }
         sleep(1)
         return r
+    }
+
+    /// The screen now, to `PERSONA_SHOTS` when set: what the eye sees, beside what the app measured.
+    private func shot(_ name: String) {
+        guard let dir = ProcessInfo.processInfo.environment["PERSONA_SHOTS"] else { return }
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("unfold-\(name).png"))
     }
 
     /// A work line's header, its first tool step and its thought, at the newest end and in the middle of the chat.

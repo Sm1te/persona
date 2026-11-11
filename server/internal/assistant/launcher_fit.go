@@ -50,7 +50,7 @@ func (s *Service) fitLauncher(ctx context.Context, m Device, own startPick, para
 	if s.launcherEverywhere(ctx, name) {
 		return "", nil
 	}
-	list, known := s.launchersHere(ctx, m.ID)
+	list, known := s.launchersHere(withUnhidden(ctx, name), m.ID) // a hidden default still runs (#4659)
 	if !known || slices.ContainsFunc(list, func(l proto.Launcher) bool { return l.Name == name }) {
 		return "", nil
 	}

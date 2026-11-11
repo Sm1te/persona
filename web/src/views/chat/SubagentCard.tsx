@@ -1,203 +1,127 @@
-// A subagent the agent launched, in the chat where it launched it (#5602, after Claude Desktop's subagent row): its
-// title, then how it is going in one line: while it runs what it is doing now (its latest call), once it ended "Done ·
-// N steps". Open, what it was asked, what it reported (a background one's report, which came back as a notice, too),
-// its latest steps as they come (it follows the subagent's own transcript while open) and the subagents it launched.
-// Its whole conversation opens read-only in the side panel, the chat staying where it is.
-import { memo, useRef } from "react";
-import { openPanel } from "../../lib/panel";
-import { agentSummary, isLaunchReceipt, nestedSubagents, subagentEnded, subagentFor, subagentTitle, taskPill } from "../../lib/tasks";
-import { segments } from "../../lib/turns";
+// A subagent the agent launched, as one card in the chat where it launched it (#5030, after cindy's AgentTaskCard): never a
+// conversation of its own. Two lines: "Subagent", its title and its status word; then what ran it (Claude Code), the model
+// it actually ran on (the node reads it from the subagent's own transcript; never the one its call asked for), its tokens,
+// its tool calls and how long it took, or "Running for …" each second while it runs. The head opens the card in place,
+// remembered per card: what it was asked, what it reported (a long report folds), its last tool and its output file.
+// A background subagent's call returns at once with a launch receipt, which is not its result: the card runs until its
+// report comes back as a notice.
+import { memo, useState } from "react";
+import { t } from "../../i18n";
+import { agentSummary, isLaunchReceipt, modelChipLabel, subagentCardKey, subagentEnded, subagentFor, subagentTitle } from "../../lib/tasks";
+import { compactTokens } from "../../lib/tokens";
 import type { Item, Subagent, TaskNote } from "../../lib/types";
 import { tsMs, workDuration, type AgentStatus, type ToolStep } from "../../lib/work-groups";
-import { Collapse, cx, Shimmer, Spinner, useNow } from "../../ui/atoms";
-import { StatusMark } from "../../ui/StatusMark";
-import { Icon } from "../../ui/icons";
-import { ActionRow } from "./ActionRow";
+import { agentName } from "../../lib/agent-kind";
+import { Collapse, cx } from "../../ui/atoms";
+import { useClamped } from "../../ui/use-clamped";
 import { useChatContext } from "./chat-context";
 import { useExpanded } from "./expanded";
-import { useTranscript } from "./useTranscript";
-import { t } from "../../i18n";
-import { ScrollFold } from "./fold-scroll";
-import { Markdown } from "../../ui/Markdown";
-import { FoldedReport } from "./FoldedReport";
+import { isHandbackText } from "./FoldedReport";
 import { useFullText } from "./FullText";
+import { ModelChip, RunningFor, TaskCard } from "./TaskCard";
 
-const STATUS: Record<AgentStatus, string> = {
-  running: t("chat-subagentcard.status_running"),
-  completed: t("chat-subagentcard.status_completed"),
-  failed: t("chat-subagentcard.status_failed"),
-  stopped: t("chat-subagentcard.status_stopped"),
-};
-/** How many of its latest steps the open card shows. */
-const RECENT_STEPS = 3;
-
-const ms = (ts?: string) => tsMs(ts) ?? undefined;
-
-/** Opens a subagent's conversation in the side panel (SidePanel reads an "agent" panel on a `<parent>@<agent>` id as one). */
-function openSubagent(mid: string, a: Subagent) {
-  openPanel({ kind: "agent", mid, sid: a.session_id });
+/** A one-line piece of a call's input: whitespace runs as one space, at most `max` characters (never half of one). */
+export function compactText(text: string | undefined, max: number): string {
+  const chars = Array.from((text ?? "").replace(/\s+/g, " ").trim());
+  return chars.length <= max ? chars.join("") : `${chars.slice(0, max - 1).join("")}…`;
 }
 
 /** What a background subagent reported: its notice's words (the call's own result is only the launch receipt). */
 export function reportOf(result: Item | undefined, notes: TaskNote[] | undefined): string {
   if (!isLaunchReceipt(result)) return "";
-  const done = [...(notes ?? [])].reverse().find((n) => n.kind === "agent" && n.detail?.trim());
+  const done = notes?.findLast((n) => n.kind === "agent" && n.detail?.trim());
   return done?.detail?.trim() ?? "";
 }
 
-/** The line under the title: what it is doing now while it runs, its outcome and how many steps once it ended. */
-export function subagentLine(status: AgentStatus, meta: Subagent | undefined): { text: string; live: boolean } {
-  const steps = meta?.steps ? t("chat-subagentcard.steps", { count: meta.steps }) : "";
-  if (status !== "running") return { text: [STATUS[status], steps].filter(Boolean).join(" · "), live: false };
-  const doing = meta?.last_tool?.summary?.trim() || meta?.last_tool?.name || "";
-  return { text: doing || t("chat-subagentcard.starting"), live: true };
+/** The item its result is read from: its latest report (a background one's notice, or the call's result once it is one),
+ *  else the call's result when that is not the launch receipt. */
+function resultItem(result: Item | undefined, reports: Item[]): Item | undefined {
+  return reports.at(-1) ?? (result && !isLaunchReceipt(result) ? result : undefined);
+}
+
+/** The card's second line: the harness, the model chip, tokens, tool uses, and the time it took (none while it runs:
+ *  "Running for …" ticks there instead). */
+export function subagentMeta(meta: Subagent | undefined, took: string, harness: boolean): { harness?: string; model: string; tokens?: string; uses?: string; took?: string } {
+  return {
+    ...(harness ? { harness: agentName("claude") } : {}),
+    model: modelChipLabel(meta?.model),
+    ...(meta?.tokens ? { tokens: t("chat-subagentcard.tokens", { value: compactTokens(meta.tokens) }) } : {}),
+    ...(meta?.steps ? { uses: t("chat-subagentcard.tool_uses", { count: meta.steps }) } : {}),
+    ...(took ? { took } : {}),
+  };
 }
 
 export const SubagentCard = memo(function SubagentCard({ step, status, mid, sid, scope = "" }: { step: ToolStep; status: AgentStatus; mid: string; sid?: string; scope?: string }) {
-  const { subagents, tasks } = useChatContext();
+  const { subagents, tasks, lineStyle } = useChatContext();
   const { use, result } = step;
+  const call = use.tool_use_id ?? use.id;
   const inp = (use.tool_input ?? {}) as Record<string, unknown>;
   const meta = subagentFor(subagents, use);
-  const [open, setOpen] = useExpanded(`${scope}task:${use.id}`);
+  const [open, setOpen] = useExpanded(subagentCardKey(scope, call));
   const running = status === "running";
-  const now = useNow(1000, running);
-  const title = (typeof inp.description === "string" && inp.description.trim()) || (meta ? subagentTitle(meta) : "") || t("chat-subagentcard.untitled_task");
-  const prompt = typeof inp.prompt === "string" ? inp.prompt.trim() : "";
+  const description = typeof inp.description === "string" ? inp.description : "";
+  const prompt = typeof inp.prompt === "string" ? inp.prompt : "";
+  const title = compactText(description || (meta ? subagentTitle(meta) : "") || prompt, 96) || t("chat-subagentcard.untitled_task");
+  const notes = use.tool_use_id ? tasks.notes.get(use.tool_use_id) : undefined;
   const reports = use.tool_use_id ? tasks.reports.get(use.tool_use_id) ?? [] : [];
-  const summary = reports.length || result?.task?.kind === "agent" ? "" : reportOf(result, use.tool_use_id ? tasks.notes.get(use.tool_use_id) : undefined) || agentSummary(result, meta);
-  const type = (typeof inp.subagent_type === "string" && inp.subagent_type) || meta?.type || "";
-  const start = ms(meta?.started_at) ?? ms(use.ts);
-  const end = running ? now : subagentEnded(result, meta);
+  const start = tsMs(meta?.started_at) ?? tsMs(use.ts) ?? undefined;
+  const end = running ? undefined : subagentEnded(result, meta);
   const took = start !== undefined && end !== undefined && end >= start ? workDuration(end - start) : "";
-  const nested = meta ? nestedSubagents(subagents, meta.id) : [];
-  const line = subagentLine(status, meta);
-  // the dot pulses for a call that came while the card was on screen, not for the one it found when it was drawn
-  const toolId = meta?.last_tool?.id ?? "";
-  const toolAtMount = useRef(toolId);
+  // the Persona chat's own calls: what ran it is Persona itself, not a tool its reader works with
+  const m = subagentMeta(meta, took, lineStyle !== "assistant");
+  const parts = [
+    m.harness && <span key="harness">{m.harness}</span>,
+    m.model && <ModelChip key="model">{m.model}</ModelChip>,
+    m.tokens && <span key="tokens">{m.tokens}</span>,
+    m.uses && <span key="uses">{m.uses}</span>,
+    m.took && <span key="took">{m.took}</span>,
+    running && start !== undefined && <RunningFor key="running" since={start} />,
+  ].filter(Boolean);
+  const output = notes?.findLast((n) => n.output_file)?.output_file;
   return (
-    <div className="flex w-full min-w-0" data-subagent-card={status} data-tool-use={use.tool_use_id}>
-      <div className="w-full min-w-0 rounded-xl border border-line bg-surface px-3 py-2">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-label={open ? t("chat-subagentcard.collapse_details") : t("chat-subagentcard.expand_details")}
-          className="flex w-full min-w-0 items-start gap-2 rounded-lg text-left [@media(pointer:coarse)]:min-h-10"
-        >
-          <span className="relative mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-field text-ink-2">
-            <Icon name="agent" size={14} />
-            {running && (
-              <span
-                key={toolId}
-                aria-hidden
-                className={cx("absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent ring-2 ring-surface", toolId !== toolAtMount.current && "animate-[pop-in_0.3s_ease-out]")}
-              />
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-[length:var(--chat-secondary)] leading-[1.428571] font-medium text-ink">{title}</span>
-              {took && <span className="shrink-0 text-[12px] leading-[1.333333] whitespace-nowrap text-ink-3 tabular-nums">{took}</span>}
-            </span>
-            <span
-              className={cx("mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] leading-[1.333333]", status === "failed" ? "text-red" : "text-ink-2")}
-              data-subagent-line
-            >
-              {running ? <Spinner size={11} /> : <Icon name={status === "failed" ? "info" : status === "stopped" ? "stop" : "check"} size={12} />}
-              {line.live ? <Shimmer className="min-w-0 truncate">{line.text}</Shimmer> : <span className="min-w-0 truncate">{line.text}</span>}
-            </span>
-            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] leading-[1.333333] text-ink-3">
-              <span>{t("chat-subagentcard.subagent")}</span>
-              {type && <span className="inline-flex items-center rounded-full bg-field px-1.5 py-0.5">{meta?.fork ? t("chat-subagentcard.fork") : type}</span>}
-              {meta?.background && <span>{t("chat-subagentcard.background")}</span>}
-            </span>
-          </span>
-          <Icon name="chevronRight" size={14} stroke={2.2} className="mt-1 shrink-0 text-ink-3 transition-transform duration-150 motion-reduce:transition-none" style={{ transform: open ? "rotate(90deg)" : "none" }} />
-        </button>
-        <Collapse open={open} lazy>
-          <div className="mt-2 flex flex-col gap-1.5 border-l-2 border-tool-rail pl-3 text-[13px] leading-5 text-ink-2">
-            {prompt && <ScrollFold className="max-h-[6lh] whitespace-pre-wrap" data-subagent-prompt>{prompt}</ScrollFold>}
-            {summary && (
-              <div className="flex flex-col gap-0.5" data-subagent-summary>
-                {!running && <span className="text-[12px] text-ink-3">{t("chat-subagentcard.result")}</span>}
-                <FoldedReport id={`task:${use.id}`} text={summary}>
-                  <Markdown text={summary} small mid={mid} />
-                </FoldedReport>
-              </div>
-            )}
-            {reports.map((item) => <SubagentReport key={item.id} item={item} mid={mid} sid={sid} scope={scope} />)}
-            {meta && open && <RecentSteps mid={mid} agent={meta} running={running} />}
-            {nested.length > 0 && (
-              <div className="flex flex-col" data-subagent-nested>
-                {nested.map(({ agent: a, depth }) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => openSubagent(mid, a)}
-                    className="flex min-w-0 items-center gap-2 rounded-[8px] py-1 pr-2 text-left transition-colors hover:bg-tool-hover"
-                    style={{ paddingLeft: 8 + depth * 16 }}
-                  >
-                    {depth > 0 && <span aria-hidden className="h-2 w-2.5 shrink-0 rounded-bl-[4px] border-b border-l border-line-strong" />}
-                    <StatusMark state={a.running ? "working" : "unread"} size="sm" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{subagentTitle(a)}</span>
-                    <span className="shrink-0 text-[12px] whitespace-nowrap text-ink-3">{a.running ? t("chat-subagentcard.status_running") : t("chat-subagentcard.ended")}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {meta && (
-              <button
-                type="button"
-                onClick={() => openSubagent(mid, meta)}
-                className="mt-0.5 flex w-fit items-center gap-1 rounded-[6px] py-0.5 text-[12px] font-medium whitespace-nowrap text-accent-ink hover:underline"
-                data-subagent-open
-              >
-                {t("chat-subagentcard.view_full")}
-                <Icon name="chevronRight" size={12} stroke={2.2} />
-              </button>
-            )}
-          </div>
-        </Collapse>
-      </div>
-    </div>
+    <TaskCard
+      icon="agent"
+      label={t("chat-subagentcard.subagent")}
+      title={title}
+      status={status}
+      meta={parts}
+      onClick={() => setOpen((o) => !o)}
+      expanded={open}
+      ariaLabel={open ? t("chat-subagentcard.collapse_details") : t("chat-subagentcard.expand_details")}
+      data={{ "data-subagent-card": status, "data-tool-use": use.tool_use_id }}
+    >
+      <Collapse open={open} lazy>
+        <div className="mt-2 border-l-2 border-tool-rail pl-3 text-[13px] leading-5 text-ink-2" data-subagent-details>
+          {(prompt || description) && <p className="mb-1" data-subagent-prompt>{compactText(prompt || description, 260)}</p>}
+          <SubagentResult item={resultItem(result, reports)} fallback={running ? "" : reportOf(result, notes) || agentSummary(result, meta)} mid={mid} sid={sid} />
+          {meta?.last_tool?.name && <p className="text-[12px] leading-4 text-ink-3" data-subagent-last-tool>{t("chat-subagentcard.last_tool", { tool: meta.last_tool.name })}</p>}
+          {output && <p className="text-[12px] leading-4 break-all text-ink-3" data-subagent-output>{t("chat-subagentcard.output_file", { path: output })}</p>}
+        </div>
+      </Collapse>
+    </TaskCard>
   );
 });
 
-/** One report keeps its own disclosure and full-output identity, including after another report arrives. */
-function SubagentReport({ item, mid, sid, scope }: { item: Item; mid: string; sid?: string; scope: string }) {
-  const full = useFullText(item.kind === "tool_result" ? item : undefined, mid, sid);
-  const text = item.kind === "tool_result" ? full.text : item.task?.detail ?? "";
-  const pill = item.task ? taskPill(item.task) : null;
+/** What it reported, as plain text: four lines until "Show full result" when it is longer (measured, `useClamped`); a
+ *  report the hub cut has its "View full text" too. */
+function SubagentResult({ item, fallback, mid, sid }: { item: Item | undefined; fallback: string; mid: string; sid?: string }) {
+  const full = useFullText(item?.kind === "tool_result" ? item : undefined, mid, sid);
+  // a report the call returned ends with Claude Code's "agentId: …" line, and may start with its hand-back frame: both
+  // are for the model
+  const said = item?.kind === "tool_result" ? agentSummary({ ...item, text: full.text }, undefined) : (item ? item.task?.detail ?? "" : fallback).trim();
+  const text = isHandbackText(said) ? said.split("\n").slice(1).join("\n").trim() : said;
+  const [whole, setWhole] = useState(false);
+  const clamp = useClamped<HTMLParagraphElement>(whole);
+  if (!text) return null;
   return (
-    <div className="flex min-w-0 flex-col gap-0.5" data-subagent-summary data-items={item.id}>
-      <span className="text-xs text-ink-3">{pill?.text ?? (item.task?.status === "running" ? t("chat-subagentcard.status_running") : t("chat-subagentcard.result"))}</span>
-      <FoldedReport id={`${scope}task-report:${item.id}`} text={text}>
-        <Markdown text={text} small mid={mid} />
-        {full.more}
-      </FoldedReport>
+    <div className="mb-1" data-subagent-summary data-items={item?.id}>
+      <p ref={clamp.ref} className={cx("whitespace-pre-wrap [overflow-wrap:anywhere]", !whole && "line-clamp-4")}>{text}</p>
+      {(clamp.cut || whole) && (
+        <button type="button" aria-expanded={whole} onClick={() => setWhole((w) => !w)} className="rounded-full text-[12px] text-accent-ink hover:underline">
+          {whole ? t("chat-subagentcard.hide_full_result") : t("chat-subagentcard.show_full_result")}
+        </button>
+      )}
+      {full.more}
     </div>
   );
-}
-
-/** The subagent's latest few tool calls while the card is open: it follows the subagent's own transcript (the hub
- *  pushes what it writes), instead of one fetch that went stale (#5602). */
-function RecentSteps({ mid, agent, running }: { mid: string; agent: Subagent; running: boolean }) {
-  const tr = useTranscript(mid, agent.session_id, { updatedAt: agent.updated_at });
-  const steps = lastTools(tr.items, RECENT_STEPS);
-  if (tr.loading && !steps.length) return <Spinner size={11} />;
-  if (!steps.length) return null;
-  return (
-    <div className="-ml-2 flex flex-col" data-subagent-recent>
-      {steps.map((s) => (
-        <ActionRow key={s.id} step={s} running={!s.result && running} mid={mid} sid={agent.session_id} />
-      ))}
-    </div>
-  );
-}
-
-function lastTools(items: Item[], n: number): ToolStep[] {
-  return segments(items)
-    .flatMap((s) => s.steps)
-    .filter((s): s is ToolStep => s.kind === "tool")
-    .slice(-n);
 }

@@ -127,7 +127,8 @@ fun EntryProviderScope<NavKey>.agentsEntries(
                 viewModel(key = "new-agent:${service.scope}:${System.identityHashCode(service)}") {
                     NewAgentViewModel(service, wiring.creationPreferences?.let { AgentCreationPreferences(context, it) }
                         ?: AgentCreationPreferences(context), dependencies.sessions().machines,
-                        sender = dependencies.sender(), adopt = dependencies.sessions()::adopt)
+                        sender = dependencies.sender(), adopt = dependencies.sessions()::adopt,
+                        usage = dependencies.machines()?.let { m -> { id: String -> m.usageWindows(id) } })
                 }
             }
             val groups by dependencies.groups().groups.collectAsStateWithLifecycle()

@@ -77,6 +77,30 @@ func (d *DB) ListTodoDecisions(ctx context.Context, todoID string, all bool) ([]
 	return out, rows.Err()
 }
 
+// TodoDecisionsSince returns the decisions in effect of every todo written at or after since, oldest first: what the
+// owner answered lately, counted when a standing rule is suggested (assistant/rule_suggest.go, #4929).
+func (d *DB) TodoDecisionsSince(ctx context.Context, since time.Time) ([]TodoDecisionRow, error) {
+	rows, err := d.pool.Query(ctx, `SELECT d.id, d.todo_id, d.question, d.choice, d.reason, d.source, d.source_machine,
+			d.source_session, d.source_message, COALESCE(d.supersedes_id, ''), d.created_at
+		FROM todo_decisions d
+		WHERE d.created_at >= $1 AND NOT EXISTS (SELECT 1 FROM todo_decisions n WHERE n.supersedes_id = d.id)
+		ORDER BY d.created_at, d.id`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TodoDecisionRow{}
+	for rows.Next() {
+		var r TodoDecisionRow
+		if err := rows.Scan(&r.ID, &r.TodoID, &r.Question, &r.Choice, &r.Reason, &r.Source, &r.SourceMachine,
+			&r.SourceSession, &r.SourceMessage, &r.SupersedesID, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // InsertTodoDecision writes a decision. ErrTodoNotFound when the todo is gone, ErrDecisionSupersede when SupersedesID
 // is not an earlier decision of the same todo. A card's answer already written (same todo, interaction and question)
 // is not written again: inserted is false then.

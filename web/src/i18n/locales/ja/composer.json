@@ -5,21 +5,7 @@
   "history_list": "送信済みメッセージ",
   "history_empty": "一致するメッセージはありません",
   "history_footer": "↑↓ 選択 · Enter 入力 · Esc 閉じる",
-  "model_effort": "モデルと思考の強さ",
-  "effort": "思考の強さ",
-  "effort_missing": "このモデルにはこの段階がありません",
-  "models": "モデル",
-  "loading_models": "モデル一覧を読み込み中…",
-  "models_error": "モデル一覧を読み込めませんでした：{error}",
-  "current": "現在",
-  "default_note": "新しいバージョンの Claude Code では、選んだモデルが新規セッションの既定としても保存されます。",
   "locked": "このランチャーは独自のモデルを固定しているため、ここで選んでも反映されません。",
   "busy": "エージェントが作業中です。このターンの終了後にモデルを切り替えてください",
-  "keys_hint": "↑↓ モデル · ←→ 思考",
-  "apply": "適用",
-  "forget": "「{id}」を削除",
-  "forget_failed": "「{id}」を削除できませんでした：{error}",
-  "other_model": "その他のモデル…",
-  "enter_model": "モデルIDを入力…",
-  "typed_note": "「適用」で Claude Code がこのモデルに切り替わります。"
+  "forget_failed": "「{id}」を削除できませんでした：{error}"
 }

@@ -13,5 +13,18 @@
   "box": "矩形",
   "pen": "ペン",
   "undo": "取り消す（⌘Z）",
-  "clear": "クリア"
+  "clear": "クリア",
+  "redo": "やり直す（⇧⌘Z）",
+  "crop": "切り抜き",
+  "rotate": "回転",
+  "reset": "リセット",
+  "aspect_ratio": "縦横比",
+  "shape_free": "自由形式",
+  "shape_original": "オリジナル",
+  "shape_square": "正方形",
+  "line_width": "線の太さ",
+  "width_thin": "細い",
+  "width_medium": "中",
+  "width_thick": "太い",
+  "named_value": "{label}：{value}"
 }

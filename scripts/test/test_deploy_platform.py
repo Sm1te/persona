@@ -137,8 +137,8 @@ class DeployBuildsEveryPlatformTests(unittest.TestCase):
         # persona-node is built for every platform too, beside personad; the hub gets it whole, its old version file
         # gone first and the new one written last.
         self.assertIn('-o "bin/persona-node-$plat" ./cmd/persona-node', text)
-        # personad lands as the hub's version: a version file a hand-put release build left beside it goes.
-        self.assertIn('n="$PERSONA_HOME/bin/nodes/\'"personad-$plat"\'"; rm -f "$n.version"; cat > "$n"\' < "bin/personad-$plat"', text)
+        # Both binaries land whole: the old version file goes first, the binary is staged, then renamed over its final path.
+        self.assertIn('n="$PERSONA_HOME/bin/nodes/\'"personad-$plat"\'"; rm -f "$n.version"; cat > "$n.new" && mv "$n.new" "$n"\' < "bin/personad-$plat"', text)
         self.assertIn('rm -f "$n.version"; cat > "$n.new" && mv "$n.new" "$n"\' < "bin/persona-node-$plat"\n'
                       '        printf \'%s\\n\' "$VERSION" | remote_state "$PERSONA_HUB_SSH" \'cat > "$PERSONA_HOME/bin/nodes/\'"persona-node-$plat.version"', text)
 

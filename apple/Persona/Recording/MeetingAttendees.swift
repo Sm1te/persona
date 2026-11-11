@@ -4,8 +4,9 @@ import Foundation
 /// Who can attend a meeting (#2981, docs/assistant/meeting-minutes.md「What the phone does」): the main chat, Persona's
 /// other open chats, and the Agents that take messages now; only those the hub would let attend ("Sessions that never
 /// attend": a work computer's, another manager's, the health space's, a chat whose replies leave the apps, one that
-/// never asks before it acts). The session picked last starts the next meeting again while it can still attend, else
-/// the main chat.
+/// never asks before it acts). The session picked last starts the next meeting again while it can still attend, unless
+/// it was the main chat: the main chat attends only when picked for that meeting (#3862), else Persona stays out until
+/// the owner picks.
 @MainActor enum MeetingAttendees {
     struct Candidate: Identifiable, Hashable {
         var key: SessionKey
@@ -40,12 +41,34 @@ import Foundation
         return hubDefault(model) ?? MeetingAttendanceDefaults.cachedRole()
     }
 
+    /// The hub takes the meeting conversation (#3862): `meeting_attendance` and `meeting_conversation` (from the last
+    /// `hello`, kept for a start without the app in front, as `offered`).
+    static func conversation(_ model: AppModel) -> Bool {
+        guard offered(model) else { return false }
+        let features = model.hubFeatures
+        guard !features.isEmpty else { return UserDefaults.standard.bool(forKey: MeetingAttendanceDefaults.conversationKey) }
+        let conversation = features.contains(MeetingAttendanceDefaults.conversationFeature)
+        MeetingAttendanceDefaults.remember(conversation: conversation,
+                                           photos: conversation && features.contains(MeetingAttendanceDefaults.photosFeature))
+        return conversation
+    }
+
+    /// …and photos in the meeting (phase 3), which come only with the conversation.
+    static func photos(_ model: AppModel) -> Bool {
+        guard conversation(model) else { return false }
+        let features = model.hubFeatures
+        guard !features.isEmpty else { return UserDefaults.standard.bool(forKey: MeetingAttendanceDefaults.photosKey) }
+        return features.contains(MeetingAttendanceDefaults.photosFeature)
+    }
+
     // MARK: Sessions
 
     /// The main chat first, Persona's other open chats, then the Agents, latest first; each one that may attend.
     static func candidates(_ model: AppModel, limit: Int = 30) -> [Candidate] {
         var out: [Candidate] = []
-        if let main = mainCandidate(model) { out.append(main) }
+        // A hub with the meeting conversation keeps meetings out of the main chat (#3862): a meeting begun before it had
+        // one (a #2981 meeting) can still pick another session, never the main chat.
+        if !conversation(model), let main = mainCandidate(model) { out.append(main) }
         let chats = model.assistantConversations
             .filter { $0.key != model.assistantMain && $0.archived != true && mayAttend($0, model: model) }
             .sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
@@ -88,31 +111,62 @@ import Foundation
         return true
     }
 
-    /// The session a meeting starts with: the one picked last while it can still attend, else the main chat.
+    /// The session a meeting starts with when nobody is picked for it: the one picked last while it can still attend,
+    /// never the main chat (#3862, the owner's rule after a real meeting: a meeting's words fill the chat they are fed to,
+    /// so the main chat gets them only when picked for that meeting). A remembered main chat counts as no pick; nil then.
     static func preferred(_ model: AppModel, store: UserDefaults = .standard) -> Candidate? {
-        let main = mainCandidate(model)
         guard let path = store.string(forKey: MeetingAttendanceDefaults.sessionKey), path != MeetingAttendanceDefaults.main,
-              let key = SessionKey(path: path), key != main?.key else { return main }
-        if let listed = candidates(model).first(where: { $0.key == key }) { return listed }
+              let key = SessionKey(path: path), key != model.assistantMain else { return nil }
+        if let listed = candidates(model).first(where: { $0.key == key }) { return listed.main ? nil : listed }
         // Started before the hub listed anything (Siri, the Control, with the app not running): the one picked last, as
         // it was named then; the hub says if it can't take messages (`attendee_unavailable`).
         if model.allSessions.isEmpty, let title = store.string(forKey: MeetingAttendanceDefaults.sessionTitleKey) {
             return Candidate(key: key, title: title, detail: "", main: false, persona: false)
         }
-        return main
+        return nil
     }
 
     /// What a meeting recording starts with when nothing was picked for it (the drawer, Siri, the Control, the Action
-    /// button): `role` (the default unless given), with the preferred session. The main chat is the absent session.
+    /// button): `role` (the default unless given), with the preferred session; off when there is none, so Persona stays
+    /// out of the meeting until the owner picks who attends (never the main chat by default, #3862).
     static func defaultAttendance(_ model: AppModel, role: MeetingAttendance? = nil, store: UserDefaults = .standard) -> RecordingAttendance {
         let role = role ?? defaultRole(model)
-        guard role.attends else { return RecordingAttendance(role: role) }
-        let chosen = preferred(model, store: store)
-        return RecordingAttendance(role: role, session: chosen.flatMap { $0.main ? nil : $0.key.path },
-                                   sessionTitle: chosen?.title ?? model.persona.name)
+        guard role.attends, let chosen = preferred(model, store: store) else { return RecordingAttendance(role: .off) }
+        return choose(chosen, in: RecordingAttendance(role: role))
     }
 
-    /// Remembers the session picked (nil: the main chat), for the next meeting.
+    /// `attendance` with `candidate` chosen to attend: a session by name, or the main chat, which is sent by leaving
+    /// `attending_session` out and so is marked as picked (`mainPicked`), the only way it ever attends.
+    static func choose(_ candidate: Candidate, in attendance: RecordingAttendance) -> RecordingAttendance {
+        var a = attendance
+        a.session = candidate.main ? nil : candidate.key.path
+        a.sessionTitle = candidate.title
+        a.mainPicked = candidate.main
+        return a
+    }
+
+    /// A non-room meeting's attendance once its role turns to `role` at `at` on the recording's clock (the page's picker
+    /// and Turn on Persona, the activity's Turn Off), or nil when it would attend with nobody chosen to and no session
+    /// picked before that isn't the main chat (`lastPicked`, the preferred one): it then stays as it is, and the page asks
+    /// who attends.
+    static func turned(_ attendance: RecordingAttendance?, to role: MeetingAttendance, at: Double, lastPicked: Candidate?) -> RecordingAttendance? {
+        var a = attendance ?? RecordingAttendance(role: .off)
+        if role.attends, !a.hasAttendee {
+            guard let lastPicked, !lastPicked.main else { return nil }
+            a = choose(lastPicked, in: a)
+        }
+        a.set(role, at: at)
+        return a
+    }
+
+    /// What a meeting recording started with nothing picked begins with (`MeetingRecorder.startMeeting`): with the meeting
+    /// conversation a room meeting in the default role, not private (the one-tap rule, #3862); else `defaultAttendance`.
+    static func startAttendance(_ model: AppModel) -> RecordingAttendance {
+        guard conversation(model) else { return defaultAttendance(model) }
+        return .room(defaultRole(model), private: false, photos: photos(model))
+    }
+
+    /// Remembers the session picked (nil: the main chat, which the next meeting reads as no pick), for the next meeting.
     static func remember(_ key: SessionKey?, title: String?, store: UserDefaults = .standard) {
         store.set(key?.path ?? MeetingAttendanceDefaults.main, forKey: MeetingAttendanceDefaults.sessionKey)
         store.set(title, forKey: MeetingAttendanceDefaults.sessionTitleKey)

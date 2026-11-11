@@ -682,6 +682,9 @@ type question struct {
 	answer chan proto.Resolution
 	// userSpoke is set (under questions.mu) when the question was withdrawn because the user wrote in the conversation.
 	userSpoke bool
+	// later: asked with wait false (ask_later.go): no call waits on answer, its end is told to the conversation as a
+	// message; telling (under questions.mu) while that is being done.
+	later, telling bool
 }
 
 // errUserSpoke is what ask returns for a question withdrawn because the user wrote in the conversation.
@@ -701,6 +704,8 @@ func (s *Service) toolAskUser(ctx context.Context, machine, sessionID string, ar
 			MultiSelect bool                   `json:"multiSelect"`
 			Options     []proto.QuestionOption `json:"options"`
 		} `json:"questions"`
+		// Wait false: the card goes up and the tool returns at once (ask_later.go). Unset is true.
+		Wait *bool `json:"wait"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil || len(a.Questions) == 0 {
 		return "", fmt.Errorf("questions are required")
@@ -749,6 +754,9 @@ func (s *Service) toolAskUser(ctx context.Context, machine, sessionID string, ar
 		return "", i18n.Err("hub-hub.duplicate_question")
 	}
 	s.promoteSupervision(sessionID)
+	if a.Wait != nil && !*a.Wait {
+		return s.askLaterStart(ctx, ix)
+	}
 	r, err := s.ask(ctx, ix)
 	if errors.Is(err, errUserSpoke) {
 		return prompts.RenderQuestionUserSpoke(), nil
@@ -823,7 +831,8 @@ func (s *Service) withdrawAskUser(session string) {
 	s.questions.mu.Lock()
 	var mine []*question
 	for _, q := range s.questions.m {
-		if q.ix.SessionID == session && q.ix.ToolName == "ask_user" && !q.userSpoke {
+		// One asked without waiting holds no turn: its card stays up and can still be answered (ask_later.go).
+		if q.ix.SessionID == session && q.ix.ToolName == "ask_user" && !q.userSpoke && !q.later {
 			q.userSpoke = true
 			mine = append(mine, q)
 		}
@@ -842,8 +851,10 @@ func (s *Service) withdrawAskUser(session string) {
 	}
 }
 
-// pendingQuestions are the questions out to the user, oldest first.
+// pendingQuestions are the questions out to the user, oldest first: the ones a call waits on, and the ones asked
+// without waiting (those a manager before this one left are read back first, ask_later.go).
 func (s *Service) pendingQuestions() []proto.Interaction {
+	s.loadAskLater(context.Background())
 	s.questions.mu.Lock()
 	defer s.questions.mu.Unlock()
 	out := []proto.Interaction{}
@@ -882,6 +893,10 @@ func (s *Service) Action(ctx context.Context, a Action) (ActionResult, error) {
 		return ActionResult{}, errInvalidQuestionCancel
 	}
 	r = honest(q.ix, r)
+	if q.later { // asked without waiting: its end goes to the conversation as a message (ask_later.go)
+		err := s.askLaterEnded(ctx, q, r)
+		return ActionResult{OK: err == nil}, err
+	}
 	select {
 	case q.answer <- r:
 	default: // answered already

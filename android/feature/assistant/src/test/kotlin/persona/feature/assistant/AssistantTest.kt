@@ -129,4 +129,22 @@ class AssistantTest {
         assertEquals(main, repository.outbox.value.single().session)
         assertEquals("整理日程", repository.assistant.value.conversations.single { it.key == main }.lastText)
     }
+
+    /** #4922 (web `recentConversations`, iOS `AssistantSidebarGroups.recent`): the drawer's Recent. */
+    @Test fun recentIsTheUsersOwnNewestFiveWithoutMainLeadersOrPersonasOwn() {
+        fun chat(id: String, minutes: Long, origin: String? = null, archived: Boolean = false) = Session(machineId = "demo", sessionId = id,
+            updatedAt = Instant.parse("2026-11-11T12:00:00Z").minusSeconds(minutes * 60).toString(), origin = origin, archived = archived)
+        val main = chat("main", 0)
+        val chats = listOf(main, chat("lead", 1), chat("inbox", 2, "inbox"), chat("task", 2, "task"), chat("lark", 2, "lark_agent"),
+            chat("spawned", 2, "spawned"), chat("ext", 2, "extension"), chat("future", 2, "something_new"), chat("gone", 2, archived = true),
+            chat("b", 3, "user"), chat("a", 3, "channel"), chat("c", 4, ""), chat("d", 5), chat("e", 6), chat("f", 7))
+        val snapshot = AssistantSnapshot(main.key, chats + chats.last(), leaders = listOf("lead"))
+        assertEquals("newest first, equal times by session id, at most 5", listOf("a", "b", "c", "d", "e"), recentConversations(snapshot).map { it.sessionId })
+        assertEquals("ending the leader lets it back in", "lead", recentConversations(snapshot.copy(leaders = emptyList())).first().sessionId)
+        val groups = conversationGroups(snapshot, "", words)
+        assertEquals(listOf("a", "b", "c", "d", "e"), groups.recent.map { it.sessionId })
+        assertTrue("All chats still lists them", groups.others.map { it.sessionId }.containsAll(listOf("a", "b", "inbox")))
+        assertTrue("no Recent while searching", conversationGroups(snapshot, "x", words).recent.isEmpty())
+        assertTrue("nothing qualifies: no Recent", recentConversations(AssistantSnapshot(main.key, listOf(main, chat("inbox", 1, "inbox")))).isEmpty())
+    }
 }

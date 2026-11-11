@@ -80,6 +80,8 @@
     <string name="assistant_search_chats">Search chats</string>
     <string name="assistant_start_main">Start the main chat</string>
     <string name="assistant_main_chat">Main chat</string>
+    <!-- The drawer's newest own chats, between 常驻 and All chats (#4922) -->
+    <string name="assistant_recent">Recent</string>
     <string name="assistant_directions">Pinned</string>
     <string name="assistant_origin_inbox">Inbox</string>
     <string name="assistant_empty_title">No chats yet</string>

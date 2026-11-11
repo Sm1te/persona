@@ -3,11 +3,12 @@
 // explicit model still wins.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PlanTask, TaskPlan } from "../../lib/feed";
 
 const { getState } = await import("../../lib/store");
 const { PlanCard } = await import("./Tasks");
+const { forgetProviderNames } = await import("../../lib/provider-names");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,6 +33,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   seed(before);
+  vi.unstubAllGlobals();
+  forgetProviderNames();
 });
 
 it("shows a task's preset, and an explicit model over it", async () => {
@@ -40,4 +43,13 @@ it("shows a task's preset, and an explicit model over it", async () => {
   expect(text).toContain("预设 review");
   expect(text).toContain("gw/model-x");
   expect(text).toContain("默认模型");
+});
+
+it("names a task's launcher by the provider's display name, its ID in the chip's tooltip; an rc alias by its ID (#5029)", async () => {
+  const providers = [{ id: "launcher.relay-example-com", name: "我的中转 站", kind: "launcher" }];
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ providers }), { status: 200, headers: { "Content-Type": "application/json" } })));
+  forgetProviderNames();
+  await render(plan([task({ launcher: "relay-example-com", tier: "review" }), task({ title: "文档", launcher: "cc_glm" })]));
+  const chips = [...host.querySelectorAll<HTMLElement>("span.rounded-full")].filter((c) => c.textContent?.match(/中转|cc_glm/));
+  expect(chips.map((c) => [c.textContent, c.getAttribute("title")])).toEqual([["我的中转 站 · 预设 review", "relay-example-com"], ["cc_glm", null]]);
 });

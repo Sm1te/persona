@@ -6,7 +6,7 @@
 import { t } from "../i18n";
 import { api, ApiError, errorText, sessionPath } from "./api";
 import { pickedLauncher, pickedModel, conversationKey } from "./assistant-chat";
-import { startConversation } from "./assistant-start";
+import { showLauncherNote, startConversation } from "./assistant-start";
 import { removeStoredValue, storedValue, storeValue } from "./compatibility";
 import { uuid } from "./format";
 import { conversationPage } from "./conversation-page";
@@ -307,12 +307,13 @@ async function deliver(mid: string, sid: string, e: OutboxEntry, clearDraft?: st
   const key = outboxKey(mid, sid);
   try {
     // stays sending through a gap (a hub restart); the client_msg_id is the op id
-    await inSendOrder(key, () => apiOp(`${sessionPath(mid, sid)}/messages`, {
+    const r = await inSendOrder(key, () => apiOp<{ launcher_note?: string } | undefined>(`${sessionPath(mid, sid)}/messages`, {
       method: "POST",
       opId: e.id,
       json: { text: e.text, images: e.images.length ? e.images : undefined, client_msg_id: e.id, launcher: e.launcher || undefined, model: e.model || undefined, clear_draft: clearDraft },
     }));
     update(key, e.id, { state: "sent", acceptedAt: Date.now(), error: undefined, clearable: undefined });
+    showLauncherNote(`${mid}/${sid}`, r?.launcher_note);
     return true;
   } catch (err) {
     update(key, e.id, failedWith(err));

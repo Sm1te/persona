@@ -341,6 +341,7 @@ export function Menu({
   side = "bottom",
   width = 208,
   header,
+  container,
 }: {
   items: MenuItem[];
   anchor: HTMLElement | null;
@@ -351,6 +352,9 @@ export function Menu({
   side?: "top" | "bottom";
   width?: number;
   header?: string;
+  /** Where the menu is put instead of the page's body: a full-screen layer above the menus' own (the image editor),
+   *  whose look (its `dark`) the menu then takes. */
+  container?: Element | null;
 }) {
   const id = useId();
   const [subs, setSubs] = useState<Sub[]>([]); // the open submenus: depth d (d ≥ 1) is subs[d - 1]
@@ -572,7 +576,7 @@ export function Menu({
         <MenuPanel key={`${s.from}-${i}`} {...panelProps(i + 1)} place={{ rect: s.rect, width }} loading={s.loading} loadError={s.error} />
       ))}
     </>,
-    document.body,
+    container ?? document.body,
   );
 }
 

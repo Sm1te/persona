@@ -252,4 +252,36 @@ class AssistantDrawerShotsTest {
         rule.onNodeWithText("整理收件箱").assertExists()
         capture("drawer-all-chats-glass-light")
     }
+
+    // #4922: Recent, the user's own newest chats, between 常驻 and All chats (which still lists everything), in every style,
+    // light and dark; no Recent heading when nothing qualifies.
+    @Test fun drawsRecentBetweenTheLeadersAndAllChats() {
+        var style by mutableStateOf(AppStyle.Glass)
+        var dark by mutableStateOf(false)
+        val lead = Session(machineId = "hub", sessionId = "l1", title = "1110 | 探索 | 增长", status = "working", updatedAt = minutesAgo(4))
+        val auto = Session(machineId = "hub", sessionId = "a1", title = "收件箱分身", origin = "inbox", status = "idle", updatedAt = minutesAgo(1))
+        val snapshot = persona.core.contracts.api.AssistantSnapshot(main.key, listOf(main, lead, auto) + recent, leaders = listOf("l1"),
+            directionNames = mapOf("l1" to "增长"))
+        var groups by mutableStateOf(conversationGroups(snapshot, "", ConversationWords("新对话", "接力", "接力：%s")))
+        rule.setContent {
+            PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
+                Box(Modifier.testTag("shot").width(400.dp).height(1300.dp).background(PersonaTheme.palette.background)) {
+                    AssistantDrawer("", {}, groups, active = null, hasMain = true, onEnd = null, onMain = {}, onOpen = {},
+                        onInfo = {}, onNew = {}, onHome = {}, onSettings = {})
+                }
+            }
+        }
+        val top = { text: String -> rule.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.top }
+        rule.onNodeWithText("最近").assertExists()
+        assertTrue("常驻 › 最近 › 全部对话", top("常驻") < top("最近") && top("最近") < top("整理收件箱") && top("周末去哪儿") < top("全部对话（3）"))
+        rule.onNodeWithText("收件箱分身").assertDoesNotExist()
+        for (s in AppStyle.entries) for (d in listOf(false, true)) {
+            style = s; dark = d
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+            capture("drawer-recent-${s.name.lowercase()}-${if (d) "dark" else "light"}")
+        }
+        groups = groups.copy(recent = emptyList())
+        rule.waitForIdle()
+        rule.onNodeWithText("最近").assertDoesNotExist()
+    }
 }

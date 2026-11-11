@@ -5,8 +5,6 @@ import { ago, externalLink, resumeCommand, sessionCan, sessionTitle, shortPath, 
 import { openLink } from "../../lib/links";
 import { BYPASS_MODE, BYPASS_WARNING, effortOptions, effortTitle, modeTitle, renameBody } from "../../lib/session-actions";
 import { headerIcon, headerTone, modeMenuItems, modesChangeable, type ModeTone } from "../../lib/header-mode";
-import { canSwitchModel, onModelPicker } from "../../lib/model-switch";
-import { CODEX_ULTRA, ultracodeOn } from "../../lib/ultracode";
 import { href, navigate, parse, showsSession } from "../../lib/router";
 import { stripBase } from "../../lib/base";
 import { dropSession, getSession, refresh, refreshAssistant, upsertSession } from "../../lib/store";
@@ -14,15 +12,10 @@ import type { Session } from "../../lib/types";
 import { Button, copyText, cx, Dialog, Loading, Menu, Spinner, Switch, toast, useMenu } from "../../ui/atoms";
 import { removeAgentWorktree, worktreeLoss, worktreeStatus, type WorktreeStatus } from "../../lib/worktree";
 import { Icon, type IconName } from "../../ui/icons";
-import { lazyOverlay } from "../LazyOverlay";
-import { UltraMark } from "./Ultracode";
 import { t } from "../../i18n";
 import { AlwaysPermissions } from "./AlwaysPermissions";
 import { DelegatedHistory } from "./Delegated";
 import { appArchiveDeps, archiveAgent } from "../../lib/agent-archives";
-
-// the model and effort popover loads on the chip's first tap, not with every chat's header
-const ModelEffortPopover = lazyOverlay(() => import("./ModelEffortPopover").then((m) => m.ModelEffortPopover));
 
 interface SessionInfo {
   session_id?: string;
@@ -259,25 +252,13 @@ function Field({ label, value, onChange, autoFocus }: { label: string; value: st
   );
 }
 
-// The two chips under the composer, like Claude Code's bottom bar: permission mode and effort (POST …/modes). A Codex
-// thread on its app-server gets the effort alone, among its own levels (effortOnly; `Session.efforts`). An assistant
-// conversation may also switch to "Allow everything" (#2416). On a Claude Code session the effort chip opens the model and effort
-// popover instead of the effort menu (issue #2434; the chip itself reads as before), and `/model` Enter in the composer
-// opens it too. Claude Code's ultracode switch (#3428) is a row under the popover's efforts (a session that has it always
-// gets the popover, so the effort menu has no such row); while it is on, the chip carries the workflow mark, as a Codex
-// thread on its "ultra" effort does (the same thing: several agents, a lot of quota).
-export function ModeChips({ session, effortOnly, assistant, withInfo }: { session: Session; effortOnly?: boolean; assistant?: boolean; withInfo?: boolean }) {
+// The chips under the composer, like Claude Code's bottom bar: the permission mode, and on a Persona conversation the
+// thinking effort (POST …/modes). An Agent's effort is on the composer's model pill with its model (#5032,
+// ModelPill.tsx); a Persona conversation keeps its effort chip and launcher chip until they move to the pill (#5033). A
+// Persona conversation may also switch to "Allow everything" (#2416).
+export function ModeChips({ session, assistant, withInfo }: { session: Session; assistant?: boolean; withInfo?: boolean }) {
   const modeMenu = useMenu();
   const effortMenu = useMenu();
-  const effortChip = useRef<HTMLButtonElement>(null);
-  const [popover, setPopover] = useState<HTMLElement | null>(null);
-  const withModel = !effortOnly && canSwitchModel(session);
-  const key = `${session.machine_id}/${session.session_id}`;
-  useEffect(() => (withModel ? onModelPicker(key, () => setPopover(effortChip.current)) : undefined), [withModel, key]);
-  useEffect(() => {
-    if (!withModel) setPopover(null);
-  }, [withModel]);
-  const mark = ultracodeOn(session) ? {} : effortOnly && session.effort === CODEX_ULTRA ? { label: t("ultracode.codex_ultra_title"), title: t("ultracode.codex_ultra_title") } : undefined;
   const { set, latest } = useModeSet(session);
   const speedTitle = (id: string, name: string) => id === "default" ? t("chat-sessiondialogs.speed_standard") : id === "priority" ? t("chat-sessiondialogs.speed_fast") : name;
   const speedChoices = session.service_tiers ?? [];
@@ -288,21 +269,21 @@ export function ModeChips({ session, effortOnly, assistant, withInfo }: { sessio
     // A Persona conversation has its launcher chip after these and no text to give way: these keep their width up to
     // the row less 5.5rem (the row's 0.5rem gap and 5rem of launcher chip), so that chip truncates first (#3575). At
     // phone width that chip is an icon (#4142): 3rem leaves its 2.5rem and the gap, 5rem also the footer's 22px ⓘ
-    // button and its gap (`withInfo`, #3533). An agent's chips keep their width on a wide screen, where the path beside
-    // them truncates first; at phone width (the path hidden) they may shrink, their labels truncating, so the ⓘ after
-    // them never slides under the composer's stop or send button (the ultracode mark, #3428, made the English row too wide).
+    // button and its gap (`withInfo`, #3533). An agent's chip keeps its width on a wide screen, where the path beside it
+    // truncates first; at phone width (the path hidden) it may shrink, its label truncating, so the ⓘ after it never
+    // slides under the composer's model pill, stop or send button.
     <span className={cx("flex shrink-0 items-center gap-1", assistant && "min-w-0 max-w-[calc(100%-5.5rem)]", assistant && (withInfo ? "max-sm:max-w-[calc(100%-5rem)]" : "max-sm:max-w-[calc(100%-3rem)]"), !assistant && "max-sm:min-w-0 max-sm:shrink")}>
-      {!effortOnly && <Chip label={mode ? modeTitle(mode) : t("chat-sessiondialogs.permission_default")} narrow={{ icon: "shield", label: modeShort(mode) }} danger={danger} onClick={modeMenu.open} active={Boolean(modeMenu.anchor)} title={danger ? BYPASS_WARNING : t("chat-sessiondialogs.permission_mode")} />}
-      <Chip
-        buttonRef={effortChip}
-        label={effortOnly && !session.efforts?.length ? t("chat-sessiondialogs.speed") : session.effort ? t("chat-sessiondialogs.effort_chip", { effort: effortTitle(session.effort) }) : t("chat-sessiondialogs.effort_default")}
-        narrow={{ icon: "gauge", label: session.effort ? effortTitle(session.effort) : t("chat-sessiondialogs.short_default") }}
-        onClick={withModel ? (e) => setPopover((a) => (a ? null : e.currentTarget)) : effortMenu.open}
-        active={Boolean(withModel ? popover : effortMenu.anchor)}
-        title={withModel ? t("composer.model_effort") : t("chat-sessiondialogs.effort")}
-        mark={mark}
-      />
-      {modeMenu.anchor && !effortOnly && (
+      <Chip label={mode ? modeTitle(mode) : t("chat-sessiondialogs.permission_default")} narrow={{ icon: "shield", label: modeShort(mode) }} danger={danger} onClick={modeMenu.open} active={Boolean(modeMenu.anchor)} title={danger ? BYPASS_WARNING : t("chat-sessiondialogs.permission_mode")} />
+      {assistant && (
+        <Chip
+          label={session.effort ? t("chat-sessiondialogs.effort_chip", { effort: effortTitle(session.effort) }) : t("chat-sessiondialogs.effort_default")}
+          narrow={{ icon: "gauge", label: session.effort ? effortTitle(session.effort) : t("chat-sessiondialogs.short_default") }}
+          onClick={effortMenu.open}
+          active={Boolean(effortMenu.anchor)}
+          title={t("chat-sessiondialogs.effort")}
+        />
+      )}
+      {modeMenu.anchor && (
         <Menu
           anchor={modeMenu.anchor}
           onClose={modeMenu.close}
@@ -313,7 +294,7 @@ export function ModeChips({ session, effortOnly, assistant, withInfo }: { sessio
           items={modeMenuItems(session, (m) => void set({ permission_mode: m }), { assistant })}
         />
       )}
-      {effortMenu.anchor && !withModel && (
+      {effortMenu.anchor && assistant && (
         <Menu
           anchor={effortMenu.anchor}
           onClose={effortMenu.close}
@@ -321,25 +302,25 @@ export function ModeChips({ session, effortOnly, assistant, withInfo }: { sessio
           width={280}
           header={t("chat-sessiondialogs.effort")}
           items={[
-            ...(effortOnly && !session.efforts?.length ? [] : effortOptions(session).map((m) => ({ key: m.id, label: m.title, detail: m.detail, radio: true, checked: session.effort === m.id, onSelect: () => void set({ effort: m.id }) }))),
+            ...effortOptions(session).map((m) => ({ key: m.id, label: m.title, detail: m.detail, radio: true, checked: session.effort === m.id, onSelect: () => void set({ effort: m.id }) })),
             ...(speedChoices.length ? [{
               key: "speed", label: t("chat-sessiondialogs.speed"),
               hint: currentSpeed ? speedTitle(currentSpeed.id, currentSpeed.name) : t("chat-sessiondialogs.speed_unknown"),
               divider: true, onSelect: () => {},
-              // Speed controls load on intent, alongside the existing model popover.
+              // Speed controls load on intent
               children: () => import("./CodexSpeed").then((module) => module.codexSpeedOptions(latest.current)),
             }] : []),
           ]}
         />
       )}
-      {popover && withModel && <ModelEffortPopover session={session} anchor={popover} onClose={() => setPopover(null)} apply={set} />}
     </span>
   );
 }
 
-/** POST …/modes with a patch, drawn at once and put back if it fails: the composer's chips and the header's mode. `latest`:
- *  the popover applies the model and then the effort, and the second must build on the session the first changed. */
-function useModeSet(session: Session) {
+/** POST …/modes with a patch, drawn at once and put back if it fails (the error toasted): the composer's chips and model
+ *  pill, the header's mode. `latest`: a pick applies the model and then the effort, and the second must build on the
+ *  session the first changed. */
+export function useModeSet(session: Session) {
   const latest = useRef(session);
   latest.current = session;
   const set = async (patch: { permission_mode?: string; effort?: string; model?: string }): Promise<boolean> => {
@@ -356,6 +337,18 @@ function useModeSet(session: Session) {
     }
   };
   return { set, latest };
+}
+
+/** POST …/modes {service_tier}: Codex's speed (the Speed submenu, the model pill). Nothing is drawn ahead of it: the
+ *  session's push after the agent took it owns what is shown (DESIGN_SYSTEM.md "Codex speed controls"). */
+export async function setServiceTier(s: Session, tier: string): Promise<boolean> {
+  try {
+    await api(`${sessionPath(s.machine_id, s.session_id)}/modes`, { method: "POST", json: { service_tier: tier } });
+    return true;
+  } catch (e) {
+    toast(t("chat-sessiondialogs.change_failed", { error: errorText(e) }), "error");
+    return false;
+  }
 }
 
 const MODE_LOOK: Record<ModeTone, string> = {
@@ -431,10 +424,9 @@ export function modeShort(mode?: string): string {
  *  the chips beside it keep their words (#4142); wider, the chip is as before.
  *  `narrow`: below 340 px (a 320 px phone, #4316) the label gives way to this icon and short word, which still say the
  *  setting (the chevron goes, for room); the full label stays for screen readers. From 340 px up the chip is as before. */
-export function Chip({ label, onClick, active, danger, title, buttonRef, phoneIcon, narrow, mark }: { label: string; onClick: (e: React.MouseEvent<HTMLElement>) => void; active?: boolean; danger?: boolean; title: string; buttonRef?: React.Ref<HTMLButtonElement>; phoneIcon?: IconName; narrow?: { icon: IconName; label: string }; /** The workflow mark after the label (ultracode on, a Codex "ultra" effort; #3428): an icon, no words. */ mark?: { label?: string; title?: string } }) {
+export function Chip({ label, onClick, active, danger, title, phoneIcon, narrow }: { label: string; onClick: (e: React.MouseEvent<HTMLElement>) => void; active?: boolean; danger?: boolean; title: string; phoneIcon?: IconName; narrow?: { icon: IconName; label: string } }) {
   return (
     <button
-      ref={buttonRef}
       type="button"
       title={title}
       aria-haspopup="menu"
@@ -450,7 +442,6 @@ export function Chip({ label, onClick, active, danger, title, buttonRef, phoneIc
       {narrow && <Icon name={narrow.icon} size={12} className="shrink-0 xs:hidden" />}
       {narrow && <span aria-hidden className="min-w-0 truncate xs:hidden">{narrow.label}</span>}
       <span className={cx("min-w-0 truncate", phoneIcon && "max-sm:sr-only", narrow && "max-xs:sr-only")}>{label}</span>
-      {mark && <UltraMark size={10} label={mark.label} title={mark.title} className="ml-0.5" />}
       <Icon name="chevron" size={9} stroke={2.4} className={cx("shrink-0", narrow && "max-xs:hidden")} />
     </button>
   );

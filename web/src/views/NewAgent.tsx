@@ -34,6 +34,7 @@ import { startBlocked, ultracodeStartOffered } from "../lib/ultracode";
 import { UltracodeStartRow } from "./chat/Ultracode";
 import { Icon } from "../ui/icons";
 import { ModelPicker, type ModelList } from "../ui/ModelPicker";
+import { ProviderName } from "../ui/ProviderName";
 import { t } from "../i18n";
 import { useAddComputer } from "./machines/AddComputerEntry";
 import { useScopedMachines } from "../lib/current-assistant";
@@ -42,6 +43,7 @@ import { initialLauncher, launcherBlock } from "../lib/launcher-health";
 import { navigate } from "../lib/router";
 import { settingsHref } from "./settings/nav";
 import { LauncherBlockedHelp } from "./LauncherBlockedHelp";
+import { namedLauncher, namesFromProviders, providerIdNote, providerLabel, providerTitle, type Named } from "../lib/provider-names";
 import { WorkSessionForm } from "./WorkSessionForm";
 
 /** A forwarded picture (lib/drafts.ts DraftImage, base64) as a file for the first message's tray. */
@@ -79,6 +81,9 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   const [workspace, setWorkspace] = useState<WorkspaceTarget | null>(null);
   const [launcher, setLauncher] = useState("");
   const [launchers, setLaunchers] = useState<Launcher[]>([]);
+  // the model configuration's providers' names (#5029): titles for a launcher ID this computer's list doesn't have (a
+  // preset's, a recent setup's, the default's)
+  const [providerNames, setProviderNames] = useState<Named[]>([]);
   const [unified, setUnified] = useState(true);
   const [modelDefault, setModelDefault] = useState("");
   // the hub's "Default: …" for "New agent" (#2455); undefined from an older hub
@@ -270,6 +275,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
     if (!open || !mid) return;
     localStorage.setItem("new.machine", mid);
     setLaunchers([]);
+    setProviderNames([]);
     setHelpFor("");
     const controller = new AbortController();
     setLauncher("");
@@ -298,6 +304,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
         if (config) {
           setModelDefault(modelSummary(config.purpose, config.providers));
           setConfigured(config.purpose.effective ?? {});
+          setProviderNames(namesFromProviders(config.providers));
         }
         const card = pendingSetup.current?.machine === mid ? pendingSetup.current : null;
         if (card) pendingSetup.current = null;
@@ -418,6 +425,9 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
     })
     .sort((a, b) => Number(b.l.name === runs) - Number(a.l.name === runs));
   const help = blocked.find((b) => b.l.name === helpFor);
+  // what a launcher ID is called (#5029): this computer's launchers first, then the model configuration's providers
+  const names: Named[] = [...launchers, ...providerNames];
+  const defaultId = hubDefault?.provider ? providerIdNote(namedLauncher(hubDefault.provider, names)) : "";
   // a model ID can be typed (#1644): Claude Code or Codex whose launcher passes the pick on, also with an empty list or none read
   const typing = typedModelOffered(agent, models.list) && models.list !== null;
   // a launcher that passes its own --model keeps its locked row where an ID could otherwise be typed, empty list or not
@@ -591,6 +601,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
         <div className="flex flex-col gap-4">
           {cards.length > 0 && !presetFolder && (
             <RecentSetups
+              names={names}
               cards={cards}
               machines={machines}
               picked={pickedShown}
@@ -725,7 +736,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
                   const block = launcherBlock(launchers.find((l) => l.name === x.launcher));
                   return (
                     <Choice key={x.name} radio mono selected={tier?.name === x.name} onClick={() => pickTier(x)}
-                      title={[x.description, tierRuns(x), block?.reason].filter(Boolean).join("\n")}>
+                      title={[x.description, tierRuns(x, names), block?.reason].filter(Boolean).join("\n")}>
                       <span className="flex items-center gap-1.5">
                         {block && <Icon name="warning" size={12} className="text-orange" />}
                         {x.name}
@@ -740,7 +751,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
                   {tierMissed.length
                     ? t("newagent.preset_left_out", { what: tierMissed.map((v) => (v === tier?.effort ? effortTitle(v) : v)).join(" · ") })
                     : tier
-                      ? tier.description || tierRuns(tier)
+                      ? tier.description || tierRuns(tier, names)
                       : t("newagent.preset_hint", { profile: tiersProfile })}
                 </span>
               </p>
@@ -751,15 +762,15 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
             <Field label={unified ? t("newagent.launcher_override") : t("newagent.launcher")}>
               <div className="flex flex-wrap gap-1.5">
                 {unified && (
-                  <Choice selected={launcher === ""} onClick={() => { setTier(null); setLauncher(""); }} title={defaultBlock ? `${modelDefault} · ${defaultBlock.reason}` : modelDefault}>
+                  <Choice selected={launcher === ""} onClick={() => { setTier(null); setLauncher(""); }} title={[defaultId, defaultBlock ? `${modelDefault} · ${defaultBlock.reason}` : modelDefault].filter(Boolean).join("\n")}>
                     {defaultBlock ? (
                       // what the default runs can't start here (#1643): marked, still the default, said in the list below
                       <span data-testid="new-agent-default-blocked" className="flex items-center gap-1.5">
                         <Icon name="warning" size={12} className="text-orange" />
-                        {hubDefault ? defaultLabel(hubDefault) : t("newagent.follow_model_settings")}
+                        {hubDefault ? defaultLabel(hubDefault, "", names) : t("newagent.follow_model_settings")}
                       </span>
                     ) : hubDefault ? (
-                      defaultLabel(hubDefault)
+                      defaultLabel(hubDefault, "", names)
                     ) : (
                       t("newagent.follow_model_settings")
                     )}
@@ -767,19 +778,21 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
                 )}
                 {launchers.map((l) => {
                   const block = launcherBlock(l);
+                  // a provider by its display name (#5029), its startup ID in the tooltip; an rc alias keeps its ID in mono
+                  const id = providerIdNote(l);
                   return (
                     <Choice
                       key={l.name}
-                      mono
+                      mono={!id}
                       selected={launcher === l.name}
                       // grayed out with why, never hidden (#1643): choosing it shows how to fix it instead of picking it
                       blocked={Boolean(block)}
                       onClick={() => (block ? setHelpFor((open) => (open === l.name ? "" : l.name)) : (setTier(null), setLauncher(l.name)))}
-                      title={block ? block.reason : l.model}
+                      title={[id, block ? block.reason : l.model].filter(Boolean).join("\n") || undefined}
                     >
                       <span className="flex items-center gap-1.5">
                         {block ? <Icon name="warning" size={12} className="text-orange" /> : <AgentMark agent={l.agent_type || l.agent} size={13} className="text-current" />}
-                        {l.name}
+                        {providerTitle(l)}
                       </span>
                     </Choice>
                   );
@@ -797,13 +810,13 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
                             <Pill tone="orange">{t("newagent.runs_this_time")}</Pill>{" "}
                           </>
                         )}
-                        <span className="font-mono text-ink-2">{l.name}</span>{" "}
+                        <ProviderName of={l} className="text-ink-2" idClassName="text-[11px]" />{" "}
                         <span>{block.reason}</span>{" "}
                         <button
                           type="button"
                           aria-expanded={helpFor === l.name}
                           aria-controls={helpFor === l.name ? "new-agent-blocked-help" : undefined}
-                          aria-label={t("newagent.how_to_fix_named", { name: l.name })}
+                          aria-label={t("newagent.how_to_fix_named", { name: providerTitle(l) })}
                           onClick={() => setHelpFor((open) => (open === l.name ? "" : l.name))}
                           className="whitespace-nowrap text-accent-ink hover:underline"
                         >
@@ -816,7 +829,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
               )}
               {help && (
                 <LauncherBlockedHelp
-                  name={help.l.name}
+                  launcher={help.l}
                   block={help.block}
                   onTryAnyway={() => {
                     setTier(null);
@@ -962,7 +975,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // The recent setups (#2134): up to three cards in a row, each a setup that started an agent (folder · computer, then launcher
 // · model · mode · effort); an offline computer's is dimmed and can't be picked. The ⋯ removes one or clears them all.
-function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { cards: RecentCard[]; machines: Machine[]; /** The card the form holds (setupKey); "": none. */ picked: string; onPick: (card: RecentCard) => void; onForget: (setup: RecentSetup) => void; onClear: () => void }) {
+function RecentSetups({ cards, machines, names, picked, onPick, onForget, onClear }: { cards: RecentCard[]; machines: Machine[]; /** What a launcher ID is called (#5029). */ names: Named[]; /** The card the form holds (setupKey); "": none. */ picked: string; onPick: (card: RecentCard) => void; onForget: (setup: RecentSetup) => void; onClear: () => void }) {
   const menu = useMenu();
   const title = (s: RecentSetup) => `${baseName(shortPath(s.cwd))} · ${machines.find((m) => m.id === s.machine)?.name ?? s.machine}`;
   return (
@@ -988,8 +1001,11 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
           const s = c.setup;
           const on = picked === setupKey(s);
           const claude = s.agent_type === "claude";
+          // the launcher by its display name (#5029), its startup ID in the card's tooltip; an rc alias keeps its ID in mono
+          const runsOn = s.launcher ? namedLauncher(s.launcher, names) : null;
+          const runsId = runsOn ? providerIdNote(runsOn) : "";
           const parts: React.ReactNode[] = [
-            s.launcher ? <span key="l" className="font-mono">{s.launcher}</span> : t("newagent.follow_model_settings"),
+            runsOn ? <span key="l" className={cx(!runsId && "font-mono")}>{providerTitle(runsOn)}</span> : t("newagent.follow_model_settings"),
             s.model && <span key="m" className="font-mono">{s.model}</span>,
             // "Allow everything" said with the warning it has in the form
             claude && s.mode && (s.mode === BYPASS_MODE
@@ -1006,7 +1022,7 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
               data-bypass={(claude && s.mode === BYPASS_MODE) || undefined}
               aria-pressed={on}
               disabled={!c.online}
-              title={shortPath(s.cwd)}
+              title={[shortPath(s.cwd), runsId].filter(Boolean).join("\n")}
               onClick={() => onPick(c)}
               className={cx(
                 "flex min-w-0 flex-col gap-0.5 rounded-control px-2.5 py-2 text-left transition-[background-color,box-shadow,opacity] disabled:opacity-45",
@@ -1034,9 +1050,9 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
   );
 }
 
-/** What a preset runs on, in a line: its launcher, model and effort (its name). */
-function tierRuns(x: PickerTier): string {
-  return [x.launcher, x.model, x.effort && effortTitle(x.effort)].filter(Boolean).join(" · ");
+/** What a preset runs on, in a line: its launcher ("Title (id)", #5029), model and effort (its name). */
+function tierRuns(x: PickerTier, names: Named[]): string {
+  return [providerLabel(namedLauncher(x.launcher, names)), x.model, x.effort && effortTitle(x.effort)].filter(Boolean).join(" · ");
 }
 
 function Choice({ selected, onClick, title, mono, radio, blocked, children }: { selected: boolean; onClick: () => void; title?: string; mono?: boolean; /** One of a radiogroup. */ radio?: boolean; /** Grayed out: this computer can't start it now (#1643); a click explains instead of picking. */ blocked?: boolean; children: React.ReactNode }) {

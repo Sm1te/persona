@@ -101,9 +101,9 @@ describe("a secret provider's page", () => {
     await open("onepassword");
     const users = host.querySelector("[data-secret-users]")!;
     expect(users.textContent).toContain("Example notes › API key");
-    expect(users.textContent).toContain("MacBook 上 Gateway 的 Key");
+    expect(users.textContent).toContain("MacBook 上「Gateway」的 Key");
     const rules = host.querySelector("[data-handoff-rules]")!;
-    expect(rules.textContent).toContain("MacBook 上的 claude");
+    expect(rules.textContent).toContain("MacBook 上的「claude」");
     expect(rules.textContent).toContain("op://Dev/GitHub/credential");
     await act(async () => [...rules.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "移除")!.click());
     expect(removeHandoffRule).not.toHaveBeenCalled(); // asked first

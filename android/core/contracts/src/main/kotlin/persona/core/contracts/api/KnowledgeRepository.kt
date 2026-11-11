@@ -71,8 +71,11 @@ data class RecordingMinutes(
     /** The recording revision they were made from: below `meta.revision` while newer ones are being written. */
     val revision: Int = 0,
     val title: String? = null,
-    /** "2026-11-10 14:00–15:10", in the user's time zone. */
+    /** "2026-11-10 14:00–15:10", in the user's time zone: shown only when [start] / [end] are missing (an older hub). */
     @SerialName("when") val time: String? = null,
+    /** RFC 3339 with the user's offset (#4713); the app formats them itself. */
+    val start: String? = null,
+    val end: String? = null,
     val where: String? = null,
     val attendees: List<String> = emptyList(),
     val points: List<MinutesItem> = emptyList(),

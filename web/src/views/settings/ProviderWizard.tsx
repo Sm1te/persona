@@ -1,7 +1,8 @@
 // Settings › Model providers › Add / Edit (#2455, docs/assistant/onboarding.md 4.3 "Three paths" B): (1) "Choose a provider" lists what the hub offers
 // (GET /api/v1/launchers/presets: its built-in providers, then the extensions'), a compatible gateway typed by hand last.
 // A preset needs only ② the key: it is tested on its own (POST /launchers/test with the preset) and saved with
-// assign, and (3) says what now runs on it. The gateway goes (2) "Connect" (address, auth, key; once they are in it fetches the models
+// assign, and (3) says what now runs on it. The gateway goes (2) "Connect" (a display name in any language, address, auth, key, the
+// startup ID under "More options" where the hub makes one up, #5029; once address and key are in it fetches the models
 // and tests one by itself, and "Test connection" and "Fetch models" stay for doing it by hand) (3) "Choose models"
 // (context window, thinking levels, the default; an ID typed by hand is looked up in the hub's catalog) and, for Claude Code, its tiers
 // (#4975: filled in from the checked models, a summary with Adjust), the rest under "Advanced". Editing opens at "Connect" with the
@@ -15,6 +16,7 @@ import {
   assignSummary,
   regionBlocked,
   BUILTIN_PLUGIN,
+  displayNameProblem,
   launcherNameProblem,
   loadPresets,
   presetBody,
@@ -31,10 +33,12 @@ import {
   testableKey,
   type AddResult,
   type LauncherPreset,
+  type PresetForm,
 } from "../../lib/launcher-presets";
 import {
   autoCheckable,
   EFFORT_LEVELS,
+  fallbackTitle,
   fillFromCatalog,
   formFromView,
   formModel,
@@ -52,6 +56,7 @@ import {
   type ProviderView,
   type TestResult,
 } from "../../lib/providers";
+import { forgetProviderNames, providerTitle } from "../../lib/provider-names";
 import { applyTiers, checkedIds, hasTiers, setTier, tierAdvice, tierLines, tiersSplit, withAutoTiers, type TierAdvice, type TierRow, type Tiers, type TierSlot } from "../../lib/provider-tiers";
 import { formScope, newScope, scopeBody, scopeFromView, scopeProblem, scopeShown, scopeSummary, type ScopeForm } from "../../lib/provider-scope";
 import { claudeMissing, claudeWorks, currentReadiness, readinessChanged, readinessSettled, useReadiness, type Readiness } from "../../lib/readiness";
@@ -69,8 +74,11 @@ import { t } from "../../i18n";
 
 type Step = "pick" | "key" | "done" | "connect" | "models" | "devices";
 const CUSTOM = "custom";
+const NO_PRESET_FORM: PresetForm = { name: "", display_name: "", api_key: "", model: "" };
 /** The hub's hello feature for built-in presets, a name it makes up and assign (docs/integrations/launchers.md "Built-in presets"). */
 const BUILTIN_PRESETS_FEATURE = "builtin_presets";
+/** The hub's hello feature for making up a gateway's startup ID when none is typed (#5029). */
+const AUTO_NAME_FEATURE = "launcher_auto_name";
 const stepTitle = (s: Step) =>
   ({
     pick: t("settings-providerwizard.step_pick"),
@@ -80,6 +88,19 @@ const stepTitle = (s: Step) =>
     models: t("settings-providerwizard.step_models"),
     devices: t("settings-providerwizard.step_devices"),
   })[s];
+
+/** The address field's hint: what the base is, and whether its /v1 stays. A Messages base reaches Claude Code (or
+ *  omp) as ANTHROPIC_BASE_URL and the hub drops a trailing /v1 from it; Responses, Chat Completions, Codex and
+ *  Antigravity bases are used as typed (docs/integrations/launchers.md "A Messages Base URL is stored without a
+ *  trailing /v1"). */
+function urlHint(f: ProviderForm): string {
+  const api = f.kind === "api";
+  if (api && f.api === "chat") return t("settings-providerwizard.url_chat_hint");
+  if (api && f.api === "responses") return t("settings-providerwizard.url_responses_hint");
+  if (!api && f.agent === "codex") return t("settings-providerwizard.url_codex_hint");
+  if (!api && f.agent === "agy") return t("settings-providerwizard.url_agy_hint");
+  return t("settings-providerwizard.url_gateway_hint");
+}
 
 /** What a single-line field keeps of pasted text: no line breaks, no space at the ends. */
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, "").trim();
@@ -134,7 +155,8 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const [presetsError, setPresetsError] = useState("");
   // a preset's id, or CUSTOM for a gateway typed by hand; "" before anything is picked
   const [choice, setChoice] = useState("");
-  const [pf, setPf] = useState({ name: "", api_key: "", model: "" });
+  const [pf, setPf] = useState(NO_PRESET_FORM);
+  // "More options": a preset's names and model, a gateway's startup ID
   const [more, setMore] = useState(false);
   // null: not touched, so it follows the readiness (off while Claude Code already answers)
   const [assignSet, setAssign] = useState<boolean | null>(null);
@@ -148,6 +170,8 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const preset = presets?.find((p) => p.id === choice);
   // a hub with built-in presets names a provider itself and takes assign; an older one needs the name and knows no assign
   const hubNames = useStore((s) => hubHas(s.features, BUILTIN_PRESETS_FEATURE, true));
+  // a hub that makes up a gateway's startup ID too: the ID waits under "More options"; an older one needs it typed
+  const autoName = useStore((s) => hubHas(s.features, AUTO_NAME_FEATURE));
   // the device scope (docs/integrations/launchers.md "Device scope and on-demand delivery"): an existing provider's
   // when its hub returns one, a new one's when the hub says it takes it
   const scopeOn = useStore((s) => scopeShown(old, s.features));
@@ -192,11 +216,11 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     setF(old ? formFromView(old) : newForm());
     setScope(scopeFromView(old) ?? newScope());
     setDevicesOpen(false);
+    setMore(false);
     setStep(old ? "connect" : "pick");
     if (!isNew) return;
     setChoice("");
-    setPf({ name: "", api_key: "", model: "" });
-    setMore(false);
+    setPf(NO_PRESET_FORM);
     setAssign(null);
     setKeyTest(null);
     setAdded(null);
@@ -233,13 +257,13 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   };
 
   const set = <K extends keyof ProviderForm>(k: K) => (v: ProviderForm[K]) => setF((x) => ({ ...x, [k]: v }));
-  const problems = formProblems(f, isNew, !!old?.has_key);
+  const problems = formProblems(f, isNew, !!old?.has_key, autoName);
   // models were found for this connection: choosing them is what comes next
   const foundModels = !!found && !found.error && found.n > 0;
   const openAI = f.kind === "api" && (f.api === "responses" || f.api === "chat");
   const hasLegacyChat = Object.keys(legacyChatClears(old)).length > 0;
   const presetFlow = isNew && choice !== CUSTOM;
-  const presetReady = !!preset && (hubNames || !!pf.name.trim()) && !launcherNameProblem(pf.name) && !!pf.api_key.trim() && !keyTest?.running;
+  const presetReady = !!preset && (hubNames || !!pf.name.trim()) && !launcherNameProblem(pf.name) && !displayNameProblem(pf.display_name) && !!pf.api_key.trim() && !keyTest?.running;
   const devicesProblem = scopeOn ? scopeProblem(scope) : "";
   const canSave = !devicesProblem && (step === "key" ? presetReady : !problems.connect && !problems.models && !problems.advanced && (!hasLegacyChat || clearLegacyChat));
 
@@ -249,7 +273,7 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
       const p = presets?.find((x) => x.id === id);
       // The key belongs to the provider it was typed for: carried over, it would be tested against (and saved for)
       // another provider's endpoint.
-      setPf((x) => ({ ...x, name: "", api_key: "", model: p ? presetDefaultModel(p) : "" }));
+      setPf({ ...NO_PRESET_FORM, model: p ? presetDefaultModel(p) : "" });
       setMore(false);
     }
     setChoice(id);
@@ -351,15 +375,19 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
           give = hubNames && (assignSet ?? assignByDefault(claudeWorks(before), keyTest && !keyTest.running ? keyTest.result : null));
           noClaude = claudeMissing(before);
         }
-        const result = await api<AddResult>("/launchers", { method: "POST", json: { ...presetBody(preset, pf.name, pf.api_key, pf.model, give), ...(scopeOn ? scopeBody(scope, null, machines, give) : {}) } });
+        const result = await api<AddResult>("/launchers", { method: "POST", json: { ...presetBody(preset, pf, give), ...(scopeOn ? scopeBody(scope, null, machines, give) : {}) } });
+        forgetProviderNames();
         onSaved();
-        setAdded({ result, asked: give, fallback: pf.name.trim() || presetTitle(preset), noClaude, direct });
+        setAdded({ result, asked: give, fallback: pf.display_name.trim() || pf.name.trim() || presetTitle(preset), noClaude, direct });
         setStep("done");
         void readinessChanged();
       } else {
         const body = { ...providerBody(f, old, clearLegacyChat), ...(scopeOn ? scopeBody(scope, old, machines) : {}) };
-        await api(isNew ? "/launchers" : `/launchers/${enc(String(body.name))}`, { method: isNew ? "POST" : "PUT", json: body });
-        toast(isNew ? t("settings-providerwizard.added", { name: String(body.name) }) : t("settings-providerwizard.saved", { name: String(body.name) }), "ok");
+        // both answer {launcher}: a new one's startup ID and display name may be the hub's (#5029)
+        const r = await api<AddResult>(isNew ? "/launchers" : `/launchers/${enc(String(body.name))}`, { method: isNew ? "POST" : "PUT", json: body });
+        const name = providerTitle(r?.launcher ?? { name: String(body.name), display_name: String(body.display_name) });
+        forgetProviderNames();
+        toast(isNew ? t("settings-providerwizard.added", { name }) : t("settings-providerwizard.saved", { name }), "ok");
         onSaved();
         void readinessChanged();
         onClose();
@@ -376,7 +404,11 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const at = steps.indexOf(step);
   const stepProblem = step === "connect" ? problems.connect : step === "models" ? problems.models || problems.advanced : step === "devices" ? devicesProblem : "";
   const next = () => {
-    if (stepProblem) return setError(stepProblem);
+    if (stepProblem) {
+      // a startup ID that keeps the step from going on is shown where it was typed
+      if (step === "connect" && launcherNameProblem(f.name)) setMore(true);
+      return setError(stepProblem);
+    }
     setError("");
     setStep(steps[at + 1]);
   };
@@ -389,13 +421,21 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     return i <= at || !isNew || (s === "models" && !problems.connect) || (s === "devices" && !problems.connect && !problems.models && !problems.advanced);
   };
   const done = step === "done";
+  // A gateway's startup ID: typed for a new one (where the hub makes one up, only if wanted, under "More options"), and
+  // read-only on a saved one, whose launches and settings refer to it (#5029).
+  const idInMore = autoName || !isNew;
+  const idField = (
+    <TextField label={t("settings-providerwizard.startup_id")} value={f.name} onChange={set("name")} disabled={!isNew} mono
+      placeholder={!isNew ? undefined : autoName ? t("settings-providerwizard.startup_id_auto") : t("settings-providerwizard.name_placeholder", { example: "my_gateway" })}
+      error={isNew ? launcherNameProblem(f.name) : undefined} hint={isNew ? t("settings-providerwizard.startup_id_hint") : t("settings-providerwizard.startup_id_fixed")} />
+  );
 
   return (
     <Dialog
       open={existing !== null}
       onClose={onClose}
       width={580}
-      title={isNew ? t("settings-providerwizard.title_new") : t("settings-providerwizard.title_edit", { name: old?.name ?? "" })}
+      title={isNew ? t("settings-providerwizard.title_new") : t("settings-providerwizard.title_edit", { name: old ? providerTitle(old) : "" })}
       footer={
         done ? (
           <>
@@ -484,8 +524,10 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
 
         {step === "connect" && (
           <div className="flex flex-col gap-3">
-            <TextField label={t("settings-providerwizard.name")} value={f.name} onChange={set("name")} disabled={!isNew} mono placeholder={t("settings-providerwizard.name_placeholder", { example: "my_gateway" })}
-              error={isNew ? launcherNameProblem(f.name) : undefined} hint={t("settings-providerwizard.name_hint")} />
+            {/* left empty, the provider shows what the placeholder says (the hub names a new one after its host) */}
+            <TextField label={t("settings-providerwizard.display_name")} value={f.display_name} onChange={set("display_name")}
+              placeholder={fallbackTitle(f, autoName) || t("settings-providerwizard.display_name_placeholder")} error={displayNameProblem(f.display_name)} hint={t("settings-providerwizard.display_name_hint")} />
+            {!idInMore && idField}
             {isNew && (
               <Labelled label={t("settings-providerwizard.kind")} hint={f.kind === "api" ? t("settings-providerwizard.kind_api_hint") : t("settings-providerwizard.kind_launcher_hint", { agent: f.agent === "codex" ? "Codex" : f.agent === "agy" ? "Antigravity" : f.agent === "omp" ? "omp" : "Claude Code" })}>
                 <Segmented<"launcher" | "codex" | "agy" | "omp" | "api">
@@ -524,7 +566,7 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
               }}
               // left for another field or the page; the window losing focus keeps the field focused, and the URL unfinished
               onBlur={(e) => document.activeElement !== e.currentTarget && setUrlTyping(false)}
-              hint={f.kind === "api" && f.api === "chat" ? t("settings-providerwizard.url_chat_hint") : openAI ? t("settings-providerwizard.url_responses_hint") : t("settings-providerwizard.url_gateway_hint")} />
+              hint={urlHint(f)} />
             {!openAI && (
               <Labelled label={t("settings-providerwizard.auth")} hint={f.auth === "bearer" ? t("settings-providerwizard.auth_bearer_hint") : t("settings-providerwizard.auth_key_hint")}>
                 <Segmented<ProviderForm["auth"]> label={t("settings-providerwizard.auth")} value={f.auth} onChange={set("auth")} options={[{ v: "bearer", label: "Bearer" }, { v: "api_key", label: "x-api-key" }]} />
@@ -556,6 +598,11 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
                   />
                 )}
               </div>
+            {idInMore && (
+              <Disclosure title={t("settings-providerwizard.more_options")} open={more} onToggle={() => setMore((o) => !o)} badge={more ? undefined : t("settings-providerwizard.startup_id")}>
+                {idField}
+              </Disclosure>
+            )}
           </div>
         )}
 
@@ -625,9 +672,7 @@ function PickStep({ presets, error, choice, onPick }: { presets: LauncherPreset[
   );
 }
 
-type PresetForm = { name: string; api_key: string; model: string };
-
-/** (2) for a preset: only the key; it is tested by itself. The name and another model wait under "More options". */
+/** (2) for a preset: only the key; it is tested by itself. The names and another model wait under "More options". */
 function KeyStep({ preset, pf, setPf, keyTest, onRetest, onOther, assign, setAssign, checking, works, more, setMore, devices }: {
   preset: LauncherPreset;
   pf: PresetForm;
@@ -651,10 +696,11 @@ function KeyStep({ preset, pf, setPf, keyTest, onRetest, onOther, assign, setAss
   const signup = signupHref(preset);
   const choices = presetChoices(preset);
   const nameProblem = launcherNameProblem(pf.name);
+  const hiddenProblem = displayNameProblem(pf.display_name) || (assign !== null ? nameProblem : "");
   const builtin = preset.plugin === BUILTIN_PLUGIN;
   const nameField = (
-    <TextField label={t("settings-providerwizard.name")} value={pf.name} onChange={(v) => setPf((x) => ({ ...x, name: v }))} mono
-      placeholder={assign === null ? t("settings-providerwizard.name_placeholder", { example: "jv_team" }) : t("settings-providerwizard.name_auto")} error={nameProblem} hint={t("settings-providerwizard.name_hint")} />
+    <TextField label={t("settings-providerwizard.startup_id")} value={pf.name} onChange={(v) => setPf((x) => ({ ...x, name: v }))} mono
+      placeholder={assign === null ? t("settings-providerwizard.name_placeholder", { example: "jv_team" }) : t("settings-providerwizard.startup_id_auto")} error={nameProblem} hint={t("settings-providerwizard.startup_id_hint")} />
   );
   return (
     <div className="flex flex-col gap-3">
@@ -698,7 +744,10 @@ function KeyStep({ preset, pf, setPf, keyTest, onRetest, onOther, assign, setAss
         </div>
       )}
       <Disclosure title={t("settings-providerwizard.more_options")} open={more} onToggle={() => setMore((o) => !o)}
-        badge={more ? undefined : assign === null ? t("settings-providerwizard.more_options_model") : t("settings-providerwizard.more_options_badge")}>
+        badge={more ? undefined : assign === null ? t("settings-providerwizard.more_options_badge_no_id") : t("settings-providerwizard.more_options_badge")}>
+        {/* left empty, it shows the preset's name, or the startup ID when one is typed */}
+        <TextField label={t("settings-providerwizard.display_name")} value={pf.display_name} onChange={(v) => setPf((x) => ({ ...x, display_name: v }))}
+          placeholder={pf.name.trim() || presetTitle(preset)} error={displayNameProblem(pf.display_name)} hint={t("settings-providerwizard.display_name_hint")} />
         {assign !== null && nameField}
         <Labelled label={t("settings-providerwizard.default_model")} hint={preset.models_error ? t("settings-providerwizard.preset_models_error", { error: preset.models_error }) : t("settings-providerwizard.default_model_hint")}>
           {choices.length ? (
@@ -714,6 +763,8 @@ function KeyStep({ preset, pf, setPf, keyTest, onRetest, onOther, assign, setAss
           )}
         </Labelled>
       </Disclosure>
+      {/* folded with a mistake in it: Save is off, so say why here (#5029) */}
+      {!more && hiddenProblem && <p role="alert" className="text-[12px] text-red">{hiddenProblem}</p>}
       {devices}
     </div>
   );
@@ -816,7 +867,7 @@ function stillNoClaude(added: Added, r: Readiness | null): boolean {
 /** ③ for a preset: it is saved; what runs on it now and what was left as it was; that Claude Code is still missing. */
 function DoneStep({ added, readiness }: { added: Added; readiness: Readiness | null }) {
   const [help, setHelp] = useState(false);
-  const name = added.result.launcher?.display_name || added.result.launcher?.name || added.fallback;
+  const name = added.result.launcher ? providerTitle(added.result.launcher) : added.fallback;
   const s = assignSummary(added.result, added.asked);
   const machine = readiness?.machine?.name ?? "";
   const noClaude = !added.direct && stillNoClaude(added, readiness);

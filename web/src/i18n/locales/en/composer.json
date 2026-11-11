@@ -5,21 +5,7 @@
   "history_list": "Sent messages",
   "history_empty": "No matching messages",
   "history_footer": "↑↓ select · Enter fill in · Esc close",
-  "model_effort": "Model and thinking effort",
-  "effort": "Thinking effort",
-  "effort_missing": "This model doesn't have this level",
-  "models": "Model",
-  "loading_models": "Reading the model list…",
-  "models_error": "Couldn't read the model list: {error}",
-  "current": "Current",
-  "default_note": "Newer versions of Claude Code also save the chosen model as the default for new sessions.",
   "locked": "This launcher fixes its own model, so a choice here won't take effect.",
   "busy": "The agent is working. Switch the model after this turn ends",
-  "keys_hint": "↑↓ model · ←→ thinking",
-  "apply": "Apply",
-  "forget": "Forget “{id}”",
-  "forget_failed": "Couldn't forget “{id}”: {error}",
-  "other_model": "Other model…",
-  "enter_model": "Enter model ID…",
-  "typed_note": "Claude Code switches to it after Apply."
+  "forget_failed": "Couldn't forget “{id}”: {error}"
 }

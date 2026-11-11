@@ -1,7 +1,7 @@
 import { t } from "../i18n";
-import type { Session, Workflow } from "./types";
+import type { Session, Subagent, Workflow } from "./types";
 import type { SessionLookup, Todo } from "./todos";
-import { workflowCounts } from "./workflows";
+import { waitingOnWorkflow, workflowCounts } from "./workflows";
 
 /** Live work, not a waiting label: summary counts win over omitted detail arrays. */
 export interface BackgroundWork {
@@ -26,6 +26,14 @@ export function backgroundWork(session: Session | undefined): BackgroundWork | u
     : background.filter((b) => b.kind !== "workflow" && b.kind !== "agent").length);
   return tasks || subagents || workflows || session.background_working || (summary && session.background_tasks_count === undefined && (session.background_count ?? 0) > 0)
     ? { tasks, subagents, workflows, workflow } : undefined;
+}
+
+/** The hub says the agent's turn is over and a subagent it launched in the background still runs (#5030, cindy's
+ *  background subtasks): the chat draws that turn finished (its summary folded, the subagent's card running inside it),
+ *  and the bar above the composer says model usage goes on. A running workflow says so first (workflows.ts
+ *  backgroundLine). */
+export function waitingOnSubagents(s: Session | undefined, subagents: Subagent[] | undefined = s?.subagents): boolean {
+  return Boolean(s?.background_working) && !waitingOnWorkflow(s) && (subagents ?? []).some((a) => a.running && a.background);
 }
 
 /** One task can have several active agents: do not mistake a quiet lead for an idle task. */

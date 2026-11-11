@@ -4,5 +4,9 @@
   "main_busy": "メインチャットが回答中または圧縮中です。止まってから新しく作成してください。",
   "guest_node_too_old": "このコンピュータの personad は古いため、ゲスト会話に対応していません。更新してからもう一度お試しください。",
   "work_machine": "アシスタントの会話は仕事用コンピューターでは実行できません。個人用コンピューターを選んでください。",
-  "launcher_not_main_chat": "「{launcher}」は {machine} で Agent を起動できますが、アシスタントの会話は実行できないため、このメッセージは送信していません。ランチャーのメニューで別のものを選んで送り直してください。"
+  "launcher_not_main_chat": "「{launcher}」は {machine} で Agent を起動できますが、アシスタントの会話は実行できないため、このメッセージは送信していません。ランチャーのメニューで別のものを選んで送り直してください。",
+  "launcher_other_kind": "「{launcher}」は {launcher_agent} で動きますが、この会話は {conversation_agent} で動いていて途中で変えられないため、このメッセージは送信していません。{conversation_agent} のランチャーを選ぶか、「{launcher}」で新しい会話を始めてください。",
+  "launcher_no_substitute": "「{launcher}」は {machine} にもうなく、同じ種類でアシスタントの会話を実行できるランチャーもそのコンピューターにないため、このメッセージは送信していません。モデル構成 › メインチャットで選び直してください。",
+  "launcher_swapped": "「{launcher}」は {machine} でアシスタントの会話を実行できないため、{to} で実行します",
+  "launcher_swapped_model": "「{launcher}」は {machine} でアシスタントの会話を実行できないため、{to}（既定のモデル。{model} は一覧にありません）で実行します"
 }

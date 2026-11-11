@@ -14,7 +14,8 @@
       "ts": "2026-01-01T12:00:05Z",
       "role": "assistant",
       "kind": "thinking",
-      "text": "Running the checks."
+      "text": "Running the checks.",
+      "model": "gpt-5-codex"
     },
     {
       "id": "call_00000000000000000000d3#0",
@@ -26,7 +27,8 @@
       "tool_name": "Bash",
       "tool_input": {
         "command": "make check"
-      }
+      },
+      "model": "gpt-5-codex"
     },
     {
       "id": "call_00000000000000000000d3#1",

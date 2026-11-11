@@ -1,7 +1,8 @@
 // End-to-end check of typing a model ID on the web (#1644, docs/assistant/model-config.md "Typing a model ID"): "New
 // agent"'s list shows the IDs typed before and "Other model…", whose field says why an ID can't be used and starts with
-// a good one; a running Claude Code session's popover sends a typed ID through POST …/modes; the Persona chat's launcher
-// menu takes one for the next messages.
+// a good one; a running Claude Code session's model panel (the composer's model pill, #5032) lists the IDs typed before
+// with Forget, offers "Use “…”" for a good ID no listed model answers, and sends it through POST …/modes; the Persona
+// chat's launcher menu takes one for the next messages.
 //
 // Needs the web page against the fake hub with MOCK_CUSTOM_MODELS set, and Chrome (playwright-core drives it):
 //
@@ -10,7 +11,7 @@
 //   node web/e2e/custom-model.mjs http://127.0.0.1:5196 --hub http://127.0.0.1:18796 [--shots <dir>]
 //
 // What it checks follows the fake hub's mode: =1 the flows above; =forgetfail a Forget the hub refuses (New agent's
-// toast, the popover's alert, the row back); =empty New agent's empty list ("Enter model ID…"); =fail New agent
+// toast and the model panel's, the row back in each); =empty New agent's empty list ("Enter model ID…"); =fail New agent
 // without a list. Runs wide (1280), light and dark, in Chinese; --shots saves each state. Prints one line per check and
 // a verdict; exits 1 on a failure.
 import { mkdirSync } from "node:fs";
@@ -87,6 +88,20 @@ async function openSession(page) {
   }, REVIEW);
 }
 
+// The session's model panel, from the composer's model pill, once the session's own list is in (the model that runs)
+async function openPanel(page, theme) {
+  const pill = page.locator("button[data-model-pill]").first();
+  await expectVisible(page, pill, `${theme}: the session's model pill`);
+  await pill.click();
+  const panel = page.locator("[data-model-panel]");
+  await expectVisible(page, panel, `${theme}: the model panel`);
+  await expectVisible(page, panel.locator("[data-panel-row][data-current]"), `${theme}: the model that runs`);
+  return panel;
+}
+
+// a row of the panel by its words
+const panelRow = (panel, id) => panel.locator("[data-panel-row]").filter({ hasText: id });
+
 async function run(browser, theme) {
   const { ctx, page } = await open(browser, theme);
 
@@ -112,31 +127,43 @@ async function run(browser, theme) {
   ok(`${theme}: the field says why, and a good ID is the pick`);
   await page.keyboard.press("Escape");
 
-  // A running session: Other model… in the popover, through …/modes (opened the way a click goes)
+  // A running session: its model panel (the composer's model pill, #5032), opened the way a click goes
   await openSession(page);
-  const chip = page.locator('button[title="模型与思考强度"]').first();
-  await expectVisible(page, chip, `${theme}: the session's model chip`);
-  await chip.click();
-  const popover = page.getByRole("dialog", { name: "模型与思考强度" });
-  await expectVisible(page, popover.locator('[data-testid="model-popover-other"]'), `${theme}: Other model… in the popover`);
-  await popover.locator('[data-testid="model-popover-other"]').click();
-  const pf = popover.locator("[data-model-id-field] input");
-  await pf.fill("a;b");
-  await expectVisible(page, popover.locator("[data-model-id-problem]"), `${theme}: why "a;b" can't be used`);
-  if (!(await popover.getByRole("button", { name: "应用" }).isDisabled())) fail(`${theme}: Apply takes a bad ID`);
-  await pf.fill(`~vendor/model-${theme}`); // a model the session doesn't run yet (the fake hub keeps the last switch)
-  // staged as it is typed: Apply is the one confirm (the field has no "Use" of its own here)
-  if (await popover.getByRole("button", { name: "应用" }).isDisabled()) fail(`${theme}: Apply stays off for a good ID`);
-  if (await popover.locator("[data-model-id-field] button").count()) fail(`${theme}: a second confirm beside the field`);
-  await shot(page, "session-popover", theme);
-  await pf.press("Enter"); // applies
+  const panel = await openPanel(page, theme);
+  const before = panelRow(panel, "vendor/model-x").first();
+  await expectVisible(page, before.filter({ hasText: "输入过的" }), `${theme}: an ID typed before, said so in the panel`);
+  await before.hover();
+  await expectVisible(page, before.getByRole("button", { name: "忘记「vendor/model-x」" }), `${theme}: Forget beside it`);
+  await shot(page, "session-panel", theme);
+  ok(`${theme}: the panel lists the IDs typed before, each with Forget`);
+  const search = panel.locator('input[aria-label="搜索模型…"]');
+  const use = panel.locator('[data-panel-row^="typed:"]');
+  // an ID the hub would refuse is offered nowhere
+  await search.fill("a;b");
+  await expectVisible(page, panel.getByText("没有匹配的模型"), `${theme}: "a;b" matches nothing`);
+  if (await use.count()) fail(`${theme}: "a;b" offered to use`);
+  // a word a listed model answers is a search, not an ID
+  await search.fill("opus");
+  await expectVisible(page, panelRow(panel, "Opus 5.5"), `${theme}: "opus" finds Opus`);
+  if (await use.count()) fail(`${theme}: "opus" offered as a typed ID beside the model it names`);
+  const id = `~vendor/model-${theme}`; // a model the session doesn't run yet (the fake hub keeps the last switch)
+  await search.fill(id);
+  await expectVisible(page, use.filter({ hasText: `使用「${id}」` }), `${theme}: Use “${id}” for an ID no listed model answers`);
+  if ((await use.count()) !== 1) fail(`${theme}: ${await use.count()} "Use" rows, want the session's launcher's one`);
+  await shot(page, "session-panel-typed", theme);
+  await use.first().click(); // applies
   for (let i = 0; i < 40; i++) {
     const { modes } = await mock("modes");
-    if ((modes ?? []).some((m) => m.session_id === "a1f3c2d4-0000-4000-8000-000000000006" && m.model === `~vendor/model-${theme}`)) break;
+    if ((modes ?? []).some((m) => m.session_id === "a1f3c2d4-0000-4000-8000-000000000006" && m.model === id)) break;
     if (i === 39) fail(`${theme}: no POST …/modes with the typed model`);
     await page.waitForTimeout(150);
   }
-  ok(`${theme}: the session switched through …/modes`);
+  try {
+    await panel.waitFor({ state: "detached", timeout: 5000 });
+  } catch {
+    fail(`${theme}: the panel stays open after the switch went through`);
+  }
+  ok(`${theme}: the session switched through …/modes, and the panel closed`);
 
   // The Persona chat: the launcher menu's Other model…
   await page.evaluate(() => {
@@ -181,17 +208,21 @@ async function forgetFails(browser, theme) {
   await page.waitForTimeout(600); // the toast goes
 
   await openSession(page);
-  const chip = page.locator('button[title="模型与思考强度"]').first();
-  await expectVisible(page, chip, `${theme}: the session's model chip`);
-  await chip.click();
-  const popover = page.getByRole("dialog", { name: "模型与思考强度" });
-  const px = popover.getByRole("button", { name: "忘记「vendor/model-x」" });
-  await expectVisible(page, px, `${theme}: Forget in the popover`);
-  await px.click();
-  await expectVisible(page, popover.getByRole("alert").filter({ hasText: "没能忘记" }), `${theme}: the popover says why`);
-  await expectVisible(page, px, `${theme}: the popover's row back`);
+  const panel = await openPanel(page, theme);
+  const row = panelRow(panel, "vendor/model-x").first();
+  await expectVisible(page, row, `${theme}: the ID typed before in the panel`);
+  // New agent's toast has gone, so the one that follows is the panel's
+  const why = page.getByText(/没能忘记「vendor\/model-x」/);
+  for (let i = 0; (await why.count()) > 0; i++) {
+    if (i === 60) fail(`${theme}: New agent's toast stays`);
+    await page.waitForTimeout(200);
+  }
+  await row.hover();
+  await row.getByRole("button", { name: "忘记「vendor/model-x」" }).click();
+  await expectVisible(page, why, `${theme}: why it wasn't forgotten`);
+  await expectVisible(page, panelRow(panel, "vendor/model-x"), `${theme}: the panel's row back`);
   await shot(page, "session-forget-failed", theme);
-  ok(`${theme}: the popover puts a refused Forget back`);
+  ok(`${theme}: the model panel puts a refused Forget back and says why`);
   await ctx.close();
 }
 

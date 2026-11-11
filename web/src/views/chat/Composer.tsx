@@ -17,6 +17,7 @@ import { INPUT_MAX } from "./dock";
 import { imagePayload, MAX_IMAGE, quotePath, releaseAttachments, sendFile } from "../../lib/attachments";
 import { activateComposer, addContext, getContexts, newContext, registerComposer, removeContext, useContexts, withContexts, type ComposerHandle } from "../../lib/links";
 import { addQuote, applyDraft, getQuotes, onDraftEvent, parseQuotes, removeQuote, replaceNeedsConfirm, sendDraft, setQuotes, splitQuotes, storeDraft, useQuotes, withQuoteBlock, withUnsent, type DraftImage } from "../../lib/drafts";
+import type { EditedImage } from "../../lib/image-edit";
 import { browseTarget, mentionAt, replaceToken, sessionQuote, workspaceContext } from "../../lib/mentions";
 import { machineWithHub } from "../../lib/mesh";
 import { getState } from "../../lib/store";
@@ -46,6 +47,9 @@ export interface Attachment {
   mime: string;
   data: string; // base64
   url: string; // object URL for the preview
+  /** Set once the picture has been through the image editor: its source, edits and history (lib/image-edit.ts), so
+   *  its tile opens it where the editor stopped; freed with the picture (releaseAttachments). */
+  edited?: EditedImage;
 }
 
 export interface Outgoing {
@@ -85,11 +89,11 @@ async function readImage(file: File): Promise<Attachment> {
   return { ...await imagePayload(file), id: uuid(), name: file.name || "image.png", url: URL.createObjectURL(file) };
 }
 
-function fromDraftImage(img: DraftImage, id = uuid()): Attachment {
+function fromDraftImage(img: DraftImage, id = uuid(), edited?: EditedImage): Attachment {
   const bin = atob(img.data);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return { ...img, id, url: URL.createObjectURL(new Blob([bytes], { type: img.mime })) };
+  return { ...img, id, url: URL.createObjectURL(new Blob([bytes], { type: img.mime })), ...(edited ? { edited } : {}) };
 }
 
 // memo: a chat renders again for each transcript item, and this box takes none of them (ChatView keeps its props stable)
@@ -110,6 +114,7 @@ export const Composer = memo(function Composer({
   stopping,
   autoFocus,
   footer,
+  trailing,
   suggestion,
   mention,
   onFocusChange,
@@ -140,6 +145,10 @@ export const Composer = memo(function Composer({
   stopping?: boolean;
   autoFocus?: boolean;
   footer?: React.ReactNode;
+  /** At the right of the bottom row, before voice / Stop / Send: an Agent's model pill (#5032, ModelPill.tsx). It sizes
+   *  itself by the card's width (the card is the `composer` container); keep it the same object while nothing in it
+   *  changes, as `footer`. */
+  trailing?: React.ReactNode;
   suggestion?: string;
   /** Turns on the @ menu: the chat's files and folder, and other sessions. */
   mention?: MentionSource;
@@ -263,7 +272,7 @@ export const Composer = memo(function Composer({
             refuseImages();
             return;
           }
-          appendImage(fromDraftImage(e.image));
+          appendImage(fromDraftImage(e.image, uuid(), e.edited));
           input.current?.focus({ preventScroll: true });
           return;
         }
@@ -733,7 +742,8 @@ export const Composer = memo(function Composer({
 
       <div
         className={cx(
-          "relative flex flex-col gap-1.5 rounded-[14px] border bg-surface p-1.5 shadow-card transition-[border-color,box-shadow] duration-150 focus-within:border-line-strong",
+          // a container: what sits in its bottom row (the model pill) takes its width modes from the card's own width
+          "@container/composer relative flex flex-col gap-1.5 rounded-[14px] border bg-surface p-1.5 shadow-card transition-[border-color,box-shadow] duration-150 focus-within:border-line-strong",
           dragging ? "border-accent shadow-[0_0_0_3px_var(--accent-tint)]" : "border-line",
         )}
       >
@@ -771,7 +781,8 @@ export const Composer = memo(function Composer({
           <div className="px-0.5 pt-0.5">
             <AttachmentTray attachments={atts} onOpen={(id) => setEditing(atts.find((a) => a.id === id) ?? null)} onRemove={(id) => {
               const att = atts.find((a) => a.id === id);
-              if (att) URL.revokeObjectURL(att.url);
+              // an edited picture's source and edits go with it
+              if (att) releaseAttachments([att]);
               setAtts((cur) => cur.filter((a) => a.id !== id));
             }} />
           </div>
@@ -823,7 +834,7 @@ export const Composer = memo(function Composer({
               if (e.key === "Escape") e.stopPropagation();
               return;
             }
-            // `/model` alone opens the model popover instead of sending (where the agent has one)
+            // `/model` alone opens the model panel instead of sending (where the agent switches models)
             if (enterSends(e, hasFinePointer()) && isModelCommand(draft) && requestModelPicker(draftKey)) {
               e.preventDefault();
               setDraft("");
@@ -978,6 +989,7 @@ export const Composer = memo(function Composer({
           )}
           {/* not overflow-hidden: the chips' tap areas reach past this row (touch-hit); the footer truncates its own text */}
           <div className="min-w-0 flex-1 px-1 text-[11.5px] whitespace-nowrap text-ink-3">{footer}</div>
+          {trailing}
           {voice && !roundVoice && (
             <button
               type="button"
@@ -1068,13 +1080,16 @@ export const Composer = memo(function Composer({
       {editing && (
         <Suspense fallback={null}>
           <ImageEditor
-            src={editing.url}
+            src={editing.edited?.source ?? editing.url}
+            start={editing.edited}
             onCancel={() => setEditing(null)}
-            onDone={(img) => {
+            onDone={(img, state) => {
               const old = editing;
               setEditing(null);
-              setAtts((cur) => cur.map((a) => (a.id === old.id ? fromDraftImage(img, a.id) : a)));
-              URL.revokeObjectURL(old.url);
+              // the picture as it came stays the source (the first edit's tile URL, kept); the earlier result goes
+              const source = old.edited?.source ?? old.url;
+              setAtts((cur) => cur.map((a) => (a.id === old.id ? fromDraftImage(img, a.id, { source, ...state }) : a)));
+              if (old.url !== source) URL.revokeObjectURL(old.url);
             }}
           />
         </Suspense>

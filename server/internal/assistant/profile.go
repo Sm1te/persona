@@ -91,6 +91,12 @@ type Settings struct {
 	// AgentTasks: every agent Persona starts is on a quiet, supervised todo (#3617, agent_tasks.go). nil is off (the
 	// default).
 	AgentTasks *bool `json:"agent_tasks,omitempty"`
+	// AgentAutoNaming corrects recognizable placeholder names; nil is on. Manual titles are protected.
+	AgentAutoNaming *bool `json:"agent_auto_naming,omitempty"`
+	// AgentAutoNamingMax counts successful automatic title changes per session; nil is one.
+	AgentAutoNamingMax *int `json:"agent_auto_naming_max,omitempty"`
+	// AgentAutoNamingIntervalHours enables refresh after new output; nil or zero is off.
+	AgentAutoNamingIntervalHours *int `json:"agent_auto_naming_interval_hours,omitempty"`
 	// InboxSignals: new Inbox messages the judge links to a supervised task reach its supervisor as the signal inbox
 	// (#4293, supervise_inbox.go). nil is off (the default): each one is a supervisor turn.
 	InboxSignals *bool `json:"inbox_signals,omitempty"`
@@ -109,7 +115,8 @@ type Settings struct {
 	Leaders []string `json:"leaders,omitempty"`
 	// InterjectBackground: a message the user sends while a Claude conversation is still answering moves what runs in
 	// the foreground (Bash commands, subagents) to the background, so the message is taken up at once instead of after
-	// them (Claude Code 2.1.139 or later, node/assistant_interject.go). nil is off (the default).
+	// them (Claude Code 2.1.139 or later, node/assistant_interject.go). nil is off (the default). A round the
+	// user did not start is moved to the background by their message either way (owner_preempt.go).
 	InterjectBackground *bool `json:"interject_background,omitempty"`
 }
 
@@ -231,7 +238,8 @@ func (s *Service) mainTasksQuiet(ctx context.Context) bool {
 }
 
 // interjectBackground: a message sent while a conversation answers moves its foreground work to the background
-// (interject_background, off by default).
+// (interject_background, off by default). The owner's message to a round they did not start does so whatever this says
+// (owner_preempt.go).
 func (s *Service) interjectBackground(ctx context.Context) bool {
 	v := s.settings(ctx).InterjectBackground
 	return v != nil && *v
@@ -464,7 +472,10 @@ type assistantView struct {
 	// InterjectBackground is in effect, like DoneNeedsDelivery.
 	InterjectBackground bool `json:"interject_background"`
 	// AgentTasks is in effect, like DoneNeedsDelivery.
-	AgentTasks bool `json:"agent_tasks"`
+	AgentTasks                   bool `json:"agent_tasks"`
+	AgentAutoNaming              bool `json:"agent_auto_naming"`
+	AgentAutoNamingMax           int  `json:"agent_auto_naming_max"`
+	AgentAutoNamingIntervalHours int  `json:"agent_auto_naming_interval_hours"`
 	// InboxSignals is in effect, like DoneNeedsDelivery.
 	InboxSignals bool `json:"inbox_signals"`
 }
@@ -488,11 +499,14 @@ func (s *Service) view(ctx context.Context, withArchived bool, space ...string) 
 		TaskWorkspacePreference: s.taskWorkspacePreference(ctx),
 		MainBackgroundFolded:    quietOn(v.MainBackgroundFolded),
 		DoneNeedsDelivery:       v.DoneNeedsDelivery != nil && *v.DoneNeedsDelivery, IdleCloseHours: int(s.idleCloseAfter(ctx) / time.Hour),
-		ArchiveClosedDays:   int(s.archiveClosedAfter(ctx) / (24 * time.Hour)),
-		ReviewSamplePercent: s.reviewSamplePercent(ctx),
-		InterjectBackground: v.InterjectBackground != nil && *v.InterjectBackground,
-		AgentTasks:          v.AgentTasks != nil && *v.AgentTasks,
-		InboxSignals:        v.InboxSignals != nil && *v.InboxSignals}
+		ArchiveClosedDays:            int(s.archiveClosedAfter(ctx) / (24 * time.Hour)),
+		ReviewSamplePercent:          s.reviewSamplePercent(ctx),
+		InterjectBackground:          v.InterjectBackground != nil && *v.InterjectBackground,
+		AgentTasks:                   v.AgentTasks != nil && *v.AgentTasks,
+		AgentAutoNaming:              quietOn(v.AgentAutoNaming),
+		AgentAutoNamingMax:           agentNamingLimit(v),
+		AgentAutoNamingIntervalHours: agentNamingInterval(v),
+		InboxSignals:                 v.InboxSignals != nil && *v.InboxSignals}
 	if d, ok := s.device(ctx, v.MachineID); ok {
 		out.Cwd = s.spaceCwd(d, sp)
 		var list []proto.Session

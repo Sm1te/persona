@@ -51,6 +51,22 @@ describe("RunningStatusView", () => {
     expect(html).toContain('data-running-status="on"');
   });
 
+  it("background subagents after the turn: cindy's line, no time, no tokens, no Stop all the node cannot do (#5030)", () => {
+    const html = render({ live: { verb: "Frosting", elapsed_s: 975, tokens_down: 22_800 }, working: true, subtasks: true });
+    expect(html).toContain("后台子任务运行中，模型用量仍在消耗…");
+    expect(html).toContain('data-running-background="subtasks"');
+    expect(html).not.toContain("Frosting");
+    expect(html).not.toContain("data-running-elapsed");
+    expect(html).not.toContain("tokens");
+    expect(html).not.toContain("全部停止");
+  });
+
+  it("a background workflow says so first, before background subagents", () => {
+    const html = render({ live: null, working: true, subtasks: true, background: { run: { task_id: "w", status: "running", running: true, agents_started: 3, agents_done: 1 }, more: 0, guessed: false } });
+    expect(html).toContain('data-running-background="workflow"');
+    expect(html).not.toContain("后台子任务运行中");
+  });
+
   it("says 思考中 while thinking", () => {
     expect(render({ live: { verb: "Frosting", thinking: true, elapsed_s: 3 }, working: true })).toContain("思考中");
   });

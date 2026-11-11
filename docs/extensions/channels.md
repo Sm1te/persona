@@ -166,7 +166,7 @@ While the assistant process is restarting or disconnected from hub, **receivers 
 - **Which channel receives them**: a channel "drives" the chat if it is the channel's target, has a run waiting on it, or has a thread binding from the last 24 hours (`threads`), and `asks` is on;
   with `all_asks` on, all Agents' questions are sent. Questions from other Agents on the computers still only appear in the App.
 - **`asks: buttons`** (Lark bot): the assistant draws cards, and button answers use the same hub `resolve` (`interactions.resolve`).
-- **`asks: text`** (WeChat, future Telegram): the assistant renders text (`channel.AskText`), and the user's next message is the answer (`channel.ReadAnswer`):
+- **`asks: text`** (WeChat, future Telegram): the assistant renders text (`channel.AskText`), and the user's next message is the answer (`channel.ReadAnswer`). The one exception is the assistant's `ask_user` raised with `wait: false` (`channel.Ask.Later`): no turn waits on it, so only a reply that names one of its options answers it, and other words are an ordinary message (`docs/assistant/assistant.md`, "Asking without holding the turn"). The rules:
 
   | Card | How to answer |
   | --- | --- |

@@ -31,6 +31,11 @@ export function overlayState(base: unknown, id: string): Record<string, unknown>
   return { ...(base && typeof base === "object" ? (base as Record<string, unknown>) : {}), [KEY]: id };
 }
 
+/** Whether `state` is an open overlay's entry (any overlay's). */
+export function onOverlayEntry(state: unknown = typeof history !== "undefined" ? history.state : null): boolean {
+  return Boolean(state && typeof state === "object" && typeof (state as Record<string, unknown>)[KEY] === "string");
+}
+
 /** Whether `state` is the entry the overlay `id` pushed. */
 export function isOverlayEntry(state: unknown, id: string): boolean {
   return Boolean(state && typeof state === "object" && (state as Record<string, unknown>)[KEY] === id);

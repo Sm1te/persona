@@ -1,11 +1,44 @@
 package proto
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 	"unsafe"
 )
+
+func TestSessionNamingMetadataAdditive(t *testing.T) {
+	var old Session
+	if err := json.Unmarshal([]byte(`{"session_id":"session","title":"Chosen title"}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.TitleManual || old.TitleSource != TitleSourceUnknown || old.OutputTokens != 0 {
+		t.Fatal("older nodes must not imply automatic title provenance or token usage")
+	}
+	for _, s := range []Session{old, {Title: "Claude Code", TitleManual: true, TitleSource: TitleSourceManual, OutputTokens: 123}} {
+		b, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded Session
+		if err := json.Unmarshal(b, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(s, decoded) {
+			t.Fatal("naming metadata did not round trip")
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(b, &fields); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"title_manual", "title_source", "output_tokens"} {
+			if _, ok := fields[key]; ok != s.TitleManual {
+				t.Fatalf("optional field %s presence=%v", key, ok)
+			}
+		}
+	}
+}
 
 // sessionSizeClass is the Go allocator's size class a Session allocated on its own lands in (the classes around it are
 // 1,408, 1,536 and 1,792 bytes, runtime/sizeclasses.go).

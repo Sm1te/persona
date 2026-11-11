@@ -7,7 +7,7 @@
   "copy": "コピー",
   "delete": "削除",
   "row_label": "キューの{n}件目：{text}",
-  "relayed_note": "このターンが終わってから届きます",
+  "relayed_note": "この会話が空いたら届きます",
   "summary_steer_other": "{count}件待機中 · {agent}は次のステップで順に受け取ります",
   "send_now": "今すぐ送信",
   "send_now_title_other": "待機中の {count} 件を今すぐ送信しますか？",

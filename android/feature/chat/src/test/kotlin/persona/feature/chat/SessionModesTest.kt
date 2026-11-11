@@ -134,4 +134,22 @@ class SessionModesTest {
         org.junit.Assert.assertFalse(Ultracode.lostShown(lost, emptySet()))
         org.junit.Assert.assertFalse(Ultracode.lostShown(lost.copy(assistant = true), features))
     }
+
+    /** #582: the quota under the switch (iOS `quotaLine`, `quotaAge`, `quotaWarnShown`). */
+    @Test fun theQuotaLineSaysEachWindowAndWarnsOnlyUnderASwitchThatCanBeOn() {
+        val now = java.time.Instant.parse("2026-11-11T12:00:00Z")
+        val q = persona.core.domain.usage.UltracodeQuota("Claude", listOf(
+            persona.core.domain.usage.UltracodeQuota.Window(persona.core.domain.usage.UltracodeQuota.Kind.FiveHours, 86.6),
+            persona.core.domain.usage.UltracodeQuota.Window(persona.core.domain.usage.UltracodeQuota.Kind.Week, 41.0)), warn = true, stale = false, sampledAt = null)
+        assertEquals("Claude 额度：5 小时 86% · 每周 41%", quotaLine(q, res))
+        assertNull("current numbers: no age", quotaAge(q, now, res))
+        assertEquals("已过期 · 2 小时前", quotaAge(q.copy(stale = true, sampledAt = now.minusSeconds(7200)), now, res))
+        val off = Session(sessionId = "s", status = "idle", ultracode = false)
+        assertTrue("off and can be turned on", Ultracode.quotaWarnShown(off, null, enabled = true))
+        assertTrue("on", Ultracode.quotaWarnShown(off.copy(ultracode = true), null, enabled = false))
+        assertFalse("can't be changed", Ultracode.quotaWarnShown(off, null, enabled = false))
+        val turningOff = off.copy(ultracode = true, ultracodePending = true)
+        assertFalse("turning it off waits", Ultracode.quotaWarnShown(turningOff, Ultracode.Ask(false, sending = false, answered = turningOff), enabled = true))
+        assertFalse("under the node's reason", Ultracode.quotaWarnShown(off.copy(ultracodeNote = "模型不支持"), null, enabled = true))
+    }
 }

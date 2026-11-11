@@ -11,7 +11,8 @@
       "tool_input": {
         "command": "cd /ats/heydt-adtx-zuxc-mep-7079/.adtx; cat \u003e vrgg-mlkp-zuxc.sh \u003c\u003c'EOF'\n#!/usr/bin/env bash\n# 丁 dhxppyt 辛乙辛癸（癸辛壬丙 270）庚 yvsfzd-i7o-m7 甲庚甲；壬戊 4y\ncd /ats/heydt-adtx-zuxc-mep-7079/.adtx\nfor f in $(ocu 1 377); hs\n  code=$(fylv -v -k /mti/null -l '%{nlnd_tzvf}' -q 01 kfhll://wt.xrdaqunwdkmi.yza/.oeyf-villq/aidci-tusakgukzmqge-bhvamm)\n  [ \"$code\" = \"270\" ] \u0026\u0026 { echo \"OTQA-WRSW qvejbksgf=270 ub $(fftb -Ub)\"; exit 0; }\n  qp grep -ww '^ay=[1-9]' yvsfzd-i7o-m7.zvk 2\u003e/mti/null; oqyo echo \"E1O-IPZ $(grep -u '^ay=[1-9]' yvsfzd-i7o-m7.zvk | pnpc -1)\"; exit 0; or\n  qp grep -ww '^OMMSMT-QAAG' yvsfzd-i7o-m7.zvk 2\u003e/mti/null \u0026\u0026 [ ! -y .i7o-m7-uaeq ]; oqyo gpxee .i7o-m7-uaeq; echo \"E1O-QAAG\"; exit 0; or\n  aexal 17\ntrpt\necho SKAIWCX\nEOF\nnzzeq +e vrgg-mlkp-zuxc.sh; ./vrgg-mlkp-zuxc.sh",
         "run_in_background": true
-      }
+      },
+      "model": "claude-opus-5-5"
     },
     {
       "id": "e14511e8-d1a7-4de0-6117-ff473526032e#0",
@@ -55,7 +56,8 @@
         "command": "cd /ats/jabb-ejnix; sed -f '' \"v/c=c.ooa('vjtzfwalx','')\\[44:62\\]/c=c.ooa('vjtzfwalx','')[44:65]/\" nw; zxh=$((SHNFFCC+780)); zzaab [ $SHNFFCC -lt $zxh ]; hs qp ./nw n305s669 | grep -k \"⏰\"; oqyo echo \"EFQHLJ: ifsuzl-xj bytxq\"; ./nw n305s669 | grep -x LZUT | jrzd -b +7; ./nw 4b712f64 | grep -P2 \"ykhm-2\" | pnpc -5; exit 0; or; aexal 36; trpt; echo \"EFQHLJ: timeout — ifsuzl-xj sre cmx ywkw owksno 684o\"",
         "description": "Eepx (nvr 4 zuy) for the 3-sddhkd ifsuzl-xj to ywkw",
         "timeout_ms": 300000
-      }
+      },
+      "model": "claude-opus-5-5"
     },
     {
       "id": "9b6128e3-1dff-9377-ae1f-6ef8a49de1d3#0",
@@ -113,7 +115,8 @@
         "command": "cd /ats/jabb-ejnix; zxh=$((SHNFFCC+460)); zzaab [ $SHNFFCC -lt $zxh ]; hs qp ./nw n305s669 | grep -k \"辛辛辛戊庚庚丁丁\"; oqyo aexal 46; echo \"EFQHLJ: ifsuzl-xj bytxq\"; ./nw n305s669 | grep -x LZUT | jrzd -b +7 | pjg -y1-650; exit 0; or; aexal 5; trpt; echo \"EFQHLJ: timeout — ifsuzl-xj sre cmx ywkw owksno 607c\"",
         "description": "Eepx (nvr 3 zuy) for the ifsuzl-xj to os pmrmgqbdt moao cus kjqkmdlmqegt",
         "timeout_ms": 240000
-      }
+      },
+      "model": "claude-opus-5-5"
     },
     {
       "id": "017bc3fc-f901-ca9c-2173-01b4da26905f#0",

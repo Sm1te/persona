@@ -11,11 +11,11 @@ import sys
 from pathlib import Path
 
 NAMES = """
-address-book app-window archive arrow-bend-up-left arrow-clockwise arrow-down arrow-left arrow-square-out
-arrow-u-up-left arrow-up arrows-in-simple arrows-out-simple arrows-clockwise at bank battery-charging battery-high bell-ringing bell-simple book-open
+address-book app-window archive arrow-bend-up-left arrow-clockwise arrow-counter-clockwise arrow-down arrow-left arrow-square-out
+arrow-u-up-left arrow-u-up-right arrow-up arrows-in-simple arrows-out-simple arrows-clockwise at bank battery-charging battery-high bell-ringing bell-simple book-open
 bookmark-simple brain broadcast calendar-blank calendar-check camera car caret-down caret-left caret-right caret-up
 chart-bar chart-line chat-circle chat-circle-dots chat-teardrop-text chats chats-circle check check-circle checks
-circle-dashed circle-notch clock clock-countdown cloud cloud-check cloud-rain code coins command copy couch cpu cube
+circle-dashed circle-notch clock clock-countdown cloud cloud-check cloud-rain code coins command copy couch cpu crop cube
 cursor-text desktop device-mobile door dots-three dots-three-vertical drop envelope-simple eye fan file file-text files
 fingerprint flag folder folder-simple funnel-simple gauge gear gear-six git-branch git-diff globe-simple hand hand-palm
 hard-drives hash heart hourglass-medium house image info kanban key keyboard laptop leaf lightbulb lightning link-simple

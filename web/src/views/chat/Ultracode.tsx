@@ -1,6 +1,7 @@
-// Claude Code's ultracode switch in the chat and in "New agent" (#3428, docs/web/web.md "ultracode"): the row under the
-// thinking effort, the workflow mark beside the thinking chip, on agent rows and on to-dos, the plan card's chip (#12) and
-// the line above the composer after a resume turned it off. The rules and the request are lib/ultracode.ts.
+// Claude Code's ultracode switch in the chat and in "New agent" (#3428, docs/web/web.md "ultracode"): the row in the model
+// panel's flyout of the model that runs (#5032), the workflow mark on the model pill, on agent rows and on to-dos, the plan
+// card's chip (#12) and the line above the composer after a resume turned it off. The rules and the request are
+// lib/ultracode.ts.
 import { useState } from "react";
 import { t } from "../../i18n";
 import { useStore } from "../../lib/store";
@@ -57,8 +58,8 @@ function SwitchHead({ on, disabled, busy, onChange }: { on: boolean; disabled: b
   );
 }
 
-/** The row under the thinking effort in the chat's model and effort popover: the switch applies at once (its own
- *  request, not the popover's "Apply"); Enter / Space on it are its own, not the popover's. A failure, a refusal too,
+/** The row under the controls of the model panel's flyout for the model that runs (its `currentExtra`, #5032): the switch
+ *  applies at once (its own request, never part of a pick); Enter / Space on it are its own. A failure, a refusal too,
  *  puts it back and says why under it until the next try; the node's own reason (`ultracode_note`) is already the line,
  *  so a failure that only repeats it is not said twice. */
 export function UltracodeSwitchRow({ session }: { session: Session }) {

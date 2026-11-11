@@ -22,9 +22,6 @@
   "tray_shelved_hint": "超过 48 小时没有进展、也没有 Agent 在跑。不计入「进行中」，数据都还在。",
   "tray_empty_progress": "没有进行中的事",
   "plan_waiting": "等你点开始",
-  "dispatch_single": "派出 1 件：{title}",
-  "dispatch_open": "打开",
-  "dispatch_many_other": "派出 {count} 件",
   "progress_count": "{value}/{total}",
   "progress_stopped": "停下了，还没完成",
   "progress_stopped_reason": "停下了，还没完成 · {reason}",
@@ -210,5 +207,12 @@
   "interrupt_batch_counts": "→ 已处理 {resolved} / 待处理 {pending}",
   "interrupt_batch_all": "→ 都处理了",
   "needs_group_another": "其他对话",
-  "new_agent_started": "已为这个任务启动新的 Agent"
+  "handoff_wake_created": "新建",
+  "handoff_wake_active": "已在运行",
+  "handoff_wake_resumed": "已恢复",
+  "handoff_last_active": "{when}活跃过",
+  "handoff_active_now": "刚刚活跃过",
+  "handoff_not_active": "还没有动静",
+  "handoff_gone": "没有这个任务了",
+  "handoff_closed": "还没开 Agent 就结束了"
 }

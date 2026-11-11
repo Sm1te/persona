@@ -405,8 +405,9 @@ The recap is `detail.recap`, present once one was written:
 - `timeline` is in time order and covers what was said, not every minute: quiet hours have no entry. `kind: meeting`
   marks time inside a meeting the hub knows of: one of the user's meeting recordings overlapping it (`meeting.kind`
   `recordings`; its minutes have the detail), or a `meetings` / `events` item of the knowledge base starting in it.
-  An entry the model judged to be a meeting with nothing matching has `kind: meeting` and no `meeting`. Everything else
-  is `outside`.
+  An entry the model judged to be a meeting with nothing matching has `kind: meeting` and no `meeting`: the merge
+  prompt keeps that for a planned discussion of several people with an agenda, and asks for one-to-ones, meals and
+  hallway talk to be `outside` unless they fall in a known meeting (#5051). Everything else is `outside`.
 - Clients show the timeline by time of day in the recording's `tz` (morning, afternoon, evening by the clock), meeting
   entries marked with their name, and keep meetings and outside apart where they summarize (the Markdown, the evening
   facts).
@@ -491,7 +492,8 @@ marks the push pending in the same write as that recap (a final recap of a day t
 asked for with `POST …/minutes` before the recap time never makes the push due. Restarts pick up both states.
 
 The push says "Your day recap is ready" with the number of meetings and suggested to-dos in the day's recaps (every
-part's), has a stable id per `day`, and a tap opens the main chat. It goes to the phone and to each channel (the Lark
+part's; a meeting is counted only when the hub knows of it, once however many parts it is in: an entry judged a
+meeting with nothing matching is not counted, #5051), has a stable id per `day`, and a tap opens the main chat. It goes to the phone and to each channel (the Lark
 bot and channels with pushes on, which get the same text with the recording's web link, as minutes do), and is marked
 done only once the phone and every channel took it (or refused it for good: the hub refusing the notification, a
 channel with no conversation to send to, a channel answering with a refusal of its own). Until then it stays pending,

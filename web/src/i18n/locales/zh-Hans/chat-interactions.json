@@ -88,7 +88,7 @@
   "always_scope_named": "总是允许的范围：{scope}",
   "always_scope_directory": "总是允许会放行这段对话中对这个目录的操作。",
   "always_scope_commands": "总是允许会放行这段对话里的所有命令。",
-  "always_scope_tool": "总是允许会放行这段对话里的所有 {tool} 调用。",
+  "always_scope_tool": "总是允许会放行这段对话里的所有「{tool}」调用。",
   "always_scope_saved": "已批准的范围会在这段对话中持续放行。",
   "secret_run_kicker": "需要密码",
   "secret_run_title": "用你的密码在 {machine} 上运行",

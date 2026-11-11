@@ -470,3 +470,32 @@ func TestWebAppRevalidatesRootFiles(t *testing.T) {
 		t.Errorf("data dir icon revalidated: %d", w.Code)
 	}
 }
+
+// The assistant html card's worker (#4215) may load and connect to nothing; other assets carry no policy of their own.
+func TestWebAppServesTheHTMLCardWorkerWithItsPolicy(t *testing.T) {
+	dir := t.TempDir()
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(dir, "assets"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>app</html>"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, "assets", "html-runtime.worker-Ab12.js"), []byte("worker"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, "assets", "sheets.worker-Cd34.js"), []byte("sheets"), 0o644))
+	h := webApp(dir)
+	get := func(p string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
+		return w
+	}
+	w := get("/assets/html-runtime.worker-Ab12.js")
+	if w.Code != 200 || w.Body.String() != "worker" || w.Header().Get("Content-Security-Policy") != "default-src 'none'; script-src 'wasm-unsafe-eval'" {
+		t.Fatalf("worker: %d %q %q", w.Code, w.Body, w.Header().Get("Content-Security-Policy"))
+	}
+	for _, p := range []string{"/assets/sheets.worker-Cd34.js", "/", "/assets/html-runtime.worker-Ab12.js.map"} {
+		if csp := get(p).Header().Get("Content-Security-Policy"); csp != "" {
+			t.Fatalf("%s: unexpected policy %q", p, csp)
+		}
+	}
+}

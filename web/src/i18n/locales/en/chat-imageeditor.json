@@ -13,5 +13,18 @@
   "box": "Box",
   "pen": "Pen",
   "undo": "Undo (⌘Z)",
-  "clear": "Clear"
+  "clear": "Clear",
+  "redo": "Redo (⇧⌘Z)",
+  "crop": "Crop",
+  "rotate": "Rotate",
+  "reset": "Reset",
+  "aspect_ratio": "Aspect ratio",
+  "shape_free": "Freeform",
+  "shape_original": "Original",
+  "shape_square": "Square",
+  "line_width": "Line width",
+  "width_thin": "Thin",
+  "width_medium": "Medium",
+  "width_thick": "Thick",
+  "named_value": "{label}: {value}"
 }

@@ -92,13 +92,23 @@ export function presetSubtitle(p: LauncherPreset): string {
   }
 }
 
-/** What is wrong with a launcher's name, the way the hub would put it; "" while empty or fine. */
+/** The startup IDs the hub keeps for itself (server `reservedLauncherNames`). */
+const RESERVED_NAMES = ["claude", "presets", "test", "discover", "import", "health"];
+
+/** What is wrong with a launcher's startup ID, the way the hub would put it; "" while empty or fine. */
 export function launcherNameProblem(name: string): string {
   const n = name.trim();
   if (!n) return "";
   if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(n)) return t("lib-launcher-presets.name_invalid");
-  if (n === "claude" || n === "presets") return t("lib-launcher-presets.name_reserved", { name: n });
+  if (RESERVED_NAMES.includes(n)) return t("lib-launcher-presets.name_reserved", { name: n });
   return "";
+}
+
+/** What is wrong with a display name, as the hub checks it (`err_display_name`): at most 64 characters (code points),
+ *  no line breaks or other control characters; "" when fine, empty included. */
+export function displayNameProblem(name: string): string {
+  const d = name.trim();
+  return [...d].length > 64 || /\p{Cc}/u.test(d) ? t("lib-launcher-presets.display_name_invalid") : "";
 }
 
 /** The categories a provider added in the wizard takes over while they are still at their default (docs/assistant/onboarding.md 5.4). */
@@ -119,14 +129,24 @@ export function assignByDefault(claudeAnswers: boolean, test: TestResult | null 
   return !claudeAnswers && !regionBlocked(test);
 }
 
-/** POST /api/v1/launchers' body: the name only when typed (the hub names it after the provider), the model only when
- *  another one than the preset's default was picked, `assign` when asked. */
-export function presetBody(p: LauncherPreset, name: string, key: string, model: string, assign = false) {
-  const m = model.trim();
-  const n = name.trim();
+/** What the wizard asks for a preset: the key, and under "More options" the startup ID, the display name and the model. */
+export interface PresetForm {
+  name: string;
+  display_name: string;
+  api_key: string;
+  model: string;
+}
+
+/** POST /api/v1/launchers' body: the startup ID and the display name only when typed (the hub names it after the
+ *  provider), the model only when another one than the preset's default was picked, `assign` when asked. */
+export function presetBody(p: LauncherPreset, f: PresetForm, assign = false) {
+  const m = f.model.trim();
+  const n = f.name.trim();
+  const d = f.display_name.trim();
   return {
     ...(n ? { name: n } : {}),
-    api_key: key.trim(),
+    ...(d ? { display_name: d } : {}),
+    api_key: f.api_key.trim(),
     preset: p.id,
     ...(m && m !== presetDefaultModel(p) ? { model: m } : {}),
     ...(assign ? { assign: [...ASSIGN_PURPOSES] } : {}),

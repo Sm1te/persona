@@ -26,7 +26,7 @@
     <string name="settings_extension_market_unavailable">The extension market is unavailable. Restore it and try again.</string>
     <string name="settings_extension_market_missing">This extension is no longer listed in its market.</string>
     <string name="settings_extension_market_removed">Auto-upgrade is paused because the extension market was removed. The saved preference is kept.</string>
-    <string name="settings_extension_global_off">Auto-upgrade is off for this assistant. The saved preference for this extension is kept.</string>
+    <string name="settings_extension_global_off">Auto-upgrade is paused because automatic extension updates are off for this assistant. Your setting is kept and applies again once they\'re turned back on.</string>
     <string name="settings_extension_global_unknown">This assistant’s global auto-upgrade setting could not be read.</string>
     <string name="settings_extension_rollback">Roll back</string>
     <string name="settings_extension_rollback_unavailable">This assistant does not provide a rollback consent preview. No rollback is sent from this page.</string>

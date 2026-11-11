@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end check of how the web chat draws an agent's work (#1963, the design's grammar): "Worked for Xs" groups that open and
 fold, a command opening in place, an edit's diff over the page, delivered prose staying out of the fold, subagent cards
-(one opened, its whole conversation in the side panel with the chat left as it was), and the "Jump to bottom" / "New messages" pill.
+(#5030: one card each in the folded summary, opened in place, an old subagent link landing on its card, the bar while
+background subagents run after the turn), and the "Jump to bottom" / "New messages" pill.
 
 Needs a running web page against the fake hub with the two conversations made for it, and Playwright for Python (it
 drives the installed Chrome):
@@ -23,6 +24,7 @@ from playwright.sync_api import expect, sync_playwright
 
 GROUPS = "/s/macbook/a1f3c2d4-0000-4000-8000-0000000c1e03"  # MOCK_WORK_GROUPS
 AGENTS = "/s/macbook/a1f3c2d4-0000-4000-8000-0000000c1e02"  # MOCK_SUBAGENT_CARDS
+BACKGROUND = "/s/macbook/a1f3c2d4-0000-4000-8000-0000000c1e12"  # MOCK_SUBAGENT_CARDS: a background subagent after the turn
 SIZES = {"wide": {"width": 1280, "height": 820}, "narrow": {"width": 390, "height": 844}}
 
 GAP = "() => { const s = document.querySelector('[data-chat-scroll]'); return s.scrollHeight - s.scrollTop - s.clientHeight; }"
@@ -138,51 +140,76 @@ def groups_page(page, tag, shot):
 def agents_page(page, tag, shot):
     page.goto(S["base"] + AGENTS)
     main = page.locator("main")
-    running = main.locator('[data-subagent-card="running"]')
+    # super rule 2: a running subagent's card is in the live summary, folded until opened
+    live = main.locator('[data-work-group="live"]')
+    expect(live).to_contain_text("正在工作…")
+    expect(main.locator('[data-subagent-card="running"]')).to_have_count(0)
+    live.locator("button").first.click()
+    running = live.locator('[data-subagent-card="running"]')
     expect(running).to_be_visible()
-    if running.evaluate("(n) => !!n.closest('[data-work-group]')"):
-        fail(f"{tag}: the running subagent's card is inside a group")
-    expect(main.locator('[data-work-group="live"]')).to_contain_text("正在工作…")
-    expect(running.locator("[data-subagent-line]")).to_contain_text("跑筛选用例")
-    ok(f"{tag}: a running subagent's card stays in the open next to the live 「正在工作…」, saying what it does now")
+    expect(running).to_contain_text("子 Agent")
+    expect(running).to_contain_text("运行中")
+    expect(running.locator("[data-task-model]")).to_have_text("Haiku 4.5")
+    expect(running.locator("[data-task-meta]")).to_contain_text("Claude Code")
+    expect(running.locator("[data-task-meta]")).to_contain_text("3 次工具调用")
+    expect(running.locator("[data-task-elapsed]")).to_contain_text("已运行")
+    ok(f"{tag}: the live 「正在工作…」 opens to the running subagent's card: status, model, tool uses, 已运行")
     if page.locator('[role="tablist"][aria-label="子 Agent"]').count():
         fail(f"{tag}: the subagent tab strip is still there")
     ok(f"{tag}: no tab strip of subagents")
+    shot("agent-running")
 
     page.evaluate(WHEEL_UP, 0)
-    # subagents launched together sit in one grid, in the open, finished or not (#5602)
-    done = main.locator('[data-subagent-grid="3"]').first
-    expect(done).to_contain_text("跑了 3 个子 Agent")
-    expect(done.locator('[data-subagent-card="completed"]').first).to_be_visible()
-    expect(done.locator('[data-subagent-card="failed"]')).to_contain_text("失败")
-    if done.evaluate("(n) => !!n.closest('[data-work-group]')"):
-        fail(f"{tag}: the finished subagents are inside a group")
-    expect(done.locator('[data-subagent-card="completed"] [data-subagent-line]').first).to_contain_text("2 步")
-    ok(f"{tag}: subagents launched together sit in one grid, finished and failed ones too, each with its steps")
+    page.wait_for_timeout(400)
+    # finished subagents fold into the exchange's summary: one card each, no grid, the nested ones as cards of their own
+    if main.locator("[data-subagent-grid]").count():
+        fail(f"{tag}: subagents still sit in a grid")
+    group = main.locator('[data-work-group="done"]').first
+    group.locator("button").first.click()
+    cards = group.locator("[data-subagent-card]")
+    expect(cards).to_have_count(5)
+    expect(group.locator('[data-subagent-card="failed"]')).to_contain_text("失败")
+    expect(group.locator("[data-subagent-card]").filter(has_text="查价格的测试数据")).to_have_count(1)
+    expect(group.locator("[data-subagent-card]").filter(has_text="核对下架商品")).to_have_count(1)
+    ok(f"{tag}: finished subagents fold into 「已工作」, one card each, nested ones flat by when they started")
 
-    card = done.locator('[data-subagent-card="completed"]').nth(1)
+    card = group.locator("[data-subagent-card]").filter(has_text="回归：价格筛选")
     card.locator("button").first.click()
     expect(card.locator("[data-subagent-prompt]")).to_contain_text("查价格筛选的回归")
     expect(card.locator("[data-subagent-summary]")).to_contain_text("测试数据的问题")
-    expect(card.locator("[data-subagent-recent] [data-action-row]").first).to_be_visible()
-    expect(card.locator("[data-subagent-nested]")).to_contain_text("查价格的测试数据")
-    expect(card.locator("[data-subagent-nested]")).to_contain_text("核对下架商品")
-    ok(f"{tag}: opened, a card shows what it was asked, what it reported, its latest steps and the ones it launched")
+    for gone in ("[data-subagent-recent]", "[data-subagent-nested]", "[data-subagent-open]"):
+        if card.locator(gone).count():
+            fail(f"{tag}: the opened card still has {gone}")
+    ok(f"{tag}: opened in place, a card shows what it was asked and what it reported; no steps list, no 查看完整过程")
+    no_overflow(page, tag, "subagent cards")
     shot("agent-card")
 
-    title = page.locator("main header h1").first.inner_text()
-    card.locator("[data-subagent-open]").click()
-    panel = page.locator("aside[aria-label=Agent]")
-    expect(panel).to_contain_text("回归：价格筛选")
-    expect(panel).to_contain_text("查价格筛选的回归，必要时再拆给子 Agent")
-    expect(panel.locator("textarea")).to_have_count(0)
-    if page.locator("main header h1").first.inner_text() != title:
-        fail(f"{tag}: opening the subagent changed the chat")
-    ok(f"{tag}: 查看完整过程 opens its conversation read-only in the side panel; the chat stays")
-    no_overflow(page, tag, "subagent panel")
-    shot("agent-panel")
-    panel.get_by_role("button", name="关闭面板").click()
-    expect(panel).to_have_count(0)
+    # an old link to a subagent's own conversation opens its parent at its card, opened
+    page.goto(S["base"] + AGENTS + "@scdone")
+    try:
+        page.wait_for_url(lambda url: "@" not in url, timeout=15000)
+    except Exception:
+        fail(f"{tag}: the subagent link stayed on the subagent ({page.url})")
+    linked = main.locator("[data-subagent-card]").filter(has_text="回归：结算流程")
+    expect(linked.locator("button").first).to_have_attribute("aria-expanded", "true")
+    expect(linked).to_be_in_viewport()
+    ok(f"{tag}: an old subagent link opens the parent chat at that subagent's card, opened")
+    if page.locator("aside[aria-label=Agent]").count():
+        fail(f"{tag}: a side panel opened for the subagent")
+    shot("agent-link")
+
+    # the turn is over and a background subagent runs on: the turn drawn finished, the bar says model usage goes on
+    page.goto(S["base"] + BACKGROUND)
+    expect(main.locator('[data-work-group="done"]')).to_have_count(1)
+    expect(main.locator('[data-work-group="live"]')).to_have_count(0)
+    main.locator('[data-work-group="done"] > button').first.click()
+    expect(main.locator('[data-subagent-card="running"]')).to_be_visible()
+    bar = page.locator('[data-running-background="subtasks"]')
+    expect(bar).to_contain_text("后台子任务运行中，模型用量仍在消耗…")
+    if bar.locator("[data-running-elapsed]").count():
+        fail(f"{tag}: the background subtasks bar shows the turn's time")
+    ok(f"{tag}: background subagents after the turn: the turn drawn finished, the bar says model usage goes on")
+    shot("agent-background")
 
 
 def run(browser, base, hub, token, size, theme, shots):

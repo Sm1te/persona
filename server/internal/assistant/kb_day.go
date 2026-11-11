@@ -249,7 +249,8 @@ const dayPushPhone = channel.App
 
 // dayRecapCounts are the meetings and the suggested to-dos of day, whose recording id's recap is d: across every part
 // of the day with a recap (one of e's day recordings of day), a meeting the hub knows of counted once whatever the
-// parts it is in.
+// parts it is in. Only meetings the hub knows of count: an entry the model judged a meeting with nothing matching is
+// as often a one-to-one or a chat over lunch, and the push leads with this number (#5051).
 func dayRecapCounts(e *kb.Engine, day, id string, d kb.DayRecap) (meetings, actions int) {
 	recaps := []kb.DayRecap{d}
 	if e != nil {
@@ -265,17 +266,14 @@ func dayRecapCounts(e *kb.Engine, day, id string, d kb.DayRecap) (meetings, acti
 	known := map[[2]string]bool{}
 	for _, rc := range recaps {
 		for _, en := range rc.Timeline {
-			if en.Kind != kb.RecapMeeting {
+			m := en.Meeting
+			if en.Kind != kb.RecapMeeting || m == nil || m.ID == "" {
 				continue
 			}
-			if m := en.Meeting; m != nil && m.ID != "" {
-				if k := [2]string{m.Kind, m.ID}; known[k] {
-					continue
-				} else {
-					known[k] = true
-				}
+			if k := [2]string{m.Kind, m.ID}; !known[k] {
+				known[k] = true
+				meetings++
 			}
-			meetings++
 		}
 		actions += len(rc.Actions)
 	}

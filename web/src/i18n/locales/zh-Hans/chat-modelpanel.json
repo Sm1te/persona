@@ -1,0 +1,5 @@
+{
+  "other_provider": "运行中的 Agent 暂时不能换供应商",
+  "other_engine": "从 {from} 换到 {to} 需要新开对话",
+  "model_fixed": "运行中的 {agent} 会话不能换模型"
+}

@@ -85,6 +85,13 @@ describe("words", () => {
     expect(runsWith({ launcher: "claude-fast", permission_mode: "auto", effort: "low" })).toEqual({ text: "claude-fast · 自动 · 思考低", danger: false });
     expect(runsWith({ permission_mode: "bypassPermissions" })).toEqual({ text: "全部放行", danger: true });
   });
+
+  it("names its launcher by the provider's display name; an rc alias by its ID (#5029)", () => {
+    const names = [{ name: "relay-example-com", display_name: "我的中转 站" }, { name: "cc_glm" }];
+    expect(runsWith({ launcher: "relay-example-com", effort: "low" }, names)).toEqual({ text: "我的中转 站 · 思考低", danger: false });
+    expect(runsWith({ launcher: "cc_glm" }, names)).toEqual({ text: "cc_glm", danger: false });
+    expect(runsWith({ launcher: "gone" }, names)).toEqual({ text: "gone", danger: false });
+  });
 });
 
 describe("the editor", () => {

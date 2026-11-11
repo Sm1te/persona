@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closePanel, getPanel, openPanel, type Panel } from "./panel";
-import { KEPT, arriving, belongsTo, leaving, notePlace, useSessionPanels, type PanelMemory, type SessionPanel } from "./panel-memory";
+import { KEPT, arriving, belongsTo, chatKey, leaving, notePlace, useSessionPanels, type PanelMemory, type SessionPanel } from "./panel-memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -55,7 +55,7 @@ describe("the memory", () => {
     expect(belongsTo(gitA, B)).toBe(false);
     expect(belongsTo({ kind: "file", mid: "m1", path: "/work/web/a.ts" }, A)).toBe(true);
     expect(belongsTo({ kind: "link", url: "https://example.com" }, A)).toBe(false);
-    expect(belongsTo({ kind: "task", todo: "t1" }, A)).toBe(false);
+    expect(belongsTo({ kind: "plan", mid: "m1", sid: "a" }, A)).toBe(false);
     expect(belongsTo(gitA, null)).toBe(false);
   });
 });
@@ -139,8 +139,8 @@ describe("moving between Persona chats", () => {
     return null;
   };
   const show = (chat?: string) => act(() => root.render(createElement(Page, { chat })));
-  const agent: Panel = { kind: "agent", mid: "m1", sid: "s1" };
-  const task: Panel = { kind: "task", todo: "t1" };
+  const agent: Panel = { kind: "plan", mid: "m1", sid: "s1" };
+  const task: Panel = { kind: "file", mid: "m1", path: "/notes/today.md" };
 
   beforeEach(() => {
     sessionStorage.clear();
@@ -183,6 +183,14 @@ describe("moving between Persona chats", () => {
     act(() => openPanel(link));
     show("B");
     expect(getPanel()).toEqual(link);
+  });
+
+  it("brings back no panel of a kind the page no longer has (the task and Agent panels, #5096)", () => {
+    sessionStorage.setItem("persona.panel.back", JSON.stringify({ [chatKey("A")]: { kind: "task", todo: "t1" }, [chatKey("B")]: task }));
+    show("A");
+    expect(getPanel()).toBeNull();
+    show("B");
+    expect(getPanel()).toEqual(task);
   });
 
   it("brings it back through a page that is not a chat", () => {

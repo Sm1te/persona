@@ -125,7 +125,8 @@ func (a assistantRemote) Start(ctx context.Context, p assistantwire.StartParams)
 // runs it on (assistant.send_params).
 func (a assistantRemote) SendParams(ctx context.Context, machine, session string, params map[string]any) (map[string]any, error) {
 	var res struct {
-		Params map[string]any `json:"params"`
+		Params       map[string]any `json:"params"`
+		LauncherNote string         `json:"launcher_note"` // the main chat ran on another launcher, and why (#4659)
 	}
 	who := principalOf(ctx) // a person's own app: a full device's credential (secret_handoff.go)
 	err := a.call(ctx, assistantwire.MethodSendParams, assistantwire.SendParams{MachineID: machine, SessionID: session, Params: params,
@@ -136,8 +137,14 @@ func (a assistantRemote) SendParams(ctx context.Context, machine, session string
 	if res.Params == nil {
 		res.Params = map[string]any{}
 	}
+	if res.LauncherNote != "" {
+		res.Params[launcherNoteParam] = res.LauncherNote // taken out again by assistantSend: never sent to the node
+	}
 	return res.Params, nil
 }
+
+// launcherNoteParam carries the manager's launcher_note from SendParams to assistantSend.
+const launcherNoteParam = "launcher_note"
 
 // Rename has the assistant rename its conversation session on machine (assistant.rename): for the user, or for
 // extension ext ("" for anyone else), whose title the assistant takes as a hint.
@@ -148,17 +155,37 @@ func (a assistantRemote) Rename(ctx context.Context, machine, session string, pa
 	return out, err
 }
 
-// assistantSend fills p, a message for the assistant's conversation sid on m, as the assistant runs it.
-func (h *Hub) assistantSend(ctx context.Context, m *Machine, sid string, p map[string]any) error {
+// assistantSend fills p, a message for the assistant's conversation sid on m, as the assistant runs it. note is the
+// manager's word that it runs on another launcher than the one configured (#4659), for the app.
+func (h *Hub) assistantSend(ctx context.Context, m *Machine, sid string, p map[string]any) (note string, err error) {
 	out, err := h.asstOf(h.sessionOwner(m.cfg.ID, sid)).SendParams(ctx, m.cfg.ID, sid, p)
 	if err != nil {
-		return err
+		return "", err
 	}
+	note, _ = out[launcherNoteParam].(string)
+	delete(out, launcherNoteParam)
 	clear(p)
 	for k, v := range out {
 		p[k] = v
 	}
-	return nil
+	return note, nil
+}
+
+// withLauncherNote adds the manager's launcher_note to a delivered send's answer (a JSON object), for the app to show.
+func withLauncherNote(status int, body []byte, note string) []byte {
+	var out map[string]any
+	if note == "" || status != http.StatusOK || json.Unmarshal(body, &out) != nil {
+		return body
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	out["launcher_note"] = note
+	b, err := json.Marshal(out)
+	if err != nil {
+		return body
+	}
+	return append(b, '\n')
 }
 
 // writeAssistantErr answers an app's request the assistant could not take: 503 assistant_offline while it is not
@@ -204,7 +231,12 @@ func (h *Hub) renameSession(w http.ResponseWriter, r *http.Request, m *Machine) 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	out := json.RawMessage(`{"ok":true}`)
-	if s, _ := m.session(sid); m.isAssistant(s) {
+	owner := h.sessionOwner(m.cfg.ID, sid)
+	sess, _ := m.session(sid)
+	// Ordinary extension calls keep the existing node authorization boundary.
+	// Older managers cannot record ordinary Agent titles; preserve their native path.
+	recordAgent := principalOf(r.Context()).Role != roleExtension && h.archiveManagerHas(owner, assistantwire.CapabilityAgentNaming) == http.StatusOK
+	if (p["title"] != nil || p["tab_name"] != nil) && (m.isAssistant(sess) || recordAgent) {
 		ext := ""
 		if pr := principalOf(r.Context()); pr.Role == roleExtension {
 			ext = pr.Extension

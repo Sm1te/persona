@@ -1,0 +1,11 @@
+{
+  "aria": "モデルを選択。現在：{model}",
+  "aria_effort": "モデルを選択。現在：{model}、思考の強さ：{effort}",
+  "aria_pending": "モデルを選択。次のメッセージ：{agent} · {model}",
+  "aria_pending_effort": "モデルを選択。次のメッセージ：{agent} · {model}、思考の強さ：{effort}",
+  "current_and_next": "現在：{current}\n次のメッセージ：{next}",
+  "loading": "モデルを読み込み中…",
+  "failed": "モデルを読み込めませんでした",
+  "default_model": "デフォルトのモデル",
+  "effort_xhigh_short": "とても高い"
+}

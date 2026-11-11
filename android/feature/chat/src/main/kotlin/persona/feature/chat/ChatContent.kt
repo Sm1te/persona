@@ -500,10 +500,13 @@ private fun PlanStep(plan: LinePlan, running: Boolean, nested: Boolean = false) 
 private fun userPictures(images: List<Item>, session: SessionKey, loader: ImageLoader): (@Composable () -> Unit)? =
     if (images.isEmpty()) null else ({ images.forEach { image -> ChatPicture(session, image, loader, alignEnd = true) } })
 
-/** A message not in the transcript yet (the outbox): no long-press menu, its own status line has the actions. */
+/**
+ * A message not in the transcript yet (the outbox): its status line has the delivery actions; with its [pending] state its long
+ * press opens the menu for a message not sent ("Copy", "Select", "Share", "Delete"), without one none.
+ */
 @Composable
-internal fun UserBubble(text: String) {
-    MergedUserBubble(listOf(Item("pending", role = "user", kind = "text", text = text)), menu = false)
+internal fun UserBubble(text: String, id: String = "pending", pending: persona.core.contracts.api.DeliveryState? = null) {
+    MergedUserBubble(listOf(Item(id, role = "user", kind = "text", text = text)), menu = pending != null, pending = pending)
 }
 
 @Composable

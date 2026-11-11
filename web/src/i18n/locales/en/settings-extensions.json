@@ -138,7 +138,7 @@
   "reference_hint": "Its provider gives the value whenever this extension needs it. Persona keeps only the reference.",
   "secret_reference_saved": "{title} now uses the reference",
   "users_title": "Used by",
-  "users_footer": "Settings that hold one of its references. Each is your standing approval for that setting.",
+  "users_footer": "These settings take their values from this provider. Saving a setting lets it keep taking its value.",
   "user_launcher": "{name} key",
   "user_launcher_machine": "{name} key on {machine}",
   "rules_title": "Always for Agents",

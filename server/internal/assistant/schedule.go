@@ -343,6 +343,8 @@ type schedule struct {
 	wake   chan struct{} // the list changed: scheduleLoop recomputes when to wake up
 	// sending: tasks whose run is being sent right now (runTask), so two can't go into one conversation at once.
 	sending map[string]bool
+	// held: by task, until when its due run waits for the owner (runDue, relay_presence.go runHold); in memory only.
+	held map[string]time.Time
 	// inflight: runs runDue started and that have not recorded their result yet.
 	inflight sync.WaitGroup
 	// waitTold: by task, the wait on the user its skip was pushed for (tellWaitingSkip, waitKey): a patrol every 30
@@ -1413,7 +1415,11 @@ func (s *Service) nextDue(ctx context.Context, now time.Time) time.Time {
 	defer sc.mu.Unlock()
 	var next time.Time
 	for _, t := range sc.tasks {
-		if n := t.nextWithLeaderCadence(now, loc, open); !n.IsZero() && (next.IsZero() || n.Before(next)) {
+		n := t.nextWithLeaderCadence(now, loc, open)
+		if until, ok := sc.held[t.ID]; ok && until.After(now) {
+			n = until // held for the owner (runDue): looked at again when the hold ends
+		}
+		if !n.IsZero() && (next.IsZero() || n.Before(next)) {
 			next = n
 		}
 	}
@@ -1431,9 +1437,20 @@ type dueTask struct {
 func (s *Service) runDue(ctx context.Context, now time.Time) {
 	loc := s.location(ctx)
 	open := s.leaderOpenWork(ctx)
+	present := s.ownersPresent(now) // read before schedule.mu
 	sc, err := s.lockedSchedule(ctx)
 	if err != nil {
 		return // this turn is skipped: a task run now could not be marked as run
+	}
+	// A run that goes into a conversation the owner is talking in waits (relay_presence.go runHold): it stays due,
+	// nothing of it is consumed or recorded, and nextDue looks again when the hold ends.
+	held := map[string]time.Time{}
+	waits := func(t *Task, due time.Time) bool {
+		h := runHold(present, *t, due, now)
+		if h > 0 {
+			held[t.ID] = now.Add(h)
+		}
+		return h > 0
 	}
 	var due []dueTask
 	var skipped []ScheduleRun
@@ -1475,6 +1492,10 @@ func (s *Service) runDue(ctx context.Context, now time.Time) {
 			if next.IsZero() || next.After(now) {
 				continue
 			}
+			// One that never ran is only looked back for two minutes (above): waiting would lose its first run.
+			if !t.LastRun.IsZero() && waits(t, next) {
+				continue
+			}
 			t.LastRun, changed = now.UTC(), true // saved before it starts: a restart in between loses the run rather than repeating it
 			if now.Sub(next) < dailyCatchUp {
 				due = append(due, dueTask{*t, next})
@@ -1502,6 +1523,9 @@ func (s *Service) runDue(ctx context.Context, now time.Time) {
 			if next.IsZero() || next.After(now) {
 				continue
 			}
+			if !t.LastRun.IsZero() && waits(t, next) { // as a daily one
+				continue
+			}
 			// The times missed while the hub was down count once, as the latest of them: a run every 30 minutes
 			// back after an hour runs once now rather than skip.
 			for n := rule.next(next, loc); !n.IsZero() && !n.After(now); n = rule.next(n, loc) {
@@ -1516,14 +1540,14 @@ func (s *Service) runDue(ctx context.Context, now time.Time) {
 					Status: runSkipped, Error: t.LastError, of: now.UTC()})
 			}
 		case repeatOnce:
-			if t.At.After(now) {
+			if t.At.After(now) || waits(t, t.At) {
 				continue
 			}
 			due = append(due, dueTask{*t, t.At})
 			t.LastRun, t.Enabled, changed = now.UTC(), false, true
 		case repeatInterval:
 			next := t.nextWithLeaderCadence(now, loc, open)
-			if next.After(now) {
+			if next.After(now) || waits(t, next) {
 				continue
 			}
 			dueAt := next
@@ -1542,6 +1566,7 @@ func (s *Service) runDue(ctx context.Context, now time.Time) {
 			}
 		}
 	}
+	sc.held = held
 	// A one-off that ran a day ago is only history now.
 	kept := tasks[:0:0]
 	for _, t := range tasks {

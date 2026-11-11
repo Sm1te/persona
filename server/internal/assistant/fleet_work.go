@@ -64,7 +64,18 @@ func workOf(l i18n.Lang, sess proto.Session, reported *proto.WorkState, asking m
 		// itself): it names what it waits for, so the lists keep it for the user, not as a wait that ends by itself.
 		w.Wait = w.Line
 	}
+	if sess.Status == proto.StatusInterrupted && selfWakes(&w) {
+		// Its process is gone (a node restart is behind it, node/interrupted.go): a wait only that process ends (its
+		// background tasks, a /loop, its CLI going on after a limit) never ends, and the task would read "waiting"
+		// forever instead of stopped (#5124).
+		return nil
+	}
 	return &w
+}
+
+// selfWakes: w is a wait the agent ends by itself, with nothing the manager sends: managerWaits without a wake.
+func selfWakes(w *proto.WorkState) bool {
+	return managerWaits(w) && w.WakeAt == nil
 }
 
 // transientPending: w is a transient model error whose "Continue" the manager sends by itself (wake_at).

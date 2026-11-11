@@ -1,12 +1,21 @@
 {
-  "title": "~/.zshrcからインポート",
+  "title": "コンピューターのaliasからインポート",
   "import_count_other": "{count}件をインポート",
   "import": "インポート",
   "computer": "コンピューター",
-  "computer_hint": "このコンピューターの~/.zshrcにあるclaudeを呼び出すaliasを読み込みます。URLとKeyが同じものは1つのプロバイダーにまとめます。",
+  "computer_hint": "このコンピューターの~/.zshrc、~/.bashrc、~/.bash_aliasesにあるclaudeを呼び出すaliasを読み込み、URLとKeyごとにまとめます。キーはハブがコンピューターから読み込み、ブラウザーは経由しません。",
   "offline_suffix": "（オフライン）",
-  "empty": "このコンピューターの~/.zshrcにインポートできるclaudeのaliasはありません。",
+  "empty": "このコンピューターの~/.zshrc、~/.bashrc、~/.bash_aliasesにインポートできるclaudeのaliasはありません。",
   "list_label": "インポートできるプロバイダー",
-  "from_aliases": "{aliases}から",
-  "merge_note": "統合すると、新しいモデルだけが既存のプロバイダーに追加されます。ほかの設定は変わりません。"
+  "merge_note": "統合すると、新しいモデルだけが既存のプロバイダーに追加されます。ほかの設定は変わりません。",
+  "no_computers": "まだコンピューターが接続されていません。インポートはコンピューター上のaliasを読み込むので、先に「マシン」でコンピューターを追加してください。",
+  "choice_label": "{name}のインポート方法",
+  "split": "aliasごとにプロバイダーを作る",
+  "split_hint": "aliasごとの設定をそのまま保ちます。",
+  "merge": "1つのプロバイダーにまとめる",
+  "merge_hint": "{alias}の設定を使い、ほかのaliasはモデルだけを追加します。",
+  "variants_label": "{name}から作るプロバイダー",
+  "hide": "インポートしたaliasをPersonaで非表示にする",
+  "hide_hint": "シェルの設定ファイルは変更しません。非表示にしたaliasは「非表示」から元に戻せます。",
+  "hide_which": "{aliases}を非表示にします。"
 }

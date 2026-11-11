@@ -49,8 +49,10 @@ const MCP_UNSUPPORTED = /does not support MCP servers/i
 /**
  * @param {{ paseo?: object, log?: (msg: string) => void, connect?: (path: string) => import('node:net').Socket }} [deps]
  *   paseo: a PaseoClient (default: one for options.home).
- * @param {{ home?: string, socketPath?: string, mcpConfig?: string, retryMs?: number, pushDelayMs?: number, refreshMs?: number,
- *   awayGrace?: number, callWait?: number, listMax?: number, pageSize?: number, closedChecks?: number[], sweepMs?: number }} [options]
+ * @param {{ home?: string, socketPath?: string, mcpConfig?: string, allowTools?: string[], retryMs?: number, pushDelayMs?: number,
+ *   refreshMs?: number, awayGrace?: number, callWait?: number, listMax?: number, pageSize?: number, closedChecks?: number[],
+ *   sweepMs?: number }} [options]
+ *   allowTools: the Persona tools (full MCP names) an Agent Persona created calls without a card (the node's, #4966).
  *   sweepMs: 0 never reads the directory again.
  */
 export function createPaseoBridge(deps = {}, options = {}) {
@@ -72,6 +74,7 @@ export function createPaseoBridge(deps = {}, options = {}) {
   let launchers = []
   const watches = new Map() // session id → watch (see watchChanged)
   const asks = new Map() // permission id → { abort, agentId }
+  const allowTools = new Set(options.allowTools ?? [])
   const handedBack = new Set() // permission ids the phone handed back to the computer: Paseo's own app answers them
   const echoes = new Map() // Paseo message id → the client_msg_id the phone sent it with
   const lastTexts = new Map() // agent id → its last words (agents whose content is not a transcript)
@@ -559,7 +562,9 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   /** Put a pending request on the phone (once); the answer goes back to Paseo. Answered in Paseo: withdrawn. */
   function askFor(agentId, request) {
-    if (!request?.id || asks.has(request.id) || handedBack.has(request.id) || !rt.connected) return
+    if (!request?.id || asks.has(request.id) || handedBack.has(request.id)) return
+    if (ownTool(agentId, request)) return allowOwn(agentId, request)
+    if (!rt.connected) return
     const sessionId = sessionOf(agentId)
     if (!sessionId) return
     const ac = new AbortController()
@@ -590,6 +595,34 @@ export function createPaseoBridge(deps = {}, options = {}) {
     }, () => {
       if (asks.get(request.id) === entry) asks.delete(request.id)
     })
+  }
+
+  /**
+   * Whether request is Claude Code asking for one of the Agent's own Persona tools (allowTools) in an Agent Persona
+   * started (it carries SESSION_LABEL): those run without a card, as the node allows them in the Claude Agents it starts
+   * (docs/integrations/claude-integration.md "Persona tools Agents call without a card"). An agent made in Paseo's own
+   * app, every other tool and every other provider's request still go to the phone.
+   */
+  function ownTool(agentId, request) {
+    if (!allowTools.has(request.name) || request.provider !== 'claude' || request.kind === 'question' || request.kind === 'plan') return false
+    const label = agents.get(agentId)?.agent?.labels?.[SESSION_LABEL]
+    return typeof label === 'string' && label !== ''
+  }
+
+  /**
+   * Allows one of the Agent's own tools (ownTool) here, once, with nothing remembered and no mode changed. Kept among
+   * asks until Paseo no longer lists it, so a refresh meanwhile does not answer it twice; a failed answer is tried again
+   * at the next refresh.
+   */
+  function allowOwn(agentId, request) {
+    const entry = { agentId, abort: () => { if (asks.get(request.id) === entry) asks.delete(request.id) } }
+    asks.set(request.id, entry)
+    paseo.request('agent_permission_response', { agentId, response: { behavior: 'allow' } },
+      { requestId: request.id, expect: 'agent_permission_resolved', timeoutMs: 30_000 })
+      .catch((err) => {
+        log(`paseo: allow ${request.name} of ${agentId}: ${err.message}`)
+        entry.abort()
+      })
   }
 
   /**

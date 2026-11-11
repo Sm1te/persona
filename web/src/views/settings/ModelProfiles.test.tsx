@@ -88,3 +88,22 @@ it("lists a profile's Agent presets and says when none is in use", async () => {
   await act(async () => root.unmount()); host.remove();
  }
 });
+
+it("names a preset's launcher by the provider's display name, its ID beside it; an rc alias by its ID (#5029)", async () => {
+ await initI18n();
+ vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ revision: 1, profiles: [{ id: "economy", name: "economy", changes: [],
+  tiers: { quick: { launcher: "cc_glm" }, review: { launcher: "relay-example-com", model: "glm-5", effort: "high" } } }] }), { status: 200 })));
+ const providers = [{ id: "launcher.relay-example-com", name: "我的中转 站", kind: "launcher" as const }, { id: "launcher.cc_glm", name: "cc_glm", kind: "launcher" as const }];
+ const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+ const flush = async () => { for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); }); };
+ try {
+  await act(async () => { root.render(<ModelProfiles providers={providers} onChanged={() => {}} />); }); await flush();
+  act(() => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("economy"))!.click()); await flush();
+  const rows = [...document.querySelectorAll('[data-testid="model-profile-tiers"] li')];
+  expect(rows.map((li) => li.textContent)).toEqual(["quickcc_glm", "review我的中转 站 relay-example-com · glm-5 · high"]);
+  expect([...rows[1].querySelectorAll("span span.font-mono")].map((s) => s.textContent)).toEqual(["relay-example-com"]);
+  expect(rows[0].querySelectorAll("span span.font-mono")).toHaveLength(0);
+ } finally {
+  await act(async () => root.unmount()); host.remove();
+ }
+});

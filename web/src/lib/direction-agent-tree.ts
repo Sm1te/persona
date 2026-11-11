@@ -4,6 +4,7 @@ import type { AgentMutes } from "./agent-groups";
 import { directionTitle, agentRef, type DirectionAgent, type DirectionTask, type DirectionTaskState, type DirectionTree } from "./direction-tree";
 import { agentTreeState, buildTodoTree, type TodoTree, type TreeAgent, type TreeProject, type TreeState, type TreeTodo, worstTreeState } from "./todo-tree";
 import type { AgentState, Machine, Session } from "./types";
+import { splitSubagentLink } from "./subagent-link";
 
 /** The Agents tree's one-word state for a task's state: needs you, working, and waiting for stuck and review. */
 const TREE_STATE: Record<DirectionTaskState, TreeState> = { needs_you: "needs_you", working: "working", stuck: "waiting", review: "waiting" };
@@ -19,10 +20,13 @@ function standIn(a: DirectionAgent): Session {
  * A task's agents as tree nodes: each found in `sessions` (by "machine/session") once, nested as the hub nested them.
  * `standIns`: an agent the list does not have is drawn from what the tree says of it (the sidebar); otherwise it is
  * left out and its children move up (the Agents page, whose list is filtered). `placed` collects the agents drawn.
+ * An in-session subagent ("<parent>@<agent>") is never a row, nor are the ones it launched (#5030, cindy): it is a card
+ * in its parent's chat.
  */
 export function directionAgentNodes(list: readonly DirectionAgent[] | undefined, sessions: ReadonlyMap<string, Session>, placed: Set<string>, standIns: boolean): TreeAgent[] {
   const out: TreeAgent[] = [];
   for (const a of list ?? []) {
+    if (splitSubagentLink(a.session_id)) continue;
     const ref = agentRef(a);
     const children = directionAgentNodes(a.children, sessions, placed, standIns);
     const s = placed.has(ref) ? undefined : sessions.get(ref) ?? (standIns ? standIn(a) : undefined);

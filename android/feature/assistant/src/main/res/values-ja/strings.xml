@@ -79,6 +79,8 @@
     <string name="assistant_search_chats">チャットを検索</string>
     <string name="assistant_start_main">メインチャットを開始</string>
     <string name="assistant_main_chat">メインチャット</string>
+    <!-- The drawer's newest own chats, between 常驻 and All chats (#4922) -->
+    <string name="assistant_recent">最近</string>
     <string name="assistant_directions">常駐</string>
     <string name="assistant_origin_inbox">受信箱</string>
     <string name="assistant_empty_title">チャットはまだありません</string>

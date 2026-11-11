@@ -12,9 +12,10 @@ import { ago, uuid } from "../lib/format";
 import { codedFailure, helpTopic, passesBySelf, refreshReadiness, type CodedFailure } from "../lib/readiness";
 import { conversationPage } from "../lib/conversation-page";
 import { navigate } from "../lib/router";
-import { refreshAssistant, useStore } from "../lib/store";
+import { hubHas, refreshAssistant, useStore } from "../lib/store";
 import { effectiveLauncher, NEW_CONVERSATION, pickedLauncher, pickLauncher } from "../lib/assistant-chat";
 import { adoptedConversation, noteSent, outboxMessage } from "../lib/outbox";
+import { CLEAR_MAIN_FEATURE, isClearCommand, mainCommands, useMainCleared } from "../lib/main-clear";
 import { Button, cx, EASE, IconButton, Loading } from "../ui/atoms";
 import { Icon } from "../ui/icons";
 import { ChatView, Header } from "./chat/ChatView";
@@ -151,6 +152,9 @@ export function PersonaAssistant({ sid, fresh, routed, onToggleSidebar }: { sid?
     return page && (page.manager ?? "") === manager ? page : null;
   }, [scope, manager, sid, fresh, assistant]);
   const main = assistant?.main ?? cached?.sessionID;
+  // this tab cleared the main conversation's context (/clear, lib/main-clear.ts): until the next one starts, its page
+  // keeps the conversation's layout
+  const cleared = useMainCleared(manager);
   const machine = home ? homeMachine || read.machine : ((sid && sid !== main ? assistant?.machine_id : mainConversationMachine(assistant)) ?? cached?.machineID);
   if (fresh) return <Starter onToggleSidebar={onToggleSidebar} />;
   const id = sid ?? main;
@@ -187,7 +191,7 @@ export function PersonaAssistant({ sid, fresh, routed, onToggleSidebar }: { sid?
   if (!sid && assistantError && !assistant && !offline) {
     return <AssistantLoadFailed error={assistantError} onToggleSidebar={onToggleSidebar} />;
   }
-  return <Starter main onToggleSidebar={onToggleSidebar} />;
+  return <Starter main cleared={cleared} onToggleSidebar={onToggleSidebar} />;
 }
 
 function AssistantLoadFailed({ error, onToggleSidebar }: { error: string; onToggleSidebar: () => void }) {
@@ -221,7 +225,9 @@ function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex h-full items-center justify-center">{children}</div>;
 }
 
-function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: () => void }) {
+/** A new conversation's page: the centered box with the example questions, or, for the main conversation this tab just
+ *  cleared (`cleared`, as Cindy's /clear leaves an empty chat), the conversation's own layout with nothing in it yet. */
+function Starter({ main, cleared, onToggleSidebar }: { main?: boolean; cleared?: boolean; onToggleSidebar: () => void }) {
   const assistant = useStore((s) => s.assistant);
   // the starter names the current assistant's computers, the ones it can work on
   const machines = useScopedMachines();
@@ -236,6 +242,12 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
   // top and "Preparing" under it, the box at the bottom, so nothing moves when the conversation itself takes over
   const [sending, setSending] = useState<{ out: Outgoing; launcher: string; at: number } | null>(null);
   const slow = useSlowStart(Boolean(sending));
+  // the conversation's layout (its header, the box docked at the bottom): while the first message's start is on its
+  // way, and in place of the main conversation just cleared, so nothing moves when it empties or when it starts again
+  const docked = Boolean(sending) || Boolean(main && cleared);
+  // /clear on the main conversation's page while there is none: nothing to clear, and never its first message
+  const clearable = useStore((s) => Boolean(main) && hubHas(s.features, CLEAR_MAIN_FEATURE));
+  const commands = useMemo(() => (clearable && docked ? mainCommands() : []), [clearable, docked]);
   // the box is the same element in both layouts (a refused start gets its words and pictures back in it): it moves
   const box = useRef<HTMLDivElement>(null);
   const boxFrom = useRef<number | null>(null);
@@ -253,6 +265,7 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
   }, [sending]);
 
   const start = async (out: Outgoing): Promise<boolean> => {
+    if (clearable && isClearCommand(out.text, out.images.length)) return true;
     setFailure(null);
     moveBox({ out, launcher: effectiveLauncher({ isNew: true, picked: pickedLauncher(NEW_CONVERSATION), config: assistant?.launcher }), at: Date.now() });
     const sent = await startOnce(out);
@@ -319,11 +332,11 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
   return (
     // data-new-conversation: the page the shared sync scenarios start a conversation from (spec/fixtures/sync, #1382)
     <div className="flex h-full flex-col" data-new-conversation>
-      {sending ? (
+      {docked ? (
         // the conversation page's own header, as it will read once the conversation is there
         <Header
           title={main ? mainTitle : conversationTitle({ title: "" })}
-          subtitle={main ? undefined : [sending.launcher, ago(new Date(sending.at).toISOString())].join(" · ")}
+          subtitle={main || !sending ? undefined : [sending.launcher, ago(new Date(sending.at).toISOString())].join(" · ")}
           machineName=""
           assistant
           main={main}
@@ -350,8 +363,8 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
       </header>
       )}
       <MainRuntimeSlot starting={Boolean(main && sending)} />
-      <div className={sending ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-[10vh]"}>
-        <div className={sending ? "contents" : "w-full max-w-[640px]"} style={sending ? undefined : { animation: `fade-up 450ms ${EASE} both` }}>
+      <div className={docked ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-[10vh]"}>
+        <div className={docked ? "contents" : "w-full max-w-[640px]"} style={docked ? undefined : { animation: `fade-up 450ms ${EASE} both` }}>
           {sending ? (
             // the conversation page's middle (ChatView): the message where its bubble will be, "Preparing" where the answer comes
             <div className="relative min-h-0 flex-1 overflow-y-auto" data-start-pending>
@@ -367,6 +380,9 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
                 </div>
               </div>
             </div>
+          ) : docked ? (
+            // the cleared main conversation: an empty chat, as Cindy's /clear leaves it
+            <div className="min-h-0 flex-1" data-main-cleared />
           ) : (
           <div className="mb-6 flex flex-col items-center text-center">
             <PersonaAvatar
@@ -386,17 +402,17 @@ function Starter({ main, onToggleSidebar }: { main?: boolean; onToggleSidebar: (
           )}
           {/* files go to the assistant's machine, as in its conversations (iOS StarterComposer) */}
           {!sending && (gate.step || failure || gate.readiness?.mode === "chat_only") && (
-            <div className="mb-2.5 flex flex-col gap-2">
+            <div className={cx("mb-2.5 flex flex-col gap-2", docked && "mx-auto w-full max-w-[880px] px-4 sm:px-7")}>
               {failure ? <FailureCard failure={failure} onClose={() => setFailure(null)} onHelp={gate.help} onConfirm={gate.confirm} /> : <ReadinessCard gate={gate} />}
               <ChatOnlyNote gate={gate} />
             </div>
           )}
           {gate.dialog}
           {/* the box: in the page's middle, or docked at the bottom as the conversation's (ChatView's dock) while the start is on its way */}
-          <div ref={box} className={sending ? "mx-auto flex w-full max-w-[880px] flex-col justify-end gap-2 px-4 pb-4 sm:px-7 [@media(max-height:500px)]:pb-2" : undefined}>
-            <Composer key={seed} blocked={offline ? undefined : gate.blocked} disabled={Boolean(offline) || Boolean(sending)} draftKey="persona-new" placeholder={offline ? offline.composer : t("personaassistant.ask_placeholder", { name: persona.name })} machineId={assistant?.machine_id} mention={NEW_MENTION} onSend={start} autoFocus commands={[]} footer={assistant && !sending ? <StarterLauncherChip /> : undefined} />
+          <div ref={box} className={docked ? "mx-auto flex w-full max-w-[880px] flex-col justify-end gap-2 px-4 pb-4 sm:px-7 [@media(max-height:500px)]:pb-2" : undefined}>
+            <Composer key={seed} blocked={offline ? undefined : gate.blocked} disabled={Boolean(offline) || Boolean(sending)} draftKey="persona-new" placeholder={offline ? offline.composer : t("personaassistant.ask_placeholder", { name: persona.name })} machineId={assistant?.machine_id} mention={NEW_MENTION} onSend={start} autoFocus commands={commands} footer={assistant && !sending ? <StarterLauncherChip /> : undefined} />
           </div>
-          {!sending && (
+          {!docked && (
           <div className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {/* an offline manager takes nothing: no questions to fill in */}
             {!offline && suggestions.map((x, i) => (

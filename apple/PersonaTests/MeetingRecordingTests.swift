@@ -150,6 +150,43 @@ import Testing
         #expect(sparse.points.first?.at == nil)
     }
 
+    // MARK: When, in the app's own date style (#4875)
+
+    private func date(_ s: String) throws -> Date { try #require(JSON.parseDate(s)) }
+
+    /// The header's style: the end's time alone on the same day, its date too on another; never the hub's fixed format.
+    @Test(arguments: ["zh_CN", "ja_JP"]) func spanInTheHeadersDateStyle(_ id: String) throws {
+        let locale = Locale(identifier: id), zone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let start = try date("2027-01-15T17:00:00+08:00"), end = try date("2027-01-15T17:02:00+08:00")
+        let same = RecordingFormat.span(start, end, locale: locale, timeZone: zone)
+        // The hour and minute in the locale's own way: "17:00" in Chinese, 「17時00分」 in Japanese (as in the header).
+        let times = [#"17\D00"#, #"17\D02"#].allSatisfy { same.range(of: $0, options: .regularExpression) != nil }
+        #expect(same.contains("1月15日") && times, "\(same)")
+        #expect(same.components(separatedBy: "15日").count == 2 && !same.contains("2027"), "\(same)")
+        let lateStart = try date("2027-01-15T23:30:00+08:00"), lateEnd = try date("2027-01-16T00:30:00+08:00")
+        let late = RecordingFormat.span(lateStart, lateEnd, locale: locale, timeZone: zone)
+        #expect(late.contains("1月15日") && late.contains("1月16日"), "\(late)")
+    }
+
+    /// `start` / `end` decoded (RFC 3339 with the offset) and shown, also in Copy and Share; `when` from a hub without
+    /// both, or with one unreadable; nothing without any.
+    @Test func whenFromStartAndEndElseTheHubsWhen() throws {
+        func decode(_ json: String) throws -> RecordingMinutes { try JSONDecoder().decode(RecordingMinutes.self, from: Data(json.utf8)) }
+        let old = try decode(minutesJSON)
+        #expect(old.start == nil && old.whenLine == "2026-11-10 14:00–15:10")
+        let m = try decode(#"{"when": "2026-11-10 14:00–15:10", "start": "2026-11-10T14:00:00+08:00", "end": "2026-11-10T15:10:00+08:00", "where": "Room 3"}"#)
+        let start = try date("2026-11-10T06:00:00Z"), end = try date("2026-11-10T07:10:00Z")
+        #expect(m.start == start && m.end == end)
+        let span = RecordingFormat.span(try #require(m.start), try #require(m.end))
+        #expect(m.whenLine == span)
+        #expect(m.text(title: "x").components(separatedBy: "\n")[1] == "\(span) · Room 3")
+        #expect(try decode(#"{"when": "w", "start": "2026-11-10T14:00:00+08:00"}"#).whenLine == "w")
+        #expect(try decode(#"{"when": "w", "start": "yesterday", "end": "2026-11-10T15:10:00+08:00"}"#).whenLine == "w")
+        #expect(try decode("{}").whenLine == nil)
+        // What the watch is sent keeps them.
+        #expect(try JSONDecoder().decode(RecordingMinutes.self, from: JSONEncoder().encode(m)) == m)
+    }
+
     @Test func minutesTextHasEverySection() throws {
         let m = try JSONDecoder().decode(RecordingMinutes.self, from: Data(minutesJSON.utf8))
         let text = m.text(title: "fallback")

@@ -1,12 +1,21 @@
 {
-  "title": "从 ~/.zshrc 导入",
+  "title": "从电脑上的 alias 导入",
   "import_count_other": "导入 {count} 个",
   "import": "导入",
   "computer": "电脑",
-  "computer_hint": "读这台电脑 ~/.zshrc 里调用 claude 的 alias，同一个地址和 Key 的合成一个供应商。",
+  "computer_hint": "读这台电脑 ~/.zshrc、~/.bashrc 和 ~/.bash_aliases 里调用 claude 的 alias，按地址和 Key 分组。Key 由 hub 从那台电脑读，不经过浏览器。",
   "offline_suffix": "（离线）",
-  "empty": "这台电脑的 ~/.zshrc 里没有能导入的 claude alias。",
+  "empty": "这台电脑的 ~/.zshrc、~/.bashrc 和 ~/.bash_aliases 里没有能导入的 claude alias。",
   "list_label": "可以导入的供应商",
-  "from_aliases": "来自 {aliases}",
-  "merge_note": "合并只把新的模型加进已有的供应商，其他设置不变。"
+  "merge_note": "合并只把新的模型加进已有的供应商，其他设置不变。",
+  "no_computers": "还没有接上电脑。导入要读电脑上的 alias，先在「机器」里添加一台电脑。",
+  "choice_label": "怎样导入 {name}",
+  "split": "每个 alias 一个供应商",
+  "split_hint": "保留每个 alias 自己的设置。",
+  "merge": "合成一个供应商",
+  "merge_hint": "用 {alias} 的设置，其余的只加上各自的模型。",
+  "variants_label": "{name} 会变成的供应商",
+  "hide": "在 Persona 里隐藏已导入的 alias",
+  "hide_hint": "不会改动 shell 配置文件。隐藏的 alias 可以在「已隐藏」里恢复。",
+  "hide_which": "会隐藏 {aliases}。"
 }

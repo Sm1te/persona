@@ -78,9 +78,15 @@ type Session struct {
 	Assistant        bool `json:"assistant"` // runs in the assistant directory (the app's "Chat" tab)
 	// Archived: a retained conversation moved out of the normal list. Assistant
 	// conversations and Claude/Codex Agents are managed by their owning manager.
-	Archived bool   `json:"archived,omitempty"`
-	Title    string `json:"title"`
-	Cwd      string `json:"cwd"`
+	Archived    bool `json:"archived,omitempty"`
+	TitleManual bool `json:"title_manual,omitempty"` // A runtime record proves the user chose a title.
+	// BypassAvailable: this Claude Code can be switched to bypassPermissions (Allow All) while it runs, since it was
+	// started with --dangerously-skip-permissions, --allow-dangerously-skip-permissions or --permission-mode
+	// bypassPermissions, which put that mode in its shift+tab cycle (#1379). The node reads it off the claude process its
+	// hooks run under; false while unknown (no hook yet, a node too old to say).
+	BypassAvailable bool   `json:"bypass_available,omitempty"`
+	Title           string `json:"title"`
+	Cwd             string `json:"cwd"`
 	// WorkspaceCwd is the node-verified physical directory for Cwd. Consumers
 	// matching workspace bindings prefer it and fall back to Cwd on older nodes.
 	WorkspaceCwd string `json:"workspace_cwd,omitempty"`
@@ -123,24 +129,20 @@ type Session struct {
 	// drives through its app-server has an Effort too (Codex's levels, see Efforts) but never a PermissionMode.
 	PermissionMode string `json:"permission_mode,omitempty"`
 	Effort         string `json:"effort,omitempty"`
-	// BypassAvailable: this Claude Code can be switched to bypassPermissions (Allow All) while it runs, since it was
-	// started with --dangerously-skip-permissions, --allow-dangerously-skip-permissions or --permission-mode
-	// bypassPermissions, which put that mode in its shift+tab cycle (#1379). The node reads it off the claude process its
-	// hooks run under; false while unknown (no hook yet, a node too old to say).
-	BypassAvailable bool `json:"bypass_available,omitempty"`
 	// Ultracode is Claude Code's independent session-only workflow switch: nil means unknown.
 	// Pending means a requested change waits for an idle input box; LostAt asks the client to offer reopening
 	// after a resumed process reset an enabled switch. Reopening or dismissing the notice clears LostAt.
-	UltracodePending bool       `json:"ultracode_pending,omitempty"`
-	Ultracode        *bool      `json:"ultracode,omitempty"`
-	UltracodeNote    string     `json:"ultracode_note,omitempty"`
-	UltracodeLostAt  *time.Time `json:"ultracode_lost_at,omitempty"`
+	Ultracode       *bool      `json:"ultracode,omitempty"`
+	UltracodeNote   string     `json:"ultracode_note,omitempty"`
+	UltracodeLostAt *time.Time `json:"ultracode_lost_at,omitempty"`
 	// ContextTokens is what the model saw in the agent's latest reply (Claude: input + cache read + cache creation;
 	// Codex: the last token_count's input) and ContextWindow the model's window, both read off the transcript tail the
 	// node already reads (#2430). ContextTokens is omitted while unknown (no reply yet); ContextWindow too, when the
 	// node cannot tell the model's window. The apps show used / window as the context bar.
 	ContextTokens int `json:"context_tokens,omitempty"`
 	ContextWindow int `json:"context_window,omitempty"`
+	// OutputTokens is cumulative generated output, not the latest context size or transcript revision.
+	OutputTokens int `json:"output_tokens,omitempty"`
 	// Efforts are the levels session.modes takes for Effort when they are not Claude Code's (which the apps know): a
 	// Codex thread the phone drives through its app-server (node/codex_effort.go), its model's levels weakest first.
 	// Speed has its own advertised choices in ServiceTiers. Empty for every other session: Claude's and the assistant's keep the apps' own
@@ -255,6 +257,8 @@ type Session struct {
 	// Asks is what the agent's last reply asks the user, when its closing words put a question or a decision to
 	// them (transcript.AskOf, #5096): read by the node off the whole reply, since LastText is only its beginning.
 	Asks string `json:"asks,omitempty"`
+	// UltracodePending: a requested switch waits for an idle input box (grouped here to keep rows compact).
+	UltracodePending bool `json:"ultracode_pending,omitempty"`
 	// AsksRead: the node read Asks off the reply (an empty Asks then means it asks nothing, or the user answered it);
 	// without it (an older node, a host that does not say) the hub reads the list's last words when they are whole.
 	AsksRead bool `json:"asks_read,omitempty"`
@@ -269,6 +273,8 @@ type Session struct {
 	// TurnErrorAfterWork: the turn did some work (a reply, a tool call) before TurnError ended it; false when the error
 	// was all it did (a continuation the limit turned down again).
 	TurnErrorAfterWork bool `json:"turn_error_after_work,omitempty"`
+	// Known transcript provenance, packed with flags; its JSON remains a string.
+	TitleSource TitleSource `json:"title_source,omitempty"`
 	// TurnError: the agent's latest turn ended in a model API error (the connection lost mid-response, overloaded,
 	// rate limited, the model service down…). The node sets it when the agent's own record says the turn failed
 	// (Codex: a rollout's task_complete.error, an app-server's failed turn, #2185); otherwise the hub reads it off the

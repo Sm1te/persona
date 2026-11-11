@@ -302,6 +302,9 @@ func (s *Service) ringAsks(todo string, ids []string, d *proto.Delegate) []proto
 	sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.Before(list[j].CreatedAt) })
 	pushed := false
 	for _, ix := range list {
+		if d != nil {
+			ix = s.suggestOnCard(ix) // a card a supervisor passed up may offer a standing rule (rule_suggest.go)
+		}
 		ix = s.tellApps(ix)
 		if d == nil && (maybeTold[ix.ID] || s.quietSession(ix.MachineID, ix.SessionID)) {
 			continue // a question that may have rung before, or a quiet task's: the apps, no second push
@@ -384,7 +387,8 @@ func (s *Service) toolAskEscalate(ctx context.Context, self string, args json.Ra
 			Session: short(ix.SessionID), Text: noticeAsk(ix)})
 	}
 	for _, ix := range rung {
-		s.workEvent(ix.MachineID, ix.SessionID, "ask_escalated", map[string]any{"by": self, "todo": t.ID})
+		// card, kind and recommend: what a suggested rule counts the owner's answer against (rule_suggest.go).
+		s.workEvent(ix.MachineID, ix.SessionID, "ask_escalated", map[string]any{"by": self, "todo": t.ID, "card": ix.ID, "kind": ix.Kind, "recommend": recommend})
 	}
 	if !main {
 		// The main conversation knows the user was asked, and what this leader recommends: it does not ask again.

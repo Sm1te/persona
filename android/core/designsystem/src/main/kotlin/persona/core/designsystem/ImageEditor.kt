@@ -3,9 +3,7 @@ package persona.core.designsystem
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
 import android.graphics.Bitmap
-import android.graphics.Paint
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,14 +42,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -67,7 +64,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 /** One colour of the image editor's marks. */
 @Immutable
@@ -91,64 +87,127 @@ object MarkupColors {
 }
 
 /**
- * One mark in picture pixels. A box is its first and last point; a pen stroke is all of them. [width] is the stroke as
- * it was on screen, in picture pixels ([ImageMath.strokeInImage]), so the result looks like what the user drew.
+ * One mark in picture pixels, before the picture is turned or cropped. A box is its first and last point; a pen stroke is
+ * all of them. [width] is the stroke as it was on screen, in picture pixels, so the result looks like what the user drew.
  */
 @Immutable
-internal data class EditorMark(val box: Boolean, val color: Color, val width: Float, val points: List<Offset>)
+data class EditorMark(val box: Boolean, val color: Color, val width: Float, val points: List<Offset>)
 
-private enum class MarkupTool(@StringRes val labelRes: Int) { Box(R.string.designsystem_markup_box), Pen(R.string.designsystem_markup_pen) }
+internal enum class EditorTool(@StringRes val labelRes: Int) {
+    Box(R.string.designsystem_markup_box), Pen(R.string.designsystem_markup_pen), Crop(R.string.designsystem_markup_crop)
+}
 
-/** The stroke of a mark on screen. */
+/** A mark's line on screen: thin, medium (the one Box and Pen drew with before there was a choice; the default) and thick, as iOS. */
 private val MarkStroke = 3.5.dp
+private val MarkWidths = listOf(MarkStroke * (4f / 7f), MarkStroke, MarkStroke * 2f)
+private val WidthNames = listOf(R.string.designsystem_editor_width_thin, R.string.designsystem_editor_width_medium, R.string.designsystem_editor_width_thick)
+/** Room round the picture while cropping, so the handles on its edges can be taken; how far round an edge a finger takes it. */
+private val CropInset get() = Tokens.Space.xl
+private val CropGrab get() = Tokens.Size.iconS
+/** The smallest crop, a side on screen; the frame's line and its corner marks. */
+private val CropMinimum get() = Tokens.Space.xxl * 2
+private val CropLine get() = Tokens.Space.xxs / 2
+private val CropCorner get() = Tokens.Size.iconXS
+private val CropCornerWidth get() = Tokens.Space.xxs * 1.5f
 
 /**
- * Marks up [source] before it goes to an Agent, full screen in the dark appearance: "Cancel · Edit image · Done", a box or
- * a pen, six colours, undo and clear. [onDone] gets the picture with the marks drawn in at [source]'s own resolution
- * ([source] itself when nothing was drawn); after that the editor waits, "Done" spinning, until its caller removes it.
- * Back and "Cancel" call [onCancel]. Pass a software bitmap ([decodePicture] with `software = true`).
+ * Edits [source] before it goes to an Agent, full screen in the dark appearance (#4992, as the iOS editor from #4963):
+ * Box or Pen in six colours and three widths, Crop (corners and edges drag, inside moves it; a shape; Rotate a quarter to
+ * the left; Reset), Undo and Redo over every change, and Clear. [onDone] gets the picture with the edits burned in at
+ * [source]'s own resolution ([source] itself when nothing was done); after that the editor waits, "Done" spinning, until
+ * its caller removes it. Back and "Cancel" call [onCancel]. Pass a software bitmap ([decodePicture] with `software = true`).
+ * [start]: the edits a picture edited before carries on from, still undoable; [onEdited] gets the edits and their history
+ * just before [onDone], so the caller can keep them beside the result (#4992, iOS `EditedImage`).
  */
 @Composable
-fun ImageEditor(source: Bitmap, onCancel: () -> Unit, onDone: (Bitmap) -> Unit) {
+fun ImageEditor(source: Bitmap, onCancel: () -> Unit, onDone: (Bitmap) -> Unit, start: ImageEditState = ImageEditState(),
+                onEdited: (ImageEditState) -> Unit = {}) {
     var finishing by remember(source) { mutableStateOf(false) }
     AlwaysDark {
         JFullScreen({ if (!finishing) onCancel() }) {
             CompositionLocalProvider(LocalReadingInset provides 0.dp) {
-                EditorBody(source, finishing, { finishing = it }, onCancel, onDone)
+                EditorBody(source, start, finishing, { finishing = it }, onCancel, onDone, onEdited)
             }
         }
     }
 }
 
+/** Where things are on screen: the whole turned picture's frame and screen pixels per picture pixel, what shows of it, and the crop's frame. */
+internal data class EditorLayout(val picture: Rect, val scale: Float, val visible: Rect, val crop: Rect) {
+    /** A point on screen in the turned picture's pixels, kept inside what shows. */
+    fun pixel(p: Offset): Offset {
+        val q = Offset(p.x.coerceIn(visible.left, visible.right), p.y.coerceIn(visible.top, visible.bottom))
+        return Offset((q.x - picture.left) / scale, (q.y - picture.top) / scale)
+    }
+
+    companion object {
+        /**
+         * Marking, the crop fills [area]; cropping, all of the turned picture shows inside [inset], the crop's frame over it
+         * ([image]: the source's pixels).
+         */
+        fun of(edits: ImageEdits, image: Size, area: Size, cropping: Boolean, inset: Float): EditorLayout {
+            val turned = edits.turned(image)
+            if (turned.width <= 0f || turned.height <= 0f || area.width <= 0f) return EditorLayout(Rect.Zero, 1f, Rect.Zero, Rect.Zero)
+            if (cropping) {
+                val room = Size((area.width - 2 * inset).coerceAtLeast(1f), (area.height - 2 * inset).coerceAtLeast(1f))
+                val picture = ImageMath.fitRect(turned, room).translate(inset, inset)
+                val c = edits.crop
+                val crop = Rect(picture.left + c.left * picture.width, picture.top + c.top * picture.height,
+                    picture.left + c.right * picture.width, picture.top + c.bottom * picture.height)
+                return EditorLayout(picture, picture.width / turned.width, picture, crop)
+            }
+            val kept = edits.cropRect(image)
+            val shown = ImageMath.fitRect(kept.size, area)
+            val scale = shown.width / kept.width.coerceAtLeast(1f)
+            val picture = Rect(Offset(shown.left - kept.left * scale, shown.top - kept.top * scale), Size(turned.width * scale, turned.height * scale))
+            return EditorLayout(picture, scale, shown, shown)
+        }
+    }
+}
+
 @Composable
-private fun EditorBody(source: Bitmap, finishing: Boolean, onFinishing: (Boolean) -> Unit, onCancel: () -> Unit, onDone: (Bitmap) -> Unit) {
+private fun EditorBody(source: Bitmap, start: ImageEditState, finishing: Boolean, onFinishing: (Boolean) -> Unit, onCancel: () -> Unit,
+                       onDone: (Bitmap) -> Unit, onEdited: (ImageEditState) -> Unit) {
     val palette = PersonaTheme.palette
     val density = LocalDensity.current
-    var tool by remember { mutableStateOf(MarkupTool.Box) }
+    var tool by remember { mutableStateOf(EditorTool.Box) }
     var color by remember { mutableStateOf(MarkupColors.Red) }
-    val marks = remember(source) { mutableStateListOf<EditorMark>() }
+    var width by remember { mutableStateOf(1) }
+    var edits by remember(source) { mutableStateOf(start.edits) }
+    var history by remember(source) { mutableStateOf(start.history) }
     var current by remember(source) { mutableStateOf<EditorMark?>(null) }
+    var dragging by remember { mutableStateOf(false) }
     var box by remember { mutableStateOf(IntSize.Zero) }
     var failed by remember { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val picture = remember(source) { source.asImageBitmap() }
     val imageSize = remember(source) { Size(source.width.toFloat(), source.height.toFloat()) }
-    val fit = ImageMath.fitRect(imageSize, Size(box.width.toFloat(), box.height.toFloat()))
-    val stroke = with(density) { MarkStroke.toPx() }
-    val latestTool by rememberUpdatedState(tool)
-    val latestColor by rememberUpdatedState(color)
-    val latestFit by rememberUpdatedState(fit)
+    val px = with(density) { object { val inset = CropInset.toPx(); val grab = CropGrab.toPx(); val minimum = CropMinimum.toPx()
+        val line = CropLine.toPx(); val corner = CropCorner.toPx(); val cornerWidth = CropCornerWidth.toPx() } }
+    val layout = EditorLayout.of(edits, imageSize, Size(box.width.toFloat(), box.height.toFloat()), tool == EditorTool.Crop, px.inset)
+    val strokes = MarkWidths.map { with(density) { it.toPx() } }
+    val latest by rememberUpdatedState(Triple(layout, edits, tool))
+    val latestStyle by rememberUpdatedState(color to strokes[width])
     val latestFinishing by rememberUpdatedState(finishing)
     val done by rememberUpdatedState(onDone)
+
+    // One step of the history: the edits [make] changes, the ones before kept for Undo.
+    fun change(make: (ImageEdits) -> ImageEdits) {
+        val next = make(edits)
+        if (next == edits) return
+        history = history.record(edits)
+        edits = next
+    }
 
     fun finish() {
         if (finishing) return
         onFinishing(true)
         failed = false
-        val drawn = marks.toList()
+        val final = edits
+        onEdited(ImageEditState(final, history))
         scope.launch {
             val result = try {
-                if (drawn.isEmpty()) source else withContext(Dispatchers.Default) { renderMarks(source, drawn) }
+                if (final.isEmpty) source else withContext(Dispatchers.Default) { final.render(source) }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Throwable) {
@@ -177,63 +236,133 @@ private fun EditorBody(source: Bitmap, finishing: Boolean, onFinishing: (Boolean
                 .pointerInput(source) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
-                        val area = latestFit
-                        if (area.width <= 0f || latestFinishing) return@awaitEachGesture
+                        val (l, start, t) = latest
+                        if (l.picture.width <= 0f || latestFinishing) return@awaitEachGesture
+                        if (t == EditorTool.Crop) {
+                            val handle = CropHandle.at(down.position, l.crop, px.grab) ?: return@awaitEachGesture
+                            down.consume()
+                            dragging = true
+                            val from = start.crop
+                            val minimum = Size(px.minimum / l.picture.width, px.minimum / l.picture.height)
+                            val k = start.shape.ratio(start.turned(imageSize))?.let { it * l.picture.height / l.picture.width }
+                            drag(down.id) { change ->
+                                val d = change.position - down.position
+                                edits = edits.copy(crop = ImageEdits.drag(from, handle, Offset(d.x / l.picture.width, d.y / l.picture.height), minimum, k))
+                                change.consume()
+                            }
+                            dragging = false
+                            if (edits.crop != from) history = history.record(edits.copy(crop = from))
+                            return@awaitEachGesture
+                        }
                         down.consume()
-                        val start = ImageMath.toImage(down.position, area, imageSize)
-                        current = EditorMark(latestTool == MarkupTool.Box, latestColor.color, ImageMath.strokeInImage(stroke, area, imageSize), listOf(start))
+                        val (ink, stroke) = latestStyle
+                        fun toSource(p: Offset) = start.unturn(l.pixel(p), imageSize)
+                        current = EditorMark(t == EditorTool.Box, ink.color, stroke / l.scale, listOf(toSource(down.position)))
                         val lifted = drag(down.id) { change ->
-                            val point = ImageMath.toImage(change.position, area, imageSize)
+                            val point = toSource(change.position)
                             current = current?.let { mark -> if (mark.box) mark.copy(points = listOf(mark.points.first(), point)) else mark.copy(points = mark.points + point) }
                             change.consume()
                         }
                         val mark = current
                         current = null
-                        if (lifted && mark != null && mark.points.size > 1 && (!mark.box || mark.points.first() != mark.points.last())) marks += mark
+                        if (lifted && mark != null && mark.points.size > 1 && (!mark.box || mark.points.first() != mark.points.last()))
+                            change { it.copy(marks = it.marks + mark) }
                     }
                 },
         ) {
-            Image(picture, stringResource(R.string.designsystem_editor_picture), Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            Canvas(Modifier.fillMaxSize()) {
-                val area = latestFit
-                if (area.width > 0f) {
-                    val scale = area.width / imageSize.width
-                    marks.forEach { drawMark(it, area, scale) }
-                    current?.let { drawMark(it, area, scale) }
+            val description = stringResource(R.string.designsystem_editor_picture)
+            Canvas(Modifier.fillMaxSize().semantics { contentDescription = description }) {
+                if (layout.picture.width <= 0f) return@Canvas
+                clipRect(layout.visible.left, layout.visible.top, layout.visible.right, layout.visible.bottom) {
+                    drawIntoCanvas { canvas ->
+                        val native = canvas.nativeCanvas
+                        native.save()
+                        native.translate(layout.picture.left, layout.picture.top)
+                        native.scale(layout.scale, layout.scale)
+                        native.concat(edits.turnMatrix(imageSize))
+                        native.drawBitmap(source, 0f, 0f, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                        val paint = ImageEdits.markPaint()
+                        edits.marks.forEach { ImageEdits.drawMark(native, it, paint) }
+                        current?.let { ImageEdits.drawMark(native, it, paint) }
+                        native.restore()
+                    }
                 }
+                if (tool == EditorTool.Crop) drawCropFrame(layout.crop, dragging, px.line, px.corner, px.cornerWidth, palette.ink, palette.background)
             }
         }
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Tokens.Space.l, vertical = Tokens.Space.m),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                MarkupColors.all.forEach { option -> ColorSwatch(option, option == color) { color = option } }
+            if (tool == EditorTool.Crop) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                JTextButton(stringResource(R.string.designsystem_editor_rotate), { change { it.turnLeft() } }, enabled = !finishing,
+                    icon = PhIcons.ArrowCounterClockwise)
+                JTextButton(stringResource(shapeName(edits.shape)), { choosing = "shape" }, enabled = !finishing, icon = PhIcons.Crop)
+                Spacer(Modifier.weight(1f))
+                JTextButton(stringResource(R.string.designsystem_editor_reset), { change { it.resetFrame() } }, enabled = !finishing && !edits.isFramedAsIs)
+            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
+                    MarkupColors.all.forEach { option -> ColorSwatch(option, option == color) { color = option } }
+                }
+                val widthName = stringResource(WidthNames[width])
+                JIconButton(PhIcons.PencilSimple, stringResource(R.string.designsystem_editor_width) + ", " + widthName, { choosing = "width" }, enabled = !finishing)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                JSegmented(MarkupTool.entries.map { JSegment(stringResource(it.labelRes)) }, tool.ordinal, { tool = MarkupTool.entries[it] })
+                JSegmented(EditorTool.entries.map { JSegment(stringResource(it.labelRes)) }, tool.ordinal, { tool = EditorTool.entries[it] })
                 Spacer(Modifier.weight(1f))
-                JIconButton(PhIcons.ArrowUUpLeft, stringResource(R.string.designsystem_editor_undo), { marks.removeLastOrNull() }, enabled = marks.isNotEmpty() && !finishing)
-                JIconButton(PhIcons.Trash, stringResource(R.string.designsystem_editor_clear), { marks.clear() }, enabled = marks.isNotEmpty() && !finishing)
+                JIconButton(PhIcons.ArrowUUpLeft, stringResource(R.string.designsystem_editor_undo), {
+                    history.undo(edits)?.let { (h, back) -> history = h; edits = back }
+                }, enabled = history.canUndo && !finishing)
+                JIconButton(PhIcons.ArrowUUpRight, stringResource(R.string.designsystem_editor_redo), {
+                    history.redo(edits)?.let { (h, ahead) -> history = h; edits = ahead }
+                }, enabled = history.canRedo && !finishing)
+                if (tool != EditorTool.Crop) JIconButton(PhIcons.Trash, stringResource(R.string.designsystem_editor_clear),
+                    { change { it.copy(marks = emptyList()) } }, enabled = edits.marks.isNotEmpty() && !finishing)
             }
         }
     }
+    when (choosing) {
+        "shape" -> JActionSheet(CropShape.entries.map { s ->
+            JAction(stringResource(shapeName(s)), checked = s == edits.shape, onClick = { change { it.reshape(s, imageSize) } })
+        }, { choosing = null }, title = stringResource(R.string.designsystem_editor_shape))
+        "width" -> JActionSheet(WidthNames.mapIndexed { i, name -> JAction(stringResource(name), checked = i == width, onClick = { width = i }) },
+            { choosing = null }, title = stringResource(R.string.designsystem_editor_width))
+    }
 }
 
-/** A mark on screen: [area] is where the picture is drawn, [scale] picture pixels to screen pixels. */
-private fun DrawScope.drawMark(mark: EditorMark, area: Rect, scale: Float) {
-    val points = mark.points.map { Offset(area.left + it.x * scale, area.top + it.y * scale) }
-    val first = points.firstOrNull() ?: return
-    val last = points.last()
-    val style = Stroke(width = mark.width * scale, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    if (mark.box) {
-        drawRect(
-            mark.color, Offset(minOf(first.x, last.x), minOf(first.y, last.y)),
-            Size(abs(last.x - first.x), abs(last.y - first.y)), style = style,
-        )
-    } else {
-        val path = Path().apply { moveTo(first.x, first.y); points.drop(1).forEach { lineTo(it.x, it.y) } }
-        drawPath(path, mark.color, style = style)
+@StringRes
+private fun shapeName(shape: CropShape): Int = when (shape) {
+    CropShape.Free -> R.string.designsystem_editor_shape_free
+    CropShape.Original -> R.string.designsystem_editor_shape_original
+    CropShape.Square -> R.string.designsystem_editor_shape_square
+    CropShape.Wide4x3 -> R.string.designsystem_editor_shape_4x3
+    CropShape.Tall3x4 -> R.string.designsystem_editor_shape_3x4
+    CropShape.Wide16x9 -> R.string.designsystem_editor_shape_16x9
+    CropShape.Tall9x16 -> R.string.designsystem_editor_shape_9x16
+}
+
+/** The crop's frame: the rest dimmed, a line round it, its corners marked, the thirds inside it while it is dragged. */
+/** [ink] the frame (white in the dark editor), [dim] what is cut away. */
+private fun DrawScope.drawCropFrame(frame: Rect, dragging: Boolean, line: Float, corner: Float, cornerWidth: Float, ink: Color, dim: Color) {
+    val outside = Path().apply {
+        fillType = PathFillType.EvenOdd
+        addRect(Rect(Offset.Zero, size))
+        addRect(frame)
+    }
+    drawPath(outside, dim.copy(alpha = 0.6f))
+    drawRect(ink, frame.topLeft, frame.size, style = Stroke(line))
+    if (dragging) for (i in 1..2) {
+        val x = frame.left + frame.width * i / 3
+        val y = frame.top + frame.height * i / 3
+        drawLine(ink.copy(alpha = 0.45f), Offset(x, frame.top), Offset(x, frame.bottom), line)
+        drawLine(ink.copy(alpha = 0.45f), Offset(frame.left, y), Offset(frame.right, y), line)
+    }
+    val c = minOf(corner, frame.width / 2, frame.height / 2)
+    for ((x, y, dx, dy) in listOf(listOf(frame.left, frame.top, c, c), listOf(frame.right, frame.top, -c, c),
+            listOf(frame.left, frame.bottom, c, -c), listOf(frame.right, frame.bottom, -c, -c))) {
+        drawPath(Path().apply { moveTo(x + dx, y); lineTo(x, y); lineTo(x, y + dy) }, ink,
+            style = Stroke(cornerWidth, cap = StrokeCap.Square))
     }
 }
 
@@ -254,32 +383,4 @@ private fun ColorSwatch(option: MarkupColor, chosen: Boolean, onClick: () -> Uni
                 .clip(CircleShape).background(option.color).border(1.dp, palette.ink3, CircleShape),
         )
     }
-}
-
-/** [marks] drawn into a copy of [source], at its resolution; [source] itself when there are none. Blocking. */
-internal fun renderMarks(source: Bitmap, marks: List<EditorMark>): Bitmap {
-    if (marks.isEmpty()) return source
-    val out = checkNotNull(source.copy(Bitmap.Config.ARGB_8888, true)) { "No memory for the marked-up picture" }
-    val canvas = android.graphics.Canvas(out)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-    for (mark in marks) {
-        val first = mark.points.firstOrNull() ?: continue
-        val last = mark.points.last()
-        paint.color = mark.color.toArgb()
-        paint.strokeWidth = mark.width
-        if (mark.box) {
-            canvas.drawRect(minOf(first.x, last.x), minOf(first.y, last.y), maxOf(first.x, last.x), maxOf(first.y, last.y), paint)
-        } else {
-            val path = android.graphics.Path().apply {
-                moveTo(first.x, first.y)
-                mark.points.drop(1).forEach { lineTo(it.x, it.y) }
-            }
-            canvas.drawPath(path, paint)
-        }
-    }
-    return out
 }

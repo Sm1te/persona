@@ -71,7 +71,7 @@ final class PersonaQueueUITests: XCTestCase {
         if strip.elementType == .button { strip.tap() } else { strip.buttons.firstMatch.tap() }
         let relayed = app.buttons.matching(identifier: "queue-item").element(boundBy: 2)
         XCTAssertTrue(relayed.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(relayed.label.contains("本轮结束后送达"), "the relayed row says when it arrives:\n\(relayed.debugDescription)")
+        XCTAssertTrue(relayed.label.contains("对话空闲后送达"), "the relayed row says when it arrives:\n\(relayed.debugDescription)")
         relayed.tap()
         XCTAssertTrue(app.buttons["拷贝"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["撤回编辑"].exists, "a relayed message cannot be taken back")

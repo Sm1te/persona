@@ -8,12 +8,13 @@ import Testing
 @MainActor struct MeetingAttendanceTests {
     private let agent = SessionKey(machineID: "mac", sessionID: "s1")
 
+    /// A meeting `session` attends, else the main chat, picked for it (the main chat never attends by default, #3862).
     private func meeting(_ role: MeetingAttendance, session: SessionKey? = nil, active: Bool = true,
                          lines: [RecordingSentence] = []) -> RecordingEntry {
         var e = RecordingEntry(id: UUID(), createdAt: Date(timeIntervalSince1970: 1_800_000_000), source: .phone, title: "Weekly",
                                locale: "zh-CN", active: active)
         e.meeting = RecordingMeeting(title: "Weekly")
-        e.attendance = RecordingAttendance(role: role, session: session?.path, sessionTitle: "Persona")
+        e.attendance = RecordingAttendance(role: role, session: session?.path, sessionTitle: "Persona", mainPicked: session == nil)
         if !lines.isEmpty { e.segments = [RecordingSegment(index: 0, start: 0, duration: 60, sentences: lines)] }
         return e
     }
@@ -29,14 +30,14 @@ import Testing
     // MARK: The upload
 
     /// A meeting Persona never attended uploads exactly as before; one it attends says the role, and names the session
-    /// only when it isn't the main chat.
+    /// only when it isn't the main chat (picked for it: #3862).
     @Test func theUploadCarriesTheAttendance() throws {
         var e = meeting(.off)
         e.attendance = nil
         let before = try json(e)
         #expect(before["attendance"] == nil && before["attending_session"] == nil)
 
-        e.attendance = RecordingAttendance(role: .participant)
+        e.attendance = RecordingAttendance(role: .participant, mainPicked: true)
         let main = try json(e)
         #expect(main["attendance"] as? String == "participant")
         #expect(main["attending_session"] == nil, "the main chat is the absent session")
@@ -69,6 +70,142 @@ import Testing
         var silent = meeting(.off)
         silent.attendance = nil
         #expect(!RecordingSync.uploadable(silent))
+    }
+
+    // MARK: Never the main chat by default (#3862)
+
+    /// Instead of the app's defaults: nothing picked before.
+    private func picks() -> UserDefaults { UserDefaults(suiteName: "meeting-attendees-\(UUID())")! }
+
+    private let mainChat = SessionKey(machineID: "server", sessionID: "main")
+
+    private func candidate(_ key: SessionKey, main: Bool) -> MeetingAttendees.Candidate {
+        MeetingAttendees.Candidate(key: key, title: main ? "Persona" : "Export fix", detail: "", main: main, persona: main)
+    }
+
+    /// One tap (the drawer, Siri, the Control, the Action button) with nothing picked before, or with the main chat picked
+    /// last, starts with Persona off and no session: never the main chat (the owner's rule after a real meeting whose every
+    /// line went to the main chat). A session picked last that isn't the main chat still starts the next meeting.
+    @Test func aOneTapStartNeverFallsToTheMainChat() {
+        // A start before the hub listed anything (Siri with the app cold): nothing listed, from a state folder of its own.
+        let model = AppModel(stateFolder: FileManager.default.temporaryDirectory.appending(path: "meeting-attendees-\(UUID())"))
+        #expect(model.allSessions.isEmpty)
+        let none = picks()
+        #expect(MeetingAttendees.preferred(model, store: none) == nil)
+        for role in [MeetingAttendance.listener, .participant] {
+            let start = MeetingAttendees.defaultAttendance(model, role: role, store: none)
+            #expect(start.role == .off && start.session == nil && !start.mainPicked, "\(role): nobody picked, Persona stays out")
+        }
+
+        let main = picks()
+        MeetingAttendees.remember(nil, title: "Persona", store: main) // the main chat, picked for a meeting before
+        #expect(main.string(forKey: MeetingAttendanceDefaults.sessionKey) == MeetingAttendanceDefaults.main)
+        #expect(MeetingAttendees.preferred(model, store: main) == nil, "a remembered main chat is no pick")
+        let afterMain = MeetingAttendees.defaultAttendance(model, role: .participant, store: main)
+        #expect(afterMain.role == .off && afterMain.session == nil && !afterMain.mainPicked)
+
+        let picked = picks()
+        MeetingAttendees.remember(agent, title: "Export fix", store: picked)
+        let start = MeetingAttendees.defaultAttendance(model, role: .listener, store: picked)
+        #expect(start.role == .listener && start.sentRole == .listener)
+        #expect(start.key == agent && start.sessionTitle == "Export fix" && !start.mainPicked)
+    }
+
+    /// The main chat attends only when the owner picks it for the meeting (`mainPicked`); then it goes as #2981 has it, by
+    /// leaving `attending_session` out. Kept with the recording; a file from before the rule names nobody.
+    @Test func theMainChatAttendsOnlyWhenPicked() throws {
+        let a = MeetingAttendees.choose(candidate(mainChat, main: true), in: RecordingAttendance(role: .listener))
+        #expect(a.mainPicked && a.session == nil && a.sentRole == .listener)
+        var e = meeting(.off)
+        e.attendance = a
+        let body = try json(e)
+        #expect(body["attendance"] as? String == "listener")
+        #expect(body["attending_session"] == nil, "the main chat is the absent session")
+        #expect(RecordingUpload.attendanceMark(e) == "listener|")
+        #expect(e.attended)
+
+        let other = MeetingAttendees.choose(candidate(agent, main: false), in: a)
+        #expect(!other.mainPicked && other.key == agent, "another pick replaces it")
+
+        #expect(try JSONDecoder().decode(RecordingAttendance.self, from: JSONEncoder().encode(a)).mainPicked)
+        let before = try JSONDecoder().decode(RecordingAttendance.self, from: Data(#"{"role":"listener"}"#.utf8))
+        #expect(!before.mainPicked && before.sentRole == .off, "a meeting from before the rule names nobody: off")
+    }
+
+    /// The upload's guard, whatever built the attendance: an attending role with no session named and the main chat not
+    /// picked goes as off, never as the main chat. Its mark is what was sent, so the hub's off settles it and nothing waits
+    /// on a role the hub never got; no live line or question goes.
+    /// A target the API can't name (a malformed path saved on the phone) is nobody: the upload never goes as attending with
+    /// no `attending_session`, which the hub reads as the main chat (#3862).
+    @Test func aSessionTheAPICantNameIsNobody() throws {
+        var e = meeting(.off, lines: [line(1, 4, "a")])
+        e.attendance = RecordingAttendance(role: .participant, session: "")
+        #expect(e.attendance?.hasAttendee == false)
+        let body = try json(e)
+        #expect(body["attendance"] as? String == "off")
+        #expect(body["attending_session"] == nil)
+        e.attendance = RecordingAttendance(role: .participant, session: "mac/0b9c4a2e-0000-4000-8000-000000000001")
+        #expect(e.attendance?.hasAttendee == true)
+        #expect(try json(e)["attendance"] as? String == "participant")
+    }
+
+    @Test func anAttendingRoleWithNobodyChosenGoesAsOff() async throws {
+        let lib = try library()
+        var e = meeting(.off, lines: [line(1, 4, "a")])
+        e.attendance = RecordingAttendance(role: .participant) // no session named, the main chat not picked
+        try lib.save(e)
+        let body = try json(e)
+        #expect(body["attendance"] as? String == "off")
+        #expect(body["attending_session"] == nil)
+        #expect(RecordingUpload.attendanceMark(e) == "off|")
+        #expect(!e.attended, "nothing is asked")
+
+        var posted = 0
+        let sender = live(lib, post: { _, from, s in posted += 1; return .init(next: from + s.count) })
+        sender.append(e.id)
+        await sender.send(e.id)
+        #expect(posted == 0, "no live line goes")
+        #expect(model(Calls()).ask(e, text: "Who owns it?") == nil, "no question goes")
+
+        final class Stored { var ids: [UUID] = [] }
+        let stored = Stored()
+        let hub = FakeHub()
+        let put = "/api/v1/recordings/\(e.id.uuidString.lowercased())"
+        hub.on("GET", "/api/v1/recordings", json: #"{"days":14,"recordings":[],"deleted":[]}"#)
+        hub.on("PUT", put) { req in
+            let sent = (try? JSONSerialization.jsonObject(with: req.body ?? Data())) as? [String: Any] ?? [:]
+            let revision = (sent["revision"] as? NSNumber)?.int64Value ?? 0
+            let role = sent["attendance"] as? String ?? ""
+            return Data(#"{"id":"x","revision":\#(revision),"status":"stored","attendance":"\#(role)"}"#.utf8)
+        }
+        let client = hub.client
+        let sync = RecordingSync(library: lib, api: { client })
+        sync.onAttendanceStored = { stored.ids.append($0) }
+        await sync.syncNow()
+        let request = try #require(hub.sent("PUT", put).last)
+        let uploaded = try #require(try JSONSerialization.jsonObject(with: request.body ?? Data()) as? [String: Any])
+        #expect(uploaded["attendance"] as? String == "off" && uploaded["attending_session"] == nil)
+        let settled = try #require(lib.entry(e.id))
+        #expect(sync.attendanceSettled(settled), "settled as off")
+        #expect(stored.ids.isEmpty, "nothing is told it attends")
+    }
+
+    /// Turning Persona on mid-meeting (`MeetingRecorder.setRole`'s rule): with nobody chosen and no session picked before
+    /// that isn't the main chat, it stays as it is (setRole says false, and the page opens the picker); with one picked
+    /// before, that one attends from now; once the main chat is picked for the meeting, the main chat.
+    @Test func turningPersonaOnWithNobodyChosenStaysOff() throws {
+        #expect(MeetingAttendees.turned(nil, to: .listener, at: 30, lastPicked: nil) == nil)
+        #expect(MeetingAttendees.turned(RecordingAttendance(role: .off), to: .participant, at: 30, lastPicked: nil) == nil)
+        #expect(MeetingAttendees.turned(nil, to: .listener, at: 30, lastPicked: candidate(mainChat, main: true)) == nil,
+                "never the main chat as the one picked before")
+
+        let agentOn = try #require(MeetingAttendees.turned(nil, to: .listener, at: 30, lastPicked: candidate(agent, main: false)))
+        #expect(agentOn.role == .listener && agentOn.key == agent && agentOn.periods == [RecordingPeriod(start: 30)])
+        let picked = MeetingAttendees.choose(candidate(mainChat, main: true), in: RecordingAttendance(role: .off))
+        let mainOn = try #require(MeetingAttendees.turned(picked, to: .participant, at: 40, lastPicked: nil))
+        #expect(mainOn.sentRole == .participant && mainOn.mainPicked && mainOn.session == nil)
+        let off = try #require(MeetingAttendees.turned(agentOn, to: .off, at: 50, lastPicked: nil))
+        #expect(off.role == .off && off.key == agent, "turning off keeps who attends")
     }
 
     // MARK: The role
@@ -388,6 +525,21 @@ import Testing
         let answer = MeetingAskWire.answer(ask)
         #expect(answer.sources == ["Design review · 2026-11-03 14:00–15:10", "Export"])
         #expect(answer.speak && answer.lang == "zh-CN")
+    }
+
+    /// A source meeting from a hub with `start` / `end` (#4713) says when in the recording page's date style; one without
+    /// them, or with one unreadable, keeps the hub's `when` (#4875).
+    @Test func sourceMeetingsInTheAppsDateStyle() throws {
+        let ask = try JSON.decoder.decode(MeetingAskWire.Ask.self, from: Data("""
+            {"id":"x","state":"answered","answer":"A","sources":[
+             {"kind":"recordings","id":"r","name":"Design review","when":"2026-11-03 14:00–15:10","start":"2026-11-03T14:00:00+08:00","end":"2026-11-03T15:10:00+08:00"},
+             {"kind":"recordings","id":"r2","name":"Weekly","when":"2026-11-04 10:00–10:30","start":"2026-11-04T10:00:00+08:00"},
+             {"kind":"recordings","id":"r3","name":"Retro","when":"","start":"soon","end":"later"}]}
+            """.utf8))
+        let start = try #require(JSON.parseDate("2026-11-03T06:00:00Z")), end = try #require(JSON.parseDate("2026-11-03T07:10:00Z"))
+        let span = RecordingFormat.span(start, end)
+        #expect(MeetingAskWire.answer(ask).sources == ["Design review · \(span)", "Weekly · 2026-11-04 10:00–10:30", "Retro"])
+        #expect(!span.contains("2026-11-03"))
     }
 
     /// The recording ended: the voice stops and its questions go.

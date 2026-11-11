@@ -131,6 +131,13 @@ Now every side says which way pushes take and, when none, why:
 
   `GET /api/v1/auth/tokens` adds `push` (credential id → the way of the device it registered last) for **Settings › Devices**; `GET /api/v1/devices/push` lists every device (`personad hub doctor` prints it under "推送").
 
+## Connections
+
+The hub's relay client and the relay's APNs client (`apns.Client`, also a hub's own key) each keep their connection between pushes
+(`apns.NewTransport`, #4800): an idle connection lives for an hour, and an HTTP/2 ping after a minute without traffic finds one that died
+silently. Before, both closed after 90 s idle, so most pushes paid a new TCP + TLS handshake. The Worker's request to the tunnel and the
+tunnel's own connection are Cloudflare's and are not affected.
+
 ## Deployment (publisher)
 
 1. On a machine with outbound internet access, put `~/.persona/relay.json` (0600):

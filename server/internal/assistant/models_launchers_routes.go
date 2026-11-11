@@ -135,12 +135,27 @@ func (s *Service) launcherRoutes() {
 		taken := func(n string) bool {
 			return slices.ContainsFunc(views, func(v LauncherView) bool { return v.Name == n })
 		}
-		if in.Name == "" && in.Preset != "" {
+		if in.Name == "" {
+			display := ""
+			if in.DisplayName != nil {
+				display = strings.TrimSpace(*in.DisplayName)
+			}
 			var n int
-			in.Name, n = launcherNameFor(in.Preset, taken)
-			if in.DisplayName == nil || strings.TrimSpace(*in.DisplayName) == "" {
-				d := s.presetDisplayName(ctx, in.Preset, n)
-				in.DisplayName = &d
+			if in.Preset != "" {
+				in.Name, n = launcherNameFor(in.Preset, taken)
+				if display == "" {
+					d := s.presetDisplayName(ctx, in.Preset, n)
+					in.DisplayName = &d
+				}
+			} else {
+				// Without a preset (launcher_auto_name, #5029): named after the display name, else after the gateway's
+				// host, which then is the display name too.
+				host := gatewayHost(strings.TrimSpace(in.BaseURL))
+				in.Name, n = customLauncherName(display, host, taken)
+				if display == "" && host != "" {
+					d := numberedName(host, n)
+					in.DisplayName = &d
+				}
 			}
 		}
 		if err := in.check(); err != nil {
@@ -256,14 +271,14 @@ func (s *Service) launcherRoutes() {
 			apierr.WriteJSON(w, map[string]any{"ok": true, "deleted": true})
 			return
 		}
-		s.models.mu.Unlock()
 		// an rc-file launcher, or plain claude (#4384): hidden in Persona, the file is not touched; a start that names it,
-		// or a default that runs it, still runs it
-		hidden := s.hiddenLaunchers(ctx)
-		if !slices.Contains(hidden, name) {
-			hidden = append(hidden, name)
+		// or a default that runs it, still runs it. Under the lock, like an import's hiding and a restore.
+		hidden, err := s.readHiddenLaunchers(ctx)
+		if err == nil && !slices.Contains(hidden, name) {
+			err = s.putSetting(ctx, launchersHiddenKey, append(hidden, name))
 		}
-		if err := s.putSetting(ctx, launchersHiddenKey, hidden); err != nil {
+		s.models.mu.Unlock()
+		if err != nil {
 			apierr.Write(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -312,10 +327,31 @@ func (s *Service) launcherRoutes() {
 		}
 		apierr.WriteJSON(w, map[string]any{"machine": machine, "check": res})
 	})
+	// What still names a launcher as its own (Model configuration's purposes, extensions' too, scheduled tasks, model
+	// profiles and their tiers), in words, for the hide confirmation (#4661): hiding an rc-file launcher only takes it
+	// out of the pickers, and these keep running on it.
+	s.handle("GET /api/v1/launchers/{name}/uses", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		f, err := s.importHideFacts(ctx, "", nil, s.storedLaunchers(ctx))
+		var uses []string
+		if err == nil {
+			uses, err = s.aliasUses(ctx, f, r.PathValue("name"))
+		}
+		if err != nil {
+			apierr.Call(w, err)
+			return
+		}
+		apierr.WriteJSON(w, map[string]any{"uses": append([]string{}, uses...)})
+	})
 	s.handle("POST /api/v1/launchers/{name}/restore", func(w http.ResponseWriter, r *http.Request) {
 		ctx, name := r.Context(), r.PathValue("name")
-		hidden := slices.DeleteFunc(s.hiddenLaunchers(ctx), func(n string) bool { return n == name })
-		if err := s.putSetting(ctx, launchersHiddenKey, hidden); err != nil {
+		s.models.mu.Lock() // launchers.hidden changes one at a time (the import, hiding, restoring)
+		hidden, err := s.readHiddenLaunchers(ctx)
+		if err == nil {
+			err = s.putSetting(ctx, launchersHiddenKey, slices.DeleteFunc(hidden, func(n string) bool { return n == name }))
+		}
+		s.models.mu.Unlock()
+		if err != nil {
 			apierr.Write(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -376,19 +412,31 @@ type pickerTier struct {
 // in use, by name, but those whose launcher the machine does not have (a direct API provider is in no machine's list)
 // or the list leaves out because its latest check failed. None when no profile is in use or it cannot be read: the
 // form then has no preset row.
-func (s *Service) pickerTiers(ctx context.Context, launchers []ConfiguredLauncher) (*ModelProfile, []pickerTier) {
+func (s *Service) pickerTiers(ctx context.Context, machine string, launchers []ConfiguredLauncher) (*ModelProfile, []pickerTier) {
 	p, _, err := s.activeModelProfile(ctx)
 	if err != nil || p == nil {
 		return nil, nil
 	}
+	hidden := s.hiddenLaunchers(ctx)
 	var out []pickerTier
 	for _, name := range slices.Sorted(maps.Keys(p.Tiers)) {
 		t := p.Tiers[name]
-		if slices.ContainsFunc(launchers, func(l ConfiguredLauncher) bool { return l.Name == t.Launcher }) {
+		if slices.ContainsFunc(launchers, func(l ConfiguredLauncher) bool { return l.Name == t.Launcher }) ||
+			slices.Contains(hidden, t.Launcher) && s.hiddenUsable(ctx, machine, t.Launcher) { // hidden still runs (#4661)
 			out = append(out, pickerTier{ModelTier: t, Name: name})
 		}
 	}
 	return p, out
+}
+
+// hiddenUsable: machine has hidden launcher name (launchersHere, which a start goes by) and its latest check did not
+// fail, as withHealth holds the visible ones.
+func (s *Service) hiddenUsable(ctx context.Context, machine, name string) bool {
+	if _, bad := s.launcherUnusable(ctx, machine, name); bad {
+		return false
+	}
+	list, known := s.launchersHere(withUnhidden(ctx, name), machine)
+	return known && slices.ContainsFunc(list, func(l proto.Launcher) bool { return l.Name == name })
 }
 
 // machineLauncherRoutes are "New Agent"'s pickers on one machine: its launchers with the agent each starts
@@ -416,13 +464,22 @@ func (s *Service) machineLauncherRoutes() {
 		def := s.pickerDefault(ctx, r)
 		keep, _ := def["provider"].(string)
 		shown := s.withHealth(ctx, mid, list, keep)
+		// A Persona-managed provider shows its display name over its ID (launcher_auto_name); tiers and default still
+		// name the ID, which clients look up here.
+		stored := s.storedLaunchers(ctx)
+		for i, l := range shown {
+			j := slices.IndexFunc(stored, func(m storedLauncher) bool { return m.Name == l.Name })
+			if j >= 0 && proto.CanonicalLauncherSource(l.Source) == "persona" {
+				shown[i].DisplayName = stored[j].DisplayName
+			}
+		}
 		out := map[string]any{"launchers": shown, "default": def}
 		if purpose := r.URL.Query().Get("purpose"); purpose == "" || purpose == "agent.new" {
 			usable := make([]ConfiguredLauncher, 0, len(shown))
 			for _, l := range shown {
 				usable = append(usable, l.ConfiguredLauncher)
 			}
-			if p, tiers := s.pickerTiers(ctx, usable); len(tiers) > 0 {
+			if p, tiers := s.pickerTiers(ctx, mid, usable); len(tiers) > 0 {
 				out["tiers"], out["tiers_profile"] = tiers, map[string]string{"id": p.ID, "name": p.Name}
 			}
 		}

@@ -32,7 +32,6 @@ describe("showsFailureNote", () => {
     expect(showsFailureNote({ ...failed, status: "working" })).toBe(false);
     expect(showsFailureNote({ ...failed, status: "blocked" })).toBe(false);
     expect(showsFailureNote({ ...failed, pending_interactions: 1 })).toBe(false);
-    expect(showsFailureNote(failed, { readOnly: true })).toBe(false);
     expect(showsFailureNote({ ...failed, source_kind: "codex_history", capabilities: {} })).toBe(false);
     expect(showsFailureNote({ ...failed, failure_reason: undefined })).toBe(false);
   });

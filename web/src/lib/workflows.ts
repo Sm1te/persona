@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { backgroundWaiting, stateOf } from "./format";
 import { took } from "./tasks";
 import type { Session, Workflow, WorkflowAgent, WorkflowPhaseStats } from "./types";
+import type { AgentStatus } from "./work-groups";
 
 export type WorkflowStatus = "running" | "completed" | "failed" | "killed" | "stalled";
 
@@ -296,8 +297,69 @@ export function tallyParts(c: WorkflowTally): { key: "done" | "running" | "faile
   });
 }
 
+// ── the run's card in the chat (#5030, after cindy's AgentTaskCard) ──
+
+/** The task card's status word for a run: killed (stopped by hand) and stalled (no word from it for 30 minutes, its
+ *  claude gone) both read Stopped; neither is known to have failed, and only a failure is red. */
+export function workflowTaskStatus(w: Workflow): AgentStatus {
+  const s = workflowStatus(w);
+  return s === "killed" || s === "stalled" ? "stopped" : s;
+}
+
+/** How long an ended run ran (ms), to its end or its last sign of life; null while it runs or when the hub does not say. */
+export function workflowDurationMs(w: Workflow): number | null {
+  const start = ms(w.started_at);
+  const end = w.running ? null : (ms(w.ended_at) ?? ms(w.updated_at));
+  return start === null || end === null ? null : Math.max(0, end - start);
+}
+
+/** The card's progress line: its agents back (done or failed) of those started, and the phase it is in while it runs. */
+export function workflowProgress(w: Workflow): { phase: string; done: number; total: number } | null {
+  const c = workflowTally(w);
+  if (!c.started) return null;
+  return { phase: w.running ? (w.phase?.trim() ?? "") : "", done: c.done + c.failed, total: c.started };
+}
+
+/** One square of the card's strip: how an agent stands ("unknown": one the hub no longer lists that the counts do not
+ *  account for), and its label when the hub lists it. */
+export interface StripCell {
+  state: AgentRunState | "unknown";
+  label?: string;
+}
+
+/** At most this many squares in the strip; the rest is "+n". */
+export const STRIP_CELLS = 40;
+
+/**
+ * The card's strip: one square per agent in the order they started, the first `max` of them, and how many more. The
+ * hub lists only the run's newest agents: the earlier ones it leaves out are squares too, their states what the run's
+ * counts leave over once the listed ones are counted (done first: the oldest are the likeliest back).
+ */
+export function workflowStrip(w: Workflow, max = STRIP_CELLS): { cells: StripCell[]; more: number } {
+  const listed = w.agents ?? [];
+  const tally = workflowTally(w);
+  const total = Math.max(tally.started, listed.length);
+  const cells: StripCell[] = [];
+  let unlisted = total - listed.length;
+  if (unlisted > 0) {
+    const seen = { done: 0, running: 0, failed: 0, stopped: 0 };
+    for (const a of listed) seen[agentRunState(a)]++;
+    for (const s of ["done", "failed", "stopped", "running"] as const) {
+      const n = Math.min(unlisted, Math.max(0, tally[s] - seen[s]));
+      for (let i = 0; i < n && cells.length < max; i++) cells.push({ state: s });
+      unlisted -= n;
+    }
+    for (let i = 0; i < unlisted && cells.length < max; i++) cells.push({ state: "unknown" });
+  }
+  for (const a of listed) {
+    if (cells.length >= max) break;
+    cells.push({ state: agentRunState(a), label: agentLabel(a) });
+  }
+  return { cells, more: total - cells.length };
+}
+
 /** The Workflow calls of a chat with a run the hub lists (#3434), by tool_use_id, with when each run started (ms, NaN when
- *  the hub does not say): those draw the run's card, which stays out of the agent's folded work, running or ended. */
+ *  the hub does not say): those draw the run's card, inside the turn's folded work like every tool call (super rule 2). */
 export interface WorkflowCalls {
   known: ReadonlySet<string>;
   startedAt: ReadonlyMap<string, number>;

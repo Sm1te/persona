@@ -132,7 +132,7 @@ func (s *Service) syncCodexInteractions(machine string, params json.RawMessage) 
 // answer (a draft in the box, the TUI elsewhere) the card comes back, still open on the computer; when the node says
 // Codex no longer asks it (prompt_changed), the node's next list has what is there now.
 func (s *Service) codexPending(machine string, ix proto.Interaction) *pending {
-	ix.AlwaysHonored, ix.ToolTitle = nil, "" // the manager's word, never a node's (nodeCard)
+	ix.AlwaysHonored, ix.ToolTitle, ix.ToolNameTitle = nil, "", "" // the manager's word, never a node's (nodeCard)
 	p := &pending{ix: ix, codex: true}
 	p.local = func(r proto.Resolution) error {
 		if r.Dismiss { // handed back to the computer: the same question asked again later is announced (#3766)

@@ -303,3 +303,25 @@ describe.each([
     expect(writes).toEqual([]);
   });
 });
+
+describe("a provider this use can't pick", () => {
+  beforeEach(() => {
+    use = LARK;
+    readonly = { ...child(), id: TWIN.id, name: "Inbox Agent", fields: [] };
+  });
+  const picked = () => dialog().querySelector("select")!.selectedOptions[0].textContent;
+
+  it("is named by the provider's name (a launcher's display name, #5029)", async () => {
+    current = { ...child({ provider: "launcher.custom" }), provider_ids: ["launcher.default"] };
+    await render();
+    await open();
+    expect(picked()).toBe(t("settings-modelconfiguration.provider_unavailable", { id: "Custom launcher" }));
+  });
+
+  it("is named by its ID when the hub has it no more", async () => {
+    current = child({ provider: "launcher.gone" });
+    await render();
+    await open();
+    expect(picked()).toBe(t("settings-modelconfiguration.provider_unavailable", { id: "launcher.gone" }));
+  });
+});

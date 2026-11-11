@@ -2,10 +2,13 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/nwverse/persona/server/internal/compat"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nwverse/persona/server/internal/identity"
@@ -56,8 +59,8 @@ func TestAgentPlugin(t *testing.T) {
 		want := startCmd("claude", "--session-id "+startID, personaDir(home))
 		if tc.flag { // the hooks go in a plugin too, and Persona passes no --settings (hooksplugin.go)
 			want = inAgentEnv(personaDir(home), "HERDR_AGENT=claude claude --session-id "+startID+" --mcp-config "+shellQuote(filepath.Join(personaDir(home), "mcp.json"))+
+				" --allowedTools "+shellQuote(pluginToolsRule(personaDir(home)))+
 				" --plugin-dir "+shellQuote(plugin)+
-				" --allowedTools "+shellQuote("Bash(sh "+filepath.Join(plugin, "skills", "persona-office", "scripts", "office.sh")+" *)")+
 				" --plugin-dir "+shellQuote(filepath.Join(personaDir(home), "claude-hooks"))+
 				" --plugin-dir "+shellQuote(filepath.Join(personaDir(home), liveRepliesDir)), shellQuote) // live replies: on by default
 		}
@@ -74,5 +77,67 @@ func TestAssistantAllowsTheOfficeScript(t *testing.T) {
 	want := assistantAllowedTools + ",mcp__" + compat.MCPServer + ",Bash(sh " + filepath.Join(identity.AssistantDir(home), ".claude", "skills", "persona-office", "scripts", "office.sh") + " *)"
 	if got := n.assistantTools(true); got != want {
 		t.Fatalf("%s\nwant %s", got, want)
+	}
+}
+
+// An Agent Persona starts is allowed exactly its own Persona tools (assistantwire.AgentOwnTools, #4966), under both
+// names the node's mcp.json registers, and nothing else of Persona's: not its whole server, the phone's tools, a
+// connector's, dispatch or the assistant's own, which keep their card. Each is a tool the node names the calling
+// Agent's session for (callerTools). Nothing of it goes into the files every session shares or the machine's Claude
+// settings: it is the start's own flag, so a session the user starts themselves is asked as before.
+func TestAgentAllowsOnlyItsOwnPersonaTools(t *testing.T) {
+	n, home := testNode(t)
+	n.dir, n.bin = personaDir(home), "/usr/local/bin/personad"
+	var want []string
+	for _, tool := range []string{"report_to_supervisor", "todo_decisions", "todo_decision_add", "todo_bind_thread", "task_plan", "task_review"} {
+		want = append(want, "mcp__persona__"+tool, "mcp__"+compat.MCPServer+"__"+tool)
+	}
+	got := strings.Split(n.agentAllowedTools(false), ",")
+	if !slices.Equal(got, want) {
+		t.Fatalf("allowed %q\nwant %q", got, want)
+	}
+	for _, name := range got {
+		if base := name[strings.LastIndex(name, "__")+2:]; !slices.Contains(callerTools, base) {
+			t.Errorf("%s: not one of the tools that act for the Agent calling them (callerTools)", name)
+		}
+	}
+	for _, asked := range []string{"dispatch_start", "dispatch_read", "phone_notify", "phone_messages_compose", "phone_calendar_create_event",
+		"mail_send", "mail_read", "iphone_do", "agent_start", "agent_send", "notify_user", "persona_settings"} {
+		for _, name := range compat.MCPToolNames([]string{asked}) {
+			if slices.Contains(got, name) {
+				t.Errorf("%s is allowed: it must keep its card", name)
+			}
+		}
+	}
+	for _, server := range []string{"mcp__persona", "mcp__" + compat.MCPServer} {
+		if slices.Contains(got, server) {
+			t.Errorf("Persona's whole server %s is allowed", server)
+		}
+	}
+	if with := n.agentAllowedTools(true); with != strings.Join(want, ",")+","+officeRule(n.agentOfficeScript()) {
+		t.Errorf("with the plugin: %s", with)
+	}
+
+	if err := writeGeneratedConfig(n.dir, n.bin); err != nil {
+		t.Fatal(err)
+	}
+	var mcp struct {
+		Servers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if b, err := os.ReadFile(filepath.Join(n.dir, "mcp.json")); err != nil || json.Unmarshal(b, &mcp) != nil {
+		t.Fatalf("mcp.json: %v", err)
+	}
+	if mcp.Servers["persona"] == nil || mcp.Servers[compat.MCPServer] == nil {
+		t.Fatalf("mcp.json registers %v: the allowed names must be the ones it registers", slices.Collect(maps.Keys(mcp.Servers)))
+	}
+	settings, err := os.ReadFile(filepath.Join(n.dir, "claude-settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(settings), `"permissions"`) || strings.Contains(string(settings), "report_to_supervisor") {
+		t.Errorf("the shared settings allow tools: %s", settings)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Errorf("the machine's Claude settings were written: %v", err)
 	}
 }

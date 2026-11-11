@@ -63,4 +63,37 @@ class ComposerPhotoEditTest {
         assertEquals(list, replaceEdited(list, "gone", edited))
         assertEquals(listOf(edited, file), replaceEdited(list, "a", edited))
     }
+
+    /** #4992 (iOS `anEditedPhotoKeepsItsEditsUntilItGoes`): the edits follow the photo they made, and go with it. */
+    @Test fun anEditedPhotoKeepsItsEditsUntilItGoes() = runBlocking {
+        val state = ChatComposerState(ChatComposerDraft("", listOf(photo("a"), photo("b"))))
+        val turned = persona.core.designsystem.ImageEditState(persona.core.designsystem.ImageEdits(turns = 1))
+        val kept = PhotoEdits("content://example.com/b", turned)
+        state.replaceWithEdited(state.attachments[1], edited, kept) { "/tmp/edited-b.jpg" }
+        assertEquals("the edit opens again as it was left, from the same source", kept, state.photoEdits["edited"])
+        // Edited again: the newer photo carries them on; the one it replaced keeps nothing.
+        val again = edited.copy(id = "edited-2", uri = "content://example.com/edited-2")
+        val more = kept.copy(state = turned.copy(edits = turned.edits.turnLeft()))
+        state.replaceWithEdited(state.attachments[1], again, more) { "/tmp/edited-b2.jpg" }
+        assertEquals(setOf("edited-2"), state.photoEdits.keys)
+        assertEquals("content://example.com/b", state.photoEdits["edited-2"]?.sourceUri)
+        // Every edit undone: the photo goes back to its source and keeps nothing.
+        state.replaceWithEdited(state.attachments[1], edited.copy(id = "plain"), null) { "/tmp/plain.jpg" }
+        assertTrue(state.photoEdits.isEmpty())
+        state.replaceWithEdited(state.attachments[1], again, more) { "/tmp/edited-b3.jpg" }
+        state.attachments = state.attachments.filter { it.id != "edited-2" }
+        assertTrue("the photo gone, its edits go too", state.photoEdits.isEmpty())
+    }
+
+    /** #4992: an edited camera photo's source stays in cache/chat-captures while the photo made from it is in the draft. */
+    @Test fun anEditedCapturesSourceStaysUntilItsPhotoGoes() {
+        val app = "persona.test"
+        val capture = "content://$app.chat.files/chat-captures/shot.jpg"
+        val shot = photo("shot").copy(uri = capture)
+        val markedUp = edited.copy(uri = "content://$app.chat.files/chat-captures/edited.jpg")
+        assertEquals("replaced by its edit, the source is kept", emptyList<String>(),
+            leftCaptures(listOf(shot), listOf(markedUp), app, keptNow = listOf(capture)))
+        assertEquals("the edit sent: the edit and its source go", listOf(markedUp.uri, capture),
+            leftCaptures(listOf(markedUp), emptyList(), app, keptBefore = listOf(capture)))
+    }
 }

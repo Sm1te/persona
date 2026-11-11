@@ -24,7 +24,6 @@ import {
   type TaskPlan,
 } from "./feed";
 import { conversationCards } from "./assistant-views";
-import { getPanel, openPanel } from "./panel";
 import { refreshTodos } from "./store";
 import type { Todo } from "./todos";
 import type { ChatLine, Segment } from "./turns";
@@ -155,16 +154,14 @@ describe("a task whose agent did not start (#1077, #1142)", () => {
       return fetcher;
     };
 
-    it("deletes a task that never had an agent at once, and drops its route and its panel", async () => {
+    it("deletes a task that never had an agent at once, and drops its route", async () => {
       const fetcher = stub();
       setRoute("c1", "t1");
-      openPanel({ kind: "task", todo: "t1" });
       const ask = vi.fn((_message: string) => true);
       expect(await removeTask(todo({ start_error: "x", done_at: "2026-11-04T10:00:05Z" }), ask)).toBe(true);
       expect(ask).not.toHaveBeenCalled();
       expect(fetcher.mock.calls.some(([url, init]) => String(url).endsWith("/todos/t1") && init?.method === "DELETE")).toBe(true);
       expect(getFeedState().routes.c1).toBeUndefined();
-      expect(getPanel()).toBeNull();
     });
 
     it("retries it in place: one POST however many taps, the todo the hub answers put in at once (#1396)", async () => {

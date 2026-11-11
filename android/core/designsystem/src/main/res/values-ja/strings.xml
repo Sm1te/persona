@@ -195,6 +195,19 @@
     <string name="designsystem_editor_picture">編集する画像</string>
     <string name="designsystem_editor_undo">取り消す</string>
     <string name="designsystem_editor_clear">クリア</string>
+    <!-- The image editor's crop, turn, widths and redo (#4992, iOS ImageEditor) -->
+    <string name="designsystem_markup_crop">切り抜き</string>
+    <string name="designsystem_editor_rotate">回転</string>
+    <string name="designsystem_editor_reset">リセット</string>
+    <string name="designsystem_editor_redo">やり直す</string>
+    <string name="designsystem_editor_shape">縦横比</string>
+    <string name="designsystem_editor_shape_free">自由形式</string>
+    <string name="designsystem_editor_shape_original">オリジナル</string>
+    <string name="designsystem_editor_shape_square">正方形</string>
+    <string name="designsystem_editor_width">線の太さ</string>
+    <string name="designsystem_editor_width_thin">細い</string>
+    <string name="designsystem_editor_width_medium">中</string>
+    <string name="designsystem_editor_width_thick">太い</string>
     <string name="designsystem_viewer_load_failed">画像を読み込めませんでした</string>
     <string name="designsystem_viewer_action_failed">操作は完了しませんでした。再試行してください</string>
     <string name="designsystem_render_too_slow">描画に時間がかかりすぎました</string>

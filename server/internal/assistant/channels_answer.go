@@ -12,7 +12,8 @@ import (
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
-// hasPending: a card of the conversation waits for an answer.
+// hasPending: a card of the conversation's turn waits for an answer. A question asked without waiting is no such
+// card: its turn ended when it went up, and that turn's closing words are the answer to send (ask_later.go).
 func (s *Service) hasPending(ctx context.Context, machine, session string) bool {
 	var res struct {
 		Interactions []proto.Interaction `json:"interactions"`
@@ -20,7 +21,9 @@ func (s *Service) hasPending(ctx context.Context, machine, session string) bool 
 	if err := s.call(ctx, DeviceAll, DeviceInteractionsList, map[string]any{}, &res); err != nil {
 		return false
 	}
-	return slices.ContainsFunc(res.Interactions, func(ix proto.Interaction) bool { return ix.MachineID == machine && ix.SessionID == session })
+	return slices.ContainsFunc(res.Interactions, func(ix proto.Interaction) bool {
+		return ix.MachineID == machine && ix.SessionID == session && !ix.AskedWithoutWaiting()
+	})
 }
 
 // pendingIDs are the cards waiting for an answer now (nil when the hub could not be asked).
@@ -173,8 +176,9 @@ func (s *Service) askAgain(ctx context.Context, r *channel.Run, prog *chanLive, 
 	text := prompts.RenderChannelAnswerAgain(prompts.ChannelAnswerAgain{Name: name})
 	_, body, _ := strings.Cut(text, "\n") // the first line is the context tag
 	id := channel.ClientMsgID(r.Channel, r.ID+"-again")
-	p, err := s.SendParams(ctx, SendParams{MachineID: r.MachineID, SessionID: r.SessionID,
-		Params: map[string]any{"session_id": r.SessionID, "text": text, "client_msg_id": id}})
+	// The manager's own words, not the owner's: they preempt no background round (owner_preempt.go).
+	p, err := s.messageParams(ctx, SendParams{MachineID: r.MachineID, SessionID: r.SessionID,
+		Params: map[string]any{"session_id": r.SessionID, "text": text, "client_msg_id": id}}, false)
 	if err == nil {
 		err = s.sendOnce(ctx, r.MachineID, p)
 	}

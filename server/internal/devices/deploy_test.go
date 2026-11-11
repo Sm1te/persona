@@ -97,6 +97,42 @@ func testDeployScript(t *testing.T, shell, bin string) {
 	}
 }
 
+// A staged file that cannot run `version` must never replace the resident binary or stop the working node (#5097).
+func TestDeployScriptRejectsAnUnusableBinary(t *testing.T) {
+	for _, shell := range loginShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			home := t.TempDir()
+			bin := filepath.Join(home, "personad")
+			old := []byte("#!/bin/sh\necho old\n")
+			if err := os.WriteFile(bin, old, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			var gz bytes.Buffer
+			zw := gzip.NewWriter(&gz)
+			_, _ = zw.Write([]byte("not an executable\n"))
+			_ = zw.Close()
+			pkilled := fakePkill(t)
+			cmd := exec.Command(shell, "-c", deployScript(bin, false))
+			cmd.Env = shellEnv(home, filepath.Dir(pkilled))
+			cmd.Stdin = &gz
+			out, err := cmd.CombinedOutput()
+			if err == nil || !strings.Contains(strings.ToLower(string(out)), "version") {
+				t.Fatalf("an unusable staged binary was accepted: %v %s", err, out)
+			}
+			got, readErr := os.ReadFile(bin)
+			if readErr != nil || !bytes.Equal(got, old) {
+				t.Fatalf("the resident binary changed: %q %v", got, readErr)
+			}
+			if called, _ := os.ReadFile(pkilled); len(called) != 0 {
+				t.Fatalf("the working node was stopped: %q", called)
+			}
+			if _, statErr := os.Stat(bin + ".new"); !os.IsNotExist(statErr) {
+				t.Fatalf("the rejected staged file remains: %v", statErr)
+			}
+		})
+	}
+}
+
 // No binary for the machine's platform on the hub: say what to do, don't start.
 func TestNodeBinaryMissing(t *testing.T) {
 	home := t.TempDir()

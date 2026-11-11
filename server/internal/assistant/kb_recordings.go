@@ -2,7 +2,6 @@ package assistant
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -26,7 +25,7 @@ func (s *Service) recordingRoutes(engine func(http.ResponseWriter, *http.Request
 		}
 		var u kb.RecordingUpload
 		// The transcript is at most 4 MB of text; JSON escaping and the segments' numbers on top.
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&u); err != nil {
+		if err := decodeLargeBody(w, r, &u, 16<<20); err != nil {
 			apierr.Write(w, http.StatusBadRequest, err)
 			return
 		}

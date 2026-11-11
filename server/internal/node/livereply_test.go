@@ -632,7 +632,7 @@ func TestLiveRepliesSettingMovesTheResumeCommand(t *testing.T) {
 	n.holdResume(context.Background(), launch, "w1:p4", sidB, agentLaunch{Agent: "codex", Launcher: "cx"})
 	waitCalls(t, f, "pane.report_agent_session", 2)
 	cmd := func(display bool) string {
-		c := "HERDR_AGENT=claude claude --resume " + startID + " --mcp-config " + filepath.Join(n.dir, "mcp.json") + " --plugin-dir " + hooks
+		c := "HERDR_AGENT=claude claude --resume " + startID + " --mcp-config " + filepath.Join(n.dir, "mcp.json") + " --allowedTools " + ownToolsRule + " --plugin-dir " + hooks
 		if display {
 			c += " --plugin-dir " + live
 		}

@@ -58,9 +58,11 @@ func (s *Service) AgentStartParams(ctx context.Context, p AgentStartParams) (map
 		// Held to what the computer has (#2640): a launcher picked that it lacks is refused, a default it lacks gives
 		// way to one it has.
 		if m, ok := s.device(ctx, p.MachineID); ok {
-			if _, err := s.fitLauncher(ctx, m, own, params); err != nil {
+			note, err := s.fitLauncher(ctx, m, own, params)
+			if err != nil {
 				return nil, badRequest(err, s.appLang(ctx, p.Lang))
 			}
+			leaveLauncherNote(ctx, note) // the app says so (agents_bus.go launcher_note, #4661)
 		}
 		if name, _ := params["launcher"].(string); name != "" {
 			if err := s.launcherScopeErr(ctx, p.MachineID, name); err != nil {

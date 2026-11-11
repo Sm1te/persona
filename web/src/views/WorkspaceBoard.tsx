@@ -221,7 +221,7 @@ function WorkCard({ item, machine }: { item: WorkItem; machine?: Machine }) {
     </div>
     <div className="mt-2">
       <Button tone="quiet" icon="chevronRight" className="!px-2 !py-1 text-xs" onClick={() => {
-        if (s) openPanel({ kind: "agent", mid: s.machine_id, sid: s.session_id });
+        if (s) navigate({ name: "session", mid: s.machine_id, sid: s.session_id });
         else navigate("/todos");
       }}>{item.kind === "todo" ? t("workspaceboard.work_open_todo") : t("workspaceboard.auto_open_session")}</Button>
     </div>
@@ -239,7 +239,7 @@ function AutoCard({ card, machine, workspace, sessions, disabled, onOpen, onMenu
   return <div>
     <WorkspaceCard card={card} machine={machine} workspace={workspace} sessions={sessions} disabled={disabled} drag={false} onOpen={onOpen} onMenu={onMenu} />
     <div className="mt-1 flex flex-wrap gap-1">
-      {focus ? <Button tone="quiet" icon="agent" className="!px-2 !py-1 text-xs" onClick={() => openPanel({ kind: "agent", mid: focus.machine_id, sid: focus.session_id })}>{t("workspaceboard.auto_open_session")}</Button>
+      {focus ? <Button tone="quiet" icon="agent" className="!px-2 !py-1 text-xs" onClick={() => navigate({ name: "session", mid: focus.machine_id, sid: focus.session_id })}>{t("workspaceboard.auto_open_session")}</Button>
         : <Button tone="quiet" icon="plus" className="!px-2 !py-1 text-xs" disabled={disabled || offline} onClick={() => openNewAgent({ machineId: card.machine_id, cwd: card.cwd })}>{t("workspaceboard.new_agent")}</Button>}
       <Button tone="quiet" icon={card.archived ? "undo" : "check"} className="!px-2 !py-1 text-xs" disabled={disabled} onClick={() => onArchive(card, !card.archived)}>{card.archived ? t("workspaceboard.restore_card") : t("workspaceboard.archive_card")}</Button>
     </div>
@@ -263,7 +263,7 @@ function WorkspaceDetail({ card, column, machine, sessions, readonly, onClose }:
   const open = (kind: "files" | "git") => { onClose(); openPanel({ kind, mid: card.machine_id, sid: sessions[0]?.session_id ?? "", cwd: card.cwd }); };
   return <Dialog open title={card.title} onClose={onClose}><div className="space-y-4"><p className="text-xs text-ink-3">{[column, card.archived && t("workspaceboard.archived"), machine?.name || card.machine_id, machine?.online === false && t("workspaceboard.offline")].filter(Boolean).join(" · ")}</p><p className="break-all rounded-control bg-inset p-3 font-mono text-xs text-ink-2">{card.cwd}</p>{card.branch && <p className="text-xs text-ink-2">{t("workspaceboard.branch", { branch: card.branch })}</p>}
     <div className="flex flex-wrap gap-2"><Button icon="folder" disabled={!machine?.online} onClick={() => open("files")}>{t("workspaceboard.files")}</Button><Button icon="git" disabled={!machine?.online} onClick={() => open("git")}>Git</Button><Button icon="plus" disabled={readonly || !machine?.online} onClick={() => { onClose(); openNewAgent({ machineId: card.machine_id, cwd: card.cwd }); }}>{t("workspaceboard.new_agent")}</Button></div>
-    <div className="border-t border-line pt-3"><h3 className="mb-2 text-xs font-medium text-ink-3">{t("workspaceboard.agents_here")}</h3>{sessions.length ? <div className="space-y-1">{sessions.map((s) => <button type="button" key={s.session_id} className="flex w-full items-center gap-2 rounded-control px-2 py-2 text-left hover:bg-hover" onClick={() => { onClose(); openPanel({ kind: "agent", mid: s.machine_id, sid: s.session_id }); }}><Icon name="agent" size={14} className="text-ink-3" /><span className="min-w-0 flex-1 truncate text-sm text-ink">{sessionTitle(s)}</span><StatePill state={stateOf(s)} /></button>)}</div> : <p className="text-sm text-ink-3">{t("workspaceboard.no_agents_detail")}</p>}</div></div></Dialog>;
+    <div className="border-t border-line pt-3"><h3 className="mb-2 text-xs font-medium text-ink-3">{t("workspaceboard.agents_here")}</h3>{sessions.length ? <div className="space-y-1">{sessions.map((s) => <button type="button" key={s.session_id} className="flex w-full items-center gap-2 rounded-control px-2 py-2 text-left hover:bg-hover" onClick={() => { onClose(); navigate({ name: "session", mid: s.machine_id, sid: s.session_id }); }}><Icon name="agent" size={14} className="text-ink-3" /><span className="min-w-0 flex-1 truncate text-sm text-ink">{sessionTitle(s)}</span><StatePill state={stateOf(s)} /></button>)}</div> : <p className="text-sm text-ink-3">{t("workspaceboard.no_agents_detail")}</p>}</div></div></Dialog>;
 }
 interface Dirs { path: string; parent?: string; entries: { name: string; path: string }[] }
 function BindWorkspace({ column, board, workspaces, machines, busy, disabled, onClose, onBind }: {

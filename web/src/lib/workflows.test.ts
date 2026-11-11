@@ -25,7 +25,12 @@ import {
   workflowShortLine,
   workflowStatus,
   workflowTally,
+  workflowDurationMs,
+  workflowProgress,
+  workflowStrip,
+  workflowTaskStatus,
   waitingOnWorkflow,
+  STRIP_CELLS,
   WORKFLOW_KEEP_MS,
 } from "./workflows";
 
@@ -286,5 +291,67 @@ describe("backgroundWaitLine (#6045)", () => {
     expect(backgroundWaitLine(s)).toEqual({ what: "until gh pr checks 7 --watch", more: 1, since: "2026-01-01T00:00:00Z" });
     expect(backgroundWaitLine({ ...s, background_waiting: false })).toBeNull();
     expect(backgroundWaitLine({ ...s, state: "idle" })).toBeNull();
+  });
+});
+
+describe("the run's task card (#5030)", () => {
+  const ended = (over: Partial<Workflow>): Workflow => ({ ...run, running: false, status: "completed", ended_at: "2026-11-05T14:01:57Z", ...over });
+
+  it("says the four status words: killed and stalled read Stopped", () => {
+    expect(workflowTaskStatus(run)).toBe("running");
+    expect(workflowTaskStatus(ended({}))).toBe("completed");
+    expect(workflowTaskStatus(ended({ status: "failed" }))).toBe("failed");
+    expect(workflowTaskStatus(ended({ status: "killed" }))).toBe("stopped");
+    expect(workflowTaskStatus(ended({ status: "stalled" }))).toBe("stopped");
+    expect(workflowTaskStatus(ended({ status: "something new" }))).toBe("completed");
+  });
+
+  it("times an ended run to its end, or its last sign of life; nothing while it runs or with no start", () => {
+    expect(workflowDurationMs(ended({}))).toBe(15 * 60_000);
+    expect(workflowDurationMs(ended({ ended_at: undefined, updated_at: "2026-11-05T13:56:57Z" }))).toBe(10 * 60_000);
+    expect(workflowDurationMs(ended({ ended_at: undefined }))).toBeNull();
+    expect(workflowDurationMs(ended({ started_at: undefined }))).toBeNull();
+    expect(workflowDurationMs(run)).toBeNull();
+  });
+
+  it("counts the agents back, failed ones too, of those started, with the phase while it runs", () => {
+    expect(workflowProgress({ ...run, agents_failed: 3, agents_done: 166 })).toEqual({ phase: "Verify", done: 169, total: 185 });
+    expect(workflowProgress(ended({ agents_running: 0 }))).toEqual({ phase: "", done: 169, total: 185 });
+    expect(workflowProgress({ ...run, agents_started: 0 })).toBeNull();
+  });
+
+  it("draws a square per agent in start order, the listed ones with their labels", () => {
+    const small: Workflow = { ...run, agents_started: 3, agents_done: 1, agents_running: 1, agents_failed: 1, agents: [
+      { id: "a1", session_id: "s@a1", label: "one", running: false, status: "done" },
+      { id: "a2", session_id: "s@a2", label: "two", running: false, status: "failed" },
+      { id: "a3", session_id: "s@a3", running: true, status: "running" },
+    ] };
+    expect(workflowStrip(small)).toEqual({ cells: [{ state: "done", label: "one" }, { state: "failed", label: "two" }, { state: "running", label: "agent" }], more: 0 });
+  });
+
+  it("draws the agents the hub no longer lists from the run's counts, first, and stops at 40 with the rest as more", () => {
+    // 185 started: 169 back (one of them failed), 16 running; the hub lists the newest three
+    const big: Workflow = { ...run, agents_failed: 1, agents_done: 168 };
+    const { cells, more } = workflowStrip(big);
+    expect(cells).toHaveLength(STRIP_CELLS);
+    expect(more).toBe(145);
+    expect(cells.every((c) => c.state === "done" && !c.label)).toBe(true);
+    // with room for all: the unlisted ones are the counts left over (168 - 2 listed done, 1 failed, 16 - 1 listed running), then the listed ones
+    const all = workflowStrip(big, 200);
+    expect(all.more).toBe(0);
+    expect(all.cells).toHaveLength(185);
+    const unlisted = all.cells.slice(0, 182).map((c) => c.state);
+    expect(unlisted.filter((s) => s === "done")).toHaveLength(166);
+    expect(unlisted.slice(166)).toEqual(["failed", ...Array(15).fill("running")]);
+    expect(all.cells.slice(182).map((c) => c.label)).toEqual(["audit:chat", "verify:chat#0", "verify:chat#1"]);
+  });
+
+  it("says unknown for unlisted agents the counts do not account for", () => {
+    // an ended run that lists none of its agents: those not back were stopped by its end
+    const odd: Workflow = { ...run, running: false, status: "completed", agents_started: 5, agents_done: 1, agents_running: 0, agents: [] };
+    expect(workflowStrip(odd).cells.map((c) => c.state)).toEqual(["done", "stopped", "stopped", "stopped", "stopped"]);
+    // a running run whose counts have none done or running yet
+    const none: Workflow = { ...run, agents_started: 4, agents_done: 0, agents_running: 0, agents: [] };
+    expect(workflowStrip(none).cells.map((c) => c.state)).toEqual(["unknown", "unknown", "unknown", "unknown"]);
   });
 });

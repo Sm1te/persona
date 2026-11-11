@@ -99,8 +99,10 @@ internal fun ExtensionSettingsPage(
         }
         item("updates-auto") {
             JGroupItem(GroupPosition.Single, Modifier.padding(top = Tokens.Space.s)) {
+                // While the assistant's automatic extension updates are off it stays at its own saved value, grayed (#4748, the
+                // web's): that value applies again once they are on. Unknown (loading, an older hub) stays editable.
                 JSwitchRow(stringResource(R.string.settings_ext_auto_upgrade), extension.autoUpgrade ?: false, onAutoUpgrade,
-                    enabled = !busy && !updates.checking && capabilities.automatic && extension.autoUpgradePaused == null)
+                    enabled = !busy && !updates.checking && capabilities.automatic && extension.autoUpgradePaused == null && updates.globalAuto != false)
             }
         }
         item("updates-auto-note") { HostSettingsNote(stringResource(when {

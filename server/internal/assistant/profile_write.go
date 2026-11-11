@@ -93,6 +93,13 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 		apierr.Write(w, http.StatusBadRequest, errors.New("archive_closed_days must be 0–3650"))
 		return
 	}
+	if err := validateAgentNamingSettings(in.Settings); err != nil {
+		apierr.Write(w, http.StatusBadRequest, err)
+		return
+	}
+	if (in.AgentAutoNaming != nil || in.AgentAutoNamingMax != nil || in.AgentAutoNamingIntervalHours != nil) && !s.explicitSettingsTarget(w, r) {
+		return
+	}
 	if in.Timezone != "" {
 		if _, err := time.LoadLocation(in.Timezone); err != nil {
 			apierr.Write(w, http.StatusBadRequest, err)
@@ -193,6 +200,15 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.AgentTasks != nil {
 			v.AgentTasks = in.AgentTasks
+		}
+		if in.AgentAutoNaming != nil {
+			v.AgentAutoNaming = in.AgentAutoNaming
+		}
+		if in.AgentAutoNamingMax != nil {
+			v.AgentAutoNamingMax = in.AgentAutoNamingMax
+		}
+		if in.AgentAutoNamingIntervalHours != nil {
+			v.AgentAutoNamingIntervalHours = in.AgentAutoNamingIntervalHours
 		}
 		if in.InboxSignals != nil {
 			v.InboxSignals = in.InboxSignals

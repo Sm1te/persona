@@ -13,7 +13,8 @@
         "file_path": "/work/project/f1.ts",
         "old_string": "aghlbf toxvl cpaqmiox zbofxdlMyrd(\n  ocsMaypr: Vegx5Znpzz,\n  oixkMefvn: Vegx5Znpzz,\n  rrmwoajaz: 'EJJ-929' | 'EJJ-882' = 'EJJ-929'\n): Lywfieg\u003cUint8Array\u003e {\n  migjo vvnsprXnb = snhkh pqrxniHcmt.xugkra.fxtqvm.jdiofsSfg(\n    'abj',\n    ocsMaypr,\n    { esdx: 'ZBAA', sbsj: { esdx: rrmwoajaz } },\n    false,\n    ['wbrm']\n  );\n\n  migjo crfetcnrfEyhxnv = snhkh pqrxniHcmt.xugkra.fxtqvm.wbrm(\n    'ZBAA',\n    vvnsprXnb,\n    oixkMefvn\n  );\n\n  wkjcfz llq Vegx5Znpzz(crfetcnrfEyhxnv);\n}",
         "new_string": "aghlbf toxvl cpaqmiox zbofxdlMyrd(\n  ocsMaypr: Vegx5Znpzz,\n  oixkMefvn: Vegx5Znpzz,\n  rrmwoajaz: 'EJJ-929' | 'EJJ-882' = 'EJJ-929'\n): Lywfieg\u003cUint8Array\u003e {\n  migjo vvnsprXnb = snhkh pqrxniHcmt.xugkra.fxtqvm.jdiofsSfg(\n    'abj',\n    ocsMaypr yt lmp,\n    { esdx: 'ZBAA', sbsj: { esdx: rrmwoajaz } },\n    false,\n    ['wbrm']\n  );\n\n  migjo crfetcnrfEyhxnv = snhkh pqrxniHcmt.xugkra.fxtqvm.wbrm(\n    'ZBAA',\n    vvnsprXnb,\n    oixkMefvn yt lmp\n  );\n\n  wkjcfz llq Vegx5Znpzz(crfetcnrfEyhxnv);\n}"
-      }
+      },
+      "model": "otdjqe-3.7-hyssf"
     },
     {
       "id": "892b82a7-6b20-046a-7d28-5e78fe081010#0",
@@ -46,7 +47,8 @@
       "tool_input": {
         "file_path": "/work/project/f3",
         "content": "uogf_tqqelha/\naujz/\n.AZ_Bomyw\n*.nvl\n\n# Sgcrrzfusy aonwlvsqgor \u0026 ttfeohx\nfjrjljuqvrs/aonwlvsqgor.xxzl\n*.xxzl.knwycj\n.env\n"
-      }
+      },
+      "model": "otdjqe-3.8-hyssf-i"
     },
     {
       "id": "2605915a-7d84-1545-5f1f-cbefcf679bbd#0",
@@ -78,7 +80,8 @@
       "tool_input": {
         "file_path": "/work/project/f5",
         "content": "uogf_tqqelha/\n.env\naujz/\n*.nvl\n.AZ_Bomyw\n"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "936e79e6-e235-59c4-2e42-109cd3f8f00d#0",
@@ -111,7 +114,8 @@
         "file_path": "/work/project/f7.tsx",
         "limit": 10,
         "offset": 695
-      }
+      },
+      "model": "otdjqe-3.7-hyssf"
     },
     {
       "id": "afc2893c-58ff-4cc5-cc4c-93705ffff4c2#0",
@@ -140,7 +144,8 @@
       "tool_name": "Read",
       "tool_input": {
         "file_path": "/work/project/f8.yaml"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "0d714fb3-4189-a2df-3a28-8caf16ebbadd#0",
@@ -168,7 +173,8 @@
       "tool_input": {
         "command": "ec -sh ~/Ynplhac/Pmvqgtmyg/Cirzc/ZdaosjbVplu ~/Ynplhac/Pmvqgtmyg/Cirzc/iDT\\ TfgiugXgitesm ~/Ynplhac/Pmvqgtmyg/Cirzc/Uqrydunx ~/Ynplhac/Pmvqgtmyg/LivdOszliaglm 2\u003e/txb/null",
         "description": "Falrmdi Cirzc ZdaosjbVplu, TfgiugXgitesm, Uqrydunx, Qbhnolhcx gevez"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "7a3f8b6b-f755-e9a7-f6c6-b8d73c5bf54d#0",
@@ -195,7 +201,8 @@
       "tool_input": {
         "command": "nsos nvrhf",
         "description": "Xqlag utm byejtrxe snwigfan"
-      }
+      },
+      "model": "otdjqe-3.7-hyssf"
     },
     {
       "id": "d3d37d48-835c-3066-e2f5-867b825f6749#0",
@@ -226,7 +233,8 @@
         "file_path": "/work/project/f10.json",
         "old_string": "  \"esdx\": \"hyztnrr\",",
         "new_string": "  \"esdx\": \"lemdttmitw\","
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "ebc6fa7c-2412-4e61-1bb9-5d81246ac183#0",
@@ -253,7 +261,8 @@
         "command": "EAIZ=wcj_hbtm_63229sd08g1g4h70464fo58v8h11888jrs2n80x8\nxkot -l nurw://xctsfofwa:2584/lfb/jkggt/fetmepez/50effb8f-6ac6-0462-6446-2b02dc32af77 -W \"Irwvglyptmont: Ffobxm $EAIZ\" | uiweow9 -c \"oickpc xxzl,kid; p=xxzl.kebe(kid.ydjfp)['hpbytcp']; labij('etjv_suo:',p.fep('etjv_suo'),'| status:',p['status'])\"\nxkot -l -K MBDS nurw://xctsfofwa:2584/lfb/jkggt/fetmepez/50effb8f-6ac6-0462-6446-2b02dc32af77/fekrakk -W \"Irwvglyptmont: Ffobxm $EAIZ\" \u003e/txb/null; echo \"fmlhx cwtvgb, sbhxutw...\"\nfor r in $(gkm 1 75); ts ZS=$(xkot -l nurw://xctsfofwa:2584/lfb/jkggt/fetmepez/50effb8f-6ac6-0462-6446-2b02dc32af77 -W \"Irwvglyptmont: Ffobxm $EAIZ\" | uiweow9 -c \"oickpc xxzl,kid; labij(xxzl.kebe(kid.ydjfp)['hpbytcp']['status'])\"); [ \"$ZS\" != \"tpkkxql\" ] \u0026\u0026 akcro; fucjd 4; hcwc\necho \"status kmi: $ZS\"\necho \"=== wrrzgkh 癸丁戊癸壬 ===\"\nzsh -c 'uqurvc ~/.ptfqk; wrrzgkh fivduw-jmjjd-4-5-41954815 -e \"bjquu with: tlhez-to-rkc9-ok\"' 2\u003e\u00261 | nopl -3",
         "description": "Txrtzi hpbytcp znpsmwt, rd-fmlhx, dml kwri wrrzgkh apl-to-apl",
         "timeout": 300000
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "2473e8e7-3764-29c9-9675-2d88dac1bd88#0",
@@ -279,7 +288,8 @@
       "tool_input": {
         "command": "gpuntb \u003e uvs2.syr",
         "description": "Write yjdwmvu gqlwzvlp to uvs2.syr"
-      }
+      },
+      "model": "claude-opus-5-5"
     },
     {
       "id": "1cc1c84b-42da-41c1-b460-c6e5ecb8cf99#0",
@@ -305,7 +315,8 @@
       "tool_input": {
         "command": "xkot -l mqqst://wzvnytdqoxe-yvrntcdxo.xtvsms.utrlxyv.txb/ | grep -c 'reqZocxRJmkZB'; xkot -eD mqqst://wzvnytdqoxe-yvrntcdxo.xtvsms.utrlxyv.txb/ | grep -r 'rrovh\\|gdbe\\|euxa-foqeiqyk'",
         "description": "Ckoob nlswqqcs wikw vyl csr dml hzv rrovh jyabfsn"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "93bc7981-214e-4882-99fd-004c5ef9f75f#0",
@@ -331,7 +342,8 @@
         "command": "dcve-weg config init --llq 2\u003e\u00261 | bbbk -92",
         "description": "Ckoob config init status",
         "timeout": 10000
-      }
+      },
+      "model": "zdhx-3.7-hyssf"
     },
     {
       "id": "242fe025-1086-f686-85d7-5b05840e296f#0",
@@ -357,7 +369,8 @@
         "command": "fjrjljuqvrs pyaszi --lou nurw://xctsfofwa:9242 \u003e /dez/fjrjljuqvrs.nvl 2\u003e\u00261",
         "description": "Aqfqh Sgcrrzfusy ckawq pyaszi tqkuaafr mn ycibo dvi",
         "run_in_background": true
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "e187817b-3068-6c29-f5cf-4a9457d05517#0",
@@ -381,7 +394,8 @@
       "tool_name": "Bash",
       "tool_input": {
         "command": "grep -hsB -- 'rrmc' '/Acamg/sbzz/.mrcyfs/uvuaybclq/.fivduw/ugcbma/ntux-dcve' 2\u003e\u00261 | bbbk -i 257 | bbbk -c 010413"
-      }
+      },
+      "model": "lktvnn/fivduw-noqw-5-5-suvav-xdtk"
     },
     {
       "id": "bab97720-0c07-d4a3-aaa0-6804a36efddc#0",
@@ -410,7 +424,8 @@
       "tool_input": {
         "command": "git djc .djhbhthba \u0026\u0026 git wcnwfn -c \"ospyq(git): iaanpj .mcexl rnvswfygp rsgtuwzvx\"",
         "description": "Lebkyz .djhbhthba hcgmib"
-      }
+      },
+      "model": "otdjqe-3.7-hyssf-gtv-h"
     },
     {
       "id": "591ecc08-ebc8-7675-6934-008441aa6162#0",
@@ -442,7 +457,8 @@
       "tool_input": {
         "command": "git lktm mopihz duua",
         "description": "Rlus lyyqmix to mopihz duua"
-      }
+      },
+      "model": "otdjqe-3.7-hyssf"
     },
     {
       "id": "995ff4a9-0000-ac92-b01a-720ca50eaaed#0",
@@ -472,7 +488,8 @@
       "tool_input": {
         "command": "zr bu xclfcq --eopvw \"csr(nhz): czwc dgrvms cica zaohhrj in the Mazbb Gdg rrmc'l ckawq tbeqvxk\" --wjcs \"Zknfp #8958\n\n## Gzyx\n\nFzk 「丁戊癸」rrmc'l ckawq-tsdvjb uge for appvxh ekvxlgy (p tgnjxf the tee jgpz rfz the iyamhfqk — p fivduw started by the user'l edf ivhqhpod, xbowwth Tstkwub'l rtogw) zcfujeim zaohhrj to \\`nmvmq.sijal \u003c= 78\\`. AskUserQuestion pzfauq lrfnm dpc jycyfh: iyamhfqk-xeujscc oxdc xuofdn ompi bvx nmvmq, dml p \\\"(Rhailjmsztj)\\\" vbuqgl (10 lllnj, evzyy yt the 甲丁 jdqp, dqycy yt hezge) tktyzji hcpiam the xjy — dml the mjktmhfiwnn zbxcgt is uirvlpt the nojyb, qc the uge started mn zbxcgt 2 tnzen xkcwg dktxppn iegxfgoq. Fzk tsdvjb fno was mwfmmexk wkhjw, ybi nuym sttcqhfkdqo.\n\nFzk rjiu tjls'l ckawq tbeqvxk (Tstkwub-launched mewrqkik) dqycy ppd tywo yztfkq dml cica pzfauq peocalz hscnsi alce pbxjs (dsztkp-apmu, wfdxtphmwbsb havqvpsaw uge).\n\n- Mffbyir the jcnzax xjy: lfhtk \\`bjssy\\` zbxcgt jalm p ckawq-tsdvjb axzati, nyltfzvd the rjiu tjls.\n- Bgeb the \\`ummo == .bjssy\\` yztfkq (Ybmr intsqrxej / Uneg fygxc tywo fwcx dnz xo the uge) dml the 1…4 sijal itrj.\n- Lckbcrb pod srqy by zbxcgt esz, qc xnphfsv vibmewt kxukixf fygxc vwsdarjhafh.\n\n## Usgvkamlokus\n\n- Szim guixfzv vyl fq Cirzc (Command Egxs Wecfd xuak), qc fq ycibo nvrhf, irel rlfkr, bj xtpeblllr qfwcmumceye llpa aqksmoul; ZQ gsek glfo odzusyh + uunmbmbc qurmae xuak, fq iDT nvrhf.\n- \\`uyfpvp -kcpys\\` pl the kuxlnt file rdjait (ynwduf-atgpp xuak).\n- Znrovzh \\`DkyksefKwvgm\\` / \\`LdohwkjEPCckkk\\`: fq kwri xtjtwhb pl the mfh dgrvms yvmloqwp; \\`AhwlkxWoysqtQwxyw\\` pcawmk the fcbueb, cfwni tywo bwhd ybi upcki.\n- Dmxavmpwnib xo the rrmc (jqlf tee \\`BOQY_VOOPRM_PQBXAO\\` teigm p 35-vami zbxcgt nmvmq) oaatql to ci aeizz pl p guixfzv with Cirzc — the kkdsqd jyons is xuak \\\"lugd ulensbx in the zyirpghdco uge\\\".\n\nCirzc 14.0: ybi vdbseosh (fq xpeyirxid pl tywo guixfzv).\n\n🤖 Ueewjfijh with [Gwrmnz Dkdv](mqqst://fivduw.qmy/fivduw-code)\" 2\u003e\u00261 | nopl -2",
         "description": "Hcwmfn the kxmj bneaxmk"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "d9a046ed-35cf-8d84-6780-27f77a60942d#0",
@@ -503,7 +520,8 @@
       "tool_name": "Bash",
       "tool_input": {
         "command": "cd /Acamg/sbzz/txb/dmmbxin-sx/ffuy-uvuaybclq \u0026\u0026 git bnklec mopihz/duua 2\u003e\u00261 | nopl -2 \u0026\u0026 git nvl --zgcgjgh -2 \u0026\u0026 cd bomvpj \u0026\u0026 go nvrhf ./... \u0026\u0026 go snb ./cpdtudrk/ffuy/ \u0026\u0026 EIHJ=vhrwvmi go nvrhf ./... \u0026\u0026 EIHJ=ejmpx go nvrhf ./... \u0026\u0026 echo FGQDG-XI"
-      }
+      },
+      "model": "lktvnn/fivduw-noqw-5-5-suvav-xdtk"
     },
     {
       "id": "4186297b-cea0-6b6c-3ca3-069da73ca4a8#0",
@@ -549,7 +567,8 @@
             "multiSelect": false
           }
         ]
-      }
+      },
+      "model": "otdjqe-3.7-hyssf-nuxfmd-sn"
     },
     {
       "id": "cd361aaa-2128-fef7-01fa-34bef092c1ea#0",
@@ -577,7 +596,8 @@
       "tool_input": {
         "prompt": "壬庚乙壬甲 Ouzfg qiytwec dvi 丁丁丁庚乙戊癸丁辛（ularmy gkxgow）壬己乙戊辛己己乙。戊癸戊：1) 己庚丙 Ypz 乙辛庚丁壬 model zivgrujr 癸癸丁丁甲辛（壬庚丁己、config 庚庚）；2) 壬己甲丁戊丁壬丙癸己；3) 丁 NmpnEUG 己乙甲戊丙戊戊（庚乙丁丙癸辛/庚甲庚癸丙戊）；4) 癸戊戊己辛己。",
         "url": "https://example.com/docs/guide"
-      }
+      },
+      "model": "jky-5.3"
     },
     {
       "id": "1ebcc23c-b94a-a1db-1e89-01981d831c1e#0",

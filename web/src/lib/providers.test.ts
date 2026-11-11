@@ -2,13 +2,25 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import {
   autoCheckable,
+  fallbackTitle,
   fillFromCatalog,
   formFromView,
   formModel,
   formProblems,
+  importCanSplit,
+  importCount,
+  importCreates,
+  importMerges,
+  importDiffers,
   importErrorText,
+  importFrom,
+  importLeftOut,
+  importBrings,
   importRow,
+  importSources,
+  importStays,
   importSummary,
+  type ImportedProvider,
   mergeDiscovered,
   newForm,
   probeBody,
@@ -56,13 +68,25 @@ describe("formProblems", () => {
     expect(formProblems(ready(), true)).toEqual({ connect: "", reach: "", models: "", advanced: "" });
   });
   it("checks the connection step", () => {
-    expect(formProblems(ready({ name: "" }), true).connect).toBe("要填名称");
-    expect(formProblems(ready({ name: "1bad" }), true).connect).toMatch(/名字只能/);
+    expect(formProblems(ready({ name: "" }), true).connect).toBe("要填启动 ID");
+    expect(formProblems(ready({ name: "1bad" }), true).connect).toMatch(/启动 ID 只能/);
     expect(formProblems(ready({ base_url: "ftp://x" }), true).connect).toMatch(/http/);
     expect(formProblems(ready({ base_url: "https://u:p@x.example.com" }), true).connect).toMatch(/凭据/);
     expect(formProblems(ready({ api_key: "" }), true).connect).toBe("要填 API Key");
     // editing one that has a key: left empty keeps it
     expect(formProblems(ready({ api_key: "" }), false, true).connect).toBe("");
+  });
+  it("needs no startup ID where the hub makes one up, but checks a typed one and the display name (#5029)", () => {
+    const auto = (over: Partial<ProviderForm>) => formProblems(ready(over), true, false, true);
+    expect(auto({ name: "", display_name: "我的中转 站" })).toEqual({ connect: "", reach: "", models: "", advanced: "" });
+    expect(auto({ name: "1bad" }).connect).toMatch(/启动 ID 只能/);
+    expect(auto({ name: "test" }).connect).toBe("不能叫 test");
+    expect(auto({ name: "", display_name: "字".repeat(65) }).connect).toBe("显示名最多 64 个字，不能换行");
+    // an older hub still needs the ID; a saved provider always has its own
+    expect(formProblems(ready({ name: "", display_name: "我的中转 站" }), true).connect).toBe("要填启动 ID");
+    expect(formProblems(ready({ display_name: "Team\nrelay" }), false, true).connect).toBe("显示名最多 64 个字，不能换行");
+    // the names never keep the gateway from being reached
+    expect(auto({ name: "1bad", display_name: "字".repeat(65) }).reach).toBe("");
   });
   it("lets the address and the key alone decide whether the gateway can be reached (#4881)", () => {
     expect(formProblems(ready(), true)).toMatchObject({ connect: "", reach: "" });
@@ -129,6 +153,18 @@ describe("providerBody", () => {
     expect(b.models).toEqual([{ id: "m1", context_window: 200000 }]);
     for (const k of ["headers", "env", "proxy", "opus_model", "compact_window", "effort"]) expect(b).not.toHaveProperty(k);
   });
+  it("a new provider with no startup ID sends it empty, for the hub to make up, with the display name (#5029)", () => {
+    expect(providerBody(ready({ name: " ", display_name: " 我的中转 站 " }), null)).toMatchObject({ name: "", display_name: "我的中转 站", base_url: "https://gw.example.com" });
+    expect(providerBody(ready(), null)).toMatchObject({ name: "gw", display_name: "" });
+  });
+  it("a PUT renames: the display name always goes, \"\" back to showing the ID (#5029)", () => {
+    const named: ProviderView = { ...stored, display_name: "Team relay" };
+    const f = formFromView(named);
+    expect(f.display_name).toBe("Team relay");
+    expect(providerBody(f, named)).toMatchObject({ name: "gw", display_name: "Team relay" });
+    expect(providerBody({ ...f, display_name: " 团队中转 " }, named).display_name).toBe("团队中转");
+    expect(providerBody({ ...f, display_name: "" }, named).display_name).toBe("");
+  });
   it("an unchanged PUT leaves out the #2455 fields, the key and the headers", () => {
     const b = providerBody(formFromView(stored), stored);
     expect(b).toMatchObject({ name: "gw", base_url: "https://gw.example.com", model: "m1", auth: "bearer" });
@@ -170,6 +206,20 @@ describe("formFromView", () => {
   });
 });
 
+describe("fallbackTitle", () => {
+  it("is what an empty display name ends up as: the startup ID, else the host the hub names it after (#5029)", () => {
+    expect(fallbackTitle(ready({ name: "", base_url: "https://relay.example.com/v1" }), true)).toBe("relay.example.com");
+    // the hub names it after the host without its port or IPv6 brackets
+    expect(fallbackTitle(ready({ name: "", base_url: "https://GW.example.com:8443/v1" }), true)).toBe("gw.example.com");
+    expect(fallbackTitle(ready({ name: "", base_url: "http://[::1]:8080" }), true)).toBe("::1");
+    expect(fallbackTitle(ready({ name: " my_gw " }), true)).toBe("my_gw");
+    expect(fallbackTitle(formFromView(stored), true)).toBe("gw");
+    // an older hub names nothing; an address that does not parse names nothing yet
+    expect(fallbackTitle(ready({ name: "" }), false)).toBe("");
+    expect(fallbackTitle(ready({ name: "", base_url: "relay.example" }), true)).toBe("");
+  });
+});
+
 describe("probes", () => {
   it("by name when editing, the typed key and touched headers over it", () => {
     expect(probeBody(ready({ api_key: "" }), "gw", "m1")).toEqual({ base_url: "https://gw.example.com", auth: "bearer", api: "messages", name: "gw", model: "m1" });
@@ -208,13 +258,83 @@ describe("probes", () => {
 });
 
 describe("import preview", () => {
+  const variant = (alias: string, model: string, extra: Partial<ImportedProvider> = {}): ImportedProvider =>
+    ({ name: alias, model, models: [{ id: model }], aliases: [alias], sources: [{ alias, file: "~/.zshrc", hide: "ok" }], ...extra });
+  const group: ImportedProvider = {
+    name: "cc_kimi", base_url: "https://api.example.com/anthropic", model: "kimi", models: [{ id: "kimi" }, { id: "kimi-fast" }],
+    aliases: ["cc_kimi", "cc_kimi_fast"], differs: ["tiers", "proxy"],
+    sources: [{ alias: "cc_kimi", file: "~/.zshrc", hide: "ok" }, { alias: "cc_kimi_fast", file: "~/.zshrc", hide: "in_use", uses: ["主对话"] }],
+    variants: [variant("cc_kimi", "kimi"), variant("cc_kimi_fast", "kimi-fast", { existing: "kimi_gw", sources: [{ alias: "cc_kimi_fast", file: "~/.zshrc", hide: "in_use", uses: ["主对话"] }] })],
+  };
+  const single: ImportedProvider = {
+    name: "cc_glm", model: "glm", aliases: ["cc_glm"], env_names: ["DISABLE_TELEMETRY"],
+    skipped_env: [{ name: "GLM_TOKEN", reason: "credential" }, { name: "PATH", reason: "computer" }, { name: "WORK", reason: "shell" }],
+    sources: [{ alias: "cc_glm", file: "~/.bashrc", hide: "elsewhere", elsewhere: ["Mac Studio"] }],
+  };
+
   it("shows the host, the model count, the aliases and where it merges", () => {
     const row = importRow({ name: "cc_glm", base_url: "https://open.example.com/api/anthropic", model: "glm-5", models: [{ id: "glm-5" }, { id: "glm-5-air" }], aliases: ["cc_glm", "cc_glm_air"], existing: "glm" });
     expect(row).toEqual({ name: "cc_glm", host: "open.example.com", models: "2 个模型", aliases: "cc_glm、cc_glm_air", action: "合并到 glm", merge: true });
     expect(importRow({ name: "a", model: "m", aliases: ["a"] })).toMatchObject({ host: "官方地址", models: "1 个模型", action: "新建", merge: false });
   });
+  it("names a provider by what it will be saved under, a split group by its own name", () => {
+    // an alias Persona already lists: the hub saves it as <alias>-2
+    expect(importCreates({ name: "cc_glm", create_as: "cc_glm-2", aliases: ["cc_glm"] })).toBe("cc_glm-2");
+    expect(importCreates(single)).toBe("cc_glm");
+    expect(importRow({ ...single, create_as: "cc_glm-2" }).name).toBe("cc_glm-2");
+    expect(importRow({ ...group, create_as: "cc_kimi-2" }, false).name).toBe("cc_kimi-2");
+    expect(importRow({ ...group, create_as: "cc_kimi-2" }, true).name).toBe("cc_kimi");
+  });
+  it("counts a split group's providers on its row and on the Import button", () => {
+    expect(importCanSplit(group)).toBe(true);
+    expect(importCanSplit({ ...group, differs: undefined })).toBe(false);
+    expect(importCanSplit({ ...group, variants: [group.variants![0]!] })).toBe(false);
+    expect(importRow(group, true)).toMatchObject({ action: "2 个供应商", merge: false });
+    expect(importRow(group, false)).toMatchObject({ action: "新建" });
+    const picked = new Set(["cc_kimi", "cc_glm"]);
+    expect(importCount([group, single], picked, new Set(["cc_kimi"]))).toBe(3);
+    expect(importCount([group, single], picked, new Set())).toBe(2);
+    expect(importCount([group, single], new Set(["cc_glm"]), new Set(["cc_kimi"]))).toBe(1);
+    // a group without the choice never counts as split
+    expect(importCount([single], new Set(["cc_glm"]), new Set(["cc_glm"]))).toBe(1);
+  });
+  it("merges only when a picked group, as chosen, lands in a provider that is there", () => {
+    const both = new Set(["cc_kimi", "cc_glm"]);
+    // split: cc_kimi_fast's variant merges into kimi_gw
+    expect(importMerges([group, single], both, new Set(["cc_kimi"]))).toBe(true);
+    // one provider: the group itself has nowhere to merge
+    expect(importMerges([group, single], both, new Set())).toBe(false);
+    // the group that would merge is not picked
+    expect(importMerges([group, single], new Set(["cc_glm"]), new Set(["cc_kimi"]))).toBe(false);
+    expect(importMerges([{ ...single, existing: "glm" }], new Set(["cc_glm"]), new Set())).toBe(true);
+    expect(importMerges([{ ...single, existing: "glm" }], new Set(), new Set())).toBe(false);
+  });
+  it("says where the aliases came from, what they bring and what they leave out", () => {
+    expect(importFrom(group)).toEqual(["来自 ~/.zshrc 里的 cc_kimi、cc_kimi_fast"]);
+    expect(importFrom({ ...single, aliases: ["cc_glm", "cc_x"], sources: [...single.sources!, { alias: "cc_x", file: "~/.zshrc", hide: "none" }] }))
+      .toEqual(["来自 ~/.bashrc 里的 cc_glm", "来自 ~/.zshrc 里的 cc_x"]);
+    // an older hub names no file
+    expect(importFrom({ name: "a", aliases: ["a", "b"] })).toEqual(["来自 a、b"]);
+    expect(importBrings(single)).toBe("一并带上 DISABLE_TELEMETRY。");
+    expect(importBrings(group)).toBe("");
+    expect(importLeftOut(single)).toEqual(["不带上 GLM_TOKEN：看起来是密钥或密码。", "不带上 WORK：值要在 shell 里才能算出来。", "不带上 PATH：只适用于那台电脑。"]);
+    expect(importLeftOut({ ...single, skipped_env: [{ name: "A", reason: "limit" }, { name: "B", reason: "new" }] })).toEqual(["不带上 A：一个供应商最多带 50 个。", "不带上 B。"]);
+    expect(importDiffers(group)).toBe("这几个 alias 的各档模型和代理不一样。");
+    expect(importDiffers({ ...group, differs: ["effort", "someday"] })).toBe("这几个 alias 的默认思考档位和someday不一样。");
+    expect(importDiffers(single)).toBe("");
+  });
+  it("speaks for the sources of the providers the picked groups land in", () => {
+    const split = importSources([group, single], new Set(["cc_kimi", "cc_glm"]), new Set(["cc_kimi"]));
+    expect(split.map((s) => [s.alias, s.hide])).toEqual([["cc_kimi", "ok"], ["cc_kimi_fast", "in_use"], ["cc_glm", "elsewhere"]]);
+    expect(importSources([group, single], new Set(["cc_glm"]), new Set())).toEqual(single.sources);
+    expect(importStays(group.sources![1]!)).toBe("cc_kimi_fast 保留：主对话在用它。");
+    expect(importStays(single.sources![0]!)).toBe("cc_glm 保留：新的供应商无法在Mac Studio上替代它。");
+    expect(importStays({ alias: "x", hide: "in_use" })).toBe("x 保留。");
+  });
   it("sums up and words the two errors the hub names", () => {
     expect(importSummary({ created: ["a", "b"], updated: ["c"] })).toBe("新建 2 个，合并 1 个");
+    expect(importSummary({ created: ["a", "b"], updated: ["c"], hidden: [], kept: [] })).toBe("新建 2 个，合并 1 个");
+    expect(importSummary({ created: ["a"], updated: [], hidden: ["a", "b"], kept: [{ alias: "c", hide: "in_use", uses: ["主对话"] }] })).toBe("新建 1 个，合并 0 个；隐藏 alias 2 个，保留 1 个");
     expect(importErrorText(new ApiError(409, "x", { code: "node_outdated" }))).toBe("这台电脑的 Persona 需要更新");
     expect(importErrorText(new ApiError(503, "x", { code: "offline" }))).toBe("这台电脑不在线");
     expect(importErrorText(new ApiError(502, "坏了", { code: "internal" }))).toContain("HTTP 502");

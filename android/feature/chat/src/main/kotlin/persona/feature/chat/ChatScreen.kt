@@ -285,19 +285,26 @@ private fun ChatPage(
     var hostRetried by rememberSaveable(key.path) { mutableStateOf<String?>(null) }
     val deliveryActions = remember(sender) { ChatDeliveryActions(sender) }
     var statusSheet by remember { mutableStateOf(false) }
+    // The shell presents transient notices once; persistent sync errors stay inline.
+    val feedback = persona.core.designsystem.LocalAppFeedback.current
+    // A message only on this phone taken off (Cancel send / Delete): nothing was sent; Undo puts it back (#4645,
+    // docs/design/DESIGN_SYSTEM.md 4.4 principle 3).
+    fun removed(message: OutboxMessage) {
+        val deleted = res.getString(R.string.chat_delivery_deleted)
+        val undo = persona.core.designsystem.FeedbackAction(res.getString(R.string.chat_delivery_undo)) { sender.restore(message) }
+        if (feedback?.notice(deleted, undo) != true) notice = deleted
+    }
     fun deliveryAction(message: OutboxMessage, action: DeliveryAction) {
         if (readOnly) return
         scope.launch {
             try {
-                if (!deliveryActions.perform(message.clientMessageId, action, composer::restoreMessage))
+                if (!deliveryActions.perform(message.clientMessageId, action, composer::restoreMessage, ::removed))
                     notice = res.getString(R.string.chat_screen_delivery_changed)
                 else if (action == DeliveryAction.Discard) statusSheet = false
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { notice = res.getString(R.string.chat_screen_delivery_failed) }
         }
     }
-    // The shell presents transient notices once; persistent sync errors stay inline.
-    val feedback = persona.core.designsystem.LocalAppFeedback.current
     LaunchedEffect(notice) { notice?.let { if (feedback?.notice(it) == true) notice = null } }
     val currentDraftCallback by rememberUpdatedState(onDraftChanged)
     LaunchedEffect(composer) { snapshotFlow { composer.draft }.collect { currentDraftCallback?.invoke(it) } }
@@ -1046,7 +1053,7 @@ private fun ChatPage(
                                     val deliveryState = if (message.state in setOf(DeliveryState.Refused, DeliveryState.Rejected))
                                         delivery?.state ?: message.state else message.state
                                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                                        UserBubble(composerMessagePreview(message.text))
+                                        UserBubble(composerMessagePreview(message.text), message.clientMessageId, deliveryState)
                                         OutboxStatus(message.copy(state = deliveryState,
                                             error = delivery?.refusal?.code ?: message.error),
                                             busy = message.clientMessageId in deliveryActions.busyIds,
@@ -1143,7 +1150,10 @@ private fun ChatPage(
                 onContext = { text -> linkContexts = linkContexts + messageContext(menuTitle, text, context.resources); notice = res.getString(R.string.chat_screen_added_context) },
                 onHandToPersona = chrome.onHandToPersona?.takeIf { renderStyle != ChatRenderStyle.Assistant }
                     ?.let { hand -> { text: String -> hand(handoffMessage(menuTitle, text, context.resources)) } },
-                onNotice = { notice = it }, onFork = onFork, rewind = rewindMenu)
+                onNotice = { notice = it }, onFork = onFork, rewind = rewindMenu,
+                onDelete = { target -> messages.firstOrNull { it.clientMessageId == target.id }?.let { message ->
+                    deliveryAction(message, if (message.state.allows(DeliveryAction.Cancel)) DeliveryAction.Cancel else DeliveryAction.Delete)
+                } })
             viewer?.let { request ->
                 ChatImageViewer(request.images, request.index, onDismiss = { viewer = null },
                     onEdited = if (readOnly) null else ({ attachment -> composer.beginEdit(); composer.attachments += attachment }),

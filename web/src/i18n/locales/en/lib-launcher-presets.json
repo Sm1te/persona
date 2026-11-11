@@ -3,6 +3,7 @@
   "kind_launcher": "Claude Code launcher",
   "name_invalid": "Use only letters, digits, _ and -, starting with a letter or _",
   "name_reserved": "Can't be named {name}",
+  "display_name_invalid": "Keep the display name to 64 characters on one line",
   "purpose_assistant": "the main conversation",
   "purpose_agent_new": "new Agents",
   "assigned": "Now used by {purposes}.",

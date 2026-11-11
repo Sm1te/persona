@@ -9,8 +9,138 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/transcript"
 )
+
+func TestNodeNamingMetadataIncremental(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	n := &Node{metas: map[string]quickMeta{}, bgScans: map[string]*bgScan{}}
+	padding := `{"type":"api-request-blob","data":"` + strings.Repeat("x", quickTail+1) + `"}` + "\n"
+	head := `{"type":"user","cwd":"/work/project","message":{"role":"user","content":"Fix the build"}}` + "\n" +
+		`{"type":"custom-title","customTitle":"Claude Code"}` + "\n" +
+		`{"type":"assistant","message":{"id":"a1","role":"assistant","content":[],"usage":{"input_tokens":1000,"output_tokens":20}}}` + "\n"
+	if err := os.WriteFile(path, []byte(head+padding+`{"type":"ai-title","aiTitle":"Generated again"}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	read := func() quickMeta {
+		t.Helper()
+		m := n.metas[path]
+		m.readAt = time.Time{} // advance the existing throttled refresh without waiting
+		n.metas[path] = m
+		st, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n.meta(path, st)
+	}
+	m := read()
+	if m.title != "Claude Code" || !m.titleManual || m.titleSource != "manual" || m.outputTokens != 20 {
+		t.Fatalf("historical metadata: title=%q manual=%v source=%q output=%d", m.title, m.titleManual, m.titleSource, m.outputTokens)
+	}
+	appendRows := func(rows string) {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(rows); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An input/context change and repeated usage do not count as new generated output.
+	appendRows(`{"type":"assistant","message":{"id":"a1","role":"assistant","content":[],"usage":{"input_tokens":8000,"output_tokens":20}}}` + "\n")
+	if got := read().outputTokens; got != 20 {
+		t.Fatalf("repeated usage output=%d", got)
+	}
+	// Output counts even when a screenshot pushes the usage fields outside the scanner's first buffer.
+	appendRows(`{"type":"assistant","message":{"id":"a2","role":"assistant","content":[{"type":"text","text":"` +
+		strings.Repeat("x", 300<<10) + `"}],"usage":{"input_tokens":9000,"output_tokens":7}}}` + "\n")
+	m = read()
+	s := proto.Session{Title: m.title}
+	setContext(&s, m)
+	if s.OutputTokens != 27 || !s.TitleManual || s.TitleSource.String() != "manual" {
+		t.Fatalf("session metadata: output=%d manual=%v source=%q", s.OutputTokens, s.TitleManual, s.TitleSource)
+	}
+	before := listKey([]proto.Session{s})
+	s.OutputTokens++
+	if before == listKey([]proto.Session{s}) {
+		t.Fatal("generated output did not change the published list key")
+	}
+	before = listKey([]proto.Session{s})
+	s.TitleSource = proto.TitleSourceAuto
+	if before == listKey([]proto.Session{s}) {
+		t.Fatal("title provenance did not change the published list key")
+	}
+}
+
+func TestNodeNamingMetadataSources(t *testing.T) {
+	for _, tc := range []struct {
+		name, rows, source string
+		output             int
+	}{
+		{"automatic", `{"type":"ai-title","aiTitle":"Generated"}` + "\n", "auto", 0},
+		{"prompt", `{"type":"user","cwd":"/work/project","message":{"role":"user","content":"Fix the build"}}` + "\n", "prompt", 0},
+		{"codex", `{"type":"session_meta","payload":{"cwd":"/work/project"}}` + "\n" + `{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"output_tokens":321},"last_token_usage":{"input_tokens":5000}}}}` + "\n", "", 321},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			if err := os.WriteFile(path, []byte(tc.rows), 0600); err != nil {
+				t.Fatal(err)
+			}
+			st, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := &Node{metas: map[string]quickMeta{}, bgScans: map[string]*bgScan{}}
+			m := n.meta(path, st)
+			s := proto.Session{Title: m.title}
+			untitled(&s, m)
+			setContext(&s, m)
+			if s.TitleManual || s.TitleSource.String() != tc.source || s.OutputTokens != tc.output {
+				t.Fatalf("source=%q manual=%v output=%d", s.TitleSource, s.TitleManual, s.OutputTokens)
+			}
+		})
+	}
+}
+
+func TestToolOnlyTitleKeepsKnownPromptProvenance(t *testing.T) {
+	s := proto.Session{Title: "◐ Claude Code"}
+	setContext(&s, quickMeta{titleSource: "prompt", outputTokens: 10})
+	if s.TitleSource != proto.TitleSourcePrompt || s.OutputTokens != 10 {
+		t.Fatal("tool fallback lost its proved transcript provenance")
+	}
+	unknown := proto.Session{Title: "◐ Claude Code"}
+	setContext(&unknown, quickMeta{})
+	if unknown.TitleSource != proto.TitleSourceUnknown || unknown.TitleManual {
+		t.Fatal("missing metadata implied known title provenance")
+	}
+}
+
+func TestIncompleteNamingScanDoesNotProveAutomaticTitle(t *testing.T) {
+	m := quickMeta{title: "Generated", titleSource: "auto", size: 100}
+	n := &Node{bgScans: map[string]*bgScan{"s": {off: 50}}}
+	n.mergeNamingMetadata("s", &m)
+	if m.titleSource != "" {
+		t.Fatal("an incomplete or failed historical scan proved automatic provenance")
+	}
+}
+
+func TestPendingNamingScanDoesNotProveAutomaticTitle(t *testing.T) {
+	m := quickMeta{title: "Generated", size: 100}
+	n := &Node{bgScans: map[string]*bgScan{"s": {pending: true, meta: transcript.Meta{Title: "Manual", TitleManual: true, TitleSource: "manual", OutputTokens: 42}}}}
+	n.mergeNamingMetadata("s", &m)
+	if m.titleSource != "" || m.outputTokens != 0 {
+		t.Fatal("pending scan published unverified metadata")
+	}
+	n.bgScans["s"].pending = false
+	n.bgScans["s"].off = m.size // the historical scan really completed, not merely stopped
+	n.mergeNamingMetadata("s", &m)
+	if m.title != "Manual" || !m.titleManual || m.titleSource != "manual" || m.outputTokens != 42 {
+		t.Fatal("completed scan did not restore historical manual title and cumulative output")
+	}
+}
 
 // The streamed background-task scan finds what parsing every short marker line finds, across a line far larger than
 // its read buffer and a last line that is only half written when one scan runs.

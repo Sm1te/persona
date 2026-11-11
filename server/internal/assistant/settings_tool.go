@@ -140,7 +140,10 @@ func (s *Service) ownSettings() []ownSetting {
 		{Setting: Setting{Key: "assistant.interject_background", Title: "Move running work to the background when I interject", Actions: getSet,
 			About: "off (the default): a message the user sends while a Claude conversation is still answering waits until the command " +
 				"or subagent running in the foreground ends; on: that work moves to the background (it goes on and reports when done) " +
-				"and the message is answered at once. Needs Claude Code 2.1.139 or later on the conversation's computer; applies from the next message",
+				"and the message is answered at once. " +
+				"Either way, a message the user sends into a round they did not start (supervision, a scheduled task or follow-up, another " +
+				"conversation's message, a task's notice) moves that round's work to the background. " +
+				"Needs Claude Code 2.1.139 or later on the conversation's computer; applies from the next message",
 			Value: "true or false"},
 			get: func(ctx context.Context) (string, error) { return fmt.Sprint(s.interjectBackground(ctx)), nil },
 			set: s.setInterjectBackground},

@@ -30,7 +30,9 @@ func (s *Service) waitOwnedQuestion(ctx context.Context, ix proto.Interaction) (
 	// disconnected. Reattach without another announcement or history insert.
 	s.fleet.mu.Lock()
 	p := s.fleet.interactions[ix.ID]
-	reattach := p != nil && p.local == nil
+	// A resumable one (asked without waiting, ask_later.go) is claimed as a hook claims its card again: the grace
+	// period a restart started for it is called off there (waitInteraction).
+	reattach := p != nil && p.local == nil && !ix.Resumable
 	s.fleet.mu.Unlock()
 	if reattach {
 		return s.await(ctx, p)

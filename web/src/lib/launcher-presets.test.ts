@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assignByDefault,
   assignSummary,
+  displayNameProblem,
   launcherNameProblem,
   loadPresets,
   presetBody,
@@ -51,17 +52,35 @@ describe("launcher presets", () => {
     expect(launcherNameProblem("")).toBe("");
     expect(launcherNameProblem("jv_team")).toBe("");
     expect(launcherNameProblem("9x")).toMatch(/字母/);
-    expect(launcherNameProblem("presets")).toBe("不能叫 presets");
+    // every startup ID the hub keeps for itself (reservedLauncherNames)
+    for (const n of ["claude", "presets", "test", "discover", "import", "health"]) expect(launcherNameProblem(n)).toBe(`不能叫 ${n}`);
+    expect(launcherNameProblem("test-2")).toBe("");
+  });
+
+  it("checks display names like the hub: 64 characters, one line, any language (#5029)", () => {
+    expect(displayNameProblem("")).toBe("");
+    expect(displayNameProblem("我的中转 站")).toBe("");
+    // counted as characters, not UTF-16 units: 64 emoji fit
+    expect(displayNameProblem("🚀".repeat(64))).toBe("");
+    expect(displayNameProblem(` ${"字".repeat(64)} `)).toBe("");
+    expect(displayNameProblem("字".repeat(65))).toBe("显示名最多 64 个字，不能换行");
+    expect(displayNameProblem("Team\nrelay")).toBe("显示名最多 64 个字，不能换行");
+    expect(displayNameProblem("Team\trelay")).toBe("显示名最多 64 个字，不能换行");
   });
 
   it("sends the model only when another one was picked", () => {
-    expect(presetBody(team, " jv_team ", " sk-x ", "example-pro")).toEqual({ name: "jv_team", api_key: "sk-x", preset: "example-gateway/team" });
-    expect(presetBody(team, "jv_team", "k", "example-mini")).toEqual({ name: "jv_team", api_key: "k", preset: "example-gateway/team", model: "example-mini" });
+    expect(presetBody(team, { name: " jv_team ", display_name: "", api_key: " sk-x ", model: "example-pro" })).toEqual({ name: "jv_team", api_key: "sk-x", preset: "example-gateway/team" });
+    expect(presetBody(team, { name: "jv_team", display_name: "", api_key: "k", model: "example-mini" })).toEqual({ name: "jv_team", api_key: "k", preset: "example-gateway/team", model: "example-mini" });
   });
 
   it("leaves the name out when none is typed, so the hub names it, and asks to assign when told to", () => {
-    expect(presetBody(glm, "  ", "sk-x", "glm-x", true)).toEqual({ api_key: "sk-x", preset: "builtin/glm", assign: ["assistant", "agent.new"] });
-    expect(presetBody(glm, "", "sk-x", "")).toEqual({ api_key: "sk-x", preset: "builtin/glm" });
+    expect(presetBody(glm, { name: "  ", display_name: "", api_key: "sk-x", model: "glm-x" }, true)).toEqual({ api_key: "sk-x", preset: "builtin/glm", assign: ["assistant", "agent.new"] });
+    expect(presetBody(glm, { name: "", display_name: "", api_key: "sk-x", model: "" })).toEqual({ api_key: "sk-x", preset: "builtin/glm" });
+  });
+
+  it("sends a typed display name, trimmed; left empty the hub uses the preset's (#5029)", () => {
+    expect(presetBody(glm, { name: "", display_name: " 团队的 GLM ", api_key: "sk-x", model: "glm-x" }, true)).toEqual({ display_name: "团队的 GLM", api_key: "sk-x", preset: "builtin/glm", assign: ["assistant", "agent.new"] });
+    expect(presetBody(glm, { name: "glm_team", display_name: "  ", api_key: "sk-x", model: "glm-x" })).toEqual({ name: "glm_team", api_key: "sk-x", preset: "builtin/glm" });
   });
 
   it("tests a key against the preset: the hub fills in the address and the default model", () => {

@@ -39,6 +39,18 @@ import Testing
         #expect(Set(all.names.keys) == ["", "g2"])
     }
 
+    /// What `unpair` pushes once every hub is forgotten (#1870): no credential and nothing missing, so the watch drops the
+    /// one it holds and shows "Not paired yet", not "No watch credential yet".
+    @Test func aPhoneWithNoHubLeftTellsTheWatchItIsNotPaired() {
+        let model = AppModel()
+        model.registry = HubRegistry()
+        let all = model.watchConfigs()
+        #expect(all.configs.isEmpty)
+        #expect(all.missing == [])
+        #expect(all.names.isEmpty)
+        #expect(all.deviceIDs == [:])
+    }
+
     /// An older phone's message has no `missing`; a newer one's still reads on an older watch (unknown keys are skipped).
     @Test func theMessageReadsBothWays() throws {
         let old = try JSONDecoder().decode(WatchConfigs.self, from: Data(#"{"configs":{},"names":{}}"#.utf8))
@@ -97,6 +109,32 @@ import Testing
             _ = try await DeviceCredentialTrade.issueWatchToken(for: old, api: full.client)
             Issue.record("A non-answer token must not be exported to the watch")
         } catch { #expect((error as? URLError)?.code == .cannotParseResponse) }
+    }
+
+    /// Settings › Devices revoked the watch's credential (#1871): the hub that issued it forgets it, so the next sync
+    /// issues a new one, and until then the group is missing (the watch drops the revoked one, Sync says it failed).
+    @Test func aRevokedWatchCredentialIsForgottenAndIssuedAgain() async throws {
+        var issued = Self.registry
+        issued.hubs[0].watchDeviceID = "watch-a-id"
+        issued.hubs[2].watchDeviceID = "watch-c-id"
+        #expect(DeviceCredentialTrade.forgettingWatch(issued, id: "watch-a-id", group: "g2") == nil) // another group's
+        #expect(DeviceCredentialTrade.forgettingWatch(issued, id: "phone-a-id", group: "") == nil) // not a watch's
+        #expect(DeviceCredentialTrade.forgettingWatch(issued, id: "", group: "") == nil)
+        let revoked = try #require(DeviceCredentialTrade.forgettingWatch(issued, id: "watch-a-id", group: ""))
+        let a = try #require(revoked.primary(""))
+        #expect(a.watch == nil && a.watchDeviceID == nil)
+        #expect(a.config == issued.hubs[0].config)
+        #expect(revoked.hubs[2] == issued.hubs[2]) // the other group's watch credential stays
+        let (configs, missing) = revoked.watchCredentials()
+        #expect(configs[""] == nil)
+        #expect(missing.contains(""))
+        let full = FakeHub()
+        full.on("POST", "/api/v1/auth/tokens", json: #"{"id":"watch-a-new","token":"fixture-watch-a-new","role":"answer"}"#)
+        #expect(try await DeviceCredentialTrade.issueWatchToken(for: try #require(issued.primary("")), api: full.client) == nil)
+        let token = try #require(try await DeviceCredentialTrade.issueWatchToken(for: a, api: full.client))
+        let reissued = try #require(DeviceCredentialTrade.watchRegistry(revoked, expected: a, token: token))
+        #expect(reissued.primary("")?.watch?.token == "fixture-watch-a-new")
+        #expect(reissued.primary("")?.watchDeviceID == "watch-a-new")
     }
 
     @Test func complicationExportContainsOnlyTheWatchsOwnGroupsAndIds() throws {

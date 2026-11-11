@@ -296,7 +296,8 @@ func (p *Peer) writeContext(ctx context.Context, m message) error {
 	return err
 }
 
-// Call sends a request and decodes the result into out (if non-nil).
+// Call sends a request and decodes the result into out (if non-nil). Params that are Appended are written straight
+// into the request's line.
 func (p *Peer) Call(ctx context.Context, method string, params any, out any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -315,11 +316,25 @@ func (p *Peer) Call(ctx context.Context, method string, params any, out any) err
 		delete(p.pending, id)
 		p.mu.Unlock()
 	}()
-	raw, err := marshal(params)
-	if err != nil {
-		return err
+	var req message
+	if a, ok := params.(Appended); ok {
+		if size, ok := callSize(id, method, a); ok {
+			if p.Limits.FrameBytes > 0 && size > p.Limits.FrameBytes { // before the line is made
+				return errFrameBudget
+			}
+			req.line = callLine(id, method, a, size)
+		} else {
+			params = json.RawMessage(a.Append(make([]byte, 0, a.Size))) // the encoder writes the envelope
+		}
 	}
-	if err := p.writeContext(ctx, message{ID: id, Method: method, Params: raw}); err != nil {
+	if req.line == nil {
+		raw, err := marshal(params)
+		if err != nil {
+			return err
+		}
+		req = message{ID: id, Method: method, Params: raw}
+	}
+	if err := p.writeContext(ctx, req); err != nil {
 		return err
 	}
 	select {

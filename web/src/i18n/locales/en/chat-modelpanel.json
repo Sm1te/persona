@@ -1,0 +1,5 @@
+{
+  "other_provider": "Switching providers in a running Agent isn't available yet",
+  "other_engine": "Switching from {from} to {to} needs a new conversation",
+  "model_fixed": "{agent} can't change the model of a running session"
+}

@@ -125,7 +125,7 @@ func (s *Service) spawnedTurnSettled(ctx context.Context, sess proto.Session, fa
 func (s *Service) relayOrQueue(ctx context.Context, to string, msg relayMsg) {
 	machine := s.settings(ctx).MachineID
 	c, ok := s.session(ctx, machine, to)
-	if !ok || c.Status == proto.StatusWorking || c.Starting || s.queuedFor(to) > 0 {
+	if !ok || c.Status == proto.StatusWorking || c.Starting || s.relayWaits(to, msg) {
 		if s.queueRelay(to, msg) > 0 {
 			s.publish(ctx) // shown waiting above its composer
 			if ok && c.Status != proto.StatusWorking && !c.Starting {

@@ -13,6 +13,7 @@ import { acceptHubs, here, rememberHub, takeHubs } from "./lib/hubs";
 import { useSessionPanels } from "./lib/panel-memory";
 import { resolveTab, tabOfSessionLink, tabPagePane } from "./lib/herdr-tree";
 import { resolveSessionLink, sessionLinkRoute, type SessionLink } from "./lib/session-link";
+import { followSubagentLink, splitSubagentLink } from "./lib/subagent-link";
 import { href, inWorkView, navigate, onLinkClick, type Route, routePath, useRoute, withWorkView } from "./lib/router";
 import { agentChatKey, noteChatShown, personaChatKey } from "./lib/recent-chats";
 import { ago, sessionTitle, shortPath } from "./lib/format";
@@ -197,6 +198,9 @@ function pageTarget(s: State, route: Route): PageTarget | undefined {
     return { link: undefined, to: "", mid: route.mid, sid: pane?.sid };
   }
   if (route.name !== "session") return undefined;
+  // a link to a subagent's own conversation (#5030): its parent's chat, which shows the subagent's card (lib/subagent-link.ts)
+  const sub = splitSubagentLink(route.sid);
+  if (sub) return { link: undefined, to: routePath({ ...route, sid: sub.parent }), mid: route.mid, sid: undefined };
   const rows = pageRows(s, route.mid);
   // an old `/s/…` link of a pane in a tab becomes that tab's `/t/…`
   const tab = tabOfSessionLink(rows, route);
@@ -221,9 +225,13 @@ function Shell() {
   const target = useStore((s) => pageTarget(s, route));
   const loaded = useStore((s) => s.loaded);
   const tabLinkPath = target?.to ?? "";
+  const linkMid = route.name === "session" ? route.mid : "";
+  const linkSid = route.name === "session" ? route.sid : "";
   useEffect(() => {
-    if (tabLinkPath) navigate(tabLinkPath, true);
-  }, [tabLinkPath]);
+    if (!tabLinkPath) return;
+    if (linkSid) followSubagentLink(linkMid, linkSid);
+    navigate(tabLinkPath, true);
+  }, [tabLinkPath, linkMid, linkSid]);
   // a tab not among the page's rows (a paged hub lists only active and pinned ones): asked of the hub before it is gone
   const tabRoute = route.name === "tab" ? route : undefined;
   const lookup = useTabLookup(tabRoute, !!tabRoute && loaded && !target?.sid);
