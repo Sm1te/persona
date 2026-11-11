@@ -1,3 +1,4 @@
 {
-  "git_missing": "The hub's machine has no git: git markets (git:…, git@…, ssh://…) need it; github: markets and https:// markets that name an index don't."
+  "git_missing": "The hub's machine has no git: git markets (git:…, git@…, ssh://…) need it; github: markets and https:// markets that name an index don't.",
+  "git_too_old": "The hub's machine has git {version}; a git market with a token needs git 2.31 or newer, which reads the token without putting it on the command line. Update git on that machine."
 }

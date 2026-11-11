@@ -537,7 +537,7 @@ private struct TabPage<Page: View>: View, Equatable {
     private var badge: Text? {
         if model.isDemo { return Text("Demo") }
         let total = ExtensionSlots.shared.total
-        if total.count > 0 { return Text(total.count > 99 ? "99+" : "\(total.count)") }
+        if let text = CountBadge.text(total.count) { return Text(text) }
         return total.dot ? Text("•") : nil
     }
 }

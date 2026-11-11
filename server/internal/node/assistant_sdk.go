@@ -125,8 +125,10 @@ type sdkStart struct {
 	configDir                      string
 	resume                         bool
 	mcp                            map[string]any // --mcp-config's {"mcpServers": …}
+	guestMCP                       map[string]any // a guest's stdio config, proxied through an in-process SDK server
 	allowedTools                   string         // --allowedTools
 	tools                          string         // --tools: built-ins only; MCP tools stay available
+	strictMCP                      bool           // --strict-mcp-config: no user/extension MCP servers
 	deny                           []string       // permission rules denied whatever allows them (healthdeny.go)
 	settings                       string         // --settings: a file, or ""
 	plugin                         string         // --plugin-dir, or ""
@@ -143,11 +145,17 @@ func (s sdkStart) options(claude string) (map[string]any, error) {
 		"includePartialMessages":     true,
 		"pathToClaudeCodeExecutable": claude,
 	}
+	if s.guestMCP != nil {
+		o["guestMcpServers"] = s.guestMCP
+	}
 	if tools := strings.Split(s.allowedTools, ","); s.allowedTools != "" {
 		o["allowedTools"] = tools
 	}
 	if s.tools != "" {
 		o["tools"] = strings.Split(s.tools, ",")
+	}
+	if s.strictMCP {
+		o["strictMcpConfig"] = true
 	}
 	if s.model != "" {
 		o["model"] = s.model

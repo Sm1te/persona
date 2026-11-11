@@ -71,7 +71,7 @@
   "close_failed": "閉じられませんでした：{error}",
   "close_agent_title": "このエージェントを閉じますか？",
   "close_agent": "エージェントを閉じる",
-  "close_agent_detail": "{machine}の「{where}」で動いているClaudeを終了し、このタブを閉じます。会話記録は残り、あとで「最近」から再開できます。",
+  "close_agent_detail": "{machine}の「{where}」で動いているClaudeを終了し、このタブを閉じます。会話はここに残り、あとでターミナルページから再開できます。",
   "close_runtime_detail": "{machine}の「{title}」を終了します。会話履歴は引き続き参照できます。",
   "route_no_images": "タスクへの直接送信では画像はまだ使えません。画像を外してもう一度お試しください。",
   "not_live": "リアルタイムではありません",
@@ -108,6 +108,9 @@
   "closeout_found_merged_no": "ハブの確認では未マージ",
   "closeout_found_deployed_yes": "ハブの確認ではデプロイ済み",
   "closeout_found_deployed_no": "ハブの確認では未デプロイ",
+  "stopped_line": "このエージェントは停止しています。会話とターミナルはここに残りますが、メッセージは受け付けません。",
+  "resume": "再開",
+  "resume_failed": "このエージェントを再開できませんでした。{error}",
   "codex_waiting": "Codex は {computer} で開いています。下で最初のメッセージを送るか、ターミナルに直接入力してください。",
   "codex_first_placeholder": "Codex への最初のメッセージ"
 }

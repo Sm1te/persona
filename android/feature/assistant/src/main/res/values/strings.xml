@@ -34,6 +34,7 @@
     <string name="assistant_compact">Compact context</string>
     <string name="assistant_new_main">New main chat</string>
     <string name="assistant_archive">Archive</string>
+    <string name="assistant_archived">Archived</string>
     <string name="assistant_copy_session_id">Copy session ID</string>
     <string name="assistant_new_main_title">Start a new main chat?</string>
     <string name="assistant_new_main_text">The current main chat will be archived as “Old main chat · until %1$s”, so you can still find it. Your next message starts a new main chat.</string>

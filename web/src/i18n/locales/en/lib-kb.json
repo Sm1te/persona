@@ -64,5 +64,6 @@
   "duration_hours": "{h} h {m} min",
   "duration_minutes": "{m} min {s} s",
   "duration_seconds": "{s} s",
-  "hit_minutes": "Minutes"
+  "hit_minutes": "Minutes",
+  "hit_recap": "Day recap"
 }

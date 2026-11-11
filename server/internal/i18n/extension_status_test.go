@@ -45,6 +45,7 @@ func TestExtensionStatusCopies(t *testing.T) {
 			{"extension-status.sandbox_probe_dir", Args{"err": "filesystem diagnostic: permission denied"}},
 			{"extension-sandbox.probe_tmp", Args{"err": "filesystem diagnostic: permission denied"}},
 			{"extension-market_git.git_missing", nil},
+			{"extension-market_git.git_too_old", Args{"version": "2.30"}},
 		} {
 			for _, source := range []Lang{En, ZhHans, Ja} {
 				text := T(source, tc.key, tc.args)

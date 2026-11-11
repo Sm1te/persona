@@ -60,9 +60,29 @@ Code: `server/internal/assistant/launcher_secrets.go`, `server/internal/extmgr/s
 
 ## The hand-off to one Agent run
 
-Values handed to one Agent start after the user approves a card (#3962). The computer's side
-(`server/internal/node/secretenv.go`, capability `secret_env`) and the hub's approval gate ("Who may approve a hand-off") are in
-place; the card and the Always rules come next.
+Values handed to one Agent start after the user approves a card (#3962): the assistant's `agent_start` takes `secret_env`, each
+environment variable with the reference its value comes from (`{"GITHUB_TOKEN": "op://vault/item/field"}`, 1 to 8), never a value
+(`server/internal/assistant/secret_handoff.go`).
+
+- **Checked before the card**: the names (as below) and references; the hub's hello must say `secret_handoff_gate` ("Who may
+  approve a hand-off"); the computer must be one this manager connects, whose node announced `secret_env`; the launcher must be
+  Claude Code's (a Claude-type provider Persona manages, or plain `claude`; no runtime); each reference's provider must be
+  installed and on. Any of these failing is the tool's error: no card is shown and nothing starts.
+- **The card**: under the reserved tool name `secret_handoff`, after the start's computer and launcher are settled (a launcher's
+  health detour included). It names each item as its provider describes it (`secrets.describe`; a provider that names nothing
+  is shown by its name alone, never the reference), the variable, the Agent (the tab's name), the computer, the directory and
+  the start of the prompt, and says to approve on iPhone or the web; it offers **Always for this launcher on this computer**.
+  It waits 10 minutes. Only an explicit allow approves: a no with anything beside it (`{"allow":false,"always":true}`) is a no
+  and keeps no rule.
+- **After the approval**: the manager resolves each value from the provider the card named (another that claims the scheme now
+  fails with `provider_changed`; purpose `{kind: "agent_run", id: <launcher>, machine}`, approved by `device:<id>` or `rule`,
+  recorded on the provider as every resolution is), stages them (below) right before the start (after a new worktree is made),
+  and the start carries the ticket alone. A start the computer refuses for ultracode is sent again without it on the same
+  ticket, and only a ticket the refused start used up is staged again. The answer lists each variable as `granted`,
+  `declined`, `expired` or `failed` (with the provider's code, such as `not_signed_in`): one that fails stops the start.
+  Values are never in the answer, the card, the model's context, a log or an error. The manager zeroes the byte copies it
+  holds once the start is sent (at once after staging when no ultracode retry can need them); as on the node, other copies
+  (the provider's answer as a string, encoder buffers) may stay in its memory until reused.
 
 - **Staged on the computer, sealed on the way**: after the approval the manager that connects the computer resolves the
   references (purpose `agent_run`), asks the node for a one-time key (`secret.stage {check}`), seals the values to it (HPKE)
@@ -108,6 +128,37 @@ place; the card and the Always rules come next.
   the node zeroes the copies it holds when they are no longer needed, but other copies may stay in its memory until it is
   reused.
 
+## Always rules
+
+**Always for this launcher on this computer** on a hand-off card keeps one rule per variable: reference × launcher × computer, for
+the provider the card named (`server/internal/extmgr/secret_handoff_rules.go`, the manager's setting `secret_handoff_rules`, at
+most 200). A rule holds only while that provider's install lasts: its uninstall removes its rules, one older than its install
+covers nothing, and a provider whose id changes takes them along. A provider's details answer
+`handoff_rules: [{id, reference, launcher, machine, by, at}]`, newest first, for a read-only provider too;
+`DELETE /api/v1/extensions/{id}/-/handoff-rules/{rule}` (full credentials only) removes one (404 for none).
+
+A rule spares the card only when the user asked for the start themselves (the decision on #3962; `handoffUserTurn`): the
+conversation calling `agent_start` is one the user opened (its origin, noted when it was started, is `user`, and no extension's
+token opened it), and every message of the turn is one a person's own app sent, as the hub vouched: the hub marks a message
+for an assistant chat `human` only when a full device's credential sent it (`assistant.send_params`), and the manager keeps
+those messages' `client_msg_id`s, with the start of their words, for a day, in memory; a line counts only when it holds those
+words (the node ties an id to a line by its first words), and the transcript's window must open with the turn's prompt. A
+`client_msg_id` alone proves nothing (channels, the inbox, extensions and Persona's own sends carry one too, and the hub never
+types an id it has delivered once). Conversations an inbox item, a channel (Feishu and others, `/new` included), a scheduled
+task, another conversation or an extension opened, and turns another author's message started, always get the card; so does
+whatever cannot be told (an origin the backfill guessed or none, a transcript that cannot be read or that the node cut, a
+message the hub did not vouch for, an older hub, a manager restarted since). The first message of a conversation started with
+its prompt (`POST /api/v1/assistant/conversations`, Siri with no main chat), a main chat an agent runtime hosts (its node gives
+each message an id of its own) and voice turns (the voice extension's token) always get it too. A start a rule spared the card
+is recorded with `approved_by: "rule"`.
+
+"A person's own app" means any full credential with a device: the iPhone, web and other apps, and also a full token the user
+made for a script or an integration, and a Shortcuts automation that runs Ask Persona with text from elsewhere; whoever holds
+the hub's own token (the hub machine's `hub.json`) can make one. What the rule still trusts in such a turn is everything that is
+not a message: the tools' results (a mail or a page the model read at the user's request), the context and earlier turns can
+still steer what the Agent is told. A main chat an inbox item started (when there was none) is the user's own: its first turn,
+the inbox's message, gets the card, the user's later turns do not.
+
 ## Who may approve a hand-off
 
 The hand-off card is a permission card with the reserved tool name `secret_handoff` (`proto.SecretHandoffTool`): only the
@@ -133,18 +184,28 @@ holds every answer to it before it reaches the manager:
   credential and reason in 10 minutes, so retries fill no log. Never a variable, an item, a reference or a value.
 - **The manager is told who approved, by the hub only**: on an answer to a hand-off card from a device that may approve it,
   and on one to a card the hub does not hold (after a restart, before the manager reported its cards again), the relayed
-  request carries `handoff_approver {device_id, device_name}` in its own field, not a header, so no client can set it. A
-  manager approves a hand-off only with it, which also refuses the cards the hub could not check. The hub's hello says
-  `secret_handoff_gate`: with an older hub, which neither checks nor says it, a manager shows no hand-off card at all.
+  request carries `handoff_approver {device_id, device_name}` in its own field, not a header, so no client can set it. The
+  manager takes an approval only with it, where every answer ends up (`resolveAnswer`): its resolve route answers anything else
+  403 `secret_handoff_elsewhere`, a channel's or the assistant's answer can only say no, and an answer that reaches the card
+  any other way is not taken as an approval. The hub's hello says `secret_handoff_gate`: with an older hub, which neither
+  checks nor says it, the manager shows no hand-off card at all.
 - **No quick approval**: a hand-off card's push and WebSocket notification have the button-less category
   `INTERACTION_INPUT` (a tap opens the card), its Live Activity row has no Allow / Deny, and a notification's choice
   (`…/choose`) never answers one.
 
+## In the apps
+
+- **Web** (`web/src/views/chat/Interactions.tsx` `SecretHandoffCard`, `web/src/views/settings/Extensions.tsx`): the hand-off card
+  names each variable with its provider and item, the Agent and its computer, the directory and the start of the prompt, with
+  Deny, Always allow (when the card offers it, with what it covers) and Allow; only its own buttons approve it, their request
+  carrying `X-Persona-Features: secret_handoff`, while Overview's rows and the browser's notifications open the chat
+  (`needsFieldValues`). An extension's secret offers **Use a reference** where the hub has `extension_secret_references`; a
+  secret that holds one says **From <provider>** with the item under its title. A provider's page lists **Used by** (the
+  settings that hold its references) and **Always for Agents** (its rules, each removed after a confirm).
+
 ## What comes next (#3962)
 
-1. The hand-off card and its Always rules (reference × launcher × computer, listed and removable in the provider's details),
-   `secret_env` on the assistant's `agent_start`, results per variable (`granted`, `declined`, `expired`, `failed`), never a value.
-   The card's title and summary say to approve on iPhone or the web, for the clients that show it as a plain permission card.
-   Channels and the assistant cannot answer it, and an approval without `handoff_approver` is refused.
-2. The web and iPhone clients. Android's part is #3986, which lists the interfaces it needs; until then an Android phone shows the
-   card as the hub sends it and cannot approve it.
+1. The iPhone app: "Use a reference" in secret fields, the hand-off card, and the provider's page listing who uses its
+   references and its Always rules; then launcher keys as references in both apps. Android's part is #3986, which lists the interfaces it needs; until then an Android phone
+   shows the card as the hub sends it and cannot approve it.
+2. The 1Password extension's side (`secrets.used` on its own page).

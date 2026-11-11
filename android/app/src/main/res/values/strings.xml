@@ -28,6 +28,12 @@
     <string name="app_connection_certificate">The hub\'s certificate changed</string>
     <string name="app_connection_revoked">Pairing is no longer valid</string>
     <string name="app_pairing_unreadable">Pairing info can\'t be read right now. The original data is kept.</string>
+    <string name="app_password_login_in_progress">A password sign-in is already in progress</string>
+    <string name="app_password_login_unavailable">Password sign-in couldn\'t open. Check that the HTTPS address and certificate are valid</string>
+    <string name="app_password_login_disabled">Your administrator hasn\'t enabled password sign-in. Use QR pairing instead</string>
+    <string name="app_password_login_expired">The sign-in authorization expired. Sign in again</string>
+    <string name="app_password_login_certificate">The hub\'s certificate couldn\'t be verified</string>
+    <string name="app_password_login_invalid_address">Enter a valid HTTPS hub address, such as https://hub.example.com</string>
     <string name="app_retry">Retry</string>
     <string name="app_local_network_title">Allow local network access</string>
     <string name="app_local_network_denied">Local network access is off. Allow it in the app\'s permissions, then come back to keep pairing.</string>

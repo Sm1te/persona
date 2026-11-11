@@ -132,5 +132,20 @@
   "local_source": "Installed outside an extension market",
   "runtime": "Runtime",
   "manager_offline": "This extension's assistant is offline. Reconnect it to make changes.",
-  "warning": "Warning"
+  "warning": "Warning",
+  "use_reference": "Use a reference",
+  "reference_placeholder": "op://vault/item/field",
+  "reference_hint": "Its provider gives the value whenever this extension needs it. Persona keeps only the reference.",
+  "secret_reference_saved": "{title} now uses the reference",
+  "users_title": "Used by",
+  "users_footer": "Settings that hold one of its references. Each is your standing approval for that setting.",
+  "user_launcher": "{name} key",
+  "user_launcher_machine": "{name} key on {machine}",
+  "rules_title": "Always for Agents",
+  "rules_footer": "An Agent with this launcher on this computer gets the value without asking, when you start it yourself.",
+  "rule_label": "{launcher} on {machine}",
+  "rule_remove": "Remove",
+  "rule_remove_title": "Remove this rule?",
+  "rule_remove_body": "The next time {launcher} on {machine} asks for it, you approve it again.",
+  "rule_removed": "Rule removed"
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ChatActionsContext, liveValue, type ChatActions } from "./chat-actions";
 import { MessageActions, moreActions, rewindActions } from "./MessageActions";
 
-const base: ChatActions = { draftKey: "m/s", canCompose: true, speaker: "Persona", title: "Persona", isAgent: false, images: () => [] };
+const base: ChatActions = { draftKey: "m/s", canCompose: true, speaker: "Persona", title: "Persona", images: () => [] };
 
 function render(actions: ChatActions, itemId?: string) {
   return renderToStaticMarkup(

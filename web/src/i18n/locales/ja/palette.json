@@ -35,5 +35,6 @@
   "group_sessions": "チャット",
   "group_recent": "最近開いた会話",
   "previous": "前の会話",
-  "previous_chat": "前の会話に戻る"
+  "previous_chat": "前の会話に戻る",
+  "place_terminals": "ターミナル一覧を開く"
 }

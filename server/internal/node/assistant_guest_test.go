@@ -53,12 +53,12 @@ func TestGuestProcessFlags(t *testing.T) {
 		t.Fatalf("persona env = %v", env)
 	}
 	if v, ok := flagValue(flags, "--tools"); !ok || v != "" {
-		t.Fatalf("--tools = %q (%v), want no built-in tools: %q", v, ok, flags)
+		t.Fatalf("--tools = %q (%v), want the CLI's no-built-in-tools flag: %q", v, ok, flags)
 	}
 	if v, _ := flagValue(flags, "--allowedTools"); v != strings.Join(compat.MCPToolNames([]string{"lark_agent_reply"}), ",") {
 		t.Fatalf("--allowedTools = %q, want only the guest's tool", v)
 	}
-	if !slices.Contains(flags, "--strict-mcp-config") || slices.Contains(flags, "--disallowedTools") {
+	if !slices.Contains(flags, "--strict-mcp-config") {
 		t.Fatalf("flags = %q", flags)
 	}
 
@@ -129,13 +129,12 @@ func TestGuestConversationStarts(t *testing.T) {
 	}
 }
 
-// Only Claude Code on the CLI runs a guest: the Agent SDK is refused before anything starts.
-func TestGuestRefusesTheAgentSDK(t *testing.T) {
+// Only Claude Code runs a guest: another runtime cannot enforce its no-built-in-tools contract.
+func TestGuestRefusesOtherRuntimes(t *testing.T) {
 	fakeClaudeHome(t, "read line\necho '{\"type\":\"system\",\"subtype\":\"init\"}'\nsleep 30\n")
 	n := codexTestNode(t)
 	withFakeHub(t, n)
-	_, err := n.assistantSend(withGuest(context.Background(), []string{"lark_agent_reply"}), "", t.TempDir(), "claude", "hi", nil, "", "",
-		modelExecution{Runtime: proto.AssistantRuntimeAgentSDK})
+	_, err := n.assistantSend(withGuest(context.Background(), []string{"lark_agent_reply"}), "", t.TempDir(), "codex", "hi", nil, "", "")
 	if !errors.Is(err, errGuestAgent) {
 		t.Fatalf("err = %v, want errGuestAgent", err)
 	}
@@ -144,6 +143,33 @@ func TestGuestRefusesTheAgentSDK(t *testing.T) {
 	n.mu.Unlock()
 	if procs != 0 {
 		t.Fatal("a process started")
+	}
+}
+
+// A guest on the Agent SDK registers its declared tools through an in-process
+// MCP server. No built-in tools or user settings are loaded.
+func TestGuestAgentSDKStart(t *testing.T) {
+	f := sdkTest(t)
+	id, err := f.n.assistantSend(withGuest(context.Background(), []string{"larkbridge_docs"}), "", t.TempDir(), "claude", "search", nil, "", "",
+		sdkExec(proto.AssistantRuntimeAgentSDK))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := f.start(t)
+	if o["sessionId"] != id || o["strictMcpConfig"] != true || o["tools"] != nil || o["plugins"] != nil {
+		t.Fatalf("start: %v", o)
+	}
+	servers, _ := o["guestMcpServers"].(map[string]any)
+	server, _ := servers["persona"].(map[string]any)
+	env, _ := server["env"].(map[string]any)
+	if server["command"] == nil || env["PERSONA_GUEST"] != "1" || env["PERSONA_SESSION_ID"] != id {
+		t.Fatalf("guest MCP: %v", o["guestMcpServers"])
+	}
+	if _, plain := o["mcpServers"].(map[string]any)["persona"]; plain {
+		t.Fatalf("guest config must go through the SDK proxy: %v", o)
+	}
+	if got, _ := o["allowedTools"].([]any); len(got) != 2 || got[0] != "mcp__persona__larkbridge_docs" || got[1] != "mcp__jarvis__larkbridge_docs" {
+		t.Fatalf("allowed tools: %#v", o["allowedTools"])
 	}
 }
 

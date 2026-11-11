@@ -625,6 +625,9 @@ func (s *Service) answerInput(ctx context.Context, m kb.MeetingMaterial, a kb.Li
 	for _, q := range m.Asks {
 		in.Asks = append(in.Asks, prompts.MeetingQA{Question: oneLine(q.Question), Answer: oneLine(q.Answer)})
 	}
+	if len(m.Photos) > 0 { // their words only, never an image
+		in.Photos = meetingPhotos(m.Photos)
+	}
 	for _, em := range m.Earlier {
 		mm := em.Minutes
 		pe := prompts.MeetingEarlier{ID: em.ID, Title: oneLine(em.Name), When: oneLine(em.When), Attendees: each(mm.Attendees)}

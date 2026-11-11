@@ -24,7 +24,7 @@ Phase one is done and this document follows the code; how it was split into issu
 - The hub has built-in voice extension `personad voice` (`server/internal/voice`), supporting GPT-Live's `live` and `codex` dialects. Clients: iOS and visionOS (`apple/Persona/Voice/`, `apple/Persona/Views/Voice/`; section 6), the web app (6.11) and Android's voice page, which speaks protocol 1 and so always talks to the main chat.
 - Since #3502, the extension speaks protocol 2 (`GET /info` returns `protocol: 2`, `features`): `start` with `protocol: 2` and `target` binds to that chat (main chat, another Persona chat, or any Agent),
   with `run` / `link` frames, 409 mapping and `resend`, `状态：` (status), `停止：` (stop), `回答：` (answer), trimmed `resume`, and an interruption gate. Since #3504, questions are supported (`asks`: `ask` frames, voice answers, only category spoken for approvals),
-  and since #3505 the upstream pauses (`suspend`: closed while the target works and the call has been quiet for 60 seconds, back when there is something to say or you speak, `link{paused / waking / live}`, 4.9); `features` is `[target, runs, asks, resume, suspend]`. Protocol 1 frames are unchanged.
+  and since #3505 the upstream pauses (`suspend`: closed while the target works and the call has been quiet for 60 seconds, back when there is something to say or you speak, `link{paused / waking / live}`, 4.9); `features` is `[target, runs, asks, resume, suspend, speak]` (`speak` since #5004: `POST /speak` reads a text aloud outside a call, 4.15). Protocol 1 frames are unchanged.
 - Since #3503, rounds in the bound chat not assigned during this call are also spoken (observed runs, protocol 2 only; main-chat rounds from other channels get just one sentence). For a bound Agent with session triage enabled, model errors that the manager will "continue" do not count as completion; triage waiting on an external dependency announces "Waiting for X" once; model errors speak only the category.
   A heartbeat is spoken after 2 minutes working silently; protocol 2 interruption `clear` follows upstream signals (`incomplete` arriving after a reply has finished does not count), with PCM energy used when the upstream reports no reply boundaries (4.5 rule 7).
   Since #2297, a fast layer that owes the user an answer (their line, a typed line, a result handed to it) and stays silent for 15 seconds gets one `say` nudge (4.5 rule 9).
@@ -258,7 +258,7 @@ the hub forwards App HTTP / WS unchanged through `/api/v1/bus/relay` to the mana
    - 503 `assistant_offline` (manager absent): no entry this time; check again on returning to foreground;
    - Android does not read `/info` and keeps using protocol 1.
 3. The extension sends new frames only when `start` carries `protocol: 2`. Clients without it (Android, #1931) receive no extra frames.
-4. Future features add `features`, not a protocol bump. Phase one: `target`, `runs`, `asks`, `resume`, `suspend`; advertise only implemented ones (#3502 has `target`, `runs`, `resume`; #3504 adds `asks`; #3505 adds `suspend`).
+4. Future features add `features`, not a protocol bump. Phase one: `target`, `runs`, `asks`, `resume`, `suspend`; advertise only implemented ones (#3502 has `target`, `runs`, `resume`; #3504 adds `asks`; #3505 adds `suspend`). #5004 adds `speak`: the extension takes `POST /speak` (4.15), which is not part of a call; an extension without it is older, and the iPhone says meeting answers in its on-device voice then.
 
 ### 3.2 App → extension
 
@@ -285,7 +285,7 @@ The plan card's "Return as feedback" calls `resolve` directly from the App (with
 
 ```
 App  → {"type":"start","protocol":2,"model":"custom/gpt-live-1","target":{"machine_id":"m1","session_id":"s1"},"recent":[…]}
-ext  → {"type":"ready","protocol":2,"features":["target","runs","asks","resume","suspend"],"input_rate":16000,"output_rate":24000,"target":{…,"kind":"agent","agent_label":"Claude Code"}}
+ext  → {"type":"ready","protocol":2,"features":["target","runs","asks","resume","suspend","speak"],"input_rate":16000,"output_rate":24000,"target":{…,"kind":"agent","agent_label":"Claude Code"}}
 ext  → transcript u1 … (user) / a1 … (fast layer: "OK, handed it to Claude")
 ext  → {"type":"run","id":"voice-7c1e…","msg_ids":["voice-7c1e…"],"task":"Fix the failing login-page tests","state":"sending","base_seq":812,…}
 ext  → run …"sent" → …"working" → {"type":"link","state":"paused"} → {"type":"link","state":"live"} → run …"done" (fast layer also speaks the result)
@@ -360,6 +360,7 @@ ext  → run …"sent" → …"working" → {"type":"link","state":"paused"} →
 | `items.go` (new) | HTTP `ItemSource` for `channel.ReadTurn` |
 | `spoken.go` (new) | Make replies speakable: identify code blocks, tables, inline code, paths, `file:line`, hashes, URLs, Markdown markers; placeholders from `prompts/voice/spoken.md` (paths keep filename only); truncate as "beginning + end" |
 | `info.go` (new) | `GET /info` |
+| `speak.go` (new, #5004) | `POST /speak`: one text read aloud in its own upstream session, its audio streamed back (4.15) |
 | `calllog.go` (new, #1485) | The call's log: per-call id, start and end lines, counts, how failures and hub answers are written (see 4.14) |
 | `fake.go` (new) | `fake` dialect (manager.json only, for development): no upstream, App `text` directly delegates, `say` / commentary returns unchanged as fast-layer captions. Works against real hub and Agent without GPT-Live |
 | `config.go` (changed) / `hub.go` (changed) | Merge config, allow no upstream; send requests use ctx rather than a 30-second client timeout |
@@ -869,6 +870,8 @@ How #3505 does it (`suspend.go`; constants from lessons "Recommended constants",
   Each negative test fails with its rule taken out.
 - **#1485 covered** (`voice/calllog_test.go`): a bound call with one `delegate_task` logs its start, binding, upstream session and tools, the function call and its delegation, the gate's decision, the run's states and its send, and its last line with the counts, every line with the call's id; a handover nobody asked for logs the gate's refusal and the run refused (`unprompted`); calls at the same time have their own ids, and a start that fails says its code. None of the typed line, the caption, the model's reply, the task or the agent's answer is in the log.
 
+- **#5004 covered** (`voice/speak_test.go`): the text goes to a session of its own with the read-aloud instructions (the owner's name, the text's language, never the notes) and no tools, word for word as the live dialect's commentary; the reply's audio comes back unchanged with `X-Persona-Audio-Rate` at the session's rate, and the session is closed (`session.close`) at the reply's end, or once its audio stops on a service that never says so; another extension, an answer-only device, no text, too long, a malformed model or voice are refused without a session; no upstream is `503 no_upstream`; a refused key (handshake or model list) `502 upstream_forbidden`, a service that is down `503 upstream_unavailable`, an error before audio `502 upstream_failed`, nothing said in time `504 no_audio`; a refused voice gets one more session with the default voice; the phone hanging up closes the session; the `fake` dialect answers with silence, and a model of an upstream no longer set up falls back to the default without the voice. The log has none of the text, the key or the service's address. Goldens add `read_aloud.*`.
+
 ### 4.14 Diagnosing a call (#1485)
 
 What happened in a call can be read afterwards from the extension's log: one line per meaningful event, each beginning with the call's id (`call 7:`, counted from 1 since the extension last started), so the lines of calls at the same time can be told apart.
@@ -909,6 +912,19 @@ Lines without a call id are the extension's own: its providers as it starts, its
 | `conversation closed after 3m12s (the app hung up (1000)): user lines 4 (typed 1), model lines 5, delegations 2, function calls 2, runs 2 (done 1, refused 1), observed turns 0, cards asked 0, reconnects 0, pauses 1, nudges 0` | The call's end: how long it lasted, why it ended (the app hung up with its close code, its connection dropped, writing to it failed, `start failed: <code>`, `fatal error <code>`), and its counts; runs by their last state. |
 
 **Reading one.** For "the model went quiet": a `nudge:` line says it owed an answer that long and was reminded once; none means nothing was owed by the rules of 4.5 rule 9 (it had spoken, a run was working, a card was asked, no echo cancellation). For "the model said it handed it over, and nothing came": find the call by its time (`conversation opened`), then look for a `delegation` or `function call` line. None: the model never handed anything over (it only said it did). A refusal by the gate: the user's words had not reached the service (no caption, no typed line, no own voice since the agent last spoke). A run that ends `refused` or `failed`, or a send that is not `ok`: the hub's code says why. A run `done` on a conversation other than the one expected: check `bound:` (protocol 2) or the `sent to` line (protocol 1: the main conversation of the moment).
+
+### 4.15 Reading a text aloud (#5004)
+
+`POST /speak` reads one text aloud in the realtime voice, outside a call. Its user is the iPhone: a meeting answer it says aloud while no meeting call runs (`docs/assistant/meeting-minutes.md` "Phase 4: realtime voice in the meeting") is said in the model and voice the owner hears in voice chats, not the phone's on-device voice, which stays the fallback for every failure (an older extension without `speak`, no voice extension, offline, an error status, no audio in time).
+
+- **Request**: `{"text": "…", "model"?: "<provider>/<model>", "voice"?: "<voice id>", "lang"?: "<BCP 47>"}`. `text` is trimmed, 1 to 1000 characters. `model` is what a call sends as `start.model` (the use `plugin.<id>`; absent: the default); a model of an upstream no longer set up falls back to the default, without the voice, as a call does. `voice` is the device's pick (`VoiceTimbre`); absent: the model's default. `lang` is the language the text is in, a hint for the instructions (a value that is not a language tag is ignored).
+- **Who**: a full device, or a caller with no `X-Persona-Role` (an old socket-only deployment); anyone else gets `403 forbidden`. Others in the room hear what it says, and every text costs a session of the owner's service.
+- **The session**: one upstream session per text, with no tools and the instructions of `server/internal/prompts/voice/read_aloud.md` in the caller's language (`X-Persona-Lang`, else the hub's): say each message exactly as written, in its own language, and never answer it, comment, translate or add anything. Others hear it, so the instructions take only the owner's name, never their notes. The text goes as the dialect's `say` (live: a commentary without a delegation; realtime: a user message and `response.create`; codex: `speakable` context in 500-byte pieces). A session the service refuses while a voice was given (not one it says is down) starts once more with the default voice.
+- **The answer**: nothing is written before the first audio. Then `200` with `Content-Type: audio/pcm`, `X-Persona-Audio-Rate: <Hz>` (the session's output rate; mono PCM16, little-endian) and `Cache-Control: no-store`, and the reply's audio as it comes, flushed piece by piece (the hub and the manager forward it unbuffered). It ends with the reply (`response.completed`, `turn.done`, `response.done`, or the reply cut off), or 3 seconds after the last audio on a service that never says a reply is over; then the session is closed with `session.close`. A reply that ends before any audio (one that only wrote text) does not end it. The `fake` dialect answers with a tenth of a second of silence.
+- **Errors**, all before any audio, as `{"error": "…", "code": "…"}`; `error` never holds the service's address or the text: `400 bad_request` (no text, too long, a malformed model or voice), `403 forbidden`, `503 no_upstream`, `502 upstream_forbidden` (the service refused the key, at the handshake or reading its model list for the default model), `503 upstream_unavailable`, `502 upstream_failed` (anything else: a refused session, a dropped socket, an error frame), `504 no_audio` (the session started and said nothing for 15 seconds). Once audio has begun, a failure only ends the body early.
+- **Limits**: 150 seconds in all. The phone hanging up (Stop Speaking, the next answer) closes the session at once. A read-aloud counts in `GET /health`'s `conversations`, so a redeploy waits for it.
+- **The log**: one line per text, such as `speak 3: custom/gpt-live-1, voice default, 86 characters: done; 241920 bytes at 24000 Hz in 5.42s` (outcomes `done`, `done (quiet)`, `the app hung up`, `the session dropped`, `failed, <status> <code> (<why>)`), and a line when the model was gone or the voice refused. Never the text.
+- **Mock**: `scripts/mock/voice_mock.py` lists `speak` and answers `POST …/voice/speak` with a short tone (`MOCK_VOICE_SPEAK=ok|fail|slow|off`, or `GET /mock/voice2?speak=…`), for the iPhone's tests.
 
 ## 5. Configurable GPT-Live upstream
 
@@ -986,6 +1002,7 @@ Reject (ii), "add realtime type to model providers": it would need a new API ret
 | `PUT /api/v1/extensions/<id>/-/config`, `PUT/DELETE …/-/secrets/key`, `PUT …/-/enabled` | Full device | Existing. Changes restart extension, interrupt active call; App resumes automatically |
 | `GET /api/v1/extensions/<id>/info` | Full device | `{protocol, features, setup?, warnings?}`, no Key or upstream list |
 | `GET …/models`, `GET …/voices?model=` | Device allowed to reach extension | Existing. Form upstream model id `custom/<model>` |
+| `POST …/speak` | Full device | #5004: a text read aloud in the realtime voice, its audio streamed back (4.15) |
 
 `POST /test` (connection test) and `/info.upstreams` come in phase two with dedicated settings.
 

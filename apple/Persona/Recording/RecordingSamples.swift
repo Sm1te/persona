@@ -105,7 +105,7 @@ enum RecordingSamples {
             RecordingSegment(index: 1, start: 60, duration: 60, sentences: [
                 RecordingSentence(start: 63, end: 80, text: "张三负责周五前补上长录音的真机测试。"),
                 RecordingSentence(start: 86, end: 101, text: "还没定的是 Mac 上要不要也支持录音。"),
-                RecordingSentence(start: 105, end: 118, text: "下周同一时间再对一次进展。"),
+                RecordingSentence(start: 105, end: 118, text: "李四负责下周同一时间约大家再对一次进展。"),
             ]),
         ]
         past.marks = [44]

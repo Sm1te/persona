@@ -3,9 +3,14 @@ import XCTest
 /// A multi-select question read off the terminal (docs/protocol/protocol.md「Terminal dialogs」「多选」): the card starts from what the
 /// computer shows and sends every tick and the free text together. Against scripts/mock/mock_hub.py started with
 /// MOCK_SCREEN_MULTI=1 (TEST_RUNNER_PERSONA_MULTI_HUB=http://127.0.0.1:<port>); both styles
-/// (TEST_RUNNER_PERSONA_UI_STYLE=beautiful).
+/// (TEST_RUNNER_PERSONA_UI_STYLE=beautiful). Each case starts from the card unanswered (`/mock/reset`).
 final class MultiSelectCardTests: XCTestCase {
     private let review = "a1f3c2d4-0000-4000-8000-000000000006"
+
+    override func setUp() {
+        super.setUp()
+        if let hub = ProcessInfo.processInfo.environment["PERSONA_MULTI_HUB"] { _ = try? Data(contentsOf: URL(string: hub + "/mock/reset")!) }
+    }
 
     @MainActor func testTicksAndTextGoTogether() throws {
         guard let hub = ProcessInfo.processInfo.environment["PERSONA_MULTI_HUB"] else {

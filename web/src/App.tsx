@@ -39,6 +39,7 @@ import { openWorktreeActions } from "./lib/worktree-actions";
 import { selectWorkspace } from "./lib/workspace-selection";
 import { setAgentGrouping } from "./lib/sidebar-api";
 import type { WorkspaceTarget } from "./lib/workspace-target";
+import { ForwardHost } from "./views/chat/ForwardHost";
 import { onOpenNewAgent, type NewAgentPreset } from "./lib/new-agent";
 import { StartingAgent } from "./views/StartingAgent";
 import { ShortcutHelp } from "./views/ShortcutHelp";
@@ -493,6 +494,7 @@ function Shell() {
         </OverlayBoundary>
       )}
       <NewWorktreeHost />
+      <ForwardHost />
       <WorktreeActionsHost onOpenWorkspace={openWorkspaceInTree} />
       {/* tab title with the "Needs you" count, favicon badge, optional sounds (#2332): a leaf, so a sessions push re-renders
           only it, not the whole shell */}

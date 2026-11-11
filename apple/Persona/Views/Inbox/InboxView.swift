@@ -981,7 +981,7 @@ struct InboxRow: View {
                     Spacer(minLength: 0)
                     if item.count > 1 && !item.isDone {
                         // @Me is the accent (it is about you); any other count is neutral.
-                        CountBadge(count: item.count, look: .solid(item.kind == "mention" ? Theme.accent : Theme.countBadge))
+                        CountBadge(count: item.count, look: item.kind == "mention" ? .accent : .neutral)
                     }
                 }
                 if item.doc != nil && !item.isDone {

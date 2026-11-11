@@ -21,6 +21,12 @@ import UIKit
     }
 
     private(set) var state: State = .none
+    /// `minutes_state` behind what is shown: `pending` over shown minutes while newer ones are written (Updating), `failed`
+    /// when those didn't come (the shown ones stay).
+    private(set) var status: String?
+    /// The transcript expired on the hub (`trimmed_at`): its minutes stay, and none can be written again.
+    private(set) var trimmed = false
+    /// A write (Regenerate, Add to To-Dos) or the read-back after it is on its way: no other one starts meanwhile.
     private(set) var asking = false
     /// Bumped by Try Again: the page's polling starts over (its task is keyed on it).
     private(set) var round = 0
@@ -32,7 +38,8 @@ import UIKit
     nonisolated struct Answer: Decodable, Sendable {
         struct Meta: Decodable {
             var state: String?
-            enum CodingKeys: String, CodingKey { case state = "minutes_state" }
+            var trimmedAt: String?
+            enum CodingKeys: String, CodingKey { case state = "minutes_state", trimmedAt = "trimmed_at" }
         }
         struct Detail: Decodable {
             var minutes: RecordingMinutes?
@@ -55,6 +62,8 @@ import UIKit
         do {
             let answer = try await Self.fetch(entry.id, api)
             state = Self.state(minutes: answer.detail.minutes, status: answer.detail.meta?.state, meeting: meeting, synced: synced)
+            status = answer.detail.meta?.state
+            trimmed = answer.detail.meta?.trimmedAt?.isEmpty == false
             #if os(iOS)
             MinutesRelay.shared.note(entry, state: state)
             #endif
@@ -84,28 +93,72 @@ import UIKit
         }
     }
 
-    /// Writes them again (`POST /api/v1/recordings/{id}/minutes`): after a failure, or when they missed something.
+    /// Writes them again (`POST /api/v1/recordings/{id}/minutes`): after a failure, or when they missed something. Minutes
+    /// shown stay while the new ones are written (Updating), as the hub keeps them.
     func regenerate(_ id: UUID) async {
         guard let api = api(), !asking else { return }
         asking = true
         defer { asking = false }
         do {
             _ = try await api.request("POST", "/api/v1/recordings/\(id.uuidString.lowercased())/minutes")
-            state = .writing
+            if case .ready = state { status = "pending" } else { state = .writing }
             round += 1
+        } catch let error as APIError where error.code == "transcript_expired" {
+            trimmed = true
+            AppModel.shared.toast = Toast(String(localized: "The transcript has expired. Only these minutes are kept."), style: .error)
         } catch let error as APIError where error.status == 409 {
             // The transcript isn't complete on the hub yet: the minutes come once it is.
-            state = .waitingForSync
+            if case .ready = state {} else { state = .waitingForSync }
             round += 1
         } catch {
             AppModel.shared.toast = Toast(String(localized: "Couldn't ask the hub for new minutes: \(error.localizedDescription)"), style: .error)
         }
     }
 
-    /// Whether to ask again soon: while they are on their way.
+    /// Whether Regenerate goes with the minutes shown: the whole transcript is on the hub, nothing is being written, and
+    /// it hasn't expired (#4062, as the web and Android offer it).
+    func canRegenerate(_ entry: RecordingEntry, synced: Bool) -> Bool {
+        guard case .ready = state else { return false }
+        return synced && !trimmed && status != "pending" && !entry.active && entry.transcribedAll
+    }
+
+    /// Newer minutes are being written over the ones shown.
+    var updating: Bool {
+        if case .ready = state { return status == "pending" }
+        return false
+    }
+
+    /// `{"todos": [Todo], "minutes": Minutes}`: only the minutes, with the confirmed actions' `todo_id`, are read.
+    nonisolated struct Added: Decodable, Sendable { var minutes: RecordingMinutes? }
+
+    /// Makes the action items `ids` to-dos (`POST /api/v1/recordings/{id}/minutes/todos` with the version shown), then
+    /// reads the recording back before anything else is sent. Minutes rewritten since they were shown (`409
+    /// minutes_stale`) are shown as they are now, and nothing is sent again: the user sees the new ones first.
+    func add(_ ids: [String], to entry: RecordingEntry, synced: Bool) async {
+        guard case .ready(let minutes) = state, let version = minutes.version, !ids.isEmpty, let api = api(), !asking else { return }
+        asking = true
+        defer { asking = false }
+        struct Body: Encodable { var version: Int; var actions: [String] }
+        do {
+            let answer: Added = try await api.post("/api/v1/recordings/\(entry.id.uuidString.lowercased())/minutes/todos",
+                                                   body: Body(version: version, actions: ids))
+            if let minutes = answer.minutes { state = .ready(minutes) }
+            Haptics.success()
+            AppModel.shared.toast = Toast(ids.count == 1 ? String(localized: "Added to To-Dos")
+                                          : String(localized: "Added \(ids.count) to To-Dos"), style: .success)
+        } catch let error as APIError where error.code == "minutes_stale" {
+            AppModel.shared.toast = Toast(String(localized: "The minutes changed. Showing the latest version; review the action items before adding them."), style: .error)
+        } catch {
+            AppModel.shared.toast = Toast(String(localized: "Couldn't add to To-Dos: \(error.localizedDescription)"), style: .error)
+        }
+        await load(entry, synced: synced)
+    }
+
+    /// Whether to ask again soon: while they are on their way, or newer ones are.
     var waiting: Bool {
         switch state {
         case .writing, .waitingForSync, .waitingForText: true
+        case .ready: status == "pending"
         default: false
         }
     }
@@ -116,7 +169,10 @@ import UIKit
 struct RecordingMinutesSections: View {
     var entry: RecordingEntry
     var model: RecordingMinutesModel
+    /// The hub has this revision of its text (Regenerate needs the whole transcript there).
+    var synced: Bool
     var jump: (Double) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         switch model.state {
@@ -184,6 +240,28 @@ struct RecordingMinutesSections: View {
                 .themedButton()
                 .accessibilityIdentifier("minutes-share")
             }
+            if model.updating {
+                // Newer ones on their way: these stay until they come (#4062).
+                HStack(spacing: Theme.Space.s) {
+                    ProgressView()
+                    Text("Updating the minutes…").font(Theme.Font.body)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("minutes-updating")
+            } else if model.status == "failed" {
+                Text("The new minutes couldn't be written. These are the earlier ones.")
+                    .font(Theme.Font.caption).foregroundStyle(Theme.danger)
+            }
+            if model.trimmed {
+                Text("The transcript has expired. Only these minutes are kept.").font(Theme.Font.caption).foregroundStyle(.secondary)
+            }
+            if model.canRegenerate(entry, synced: synced) {
+                Button { Task { await model.regenerate(entry.id) } } label: {
+                    Label("Regenerate", systemImage: Theme.Icon.retry).lineLimit(1)
+                }
+                .disabled(model.asking)
+                .accessibilityIdentifier("minutes-regenerate")
+            }
         } header: {
             Text("Minutes")
         }
@@ -192,20 +270,58 @@ struct RecordingMinutesSections: View {
         }
         items(String(localized: "Key Points"), Theme.Icon.keyPoint, minutes.points)
         items(String(localized: "Decisions"), Theme.Icon.decision, minutes.decisions)
-        items(String(localized: "Action Items"), Theme.Icon.todo, minutes.actions)
+        actions(minutes)
         items(String(localized: "Open Questions"), Theme.Icon.openQuestion, minutes.openQuestions)
     }
 
     @ViewBuilder private func items(_ heading: String, _ symbol: String, _ list: [RecordingMinutes.Item]) -> some View {
         if !list.isEmpty {
             Section(heading) {
-                ForEach(Array(list.enumerated()), id: \.offset) { _, item in row(item, symbol) }
+                ForEach(Array(list.enumerated()), id: \.offset) { _, item in row(item, symbol) { EmptyView() } }
             }
         }
     }
 
-    private func row(_ item: RecordingMinutes.Item, _ symbol: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+    /// The action items, each offered as a to-do the user confirms (docs/assistant/meeting-minutes.md, #4062): Add to To-Dos,
+    /// or Added once it is one; Add All when more than one is left. A hub that doesn't name its actions offers neither.
+    @ViewBuilder private func actions(_ minutes: RecordingMinutes) -> some View {
+        if !minutes.actions.isEmpty {
+            let offered = minutes.version != nil
+            let left = minutes.actions.filter { !$0.added }.compactMap(\.id)
+            Section(String(localized: "Action Items")) {
+                ForEach(Array(minutes.actions.enumerated()), id: \.offset) { _, item in
+                    row(item, Theme.Icon.todo) {
+                        if item.added {
+                            Chip(text: String(localized: "Added [Recording Minutes a4062d]"), look: .tint(Theme.positive), compact: true)
+                                .accessibilityIdentifier("minutes-added")
+                        } else if offered, let id = item.id, !id.isEmpty {
+                            Button { Task { await model.add([id], to: entry, synced: synced) } } label: {
+                                Label("Add to To-Dos", systemImage: Theme.Icon.add).lineLimit(1).minimumScaleFactor(0.8)
+                            }
+                            .themedButton()
+                            .disabled(model.asking)
+                            .accessibilityLabel(String(localized: "Add to To-Dos: \(item.text)"))
+                            .accessibilityIdentifier("minutes-add")
+                        }
+                    }
+                }
+                if offered, left.count > 1 {
+                    Button { Task { await model.add(left, to: entry, synced: synced) } } label: {
+                        Label("Add All", systemImage: Theme.Icon.add).lineLimit(1)
+                    }
+                    .disabled(model.asking)
+                    .accessibilityIdentifier("minutes-add-all")
+                }
+            }
+        }
+    }
+
+    /// A point, decision, action item or open question: its words, who and by when, its time; `below` under the words (an
+    /// action item's Add to To-Dos). At the accessibility sizes the time goes under the words, which then have the row's
+    /// width: beside it they broke every three characters and Add to To-Dos read "+ …" (#4062).
+    private func row<Below: View>(_ item: RecordingMinutes.Item, _ symbol: String, @ViewBuilder below: () -> Below) -> some View {
+        let large = typeSize.isAccessibilitySize
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
             ThemedIcon(symbol).font(Theme.Font.secondary).foregroundStyle(Theme.accent)
                 .scaledFrame(width: Theme.Size.iconXS)
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
@@ -213,18 +329,25 @@ struct RecordingMinutesSections: View {
                 if let byline = RecordingMinutes.byline(item) {
                     Text(byline).font(Theme.Font.caption).foregroundStyle(.secondary)
                 }
+                if large { time(item) }
+                below()
             }
             Spacer(minLength: Theme.Space.s)
-            if let at = item.at {
-                Button { jump(at) } label: {
-                    Chip(text: RecordingFormat.clock(at), look: .tint(Theme.accent), compact: true)
-                        .scaledFrame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "Show in transcript at \(RecordingFormat.clock(at))"))
-                .accessibilityIdentifier("minutes-time")
+            if !large { time(item) }
+        }
+    }
+
+    /// When it was said: a tap shows that line of the transcript.
+    @ViewBuilder private func time(_ item: RecordingMinutes.Item) -> some View {
+        if let at = item.at {
+            Button { jump(at) } label: {
+                Chip(text: RecordingFormat.clock(at), look: .tint(Theme.accent), compact: true)
+                    .scaledFrame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "Show in transcript at \(RecordingFormat.clock(at))"))
+            .accessibilityIdentifier("minutes-time")
         }
     }
 

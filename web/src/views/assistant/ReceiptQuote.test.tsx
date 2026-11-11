@@ -4,7 +4,7 @@ import type { FeedItem } from "../../lib/feed";
 import { ChatActionsContext, type ChatActions } from "../chat/chat-actions";
 import { FeedLineView } from "./Tasks";
 
-const chat: ChatActions = { draftKey: "m/s", canCompose: true, speaker: "Persona", title: "Persona", isAgent: false, images: () => [] };
+const chat: ChatActions = { draftKey: "m/s", canCompose: true, speaker: "Persona", title: "Persona", images: () => [] };
 const receipt: FeedItem = {
   id: "f1",
   conversation: "s",

@@ -131,5 +131,20 @@
   "local_source": "在扩展市场之外安装",
   "runtime": "运行方式",
   "manager_offline": "这个扩展所属的助手离线了，重新连接后才能操作。",
-  "warning": "提示"
+  "warning": "提示",
+  "use_reference": "使用引用",
+  "reference_placeholder": "op://vault/item/field",
+  "reference_hint": "这个扩展需要时由它的提供方给出值，Persona 只保存引用。",
+  "secret_reference_saved": "{title} 已改用引用",
+  "users_title": "使用方",
+  "users_footer": "保存了它某个引用的设置，每一项都是你对该设置的长期批准。",
+  "user_launcher": "{name} 的 Key",
+  "user_launcher_machine": "{machine} 上 {name} 的 Key",
+  "rules_title": "总是交给 Agent",
+  "rules_footer": "在这台电脑上用这个启动器、由你自己发起的 Agent 会直接拿到值，不再询问。",
+  "rule_label": "{machine} 上的 {launcher}",
+  "rule_remove": "移除",
+  "rule_remove_title": "移除这条规则？",
+  "rule_remove_body": "下次 {machine} 上的 {launcher} 需要它时，会重新请你批准。",
+  "rule_removed": "规则已移除"
 }

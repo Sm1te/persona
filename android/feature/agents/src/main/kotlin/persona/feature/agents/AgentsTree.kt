@@ -61,6 +61,17 @@ internal data class TreeTabEntry(val tab: AgentTab, val depth: Int, val first: B
     override val key: String get() = "tab:${tab.key}"
 }
 
+/**
+ * Whether Collapse All is done: every section folded. It leaves the computer headings as they are (#4338 A11), so they
+ * say nothing about it.
+ */
+internal val AgentListResult.allCollapsed: Boolean get() = groups.isNotEmpty() && groups.all { it.folded }
+
+/** A section's run of rows past [AgentRowCap]: "Show All [count]", or "Collapse" once they all show ([expanded]). */
+internal data class TreeShowAllEntry(val group: AgentListGroup, val count: Int, val depth: Int, val expanded: Boolean) : AgentTreeEntry {
+    override val key: String get() = "all:${group.id}"
+}
+
 /** Finished sessions of an active space that are tucked away until asked for. */
 internal data class TreeIdleEntry(val group: AgentListGroup, val hidden: Int, val depth: Int) : AgentTreeEntry {
     override val key: String get() = "idle:${group.id}"
@@ -82,6 +93,11 @@ internal fun agentTreeEntries(
     list: AgentListResult, machineFilter: String, tabs: Boolean = false, foldedTabs: Set<String> = emptySet(),
     mutes: AgentPreferences = AgentPreferences(),
     expandedTasks: Set<String> = emptySet(),
+    /**
+     * The sections showing all their rows ([AgentRowCap.key]); null: no section is capped (a search, a quick filter or a
+     * paged list shows every row it leaves, as iOS).
+     */
+    showAll: Set<String>? = null,
 ): List<AgentTreeEntry> {
     val entries = mutableListOf<AgentTreeEntry>()
     fun group(group: AgentListGroup, space: Boolean, depth: Int, first: Boolean) {
@@ -91,7 +107,10 @@ internal fun agentTreeEntries(
         // each line is a row of its own or a tab of several, in the group's order
         val lines = mutableListOf<Any>()
         val placed = mutableSetOf<String>()
-        group.visibleRows.forEach { row ->
+        val cap = showAll?.let { AgentRowCap.capped(group.visibleRows.size) }
+        val open = cap != null && AgentRowCap.key(group.id) in showAll.orEmpty()
+        val drawn = if (cap != null && !open) group.visibleRows.take(cap) else group.visibleRows
+        drawn.forEach { row ->
             val tab = row.session.tabKey?.let(byTab::get)
             if (tab == null) lines += row else if (placed.add(tab.key)) lines += tab
         }
@@ -114,13 +133,16 @@ internal fun agentTreeEntries(
                 }
             }
         }
-        val hidden = group.rows.size - shown
+        if (cap != null) entries += TreeShowAllEntry(group, group.visibleRows.size, depth, expanded = open)
+        val hidden = group.rows.size - shown - (group.visibleRows.size - drawn.size)
         if (hidden > 0) entries += TreeIdleEntry(group, hidden, depth)
     }
     val byId = list.groups.associateBy { it.id }
     val treeIds = list.machines.flatMap { it.groups }.toSet()
     list.groups.filter { it.id == "pinned" }.forEach { group(it, space = false, depth = 0, first = entries.isEmpty()) }
-    val headed = machineFilter.isEmpty() || list.machines.size > 1
+    // Computer headings only while the list holds more than one computer, as iOS's `byHost` (#4338 A7): one computer's
+    // name over its own list says nothing.
+    val headed = machineFilter.isEmpty() && list.machines.size > 1
     list.machines.forEach { machine ->
         // A computer whose sessions are all pinned has nothing left to hold here; "Pinned" says where they run.
         if (machine.groups.none(byId::containsKey)) return@forEach
@@ -187,8 +209,17 @@ internal fun MachineFilterRow(machines: List<MachineCount>, total: Int, selected
     }
 }
 
+/**
+ * A computer heading's counts, as iOS's `StateCounts` (#4338 A7): needing you, working, unread, then idle; the agents that
+ * only wait in the background are out of Working and drawn apart ([AgentMachineGroup.waitingInBackground], a clock).
+ */
 internal val AgentMachineGroup.headingCounts: List<Pair<Status, Int>>
-    get() = listOf(AgentState.NeedsYou, AgentState.Working, AgentState.Unread).map { it.designStatus to (stateCounts[it] ?: 0) }
+    get() = listOf(
+        Status.NeedsYou to (stateCounts[AgentState.NeedsYou] ?: 0),
+        Status.Working to ((stateCounts[AgentState.Working] ?: 0) - waitingInBackground).coerceAtLeast(0),
+        Status.Unread to (stateCounts[AgentState.Unread] ?: 0),
+        Status.Idle to (stateCounts[AgentState.Idle] ?: 0) + (stateCounts[AgentState.Unknown] ?: 0),
+    )
 
 /**
  * A By Status section's one count, in its state's color (iOS `SectionHeader` with the section's tone): Awaiting reply

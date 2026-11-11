@@ -35,5 +35,6 @@
   "group_sessions": "Chats",
   "group_recent": "Recently opened",
   "previous": "Previous",
-  "previous_chat": "Go back to the previous conversation"
+  "previous_chat": "Go back to the previous conversation",
+  "place_terminals": "Open terminals"
 }

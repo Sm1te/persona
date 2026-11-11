@@ -91,6 +91,48 @@ func TestPutSettings(t *testing.T) {
 	}
 }
 
+// A zone picked by hand stays (#1855): before any pick every write lands, as before; once a zone is picked, a
+// device's own sync (a zone without timezone_picked, as every app sent before) leaves it and the answer still says
+// it, while a new pick or going back to the devices' zone (false) lands; the hub's own reading follows.
+func TestPickedTimezoneStays(t *testing.T) {
+	f := newFakeHub().withMachine()
+	f.devices = []Device{{ID: "server", Name: "server", Kind: "local", Home: "/home/me"}}
+	f.hello.Assistant.Machines = []string{"server"}
+	s := newTestService(t, f)
+	put := func(body string) map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/assistant", strings.NewReader(body)))
+		out := map[string]any{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, rec.Code, rec.Body.String())
+		}
+		return out
+	}
+	steps := []struct {
+		body, zone string
+		picked     any // the answer's timezone_picked (nil: not there)
+	}{
+		{`{"timezone":"America/New_York"}`, "America/New_York", nil},                     // never picked: a device's sync lands
+		{`{"timezone":"Europe/Berlin","timezone_picked":true}`, "Europe/Berlin", true},   // picked on Android
+		{`{"timezone":"America/New_York"}`, "Europe/Berlin", true},                       // an iPhone's sync: kept
+		{`{"notes":"关于我"}`, "Europe/Berlin", true},                                       // another setting: kept
+		{`{"timezone":"Asia/Tokyo","timezone_picked":true}`, "Asia/Tokyo", true},         // another pick lands
+		{`{"timezone_picked":true}`, "Asia/Tokyo", true},                                 // a pick without a zone keeps it
+		{`{"timezone":"Asia/Shanghai","timezone_picked":false}`, "Asia/Shanghai", false}, // Match phone again
+		{`{"timezone":"America/New_York"}`, "America/New_York", false},                   // the devices' syncs land again
+	}
+	for _, st := range steps {
+		out := put(st.body)
+		if out["timezone"] != st.zone || out["timezone_picked"] != st.picked {
+			t.Fatalf("%s: timezone %v, timezone_picked %v; want %s, %v", st.body, out["timezone"], out["timezone_picked"], st.zone, st.picked)
+		}
+		if got := s.settings(context.Background()).Timezone; got != st.zone {
+			t.Fatalf("%s: the hub reads %s", st.body, got)
+		}
+	}
+}
+
 // Read-only devices (an answer-only watch) may view the assistant but cannot change its settings or write/delete
 // memory: the three mutating routes answer 403 before touching anything. No role (a test's own request) and "full"
 // keep working, and GET stays open.

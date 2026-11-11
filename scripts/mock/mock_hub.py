@@ -8,8 +8,9 @@ It serves machines, agents, conversations, interactions and the inbox, enough fo
 does not know are logged to stderr as MISSING. Timestamps are relative to when it starts. See docs/operations/testing.md.
 """
 import base64, unicodedata
-import argparse, copy, hashlib, json, os, re, shutil, signal, socket, ssl, struct, subprocess, sys, tempfile, threading, time, uuid, zlib
+import argparse, copy, hashlib, json, math, os, re, shutil, signal, socket, ssl, struct, subprocess, sys, tempfile, threading, time, uuid, zlib
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
@@ -1106,6 +1107,15 @@ if os.environ.get("MOCK_ORCA_CHILDREN"):
              "legacy-provider", 8, "codex", 1, 60, "Saved workspace history", space_kind="codex_app", space_id="provider-project",
              pane_id=None, workspace_id=None, capabilities={"read": True, "send": False}),
     ]
+# MOCK_STOPPED_AGENTS=1 (with MOCK_TERMINAL_PANES): a stopped Agent (#4754: read-only, its terminal stays) on the server,
+# whose tab is still open in the notes workspace (agent_session on its pane), and the plain panes name what runs in front.
+STOPPED_AGENT = "5d000000-0000-4000-8000-000000004754"
+if os.environ.get("MOCK_STOPPED_AGENTS"):
+    SESSIONS += [
+        sess("server", STOPPED_AGENT, "Fix the notes index", "/home/me/notes", "offline", "offline", "notes", 2, "fix-notes", 2, 45,
+             "Rebuilt the index and pushed the branch.", pane_id=None,
+             capabilities={"read": True, "terminal": True}, read_only_reason="Agent stopped"),
+    ]
 # MOCK_MANUAL_HERDR=1: two agents opened by hand in herdr (started_by_persona false) on no todo: Agents' "By to-do" lists them
 # in "Opened manually" (#2608 web, #2917 iOS / Mac).
 if os.environ.get("MOCK_MANUAL_HERDR"):
@@ -1625,9 +1635,10 @@ def mock_png(w=96, h=64):
 # went with a photo, so its words are the apps' stand-in) and one from another conversation, which the assistant holds
 # until the turn ends (`queued_relayed`: only shown and copied). POST …/queue answers the photos with the queue.
 QUEUED_PHOTOS = {"请看图片": [{"mime": "image/png", "data": mock_png()}]}
+PERSONA_QUEUE_MESSAGES = ["顺便把下周三的会也挪到下午", "请看图片", "来自「早报 · 周三」：会议纪要整理好了，要不要发给参会的人？"]
 if os.environ.get("MOCK_PERSONA_QUEUE") == "1":
     ASSISTANT[0].update({"state": "working", "status": "working", "queued_relayed": 1,
-                         "queued": ["顺便把下周三的会也挪到下午", "请看图片", "来自「早报 · 周三」：会议纪要整理好了，要不要发给参会的人？"]})
+                         "queued": list(PERSONA_QUEUE_MESSAGES)})
 
 # MOCK_ORIGINS=1 (#3264, docs/protocol/protocol.md "Origin of assistant chats"): conversations the hub opened by itself — the inbox's AI twin,
 # scheduled tasks, a Feishu /agent, one another conversation started — next to the user's own; one of them runs, one
@@ -1733,8 +1744,8 @@ WEEKDAYS = [1, 2, 3, 4, 5]
 
 
 # MOCK_ASSISTANT_SIDEBAR=1: the Persona sidebar's "Recent" holds more than the 30 it shows before "View all"
-# (`AssistantSidebar.recentCount`), and one row in each state it marks at the end: waiting for you (red dot), unread
-# (blue dot), working (spinner).
+# (`AssistantSidebar.recentCount`), and one row in each state it marks at the end: waiting for you (blue dot), unread
+# (green dot), working (spinner).
 if os.environ.get("MOCK_ASSISTANT_SIDEBAR") == "1":
     for _n, _state in enumerate(["needs_you", "unread", "working"] + ["idle"] * 33):
         _s = assistant_sess("b2e4d6f8-0000-4000-8000-%012d" % (100 + _n), "整理第 %d 周的周报" % (_n + 1),
@@ -1760,11 +1771,19 @@ if os.environ.get("MOCK_AUTO_CONVERSATIONS") == "1":
              ("task", "idle", "1104 | 定时 | 晨间简报", 60 * 27),
              ("lark_agent", "idle", "1105 | 整理 | 群里的需求", 60 * 2),
              ("spawned", "idle", "1103 | 研究 | 竞品的定价", 60 * 50)]
+    # MOCK_EXTERNAL=1 (#3758): one more, opened by an extension that isn't Lark /agent; with the Lark /agent one, the
+    # conversations the apps mark as external (their items are below, after ITEMS).
+    if os.environ.get("MOCK_EXTERNAL") == "1":
+        _AUTO[8] = ("lark_agent", "idle", "1105 | 研究 | 群里的需求汇总", 60 * 2)
+        _AUTO.append(("extension", "idle", "1104 | 文档 | 周报草稿", 60 * 26))
     for _n, (_origin, _state, _title, _min) in enumerate(_AUTO):
         _s = assistant_sess("b2e4d6f8-0000-4000-8000-%012d" % (300 + _n), _title, _min,
                             "这是收件箱里的一件事，你作为我的 AI 分身先处理它……" if _origin == "inbox" else "处理好了。")
         _s.update(origin=_origin, state=_state, status=STATUS_OF_STATE[_state],
                   pending_interactions=1 if _state == "needs_you" else 0)
+        if _origin in ("lark_agent", "extension"):
+            _s.update(origin_ref="example-ext" if _origin == "extension" else "larkext",
+                      opened_by="example-ext" if _origin == "extension" else "larkext")
         ASSISTANT.append(_s)
 
 def next_at(hhmm, weekdays):
@@ -2039,6 +2058,8 @@ ASSISTANT_CONFIG = {"machine_id": "server", "launcher": "claude", "timezone": "A
                     # supervised task reach its supervisor (#4293), off by default; closed sessions archive themselves
                     # after this many idle days (#3618), 0 is never. Left out with MOCK_LEGACY_HUB.
                     "agent_tasks": False, "inbox_signals": False, "archive_closed_days": 3,
+                    # idle Agents stop after this many hours, their terminal kept (#4754); 0 is never
+                    "idle_close_hours": 12,
                     # The role a meeting recording pre-selects (#2981; MOCK_MEETING_ATTENDANCE_DEFAULT=listener starts there)
                     "meeting_attendance_default": os.environ.get("MOCK_MEETING_ATTENDANCE_DEFAULT", "off"),
                     # How long recordings stay (#3235, MOCK_RECORDING_DAYS) and a meeting's minutes after its transcript
@@ -2065,9 +2086,11 @@ def assistant_state(space="", archived=False):
                              and (archived or not s.get("archived"))]}
     if not os.environ.get("MOCK_LEGACY_HUB"):
         out.update(agent_tasks=cfg["agent_tasks"], inbox_signals=cfg["inbox_signals"], archive_closed_days=cfg["archive_closed_days"],
-                   kb_topics=cfg["kb_topics"])
+                   idle_close_hours=cfg["idle_close_hours"], kb_topics=cfg["kb_topics"])
     if cfg["notes"] is not None:
         out["notes"] = cfg["notes"]
+    if isinstance(cfg.get("timezone_picked"), bool):  # once a client said so, as the hub (#1855)
+        out["timezone_picked"] = cfg["timezone_picked"]
     if cfg["main"]:
         out["main"] = cfg["main"]
     if MEETING_ATTENDANCE:  # only from a hub that attends meetings (meeting-minutes.md "Attendance fields")
@@ -2800,9 +2823,360 @@ RECORDINGS_TRIMMED = {}
 # recording (`kind: meeting`) as soon as it is stored, from its own sentences; pending leaves them being written; failed says
 # writing them failed; POST /mock/recording_minutes {"mode": …} switches it and forgets the recordings stored so far (a UI
 # test's fresh start on a shared mock).
-# POST /api/v1/recordings/{id}/minutes (write them again) counts in /mock/recordings ("minutes_asked").
+# POST /api/v1/recordings/{id}/minutes (write them again) counts in /mock/recordings ("minutes_asked"); as the hub, the minutes
+# shown stay while new ones are written (pending), and in `ready` mode the next version comes 3 s later.
+# POST /api/v1/recordings/{id}/minutes/todos {version, actions} confirms action items as to-dos (#4062): each gets a to-do and
+# its todo_id; an old version is 409 minutes_stale. POST /mock/recording_minutes_rewrite {"id"} writes the next version at once
+# (what the user sees is then stale).
 RECORDING_MINUTES = [os.environ.get("MOCK_RECORDING_MINUTES", "pending")]
 RECORDING_MINUTES_ASKED = []
+# All-day recording fixtures (#4741): ready makes a recap from the stored text; the other modes let clients exercise
+# waiting, retry and the time before a recap is due. All recording routes share the lock, including delete and trim.
+RECORDINGS_LOCK = threading.RLock()
+RECORDING_DAY = {"on": os.environ.get("MOCK_NO_RECORDING_DAY") != "1", "recap": os.environ.get("MOCK_DAY_RECAP", "ready")}
+RECORDING_DAY_TODOS = {}  # confirmations survive recap versions that omit an action
+DAY_MAX_SEGMENTS = 20000
+DAY_MAX_TEXT = 4 << 20
+
+
+def day_number(value):
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def day_time(value):
+    if not isinstance(value, str): raise ValueError("time must be RFC 3339")
+    out = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if out.tzinfo is None: raise ValueError("time needs a zone")
+    return out
+
+
+def day_coverage(raw):
+    if not isinstance(raw, dict) or not day_number(raw.get("to", 0)): raise ValueError("invalid coverage")
+    gaps = raw.get("gaps", [])
+    if not isinstance(gaps, list): raise ValueError("invalid coverage gaps")
+    clean = []
+    for gap in gaps:
+        if not isinstance(gap, dict) or not all(day_number(gap.get(k, 0)) for k in ("from", "to")) \
+                or not isinstance(gap.get("reason", ""), str): raise ValueError("invalid coverage gap")
+        start, end = sorted((max(0, gap.get("from", 0)), max(0, gap.get("to", 0))))
+        if start == end: continue
+        clean.append({"from": start, "to": end,
+                      "reason": gap.get("reason", "").strip().encode()[:32].decode("utf-8", "ignore")})
+    clean.sort(key=lambda g: (g["from"], g["to"]))
+    merged = []
+    for gap in clean:
+        if merged:
+            last = merged[-1]
+            if gap["reason"] == last["reason"] and gap["from"] <= last["to"]:
+                last["to"] = max(last["to"], gap["to"])
+                continue
+            if gap["from"] < last["to"]:
+                gap["from"] = last["to"]
+                if gap["to"] <= gap["from"]: continue
+        merged.append(gap)
+
+    def compact(gaps, same_reason):
+        if len(gaps) <= 500: return gaps
+        pairs = [i for i, (a, b) in enumerate(zip(gaps, gaps[1:]))
+                 if a["reason"] != "erased" and b["reason"] != "erased" and (not same_reason or a["reason"] == b["reason"])]
+        pairs.sort(key=lambda i: gaps[i + 1]["from"] - gaps[i]["to"])
+        joined = set(pairs[:len(gaps) - 500])
+        out = gaps[:1]
+        for i, gap in enumerate(gaps[1:]):
+            if i in joined: out[-1]["to"] = gap["to"]
+            else: out.append(gap)
+        return out
+
+    # Like mendCoverage: closest same-reason neighbours first, then other non-erased pairs if needed.
+    # Separated erased intervals are never bridged, even when that leaves more than 500 gaps.
+    merged = compact(compact(merged, same_reason=True), same_reason=False)
+    return {"to": max(0, raw.get("to", 0)), "gaps": merged}
+
+
+def day_fields(body):
+    """Validate before making any state changes, even for stale appends and expired recordings."""
+    out = dict(body)
+    segs = body.get("segments", [])
+    if not isinstance(segs, list): raise ValueError("invalid segments")
+    out["segments"] = []
+    for seg in segs:
+        if not isinstance(seg, dict) or not all(day_number(seg.get(k, 0)) for k in ("start", "end")) \
+                or not isinstance(seg.get("text", ""), str): raise ValueError("invalid segment")
+        out["segments"].append({"start": seg.get("start", 0), "end": seg.get("end", 0), "text": seg.get("text", "").strip()})
+    if "duration" in body and not day_number(body["duration"]): raise ValueError("invalid duration")
+    if "complete" in body and type(body["complete"]) is not bool: raise ValueError("invalid complete")
+    if "ended_at" in body and body["ended_at"] not in (None, ""): day_time(body["ended_at"])
+    if "title" in body:
+        if not isinstance(body["title"], str): raise ValueError("invalid title")
+        out["title"] = " ".join(body["title"].split())
+    if "coverage" in body: out["coverage"] = day_coverage(body["coverage"])
+    if "bookmarks" in body:
+        if not isinstance(body["bookmarks"], list): raise ValueError("invalid bookmarks")
+        for mark in body["bookmarks"]:
+            if not isinstance(mark, dict) or not day_number(mark.get("at", 0)) or not isinstance(mark.get("label", ""), str):
+                raise ValueError("invalid bookmark")
+        out["bookmarks"] = sorted(body["bookmarks"], key=lambda b: b.get("at", 0))
+    return out
+
+
+def day_expired(rid, body):
+    days = ASSISTANT_CONFIG["recording_days"]
+    return rid in RECORDINGS_TRIMMED or bool(days and day_time(body["started_at"]) < datetime.now(timezone.utc) - timedelta(days=days))
+
+
+def day_result(rid, status, put=False, fallback=None):
+    rec = RECORDINGS.get(rid) or fallback
+    out = {"id": rid, "revision": rec["revision"], "next": rec.get("next", 0), "status": status}
+    if put:
+        out["base"] = rec.get("base", rec["revision"])
+        if MEETING_ATTENDANCE: out["attendance"] = "off"
+        if fallback and fallback.get("attendance") not in (None, "", "off"):
+            out["attendance_problem"] = "not_meeting"
+    return out
+
+
+def day_clock(rec, seconds):
+    return (day_time(rec["started_at"]) + timedelta(seconds=seconds)).astimezone(ZoneInfo(rec["tz"])).strftime("%H:%M")
+
+
+def day_action_key(action):
+    return ((action.get("who") or "").strip().casefold(), action["what"].strip().casefold())
+
+
+def day_markdown(rec, recap):
+    lines = ["# " + rec["day"], "", recap["summary"]]
+    for kind, heading in (("meeting", "Meetings"), ("outside", "Outside meetings")):
+        entries = [e for e in recap.get("timeline", []) if e["kind"] == kind]
+        if not entries: continue
+        lines += ["", "## " + heading]
+        for entry in entries:
+            lines += ["", "### %s–%s %s" % (day_clock(rec, entry["from"]), day_clock(rec, entry["to"]), entry["title"])]
+            lines += ["- %s %s" % (day_clock(rec, p["at"]), p["text"]) for p in entry["points"]]
+    if recap.get("actions"):
+        lines += ["", "## Suggested to-dos"]
+        lines += ["- %s %s" % (day_clock(rec, a["at"]), a["what"]) for a in recap["actions"]]
+    return "\n".join(lines).strip() + "\n"
+
+
+def day_recap_matches(rid, word):
+    """Search the kept Markdown, never the recap's internal JSON or the transcript removed by trimming."""
+    with RECORDINGS_LOCK:
+        markdown = KB_DETAIL.get(("recordings", rid), {}).get("recap", {}).get("markdown", "")
+        return [{"path": "recordings/%s/recap.md" % rid, "n": i + 1, "line": line}
+                for i, line in enumerate(markdown.splitlines()) if line.strip() and kb_match(line, word)]
+
+
+def day_recap(rid, rec, version):
+    segs = sorted((s for s in rec["segments"] if s["text"] and s["start"] <= rec["coverage"]["to"]), key=lambda s: s["start"])
+    groups, actions, used_todos = {}, [], set()
+    for seg in segs:
+        hour = (day_time(rec["started_at"]) + timedelta(seconds=seg["start"])).astimezone(ZoneInfo(rec["tz"])).isoformat()[:13]
+        kind = "meeting" if "会议" in seg["text"] or "meeting" in seg["text"].lower() else "outside"  # i18n-ignore: fixture keywords
+        entry = groups.setdefault((hour, kind), {"from": seg["start"], "to": seg["end"], "kind": kind,
+                                                "title": seg["text"], "points": []})
+        entry["to"] = max(entry["to"], seg["end"])
+        entry["points"].append({"text": seg["text"], "at": seg["start"]})
+        if "负责" in seg["text"] or "will" in seg["text"].lower():  # i18n-ignore: fixture keywords
+            action = {"id": "a%d" % (len(actions) + 1), "what": seg["text"], "at": seg["start"], "todo_id": ""}
+            key = day_action_key(action)
+            matches = [t for t in RECORDING_DAY_TODOS.get(rid, []) if t["task"] == key and t["todo_id"] not in used_todos
+                       and abs(t["at"] - action["at"]) <= 900]
+            if matches:
+                action["todo_id"] = min(matches, key=lambda t: abs(t["at"] - action["at"]))["todo_id"]
+                used_todos.add(action["todo_id"])
+            actions.append(action)
+    cutoff = datetime.strptime(rec["day"], "%Y-%m-%d").replace(tzinfo=ZoneInfo(rec["tz"])) + timedelta(days=1, hours=6)
+    reason = "complete" if rec.get("complete") else "cutoff" if datetime.now(timezone.utc) >= cutoff else ""
+    covers = rec["coverage"]["to"]
+    gaps = [{**g, "to": min(g["to"], covers)} for g in rec["coverage"]["gaps"] if g["from"] < covers]
+    out = {"version": version, "revision": rec["revision"], "generated_at": datetime.now(timezone.utc).isoformat(),
+           "day": rec["day"], "covers": {"from": 0, "to": covers}, "final": bool(reason),
+           "summary": " ".join(s["text"] for s in segs[:2]), "timeline": sorted(groups.values(), key=lambda e: e["from"]),
+           "actions": actions, "gaps": gaps, "partial": False}
+    if reason: out["final_reason"] = reason
+    out["markdown"] = day_markdown(rec, out)
+    return out
+
+
+def day_publish(rid, repair=False, regenerate=True):
+    rec = RECORDINGS[rid]
+    prior = KB_DETAIL.get(("recordings", rid), {})
+    recap = copy.deepcopy(prior.get("recap"))
+    if repair and recap:
+        erased = [g for g in rec["coverage"]["gaps"] if g["reason"] == "erased"]
+        starts = {s["start"] for s in rec["segments"] if s["text"]}  # a point must still start a non-empty line
+        keep = lambda item: item["at"] in starts and not any(g["from"] <= item["at"] < g["to"] for g in erased)
+        # An entry overlapping an erased gap goes whole: its title can quote the erased words.
+        recap["timeline"] = [e for e in recap.get("timeline", []) if not any(g["from"] < e["to"] and e["from"] < g["to"] for g in erased)]
+        for entry in recap["timeline"]: entry["points"] = [p for p in entry["points"] if keep(p)]
+        recap["timeline"] = [e for e in recap["timeline"] if e["points"]]
+        recap["actions"] = [a for a in recap.get("actions", []) if keep(a)]
+        recap["summary"] = ""
+        recap["markdown"] = day_markdown(rec, recap)
+    mode = RECORDING_DAY["recap"]
+    has_text = any(s["text"] for s in rec["segments"])
+    state = None if not has_text or mode == "none" else mode
+    if mode == "none": recap = None
+    if state == "ready" and regenerate:
+        recap = day_recap(rid, rec, (recap or {}).get("version", 0) + 1)
+    rec.pop("recap_state", None); rec.pop("recap_final", None)
+    if state: rec["recap_state"] = state
+    if recap and recap["final"]:
+        rec["recap_final"] = True
+        rec.setdefault("recap_final_at", recap["generated_at"])  # the first final recap's time: the phone's audio clock
+    rec["matched_rev"] = rec["summarized_rev"] = rec["revision"]
+    name = rec.get("title") or "Day · " + rec["day"]
+    summary = recap["summary"] if recap else ""
+    entry = {"kind": "recordings", "id": rid, "name": name, "relevance": 0, "tags": [], "one_line": summary,
+             "updated": rec["started_at"]}
+    KB["recordings"] = [e for e in KB.get("recordings", []) if e["id"] != rid] + [entry]
+    meta = {k: v for k, v in rec.items() if k != "segments"}
+    meta.update(name=name, chars=sum(len(s["text"]) for s in rec["segments"]))
+    detail = {"meta": meta, "summary": summary, "segments": sorted((s for s in rec["segments"] if s["text"]), key=lambda s: s["start"])}
+    if recap: detail["recap"] = recap
+    KB_DETAIL[("recordings", rid)] = detail
+
+
+def day_put(h, rid, raw):
+    try:
+        body = day_fields(raw)
+        day = body.get("day")
+        if not isinstance(day, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day): raise ValueError("day is required")
+        datetime.strptime(day, "%Y-%m-%d")
+        zone = body.get("tz", ASSISTANT_CONFIG["timezone"])
+        if not isinstance(zone, str): raise ValueError("invalid tz")
+        ZoneInfo(zone)
+        part = body.get("part", 1)
+        if type(part) is not int or not 1 <= part <= 99: raise ValueError("invalid part")
+        day_time(body["started_at"])
+    except (ValueError, TypeError, OverflowError, ZoneInfoNotFoundError):
+        return h.send_json({"error": "invalid day recording"}, 400) or True
+    if len(body["segments"]) > DAY_MAX_SEGMENTS or sum(len(s["text"].encode()) for s in body["segments"]) > DAY_MAX_TEXT:
+        return h.send_json({"error": "day recording is full", "code": "day_full", "next": RECORDINGS.get(rid, {}).get("next", 0)}, 413) or True
+    body.update(kind="day", tz=zone, part=part, base=body["revision"], next=len(body["segments"]))
+    body.setdefault("coverage", {"to": 0, "gaps": []})
+    have = RECORDINGS.get(rid)
+    if day_expired(rid, body): return h.send_json(day_result(rid, "expired", put=True, fallback=body)) or True
+    if have and have["revision"] > body["revision"]:
+        return h.send_json(day_result(rid, "stale", put=True, fallback=body)) or True
+    for key in ("calendar", "attendance", "attending_session", "room", "private", "transcription", "recap_final_at"):
+        body.pop(key, None)
+    if have and have.get("recap_final_at"): body["recap_final_at"] = have["recap_final_at"]
+    for i, seg in enumerate(body["segments"]): seg["n"] = i + 1
+    RECORDINGS[rid] = body
+    day_publish(rid, repair=bool(have))
+    return h.send_json(day_result(rid, "stored", put=True, fallback=raw)) or True
+
+
+def day_append(h, rid):
+    if is_read_only(h): return h.send_json({"error": "full credentials required", "code": "forbidden"}, 403) or True
+    raw = h.last_body or b""
+    if len(raw) > 1 << 20: return h.send_json({"error": "body over 1 MiB", "code": "too_large"}, 413) or True
+    if rid in RECORDINGS_DELETED: return h.send_json({"error": "recording deleted", "code": "recording_deleted"}, 410) or True
+    if rid not in RECORDINGS: return h.send_json({"error": "upload the recording first", "code": "recording_not_found"}, 404) or True
+    if MEETING_MODE["kb_read_only"]: return h.send_json({"error": "knowledge base is read only", "code": "kb_read_only"}, 403) or True
+    try:
+        body = json.loads(raw or b"{}")
+        if not isinstance(body, dict): raise ValueError("invalid body")
+        if type(body.get("base")) is not int or body["base"] <= 0 or type(body.get("revision")) is not int \
+                or body["revision"] <= body["base"] or type(body.get("from")) is not int or body["from"] < 0:
+            raise ValueError("invalid base, revision or from")
+        body = day_fields(body)
+        if len(body["segments"]) > 500: raise ValueError("too many segments")
+    except (ValueError, TypeError, OverflowError):
+        return h.send_json({"error": "invalid append"}, 400) or True
+    rec = RECORDINGS[rid]
+    if day_expired(rid, rec): return h.send_json(day_result(rid, "expired")) or True
+    if rec.get("kind") != "day": return h.send_json({"error": "not a day recording", "code": "not_day"}, 409) or True
+    held = rec["next"]
+    if body["base"] != rec.get("base", 0):
+        return h.send_json({"error": "base changed", "code": "base_changed", "base": rec.get("base", 0), "next": held}, 409) or True
+    if body["from"] > held: return h.send_json({"error": "missing earlier segments", "code": "segments_gap", "next": held}, 409) or True
+    new = body["segments"][held - body["from"]:]
+    if held + len(new) > DAY_MAX_SEGMENTS or sum(len(s["text"].encode()) for s in rec["segments"] + new) > DAY_MAX_TEXT:
+        return h.send_json({"error": "day recording is full", "code": "day_full", "next": held}, 413) or True
+    before = copy.deepcopy(rec)
+    if body["revision"] >= rec["revision"]:
+        for key in ("duration", "ended_at", "title", "bookmarks", "coverage", "complete"):
+            if key not in body: continue
+            if key == "ended_at" and not body[key]: continue
+            if key == "complete" and rec.get("complete"): continue
+            rec[key] = body[key]
+    for i, seg in enumerate(new): seg["n"] = held + i + 1
+    rec["segments"] += new
+    rec["next"] += len(new)
+    rec["revision"] = max(rec["revision"], body["revision"])
+    if rec != before: day_publish(rid)
+    return h.send_json(day_result(rid, "stored")) or True
+
+
+def day_minutes(h, rid, todos=False):
+    if is_read_only(h): return h.send_json({"error": "full credentials required", "code": "forbidden"}, 403) or True
+    if MEETING_MODE["kb_read_only"]: return h.send_json({"error": "knowledge base is read only", "code": "kb_read_only"}, 403) or True
+    rec = RECORDINGS[rid]
+    if not todos:
+        if rid in RECORDINGS_TRIMMED:
+            return h.send_json({"error": "the transcript expired", "code": "transcript_expired"}, 409) or True
+        if not any(s["text"] for s in rec["segments"]): return h.send_json({"error": "no transcript", "code": "incomplete"}, 409) or True
+        day_publish(rid)
+        return h.send_json({"state": "pending"}, 202) or True
+    try: body = json.loads(h.last_body or b"{}")
+    except ValueError: body = None
+    if not isinstance(body, dict) or type(body.get("version")) is not int or not isinstance(body.get("actions"), list) \
+            or not body["actions"] or not all(isinstance(a, str) for a in body["actions"]):
+        return h.send_json({"error": "version and actions are required"}, 400) or True
+    recap = KB_DETAIL[("recordings", rid)].get("recap")
+    if not recap: return h.send_json({"error": "no recap"}, 404) or True
+    if body["version"] != recap["version"]: return h.send_json({"error": "recap changed", "code": "minutes_stale"}, 409) or True
+    actions = {a["id"]: a for a in recap.get("actions", [])}
+    if any(a not in actions for a in body["actions"]): return h.send_json({"error": "unknown action"}, 400) or True
+    todos = []
+    for aid in dict.fromkeys(body["actions"]):
+        action = actions[aid]
+        confirmed = RECORDING_DAY_TODOS.setdefault(rid, [])
+        tid = action.get("todo_id") or "todo_day_" + hashlib.sha256((rid + "\0" + str(recap["version"]) + "\0" + aid).encode()).hexdigest()[:24]
+        todo = next((t for t in TODOS if t["id"] == tid), None)
+        if todo is None:
+            now = datetime.now(timezone.utc).isoformat()
+            todo = {"id": tid, "title": action["what"], "notes": "Day · %s · %s" % (rec["day"], day_clock(rec, action["at"])),
+                    "created_at": now, "updated_at": now, "done_at": None, "agents": []}
+            TODOS.insert(0, todo)
+        if not any(t["todo_id"] == tid for t in confirmed):
+            confirmed.append({"task": day_action_key(action), "at": action["at"], "todo_id": tid})
+        action["todo_id"] = tid
+        todos.append(format_todo(todo))
+    return h.send_json({"todos": todos, "recap": recap}) or True
+
+
+def recording_minutes_next(rid):
+    """The next version of a stored recording's minutes, written: what regenerating them ends in."""
+    with PHOTO_LOCK:
+        detail = KB_DETAIL.get(("recordings", rid))
+        if not detail or rid not in RECORDINGS: return
+        cited = photos_cited(rid)
+        version = (detail.get("minutes") or {}).get("version", 0) + 1
+        detail["minutes"] = {**recording_minutes(RECORDINGS[rid], rid), "version": version}
+        detail.setdefault("meta", {})["minutes_state"] = "ready"
+        moved = photos_of(rid) is not None and photos_cited(rid) != cited
+    if moved and meeting_conversation_on(): meeting_changed(rid, ["photos"])  # each photo's `cited` follows the minutes
+
+
+def minutes_span(body):
+    """`when`, `start` and `end` as the hub writes them (server/internal/kb/minutes.go `minutesWhen`, #4713): the recording's
+    own start to its end (`duration`, or `ended_at` when later; at least a minute) in the local zone. `when` adds the end's
+    date when it is another day; `start` / `end` are RFC 3339 with the offset, whole seconds, for the apps to format."""
+    def at(v):
+        try: return datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone().replace(microsecond=0)
+        except (TypeError, ValueError): return None
+    start = at(body.get("started_at"))
+    if not start: return {"when": None}
+    end = start + timedelta(seconds=int(float(body.get("duration") or 0)))
+    ended = at(body.get("ended_at"))
+    if ended and ended > end: end = ended
+    end = max(end, start + timedelta(minutes=1))
+    same = start.date() == end.date()
+    return {"when": start.strftime("%Y-%m-%d %H:%M") + "–" + end.strftime("%H:%M" if same else "%Y-%m-%d %H:%M"),
+            "start": start.isoformat(timespec="seconds"), "end": end.isoformat(timespec="seconds")}
 
 
 def recording_minutes(body, rid=None):
@@ -2813,17 +3187,21 @@ def recording_minutes(body, rid=None):
     segs = [x for x in body.get("segments", []) if x.get("text")]
     cal = body.get("calendar") or {}
     item = lambda x: {"text": x["text"].rstrip("。"), "at": x["start"]}
+    acts = [x for x in segs if "负责" in x["text"]]
     out = {
+        "version": 1,
         "title": cal.get("title") or body.get("title") or None,
-        "when": "2027-01-15 16:00–17:00",
-        "start": "2027-01-15T16:00:00+08:00", "end": "2027-01-15T17:00:00+08:00",  # the same span, for the apps to format (#4713)
+        **minutes_span(body),  # `when`, and the same span as `start` / `end` for the apps to format (#4713)
         "where": cal.get("location"),
         "attendees": cal.get("attendees"),
         "points": [item(x) for x in segs[:2]] + [
             {"text": (x.get("caption") or (x.get("text") or x.get("note") or "").split("\n")[0])[:200], "at": x["at"], "photo": x["n"]}
             for x in (photos_listed(rid) if rid else []) if x.get("caption") or x.get("text") or x.get("note")],
         "decisions": [item(x) for x in segs if "决定" in x["text"]],
-        "actions": [{"who": "张三", "what": x["text"].rstrip("。"), "by": "周五前", "at": x["start"]} for x in segs if "负责" in x["text"]],
+        # Who is named before 负责 ("does"), and a deadline when one is said ("周五前").
+        "actions": [{k: v for k, v in {"id": "a%d" % (i + 1), "who": x["text"].split("负责")[0][-3:] or None, "what": x["text"].rstrip("。"),
+                                      "by": "周五前" if "周五前" in x["text"] else None, "at": x["start"], "todo_id": ""}.items() if v is not None}
+                    for i, x in enumerate(acts)],
         "open": [item(x) for x in segs if "没定" in x["text"]],
     }
     return {k: v for k, v in out.items() if v}
@@ -3184,7 +3562,8 @@ _features_without_meeting_attendance = features
 
 def features():
     return _features_without_meeting_attendance() + (["meeting_attendance"] if MEETING_ATTENDANCE else []) + \
-        (["meeting_conversation"] if meeting_conversation_on() else []) + (["meeting_photos"] if meeting_photos_on() else [])
+        (["meeting_conversation"] if meeting_conversation_on() else []) + (["meeting_photos"] if meeting_photos_on() else []) + \
+        (["recording_day"] if RECORDING_DAY["on"] else [])
 
 
 def meeting_live(rid):
@@ -3199,7 +3578,7 @@ def recording_kind(body):
     if kind is None: return "note"
     if not isinstance(kind, str): return None
     kind = kind.strip().lower() or "note"
-    return kind if kind in ("note", "meeting") else None
+    return kind if kind in ("note", "meeting") or (kind == "day" and RECORDING_DAY["on"]) else None
 
 
 def meeting_attendance(body):
@@ -4367,7 +4746,39 @@ def photo_post(h, rid, raw):
 
 
 def recordings_route(h, method, p):
+    with RECORDINGS_LOCK:
+        return recordings_route_locked(h, method, p)
+
+
+def recordings_route_locked(h, method, p):
     """The hub's recording sync, and its copy in the knowledge base (KB["recordings"])."""
+    if p == "/mock/recording_day":
+        if method == "POST":
+            try: body = json.loads(h.last_body or b"{}")
+            except ValueError: body = None
+            if not isinstance(body, dict) or ("on" in body and type(body["on"]) is not bool) \
+                    or ("recap" in body and body["recap"] not in ("ready", "pending", "failed", "none")):
+                return h.send_json({"error": "invalid day mock mode"}, 400) or True
+            RECORDING_DAY.update({k: v for k, v in body.items() if k in RECORDING_DAY})
+            if "recap" in body:
+                for rid, rec in RECORDINGS.items():
+                    if rec.get("kind") == "day" and rid not in RECORDINGS_TRIMMED: day_publish(rid)
+        return h.send_json(RECORDING_DAY) or True
+    if method == "GET" and p == "/api/v1/kb/recordings":
+        tag = parse_qs(urlparse(h.path).query).get("tag", [""])[0]
+        return h.send_json({"items": [e for e in KB.get("recordings", []) if not tag or tag in e.get("tags", [])],
+                            "tags": kb_tags("recordings")}) or True
+    if method == "GET" and re.fullmatch(r"/api/v1/kb/recordings/[^/]+", p):
+        rid = p.rsplit("/", 1)[-1].lower()
+        if RECORDINGS.get(rid, {}).get("kind") == "day":
+            detail = dict(KB_DETAIL[("recordings", rid)], kind="recordings", id=rid,
+                          path="/home/me/.persona/data/recordings/" + rid)
+            out = {"detail": detail}
+            word = parse_qs(urlparse(h.path).query).get("q", [""])[0]
+            if word: out["matches"] = day_recap_matches(rid, word)
+            return h.send_json(out) or True
+    if re.fullmatch(r"/api/v1/recordings/[^/]+/segments", p) and not RECORDING_DAY["on"]:
+        return h.send_json({"error": "404 page not found"}, 404, add_error_code=False) or True
     if meeting_conversation_route(h, method, p): return True
     if photos_route(h, method, p): return True
     if p == "/mock/meeting_attendance":
@@ -4388,7 +4799,7 @@ def recordings_route(h, method, p):
         # A fresh start for the next test on the same mock: what an earlier one stored (its minutes) is gone too.
         RECORDING_MINUTES[0] = json.loads(h.last_body or b"{}").get("mode", "pending")
         meeting_conversation_reset()
-        RECORDINGS.clear(); RECORDING_MINUTES_ASKED.clear(); MEETING_LIVE.clear(); RECORDINGS_TRIMMED.clear()
+        RECORDINGS.clear(); RECORDING_MINUTES_ASKED.clear(); MEETING_LIVE.clear(); RECORDINGS_TRIMMED.clear(); RECORDING_DAY_TODOS.clear()
         with PHOTO_LOCK: PHOTO_STORE.clear()
         KB["recordings"] = []
         for key in [k for k in KB_DETAIL if k[0] == "recordings"]: KB_DETAIL.pop(key)
@@ -4396,15 +4807,27 @@ def recordings_route(h, method, p):
     if p == "/mock/recordings" and method == "GET":
         return h.send_json({"recordings": RECORDINGS, "deleted": sorted(RECORDINGS_DELETED), "puts": RECORDING_PUTS[0],
                             "minutes_asked": RECORDING_MINUTES_ASKED, "trimmed": sorted(RECORDINGS_TRIMMED)}) or True
+    if p == "/mock/recording_minutes_rewrite" and method == "POST":
+        rid = str(json.loads(h.last_body or b"{}").get("id", "")).lower()
+        if not (KB_DETAIL.get(("recordings", rid)) or {}).get("minutes"):
+            return h.send_json({"error": "no stored recording with minutes"}, 404) or True
+        recording_minutes_next(rid)
+        return h.send_json({"id": rid, "version": KB_DETAIL[("recordings", rid)]["minutes"]["version"]}) or True
     if p == "/mock/recording_trim" and method == "POST":
         rid = str(json.loads(h.last_body or b"{}").get("id", "")).lower()
         detail = KB_DETAIL.get(("recordings", rid))
-        if rid not in RECORDINGS or not detail or not detail.get("minutes"):
-            return h.send_json({"error": "no stored recording with minutes"}, 404) or True
+        if rid not in RECORDINGS or not detail or not (detail.get("minutes") or detail.get("recap")):
+            return h.send_json({"error": "no stored recording with minutes or recap"}, 404) or True
         at = RECORDINGS_TRIMMED.setdefault(rid, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        detail["meta"].update(trimmed_at=at, minutes_state="ready")
+        is_day = RECORDINGS[rid].get("kind") == "day"
+        detail["meta"].update(trimmed_at=at, **({"recap_state": "ready"} if is_day else {"minutes_state": "ready"}))
         detail["meta"].pop("attendance", None); detail["meta"].pop("attending_session", None)
-        detail.pop("segments", None); detail["summary"] = ""  # "" over the entry's one line, as the hub's has no summary.md
+        detail.pop("segments", None)
+        # "" over the entry's one line, as the hub's has no summary.md; a day recording keeps its recap's summary.
+        detail["summary"] = detail["recap"]["summary"] if is_day else ""
+        if is_day:
+            RECORDINGS[rid]["segments"] = []
+            RECORDINGS[rid]["recap_state"] = "ready"
         with PHOTO_LOCK:  # what goes into the room (a photo's note, a withdrawn line) never lands in one deleted
             room_delete(rid)  # the room goes at the transcript cut; the private mark and the follow-up stay
             photos_trim(rid)  # and the photos the minutes do not cite
@@ -4416,12 +4839,40 @@ def recordings_route(h, method, p):
         return h.send_json({"days": ASSISTANT_CONFIG["recording_days"], "deleted": sorted(RECORDINGS_DELETED),
                             "recordings": [{"id": k, "revision": v["revision"], "complete": v.get("complete", False),
                                             "started_at": v["started_at"],
+                                            **({f: v[f] for f in ("kind", "day", "part", "next", "base", "recap_state", "recap_final", "recap_final_at") if f in v}
+                                               if v.get("kind") == "day" else {}),
                                             **({"trimmed_at": RECORDINGS_TRIMMED[k]} if k in RECORDINGS_TRIMMED else {})}
                                            for k, v in RECORDINGS.items()]}) or True
     rid = p.split("/")[4].lower()
+    if p.endswith("/segments"):
+        if method != "POST": return h.send_json({"error": "method"}, 405) or True
+        return day_append(h, rid)
     if not re.fullmatch(UUID_RE, rid):
         return h.send_json({"error": "录音 id 不对"}, 400) or True
     if p.endswith("/live") or p.endswith("/ask"): return meeting_route(h, method, p, rid)
+    if method == "POST" and (p.endswith("/minutes") or p.endswith("/minutes/todos")) and RECORDINGS.get(rid, {}).get("kind") == "day":
+        return day_minutes(h, rid, todos=p.endswith("/todos"))
+    if p.endswith("/minutes/todos") and method == "POST":
+        detail = KB_DETAIL.get(("recordings", rid)) or {}
+        minutes = detail.get("minutes")
+        if rid not in RECORDINGS or not minutes: return h.send_json({"error": "没有这条录音的纪要"}, 404) or True
+        body = json.loads(h.last_body or b"{}")
+        if body.get("version") != minutes.get("version"):
+            return h.send_json({"error": "纪要已更新", "code": "minutes_stale"}, 409) or True
+        ids = body.get("actions") or []
+        if not ids: return h.send_json({"error": "actions 不能为空"}, 400) or True
+        acts = {a.get("id"): a for a in minutes.get("actions", [])}
+        if any(i not in acts for i in ids): return h.send_json({"error": "没有这个行动项"}, 404) or True
+        made = []
+        for i in ids:
+            a = acts[i]
+            if a.get("todo_id"): continue  # confirmed before: not again
+            now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            todo = {"id": "todo_" + uuid.uuid4().hex[:8], "title": (a["who"] + ": " if a.get("who") else "") + a["what"],
+                    "notes": "", "done_at": None, "created_at": now_str, "updated_at": now_str, "agents": []}
+            TODOS.insert(0, todo); made.append(todo); a["todo_id"] = todo["id"]
+        if made: push_todos()
+        return h.send_json({"todos": made, "minutes": minutes}) or True
     if p.endswith("/minutes") and method == "POST":
         if rid not in RECORDINGS: return h.send_json({"error": "没有这条录音"}, 404) or True
         if rid in RECORDINGS_TRIMMED:
@@ -4429,17 +4880,17 @@ def recordings_route(h, method, p):
         if not RECORDINGS[rid].get("complete"): return h.send_json({"error": "转写还没完成"}, 409) or True
         RECORDING_MINUTES_ASKED.append(rid)
         with PHOTO_LOCK:
-            cited = photos_cited(rid)
             detail = KB_DETAIL.setdefault(("recordings", rid), {})
-            detail.pop("minutes", None); detail.setdefault("meta", {})["minutes_state"] = "pending"
-        if cited and meeting_conversation_on(): meeting_changed(rid, ["photos"])  # `cited` follows the minutes
+            detail.setdefault("meta", {})["minutes_state"] = "pending"  # the minutes shown stay meanwhile, as the hub's
+        if RECORDING_MINUTES[0] == "ready":  # the next version; each photo's `cited` follows it then
+            threading.Timer(3, recording_minutes_next, args=(rid,)).start()
         return h.send_json({"state": "pending"}, 202) or True
     kb = KB.setdefault("recordings", [])
     if p.rstrip("/") != "/api/v1/recordings/" + p.split("/")[4]:  # a path below a recording that no route took
         return h.send_json({"error": "404 page not found"}, 404) or True
     if method == "DELETE":
         existed = rid in RECORDINGS
-        RECORDINGS.pop(rid, None); RECORDINGS_DELETED.add(rid); RECORDINGS_TRIMMED.pop(rid, None)
+        RECORDINGS.pop(rid, None); RECORDINGS_DELETED.add(rid); RECORDINGS_TRIMMED.pop(rid, None); RECORDING_DAY_TODOS.pop(rid, None)
         kb[:] = [e for e in kb if e["id"] != rid]; KB_DETAIL.pop(("recordings", rid), None)
         with MEETING_LOCK: MEETING_LIVE.pop(rid, None)  # live lines and asks go with the recording
         with PHOTO_LOCK:  # as at the trim
@@ -4449,12 +4900,17 @@ def recordings_route(h, method, p):
     if method != "PUT": return h.send_json({"error": "method"}, 405) or True
     RECORDING_PUTS[0] += 1
     if rid in RECORDINGS_DELETED: return h.send_json({"error": "这条录音已删除", "code": "recording_deleted"}, 410) or True
-    body = json.loads(h.last_body or b"{}")
+    try: body = json.loads(h.last_body or b"{}")
+    except ValueError: body = None
+    if not isinstance(body, dict): return h.send_json({"error": "invalid recording"}, 400) or True
     kind = recording_kind(body)  # unknown is a 400, as the hub's clean()
-    if not isinstance(body.get("revision"), int) or body["revision"] <= 0 or not body.get("started_at") \
+    if type(body.get("revision")) is not int or body["revision"] <= 0 or not body.get("started_at") \
             or body.get("device") not in ("phone", "watch") or kind is None:
         return h.send_json({"error": "参数不对"}, 400) or True
     have = RECORDINGS.get(rid)
+    if have and (have.get("kind") == "day") != (kind == "day"):
+        return h.send_json({"error": "recording kind cannot change to or from day", "code": "kind_changed"}, 409) or True
+    if kind == "day": return day_put(h, rid, body)
     if rid in RECORDINGS_TRIMMED:  # the hub takes no transcript back (kb/recordings.go putRecording)
         out = {"id": rid, "revision": body["revision"], "status": "expired"}
         if MEETING_ATTENDANCE: out["attendance"] = "off"
@@ -6019,28 +6475,43 @@ if MAIN_ACTIONS and os.environ.get("MOCK_COMPACTION") in ("running", "done", "fa
 
 ITEMS[ASK2] = [it("user", "text", 60 * 5, text="⏰ 早报")] + [it("assistant", "text", 60 * 5, text="早上好！今天 2 个会议，3 封邮件需要回复。")]
 ITEMS[ASK3] = [it("user", "text", 60 * 29, text="帮我约周五和韩梅梅吃饭")] + [it("assistant", "text", 60 * 28, text="已经在日历里加好了。")]
-# MOCK_LARK_AGENT=1: the Friday scheduling request is a Feishu /agent conversation instead (prompts/lark/chat_agent.md): the
-# instructions and context in <persona-context> blocks, only the request outside them (the apps fold the blocks, #876).
-if os.environ.get("MOCK_LARK_AGENT") == "1":
-    _lark_ctx = [
-        ("instructions", "给 Agent 的说明", "", "示例用户在飞书「发布群」里用 /agent 叫你。这不是在电脑上开的会话，你只知道下面给出的上下文。\n\n"
-         "他的请求是这条消息最后、所有 <persona-context> 标签外面的那段文字；其余标签里是 hub 收集好的上下文。\n\n## 怎么做\n\n"
-         "- 能做的直接做掉：查资料、读代码、看日志、跑命令。\n- 做完用 lark_agent_reply 回复一次。"),
-        ("context", "请求的位置", "", "位置：群聊「发布群」（feed_id 7000000000000000001）；请求消息 id 7000000000000000002，2026-11-03 16:48 发出。"),
-        ("context", "前面的聊天", "", "\n".join(f"11-03 16:{10 + n:02d} {'韩梅梅' if n % 2 else '李雷'}：第 {n + 1} 条讨论构建失败的消息" for n in range(30))),
-        ("context", "请求引用的消息", "", "韩梅梅：构建在 lint 那一步挂了，帮忙看下是哪里被拦截了"),
-        ("doc", "文档 · 发布手册", "https://example.feishu.cn/docx/AbC123", "# 发布手册\n\n1. 冻结提交\n2. 跑全部测试\n3. 上传构建"),
-        ("context", "会话档案 · 发布群", "", "# 发布群\n\n## 这是什么\n\n每周五发版的协调群。"),
-        ("context", "项目 · 周五发版", "", ""),
-    ]
-    _lark_text = "".join(
+def lark_agent_request(request):
+    """A Feishu /agent conversation's first message (prompts/lark/chat_agent.md): the instructions and context in
+    <persona-context> blocks, only the request outside them (the apps fold the blocks, #876)."""
+    return "".join(
         f'<persona-context kind="{k}" title="{t}"' + (f' url="{u}"' if u else "") + f">\n{b}\n</persona-context>\n"
-        for k, t, u, b in _lark_ctx) + "看看哪里被拦截了"
-    ITEMS[ASK3] = [it("user", "text", 60 * 29, text=_lark_text),
+        for k, t, u, b in _LARK_CTX) + request
+
+
+_LARK_CTX = [
+    ("instructions", "给 Agent 的说明", "", "示例用户在飞书「发布群」里用 /agent 叫你。这不是在电脑上开的会话，你只知道下面给出的上下文。\n\n"
+     "他的请求是这条消息最后、所有 <persona-context> 标签外面的那段文字；其余标签里是 hub 收集好的上下文。\n\n## 怎么做\n\n"
+     "- 能做的直接做掉：查资料、读代码、看日志、跑命令。\n- 做完用 lark_agent_reply 回复一次。"),
+    ("context", "请求的位置", "", "位置：群聊「发布群」（feed_id 7000000000000000001）；请求消息 id 7000000000000000002，2026-11-03 16:48 发出。"),
+    ("context", "前面的聊天", "", "\n".join(f"11-03 16:{10 + n:02d} {'韩梅梅' if n % 2 else '李雷'}：第 {n + 1} 条讨论构建失败的消息" for n in range(30))),
+    ("context", "请求引用的消息", "", "韩梅梅：构建在 lint 那一步挂了，帮忙看下是哪里被拦截了"),
+    ("doc", "文档 · 发布手册", "https://example.feishu.cn/docx/AbC123", "# 发布手册\n\n1. 冻结提交\n2. 跑全部测试\n3. 上传构建"),
+    ("context", "会话档案 · 发布群", "", "# 发布群\n\n## 这是什么\n\n每周五发版的协调群。"),
+    ("context", "项目 · 周五发版", "", ""),
+]
+# MOCK_LARK_AGENT=1: the Friday scheduling request is a Feishu /agent conversation instead.
+if os.environ.get("MOCK_LARK_AGENT") == "1":
+    ITEMS[ASK3] = [it("user", "text", 60 * 29, text=lark_agent_request("看看哪里被拦截了")),
                    it("assistant", "text", 60 * 28, text="lint 那一步被新加的隐私扫描拦下了：`site/` 里有一张截图带了内网地址。已经换成占位图，重跑通过。")]
 ITEMS[ASK4] = [x for n in range(1, 31) for x in (
     it("user", "text", 60 * 50 + 61 - 2 * n, text=f"第 {n} 本也整理一下"),
     it("assistant", "text", 60 * 50 + 60 - 2 * n, text=f"第 {n} 本整理好了：\n\n- 三个主要观点\n- 两段摘抄\n- 一条和上一本的联系\n\n要接着整理第 {n + 1} 本吗？"))]
+
+# MOCK_EXTERNAL=1 (with MOCK_AUTO_CONVERSATIONS=1, #3758): what the two conversations extensions opened say. The Lark /agent
+# one opens with the request and its context blocks; the other extension's with plain text. The apps write where each
+# came from under its first message.
+if os.environ.get("MOCK_EXTERNAL") == "1":
+    ITEMS["b2e4d6f8-0000-4000-8000-000000000308"] = [
+        it("user", "text", 60 * 2 + 1, text=lark_agent_request("把群里这周提的需求汇总一下")),
+        it("assistant", "text", 60 * 2, text="汇总好了，已经回复到群里：这周一共 5 条需求，2 条和发布有关，1 条要你拍板。")]
+    ITEMS["b2e4d6f8-0000-4000-8000-000000000310"] = [
+        it("user", "text", 60 * 26 + 1, text="把这周的工作记录整理成周报草稿"),
+        it("assistant", "text", 60 * 26, text="周报草稿写好了：完成 4 件，进行中 2 件，下周计划 3 件。")]
 
 INTERACTION_HISTORY = [  # GET /api/v1/interactions/history: requests already answered
     {"id": "ix_blog_done", "machine_id": "studio", "session_id": BLOG, "session_title": "博客迁移到 Astro",
@@ -6090,6 +6561,15 @@ def _long_lark_card(ix_id, machine, session, title, tool, verb, minutes, **extra
 # MOCK_ASK_LONG=perm: the main conversation waits on a long Feishu permission card instead.
 if os.environ.get("MOCK_ASK_LONG") == "perm":
     INTERACTIONS.append(_long_lark_card("ix_perm_long", "server", ASK1, "Persona", "mcp__lark__run", "list", 1))
+# MOCK_ASSISTANT_BASH=1: the main conversation's own first Bash waits for approval (#4883), its only card: the chat
+# shows it above the composer, "Waiting for your approval", not only in the closed Needs you tray.
+if os.environ.get("MOCK_ASSISTANT_BASH") == "1":
+    INTERACTIONS[:] = [x for x in INTERACTIONS if x["session_id"] != ASK1]
+    INTERACTIONS.append({"id": "ix_assistant_bash", "machine_id": "server", "session_id": ASK1, "session_title": "Persona",
+                         "kind": "permission", "created_at": ago(minutes=3), "expires_at": later(minutes=27),
+                         "tool_name": "Bash", "summary": "ssh vps 'cat /etc/example/config.json'",
+                         "tool_input": {"command": "ssh vps 'cat /etc/example/config.json'",
+                                        "description": "Read the server config on the VPS"}})
 # MOCK_ASK_LONG=agent: two long Feishu permission cards on an agent's chat (the tests session on the MacBook) and no
 # other card there, whose cards a phone and a side panel fold under the composer (PendingCards): the first open, the
 # second behind "1 more".
@@ -6375,8 +6855,10 @@ if os.environ.get("MOCK_SCREEN_DIALOG"):
 
 # MOCK_SCREEN_MULTI=1: a multi-select AskUserQuestion read off the terminal (Claude Code 2.1.316), the second of
 # three questions: two boxes already ticked at the computer, a few words in its free-text field, "Next" to send it.
+# /mock/reset puts it back unanswered (MultiSelectCardTests: each case starts from the card).
+SCREEN_MULTI_INTERACTIONS = []
 if os.environ.get("MOCK_SCREEN_MULTI"):
-    INTERACTIONS.append(
+    SCREEN_MULTI_INTERACTIONS.append(
         {"id": "scr_macbook_review_5c1d2e3f4a5b", "machine_id": "macbook", "session_id": REVIEW, "session_title": "检查 PR #42 的改动",
          "cwd": "/Users/me/code/weather", "kind": "screen", "created_at": ago(minutes=1), "expires_at": later(hours=24),
          "screen": "←  ☒ 环境  ☐ 平台  ☐ 通知  ✔ Submit  →\n哪些平台要一起发？\n❯ 1. [✔] 手机\n     iPhone 版本。\n"
@@ -6391,6 +6873,7 @@ if os.environ.get("MOCK_SCREEN_MULTI"):
                         {"key": "4", "label": "Type something", "kind": "type_something", "keys": ["4"], "checked": True,
                          "text": "平板也看一眼"},
                         {"key": "5", "label": "Chat about this", "kind": "chat", "keys": ["5"]}]}})
+    INTERACTIONS.extend(copy.deepcopy(SCREEN_MULTI_INTERACTIONS))
 # MOCK_SCREEN_STEPS=1: a terminal AskUserQuestion of three questions read off the screen (Claude Code 2.1.316) that
 # answers as the terminal does (#2970): ← and → move between the tabs, an answer moves on to the next one, and after an
 # answer that names its option the node submits the review tab once every question has one (keys alone never do).
@@ -6996,6 +7479,13 @@ def mock_panes(mid):
             tabs.append({"id": extra["tab_id"], "workspace_id": wid, "label": "shell-2", "number": 3})
     for pane in SPLIT_PANES.get(mid, []):
         panes.append(pane)
+    if os.environ.get("MOCK_STOPPED_AGENTS") and mid == "server":
+        for p in panes:
+            if not p.get("agent"):
+                p["foreground"] = "npm" if "npm" in (p.get("title") or "") else "zsh"
+        tabs.append({"id": "w2:t2", "workspace_id": "w2", "label": "fix-notes", "number": 2})
+        panes.append({"pane": "w2:p4", "terminal": "pane:w2:p4", "tab_id": "w2:t2", "workspace_id": "w2", "title": "zsh",
+                      "cwd": "/home/me/notes", "foreground": "zsh", "agent_session": STOPPED_AGENT})
     panes = [p for p in panes if p["pane"] not in CLOSED_PANES and p["tab_id"] not in CLOSED_TABS]
     tabs = [dict(t, label=TAB_NAMES.get(t["id"], t["label"])) for t in tabs if t["id"] not in CLOSED_TABS]
     if MARKS_AGENTS and mid == "server":  # MOCK_AGENT_MARKS: a workspace of its own, one tab per agent
@@ -7060,6 +7550,16 @@ def node_action(h, p, body):
     """POST /api/v1/machines/{mid}/{panes,tabs}/{close,split,agent,git,rename}: what the menus ask of a computer."""
     mid, area, verb = p.split("/")[4], p.split("/")[5], p.split("/")[6]
     NODE_ACTIONS.append({"machine": mid, "route": area + "/" + verb, **body})
+    if area == "panes" and verb == "close_finished":  # #4754: the stopped Agents' terminals, those confirmed
+        hosts = mock_panes(mid).get("hosts") or []
+        done = [{"pane": x["pane"], "session_id": x["agent_session"], "tab_id": x["tab_id"], "workspace_id": x["workspace_id"]}
+                for x in (hosts[0]["panes"] if hosts else []) if x.get("agent_session")]
+        want = [x for x in str(body.get("panes") or "").split(",") if x]
+        if want:
+            done = [x for x in done if x["pane"] in want]
+        if not body.get("preview"):
+            CLOSED_PANES.update(x["pane"] for x in done)
+        return h.send_json({"closed": done, "kept": [], "preview": bool(body.get("preview"))})
     if area == "panes" and verb == "close":
         CLOSED_PANES.add(body.get("pane"))
     elif area == "tabs" and verb == "close":
@@ -7539,7 +8039,6 @@ SENT_TO = []  # where each of them went: machine_id, session_id, client_msg_id, 
 LARK_READS = []  # Feishu read reports, {"feed", **body} (GET /mock/lark_reads): what a chat page saw
 MAIL_SENT = []  # POST /api/v1/mail/send bodies (GET /mock/mail_sent): "Compose mail" / "Reply"
 MAIL_FLAGS = []  # POST …/mail/messages/{aid}/{uid}/flags, {"account_id", "uid", **body} (GET /mock/mail_flags)
-QUEUE_EDITS = []  # bodies of …/queue ("Withdraw to edit" / "Delete" of a queued message; GET /mock/queue_edits)
 
 
 QUEUED_IMAGES = [0]  # Claude Code numbers the pictures pasted into a session: [Image #1], [Image #2]…
@@ -10068,7 +10567,7 @@ LAUNCHER_PRESETS = [
 # "Fetch models" with 3 models (these two also without MOCK_PROVIDERS), and an import preview of 3 providers on macbook (one merging into gw_full); studio's node is
 # too old (409 node_outdated), nas is offline (503). Keys and headers are kept only as has_key / has_headers.
 MOCK_PROVIDERS = os.environ.get("MOCK_PROVIDERS") == "1"
-PROVIDER_LOG = {"post": None, "put": None, "test": [], "discover": [], "import": None}
+PROVIDER_LOG = {"post": None, "put": None, "test": [], "discover": [], "catalog": [], "import": None}
 PROVIDER_FIELDS = ("kind", "api", "base_url", "model", "small_model", "subagent_model", "custom_model", "custom_model_name",
                    "custom_model_description", "args", "auth", "models", "opus_model", "sonnet_model", "haiku_model", "fable_model",
                    "subagent_force", "proxy", "no_proxy", "timeout_ms", "compact_window", "max_context", "effort")
@@ -10117,17 +10616,62 @@ def _provider_apply(l, b):
         else: l.pop("has_headers", None)
 
 
+# POST /api/v1/launchers/catalog (#4975): the hub's built-in model catalog for ids typed by hand, read from the file the
+# hub embeds. Exact rows only (the hub also lets an unlisted newer generation inherit; the mock does not).
+MODEL_CATALOG_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "server", "internal", "assistant",
+                                  "models_catalog.json")
+_MODEL_CATALOG = {}
+
+
+def _catalog_key(model_id, dated=True):
+    """normalizeCatalogID (lower case, nothing up to the last /, no trailing [1m]), and without dated a trailing
+    -YYYYMMDD too (catalogGenerationKey)."""
+    key = model_id.strip().lower().rsplit("/", 1)[-1].removesuffix("[1m]")
+    if dated: return key
+    while True:
+        prev, key = key, re.sub(r"-\d{8}$", "", key.removesuffix("[1m]")).removesuffix("[1m]")
+        if key == prev: return key
+
+
+def _catalog_route(h, body):
+    if not _MODEL_CATALOG:
+        with open(MODEL_CATALOG_JSON, encoding="utf-8") as f:
+            for m in json.load(f)["models"]:
+                _MODEL_CATALOG[m["id"].lower()] = m
+    try:
+        ids = json.loads(body or b"{}").get("ids")
+        ids = [] if ids is None else ids
+        if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids): raise ValueError
+    except (ValueError, AttributeError):
+        h.send_json({"error": "请求格式不对：ids 要是模型 ID 的列表"}, 400); return
+    if len(ids) > 100:
+        h.send_json({"error": "一次最多查 100 个模型 ID"}, 400); return
+    if any(len(x.strip().encode()) > 200 for x in ids):
+        h.send_json({"error": "模型 ID 最长 200 字节"}, 400); return
+    PROVIDER_LOG["catalog"].append(ids)
+    out, seen = [], set()
+    for model_id in (x.strip() for x in ids):
+        if not model_id or model_id in seen: continue
+        seen.add(model_id)
+        row = _MODEL_CATALOG.get(_catalog_key(model_id)) or _MODEL_CATALOG.get(_catalog_key(model_id, dated=False))
+        if row: out.append({"id": model_id, **{k: v for k, v in row.items() if k != "id"}})
+    h.send_json({"models": out})
+
+
 def providers_route(h, method, p, q, body):
     """The provider endpoints under MOCK_PROVIDERS; True when it answered. A typed-in gateway's "Test connection" and
     "Fetch models" answer in the hub's shape without it too (#4881): the catch-all {"ok": true} has no `ms`, which the
-    wizard shows. A built-in preset's test keeps its own answers then (_builtin_preset_route)."""
+    wizard shows. A built-in preset's test keeps its own answers then (_builtin_preset_route). The catalog lookup
+    (_catalog_route) answers with or without MOCK_PROVIDERS."""
+    if p == "/api/v1/launchers/catalog" and method == "POST":
+        _catalog_route(h, body); return True
     probe = method == "POST" and p in ("/api/v1/launchers/test", "/api/v1/launchers/discover")
     if not MOCK_PROVIDERS and not probe: return False
     if p == "/mock/providers/log":
         h.send_json(PROVIDER_LOG); return True
     if MOCK_PROVIDERS:
         b = json.loads(body or b"{}") if method != "GET" else {}
-    else:  # a body that is not this wizard's goes on to the routes after this one
+    else:  # a body that is not a typed-in gateway's probe goes on to the routes after this one
         try:
             b = json.loads(body or b"{}")
         except ValueError:
@@ -10170,7 +10714,7 @@ def providers_route(h, method, p, q, body):
     if p == "/api/v1/launchers/discover" and method == "POST":
         PROVIDER_LOG["discover"].append(_provider_redacted(b))
         if "bad" in (b.get("base_url") or ""):
-            h.send_json({"models": [], "error": "网关没有 /v1/models"}); return True
+            h.send_json({"models": [], "error": "网关没有 /v1/models", "code": "not_found"}); return True
         h.send_json({"models": PROVIDER_DISCOVERED}); return True
     if p == "/api/v1/launchers" and method == "POST" and not b.get("preset"):
         PROVIDER_LOG["post"] = _provider_redacted(b)
@@ -10695,9 +11239,32 @@ def subagent_step():
 
 
 # MOCK_MESSAGE_LIFT=1: chats for the lifted message of a long press (#603): short messages, the newest one just above the
-# composer, and a long answer with a heading, a list, a code block and a table, taller than any screen. Synthetic text.
+# composer, and a long answer with a heading, a list, a code block and a table, taller than any screen, in an Agents chat
+# and in a Persona conversation (#3188: the lifted copy scrolls to its first line); in another Persona conversation, an
+# answer a little shorter than a small phone's screen, which lifts whole, under where Persona's top bar floats. And a long
+# message of yours with paths that are there on the machine (underlined links), and an answer with inline code, a list,
+# a code block and a quote (#3188: the words stay where they are, lifted and selected). Synthetic text.
 LIFT_SHORT = "a1f3c2d4-0000-4000-8000-0000000c1e08"
 LIFT_LONG = "a1f3c2d4-0000-4000-8000-0000000c1e09"
+LIFT_ASK = "b2e4d6f8-0000-4000-8000-0000000c1e09"
+LIFT_ASK_MID = "b2e4d6f8-0000-4000-8000-0000000c1e0a"
+LIFT_MIX = "a1f3c2d4-0000-4000-8000-0000000c1e0b"
+# The case a tester reported (#3188): an answer with inline code in its sentences, a long path in inline code that
+# wraps, a list, a code block, a quote and a link, after a message of yours with a path; in an Agents chat and in a
+# Persona conversation. Every style's position test lifts and selects both.
+LIFT_KEY = "a1f3c2d4-0000-4000-8000-0000000c1e0c"
+# An answer with a quote long enough to fold (#2984), between two paragraphs, the second with a path there in code:
+# lifted and selected, the quote stays folded (or open, as it was in the chat) and its hidden lines are not selected.
+LIFT_FOLD = "a1f3c2d4-0000-4000-8000-0000000c1e0d"
+LIFT_ASK_KEY = "b2e4d6f8-0000-4000-8000-0000000c1e0c"
+LIFT_KEY_MINE = "你先把管理密钥存到本机文件，我跑命令读一下。放在 ~/.config/example-gateway/management.key，权限设成 600，别打印到日志里。"
+LIFT_KEY_ANSWER = ("管理 Key 已经存到本机（hub）了：\n`/home/me/.config/example-gateway/management.key`\n\n"
+                   "- 文件权限 600，内容 64 位，没有换行，以 `cb3b` 开头、`047f` 结尾。\n"
+                   "- 我用这个文件里的 Key 请求了网关的 `/api/admin/accounts`，返回 200，Key 是对的。\n\n"
+                   "在 hub 上运行下面这条就能看到明文：\n\n```sh\ncat ~/.config/example-gateway/management.key; echo\n```\n\n"
+                   "> 这个文件只有你的账号能读，备份里也不会带上。\n\n"
+                   "复制后粘贴到 设置 › 扩展 › 网关 的 Key 框里，再点保存，步骤见[扩展设置说明](https://example.com/docs/extensions)。"
+                   "存好之后要删掉这个文件就跟我说一声。")
 
 
 def mock_message_lift():
@@ -10731,6 +11298,43 @@ def mock_message_lift():
                         it("assistant", "text", 5, text=long)]
     SESSIONS.append(sess("macbook", LIFT_SHORT, "登录页文案", "/Users/me/code/shop-app", "done", "done", "shop-app", 17, "lift", 1, 2, "收到，都提交了。"))
     SESSIONS.append(sess("macbook", LIFT_LONG, "改动整理", "/Users/me/code/shop-app", "done", "done", "shop-app", 17, "lift", 2, 5, "有问题的话告诉我具体哪一页。"))
+    ITEMS[LIFT_ASK] = [it("user", "text", 15, text="把这次登录和注册页的改动整理一下，带上测试结果"),
+                       it("assistant", "text", 5, text=long)]
+    ASSISTANT.append(assistant_sess(LIFT_ASK, "改动整理", 5, "有问题的话告诉我具体哪一页。"))
+    mid = ("## 接手前要知道的\n\n"
+           "这个仓库分成三块：服务端、网页端和手机端，各自有自己的测试脚本，改哪块就跑哪块的测试，跑完再提交。\n\n"
+           "服务端的配置都在一个文件里，本地开发用示例配置就能起来，不需要连真实的数据库，测试会自己起一个临时的。\n\n"
+           "网页端改样式之前先看设计规范，颜色、间距和字号都有现成的变量，不要在页面里直接写数字。\n\n"
+           "手机端的截图测试比较慢，一次大概要十分钟，可以先只跑你改到的那几页，合并之前再跑一遍完整的。\n\n"
+           "提交说明用英文写，一个改动一个提交，标题说清楚改了什么，正文写为什么这么改。\n\n"
+           "要我先带你看哪一块？")
+    ITEMS[LIFT_ASK_MID] = [it("user", "text", 12, text="我刚接手这个仓库，有什么要先知道的"),
+                           it("assistant", "text", 4, text=mid)]
+    ASSISTANT.append(assistant_sess(LIFT_ASK_MID, "接手须知", 4, "要我先带你看哪一块？"))
+    repo = "/Users/me/code/shop-app"
+    mine = ("定时检查：读取 docs/review-queue.md 中没处理的条目、notes/status.md 和最新的截图。按 docs/brief.md 做一轮核对，"
+            "更新日报和待办；发现新问题就在 30 分钟内给出影响、证据和建议。没有新问题就只更新 status 里的核对时间。"
+            "页面保持只读，不要另起新的循环。本批：[{\"at\": \"2026-11-10T16:54:04+00:00\", \"reason\": \"每小时核对；异常数=0\", "
+            "\"evidence\": \"notes/runs/20261110T165351Z/snapshot.json\"}]")
+    mix = ("### 这次核对的结果\n\n没有新问题，只更新了 `notes/status.md` 里的核对时间。\n\n"
+           "- **报错**：只有整点对账时的 6 条，都是已知的夜间噪音。\n- **页面**：首页和设置页的截图和上一批一致。\n\n"
+           "核对用的命令：\n\n```sh\nscripts/check.sh --since 1h --quiet\n```\n\n"
+           "> 日报的模板改过一次，标题里的日期现在按北京时间写。\n\n下一次核对在整点之后五分钟。")
+    ITEMS[LIFT_MIX] = [it("user", "text", 9, text=mine), it("assistant", "text", 7, text=mix)]
+    fold = ("评审意见原文如下，我按模块标了要改的地方：\n\n"
+            "> 登录页：按钮文字太长，小屏上换行；倒计时期间没有读屏提示。\n"
+            "> 注册页：日语下「获取验证码」被截短，手机号输错时只变红，没有说明原因。\n"
+            "> 设置页：深色模式下说明文字的对比度不够，大字号下开关和标题挤在一起。\n"
+            "> 共用组件：按钮标签要单行，放不下时先缩小字号，最小到 0.8 倍。\n"
+            "> 测试：截图基准图等确认后再更新，失败的两张和这次改动无关。\n\n"
+            "改动记在 `notes/status.md` 里，改完我跑一遍截图测试，再把结果发你。")
+    ITEMS[LIFT_FOLD] = [it("user", "text", 8, text="把上周评审的意见贴给我看看"), it("assistant", "text", 6, text=fold)]
+    SESSIONS.append(sess("macbook", LIFT_FOLD, "评审意见", repo, "done", "done", "shop-app", 17, "lift", 5, 6, "改完我跑一遍截图测试，再把结果发你。"))
+    ITEMS[LIFT_KEY] = [it("user", "text", 6, text=LIFT_KEY_MINE), it("assistant", "text", 5, text=LIFT_KEY_ANSWER)]
+    SESSIONS.append(sess("macbook", LIFT_KEY, "保存管理密钥", repo, "done", "done", "shop-app", 17, "lift", 4, 5, "存好之后要删掉这个文件就跟我说一声。"))
+    ITEMS[LIFT_ASK_KEY] = [it("user", "text", 6, text=LIFT_KEY_MINE), it("assistant", "text", 5, text=LIFT_KEY_ANSWER)]
+    ASSISTANT.append(assistant_sess(LIFT_ASK_KEY, "保存管理密钥", 5, "存好之后要删掉这个文件就跟我说一声。"))
+    SESSIONS.append(sess("macbook", LIFT_MIX, "定时核对", repo, "done", "done", "shop-app", 17, "lift", 3, 7, "下一次核对在整点之后五分钟。"))
 
 
 if os.environ.get("MOCK_MESSAGE_LIFT") == "1":
@@ -12007,6 +12611,10 @@ GAP = os.environ.get("MOCK_GAP") == "1"
 # one small file per language for screenshots, and a last message in the widget conversation that names some of them
 # and two that are not there (another machine's path, a deleted file).
 FILES = {}
+if os.environ.get("MOCK_MESSAGE_LIFT") == "1":  # the paths in the lift's long message of yours are there (#3188)
+    for _f in ("docs/review-queue.md", "notes/status.md", "docs/brief.md", "notes/runs/20261110T165351Z/snapshot.json"):
+        FILES["/Users/me/code/shop-app/" + _f] = b"# placeholder\n"
+    FILES["/Users/me/.config/example-gateway/management.key"] = b"placeholder\n"
 VIDEO_READS = []
 VIDEO_READ_LOCK = threading.Lock()
 FILE_PAGE = 2 << 20
@@ -14272,7 +14880,8 @@ def png(w, h, rgb):
 # …&slow=S: it answers S seconds late (the small window's "Connecting…"); …&down=1: it hangs up on everyone, now and on
 # connecting (0: back).
 FAKE_SCREEN = {"account": "me", "password": "mock-pass", "port": 0, "signins": [], "typed": "",  # typed: keys after signing in
-               "pointer": None, "clicks": [], "clipboard": "", "conns": [], "frames": 0, "slow": 0.0, "down": False}
+               "pointer": None, "clicks": [], "clipboard": "", "conns": [], "frames": 0, "slow": 0.0, "down": False,
+               "events": []}  # clipboard writes (node / rfb) and keys, in the order they came (#3075: ⌘V after the write)
 # MOCK_SCREEN_DISPLAYS=2 (#80): the mock Mac has two 480×300 displays side by side, one picture 960×300 wide, each
 # numbered in its window (display 2 green). Its Screen Sharing sends their rectangles (ExtendedDesktopSize) when asked;
 # with "2:node" it sends none, as macOS's does, and MacBook's computer status carries them as the node reads them
@@ -14283,6 +14892,69 @@ FAKE_EXTENDED = FAKE_DISPLAYS > 1 and "node" not in _displays[1:]
 FAKE_W, FAKE_H = 480 * FAKE_DISPLAYS, 300
 FAKE_NODE_DISPLAYS = [{"id": i + 1, "x": 240 * i, "y": 0, "width": 240, "height": 150, **({"main": True} if i == 0 else {})}
                       for i in range(FAKE_DISPLAYS)] if FAKE_DISPLAYS > 1 and not FAKE_EXTENDED else []
+# MOCK_SCREEN_BG=black|white|gray|terminal (#3075): the mock Mac is 1920×1080 as a real one is, one plain color (a
+# terminal: near black with lines of light-gray text), and like macOS's its Screen Sharing sends no pointer (the app
+# draws its own); MOCK_SCREEN_CURSOR=1 sends macOS's arrow when asked, as other servers do (the Cursor pseudo-encoding:
+# its 1× pixels, black with a white outline, and its mask). GET /mock/screen-password?bg=… changes the background on
+# the screens connected (the pointer's look over each, VNCTests.testThePointerReads).
+FAKE_BG = {"kind": os.environ.get("MOCK_SCREEN_BG", "")}
+FAKE_BG_COLORS = {"black": (0, 0, 0), "white": (255, 255, 255), "gray": (128, 128, 128), "terminal": (30, 30, 32)}
+FAKE_TEXT = (204, 204, 204)
+if FAKE_BG["kind"]:
+    FAKE_W, FAKE_H = 1920, 1080
+# macOS's arrow at 1× as its Screen Sharing sends it ("#" black, "o" white), its hot spot at its tip.
+FAKE_ARROW = ["oo........", "o#o.......", "o##o......", "o###o.....", "o####o....", "o#####o...", "o######o..", "o#######o.",
+              "o########o", "o########o", "o#####oooo", "o##o##+o..", "o+ooo##o..", ".o+.o##+o.", "....o+##o.", ".....o++o.",
+              "......oo.."]
+FAKE_ARROW_HOT = (1, 1)
+
+
+def fake_cursor_rect():
+    """The Cursor pseudo-encoding of FAKE_ARROW: x, y the hot spot; its pixels in the client's format (B G R and a
+    byte of padding); then its mask, a bit a pixel, rows padded to a byte."""
+    w, h = len(FAKE_ARROW[0]), len(FAKE_ARROW)
+    shade = {"#": 0, "o": 255, "+": 128}
+    px, mask = b"", b""
+    for row in FAKE_ARROW:
+        bits = 0
+        for i, ch in enumerate(row):
+            v = shade.get(ch, 0)
+            px += bytes([v, v, v, 0])
+            if ch in shade: bits |= 1 << (((w + 7) // 8) * 8 - 1 - i)
+        mask += bits.to_bytes((w + 7) // 8, "big")
+    return struct.pack(">HHHHi", FAKE_ARROW_HOT[0], FAKE_ARROW_HOT[1], w, h, -239) + px + mask
+
+
+def fake_text(x, y):
+    """1 where a terminal's text is: lines 36 pixels apart, characters 16 wide, of lengths that vary, with spaces."""
+    if not (40 <= x < 1400 and 40 <= y < 760): return 0
+    line, ly = divmod(y - 40, 36)
+    col, lx = divmod(x - 40, 16)
+    return 1 if ly < 18 and lx < 11 and col < (line * 37) % 70 + 8 and (col * 7 + line) % 11 else 0
+
+
+def fake_bg_rect(z):
+    """The whole of a plain background in ZRLE: solid tiles, and two-color ones where a terminal has text."""
+    base = FAKE_BG_COLORS.get(FAKE_BG["kind"], (0, 0, 0))
+    cp = lambda c: bytes([c[2], c[1], c[0]])
+    out = bytearray()
+    for ty in range(0, FAKE_H, 64):
+        for tx in range(0, FAKE_W, 64):
+            tw, th = min(64, FAKE_W - tx), min(64, FAKE_H - ty)
+            if FAKE_BG["kind"] != "terminal" or not (tx < 1400 and ty < 760 and tx + tw > 40 and ty + th > 40):
+                out += b"\x01" + cp(base)
+                continue
+            out += bytes([2]) + cp(base) + cp(FAKE_TEXT)
+            for j in range(th):
+                acc = n = 0
+                for i in range(tw):
+                    acc = acc << 1 | fake_text(tx + i, ty + j); n += 1
+                    if n == 8: out.append(acc); acc = n = 0
+                if n: out.append(acc << (8 - n))
+    comp = z.compress(bytes(out)) + z.flush(zlib.Z_SYNC_FLUSH)
+    return struct.pack(">HHHHi", 0, 0, FAKE_W, FAKE_H, 16) + struct.pack(">I", len(comp)) + comp
+
+
 # The displays' numbers, 3×5 cells each, drawn 12 pixels a cell.
 FAKE_DIGITS = {1: [".#.", "##.", ".#.", ".#.", "###"], 2: ["###", "..#", "###", "#..", "###"],
                3: ["###", "..#", "###", "..#", "###"], 4: ["#.#", "#.#", "###", "..#", "..#"]}
@@ -14390,9 +15062,22 @@ def fake_screen_sharing():
             c.sendall(struct.pack(">HH", FAKE_W, FAKE_H) + fmt + struct.pack(">I", len(name)) + name)
             FAKE_SCREEN["conns"].append(conn)
             encodings, z, t, sent = [], zlib.compressobj(6), 0, False
-            frame = fake_frame()
+            frame = [] if FAKE_BG["kind"] else fake_frame()
+
+            def redraw():  # a plain background again (?bg=…), on the update request the client left waiting
+                if 16 not in encodings: return
+                with lock:
+                    c.sendall(struct.pack(">BxH", 0, 1) + fake_bg_rect(z))
+                FAKE_SCREEN["frames"] += 1
+            conn["redraw"] = redraw
 
             def update(rects, extended=False):
+                if FAKE_BG["kind"]:
+                    cursor = -239 in encodings and os.environ.get("MOCK_SCREEN_CURSOR") == "1"
+                    with lock:
+                        c.sendall(struct.pack(">BxH", 0, 1 + cursor) + (fake_cursor_rect() if cursor else b"") + fake_bg_rect(z))
+                    FAKE_SCREEN["frames"] += 1
+                    return
                 body = b""
                 if extended:  # ExtendedDesktopSize: reason 0, status 0, the framebuffer's size, then each display
                     body += struct.pack(">HHHHi", 0, 0, FAKE_W, FAKE_H, -308) + struct.pack(">B3x", FAKE_DISPLAYS)
@@ -14415,10 +15100,11 @@ def fake_screen_sharing():
                     encodings = list(struct.unpack(">%di" % n, exact(c, 4 * n)))
                 elif kind == 3:
                     exact(c, 9)
+                    conn["waiting"] = sent
                     if not sent:
                         sent = True
                         update([(0, 0, FAKE_W, FAKE_H)], extended=FAKE_EXTENDED and -308 in encodings)
-                    elif os.environ.get("MOCK_SCREEN_ANIMATE") == "1":  # a box moving at ~30 frames a second
+                    elif os.environ.get("MOCK_SCREEN_ANIMATE") == "1" and not FAKE_BG["kind"]:  # a box moving at ~30 frames a second
                         time.sleep(1 / 30)
                         old = (80 + (t * 7) % 300, 120 + (t * 3) % 120)
                         t += 1
@@ -14430,6 +15116,7 @@ def fake_screen_sharing():
                         update([(0, 0, 2, 1), (x0, y0, min(FAKE_W - x0, abs(new[0] - old[0]) + 40), min(FAKE_H - y0, abs(new[1] - old[1]) + 40))])
                 elif kind == 4:  # a key: what is typed on the lock screen ("Unlock", #1507 a-2), Return as \n
                     down, _, key = struct.unpack(">BHI", exact(c, 7))
+                    FAKE_SCREEN["events"].append({"key": key, "down": bool(down)})
                     if down and key == 0xff0d: FAKE_SCREEN["typed"] += "\n"
                     elif down and (0x20 <= key <= 0xff): FAKE_SCREEN["typed"] += chr(key)
                     elif down and key >= 0x01000000: FAKE_SCREEN["typed"] += chr(key - 0x01000000)
@@ -14447,6 +15134,7 @@ def fake_screen_sharing():
                 elif kind == 6:  # the client's clipboard
                     exact(c, 3); n = struct.unpack(">I", exact(c, 4))[0]
                     FAKE_SCREEN["clipboard"] = exact(c, n).decode("latin-1")
+                    FAKE_SCREEN["events"].append({"clipboard": FAKE_SCREEN["clipboard"], "via": "rfb"})
                 else: return
         except OSError:
             pass
@@ -17327,7 +18015,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, fmt, *a):
         LOG.write("%s %s\n" % (self.command, self.path)); LOG.flush()
 
-    def send_json(self, obj, status=200, headers=None):
+    def send_json(self, obj, status=200, headers=None, add_error_code=True):
         global LOST_RECEIPT
         if self.command == "GET" and 200 <= status < 300:
             obj = stamp_managers(urlparse(self.path).path, obj)
@@ -17337,7 +18025,7 @@ class H(BaseHTTPRequestHandler):
                     LOST_RECEIPT = False
                     status, obj = 502, {"error": "操作回执丢失，请核对执行结果", "code": "lost_receipt",
                                         "delivered": "unknown", "retryable": False}
-        if status >= 400 and isinstance(obj, dict):
+        if status >= 400 and isinstance(obj, dict) and add_error_code:
             obj = dict(obj)
             obj.setdefault("code", {400: "invalid", 401: "unauthorized", 403: "forbidden", 404: "not_found",
                                     405: "method_not_allowed", 409: "conflict", 502: "upstream_error",
@@ -17454,8 +18142,14 @@ class H(BaseHTTPRequestHandler):
             return self.send_json(GIT_PULL_STATE)
         if p == "/mock/screen-password":  # MOCK_SCREEN=fake: the Mac's password changed; who signed in how; what was typed
             if "p" in q: FAKE_SCREEN["password"] = q["p"][0]
-            if "clear" in q: FAKE_SCREEN.update(typed="", clicks=[], clipboard="")
+            if "clear" in q: FAKE_SCREEN.update(typed="", clicks=[], clipboard="", events=[])
             if "clip" in q: fake_screen_clip(q["clip"][0])  # the Mac copied this
+            if "bg" in q and q["bg"][0] in FAKE_BG_COLORS and FAKE_BG["kind"]:  # another background (MOCK_SCREEN_BG)
+                FAKE_BG["kind"] = q["bg"][0]
+                for conn in list(FAKE_SCREEN["conns"]):
+                    if conn.pop("waiting", False):
+                        try: conn["redraw"]()
+                        except OSError: pass
             if "slow" in q: FAKE_SCREEN["slow"] = float(q["slow"][0])
             if "down" in q:
                 FAKE_SCREEN["down"] = q["down"][0] == "1"
@@ -17463,7 +18157,8 @@ class H(BaseHTTPRequestHandler):
                     try: conn["sock"].shutdown(socket.SHUT_RDWR)
                     except OSError: pass
             return self.send_json({"signins": FAKE_SCREEN["signins"], "typed": FAKE_SCREEN["typed"], "clicks": FAKE_SCREEN["clicks"],
-                                   "pointer": FAKE_SCREEN["pointer"], "clipboard": FAKE_SCREEN["clipboard"], "frames": FAKE_SCREEN["frames"]})
+                                   "pointer": FAKE_SCREEN["pointer"], "clipboard": FAKE_SCREEN["clipboard"], "frames": FAKE_SCREEN["frames"],
+                                   "events": FAKE_SCREEN["events"][-200:]})
         if p == "/mock/churn":
             CHURN["rounds"] = 0
             threading.Thread(target=churn, args=(int(q.get("n", ["20"])[0]), int(q.get("ms", ["300"])[0]),
@@ -17740,10 +18435,18 @@ class H(BaseHTTPRequestHandler):
             BUMPED.pop("blocked", None)
             TODOS[:] = copy.deepcopy(TODOS_INIT)
             TODO_DECISIONS[:] = copy.deepcopy(TODO_DECISIONS_INIT)
-            codex = {x["id"] for x in CODEX_INTERACTIONS}
-            INTERACTIONS[:] = [x for x in INTERACTIONS if x["id"] not in codex] + copy.deepcopy(CODEX_INTERACTIONS)
-            RESOLVED[:] = [r for r in RESOLVED if r["id"] not in codex]
-            INTERACTION_HISTORY[:] = [x for x in INTERACTION_HISTORY if x["id"] not in codex]
+            again = CODEX_INTERACTIONS + SCREEN_MULTI_INTERACTIONS  # the cards back, unanswered
+            ids = {x["id"] for x in again}
+            INTERACTIONS[:] = [x for x in INTERACTIONS if x["id"] not in ids] + copy.deepcopy(again)
+            RESOLVED[:] = [r for r in RESOLVED if r["id"] not in ids]
+            INTERACTION_HISTORY[:] = [x for x in INTERACTION_HISTORY if x["id"] not in ids]
+            if os.environ.get("MOCK_PERSONA_QUEUE") == "1":
+                ASSISTANT[0].update({"state": "working", "status": "working", "queued_relayed": 1,
+                                     "queued": list(PERSONA_QUEUE_MESSAGES)})
+                photo = {"mime": "image/png", "data": mock_png()}
+                QUEUED_PHOTOS["请看图片"] = [photo for _ in range(int(q.get("photos", ["1"])[0] or 1))]
+                QUEUE_EDITS.clear()
+                push_machine(ASSISTANT[0]["machine_id"])
             return self.send_json({"ok": True})
         if p == "/mock/session_close":
             if "fail" in q: SESSION_CLOSE["fail"] = q["fail"][0] == "1"
@@ -18292,14 +18995,15 @@ class H(BaseHTTPRequestHandler):
                     for e in l:
                         found = [{"path": "%s/%s/messages/%s.md" % (k, e["id"], d), "n": n, "line": t}
                                  for d, n, t in reversed(kb_messages(e["id"])) if kb_match(t, word)] if k == "chats" else \
-                            photo_matches(e["id"], word) if k == "recordings" else []
+                            photo_matches(e["id"], word) + day_recap_matches(e["id"], word) if k == "recordings" else []
                         named = kb_match(e["name"], word) or kb_match(e.get("one_line") or "", word)
                         if found or named:
                             res.append({"entry": e, "count": len(found), "hits": found[:3], "in_name": kb_match(e["name"], word)})
                 return self.send_json({"results": res})
             hits = [{"path": "%s/%s/summary.md" % (k, e["id"]), "line": "- " + e["name"] + "：" + (e.get("one_line") or "")}
                     for k, l in KB.items() for e in l if word and (word in e["name"].lower() or word in (e.get("one_line") or "").lower())]
-            hits += [{"path": x["path"], "line": x["line"]} for e in KB.get("recordings", []) for x in photo_matches(e["id"], word)] if word else []
+            hits += [{"path": x["path"], "line": x["line"]} for e in KB.get("recordings", [])
+                     for x in photo_matches(e["id"], word) + day_recap_matches(e["id"], word)] if word else []
             return self.send_json({"hits": hits})
         if p.startswith("/api/v1/machines/") and p.endswith("/file/thumb"): return self.file_thumb(p, q)
         files = mock_files(p, q)
@@ -18440,7 +19144,7 @@ class H(BaseHTTPRequestHandler):
         if doctor_route(self, p, "POST"): return
         if history_route(self, p, parse_qs(urlparse(self.path).query)): return
         if plugins_route(self, p, self.last_body): return
-        if os.environ.get("MOCK_TERMINAL_PANES") and re.fullmatch(r"/api/v1/machines/[^/]+/(panes/(close|split|agent|git)|tabs/(close|rename))", p):
+        if os.environ.get("MOCK_TERMINAL_PANES") and re.fullmatch(r"/api/v1/machines/[^/]+/(panes/(close|close_finished|split|agent|git)|tabs/(close|rename))", p):
             return node_action(self, p, json.loads(self.last_body or b"{}"))
         if os.environ.get("MOCK_TERMINAL_PANES") and re.fullmatch(r"/api/v1/machines/[^/]+/worktree/(prepare|create)", p):
             return worktree_route(self, p, json.loads(self.last_body or b"{}"))
@@ -18458,6 +19162,7 @@ class H(BaseHTTPRequestHandler):
             return self.send_json({"pane": pane["pane"], "terminal": pane["terminal"], "tab_id": pane["tab_id"]})
         if p.startswith("/api/v1/machines/") and p.endswith("/computer/clipboard") and os.environ.get("MOCK_SCREEN") == "fake":
             FAKE_SCREEN["clipboard"] = json.loads(self.last_body or b"{}").get("text", "")  # pbcopy on the Mac (#1343)
+            FAKE_SCREEN["events"].append({"clipboard": FAKE_SCREEN["clipboard"], "via": "node"})
             return self.send_json({"ok": True})
         if p == "/test/lark-pins/state" and os.environ.get("MOCK_LARK_PINS"):
             req = json.loads(self.last_body or b"{}")
@@ -19559,6 +20264,11 @@ class H(BaseHTTPRequestHandler):
             for key, (low, high) in RETENTION_BOUNDS.items():
                 if key in body and (type(body[key]) is not int or not low <= body[key] <= high):
                     return self.send_json({"error": "%s must be %d–%d" % (key, low, high), "code": "bad_request"}, 400)
+            if "idle_close_hours" in body:  # 0–8760, as the hub checks it (#4754)
+                hours = body["idle_close_hours"]
+                if not isinstance(hours, int) or isinstance(hours, bool) or not 0 <= hours <= 8760:
+                    return self.send_json({"error": "idle_close_hours must be 0–8760"}, 400)
+                ASSISTANT_CONFIG["idle_close_hours"] = hours
             if "archive_closed_days" in body:  # 0–3650, as the hub checks it (#3618)
                 days = body["archive_closed_days"]
                 if not isinstance(days, int) or isinstance(days, bool) or not 0 <= days <= 3650:
@@ -19574,9 +20284,14 @@ class H(BaseHTTPRequestHandler):
                 if not any(m["id"] == body["machine_id"] for m in MACHINES):
                     return self.send_json({"error": "unknown machine"}, 400)
                 ASSISTANT_CONFIG["machine_id"] = body["machine_id"]
-            for key in ("launcher", "timezone"):
-                if body.get(key):
-                    ASSISTANT_CONFIG[key] = body[key]
+            if body.get("launcher"):
+                ASSISTANT_CONFIG["launcher"] = body["launcher"]
+            # as the hub (#1855): a zone sent without timezone_picked is a device's own sync, left out while one was picked
+            picked = body.get("timezone_picked")
+            if body.get("timezone") and (isinstance(picked, bool) or ASSISTANT_CONFIG.get("timezone_picked") is not True):
+                ASSISTANT_CONFIG["timezone"] = body["timezone"]
+            if isinstance(picked, bool):
+                ASSISTANT_CONFIG["timezone_picked"] = picked
             if body.get("notes") is not None:
                 ASSISTANT_CONFIG["notes"] = body["notes"]
             if body.get("main"):
@@ -20484,6 +21199,7 @@ def features():
 MOCK_HELP.append("MOCK_EXTENSION_PICKERS=1  （配合 MOCK_EXTENSIONS=1）多一个扩展「Example 聊天」：设置里选一台电脑（format machine）、选启动器（format launcher，代答的那个已经不在了）、整数带步进（#2385）")
 MOCK_HELP.append("MOCK_EXTENSION_OPS=1|fail  （配合 MOCK_EXTENSIONS）扩展的安装 / 升级 / 卸载分步骤推进度（extension_operation 事件）：后台预览、停在等你同意、同意后同一个操作接着装；fail：每个扩展第一次安装停在「启动」、第一次卸载停在「删除」，都能重试；MOCK_EXTENSION_OPS_STEP=秒 每步的时长；MOCK_EXTENSION_INSTALL_DELAY=秒 没有分步骤的旧 hub 安装 / 卸载要这么久才回（#3307）")
 MOCK_HELP.append("MOCK_MANAGER_NAS=1  （默认的三个管理者）NAS 归离线的「家里」：像 hub 一样显示成离线，error 是 hub 的「助手暂时连不上，稍后再试」；它的一个 agent（备份脚本）状态 unknown")
+MOCK_HELP.append("MOCK_ASSISTANT_BASH=1  主对话自己的第一条 Bash 在等批准（#4883），是它唯一的卡片：对话里输入区上方显示「在等你批准」，不只在收起的「需要你」里")
 MOCK_HELP.append("MOCK_ASK_LONG=1|perm|agent  卡片比输入区上方的盒子还高（#3112）：1 主对话的 ask_user 提问卡（八个带说明的选项）；perm 主对话的飞书授权卡（超长命令）；agent MacBook 上补测试的 Agent 对话里两张这样的授权卡、没有别的卡（手机和侧边面板把第二张折在「还有 1 件」后面）")
 MOCK_HELP.append("MOCK_MANAGER_NEEDS_YOU=0  名册不带 inbox_needs_you（旧 hub，或还不上报这个数的旧管理者）；默认每个在线的管理者带它收件箱里「需要你处理」的未完成条目数，数变了推 managers")
 MOCK_HELP.append("MOCK_MANAGER_OUTDATED=1  设置 › 管理者：「工作」带 needs_update（它还不读自己的 manager.json，hub 在它在线时这样标）")
@@ -20500,6 +21216,7 @@ MOCK_HELP.append("MOCK_EXCHANGES=1  主对话新布局的素材（#1666）：Per
 MOCK_HELP.append("MOCK_MARKDOWN=1  任务往来和回执里带 **粗体**、`代码`、标题的原话（#2363）：应渲染成 Markdown，不露标记")
 MOCK_HELP.append("MOCK_TASK_RENAMED=1  整理发布说明这个任务在回执写好后改了名：回执应显示新名字「写本周发布说明」（#3036）")
 MOCK_HELP.append("MOCK_AUTO_CONVERSATIONS=1  助手对话带来源 origin（feature conversation_origin）：另有 10 段自动对话（收件箱 6、定时任务 2、飞书 /agent、对话派生），侧边栏收进「自动对话」（#3264）")
+MOCK_HELP.append("MOCK_EXTERNAL=1  和 MOCK_AUTO_CONVERSATIONS=1 一起用：飞书 /agent 那段带上请求和上下文，另加一段别的扩展开的（origin extension），两段都是外部的（#3758）")
 
 
 

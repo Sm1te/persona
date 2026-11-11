@@ -422,7 +422,7 @@ struct AssistantActionBar: View {
         } label: {
             HStack(spacing: Theme.Space.xs) {
                 Text(tray.title)
-                if count > 0 { Text(count > 99 ? "99+" : "\(count)").monospacedDigit() }
+                if let text = CountBadge.text(count) { Text(text).monospacedDigit() }
             }
             .dockCapsule(look)
             // On the page under its see-through fill: the chat fading out behind the row does not read through the

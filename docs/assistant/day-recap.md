@@ -411,8 +411,9 @@ The recap is `detail.recap`, present once one was written:
   entries marked with their name, and keep meetings and outside apart where they summarize (the Markdown, the evening
   facts).
 - `actions`, `who`, `by` and `due_date` follow the minutes' rules: no guessing who, `by` as said, `due_date` only when
-  it is one date from the day to a year after it. `id` names an action within one `version`. A confirmed action keeps
-  its `todo_id` in every later version that has an action with the same `who` and `what` (trimmed, case-folded) and an
+  it is one date from the day to a year after it; the same `who` and `what` said again within 15 minutes is one
+  action, said again later another. `id` names an action within one `version`. A confirmed action keeps its
+  `todo_id` in every later version that has an action with the same `who` and `what` (trimmed, case-folded) and an
   `at` within 15 minutes of it, even after a version that left it out; each confirmed to-do goes to at most one action
   of a version, and one reworded by the model is a new suggestion.
 - A day with text but nothing worth noting gets a recap with only its `summary`. Sections with nothing in them are
@@ -438,12 +439,15 @@ The knowledge base loop gets a recap lane of its own (beside the minutes lane, s
 meeting's minutes). It cuts a day recording's text (ordered by time, up to `coverage.to`) into chunks of the minutes
 pipeline's size (about 12000 characters) that never cross a full hour of the clock in `tz`, and has the model note
 each finished chunk once (candidate timeline entries, points and to-dos, each citing its line). A chunk is finished
-when `coverage.to` has passed its hour, or when it is full.
+when `coverage.to` has passed its hour, or when it is full, and no `pending` gap lies in its hour (its audio is still
+to come; until the cutoff). Hours are clock hours of `tz` by its offset at the time, so the hour a fall-back repeats
+is two.
 
 - Lines are numbered by position, so notes stay valid as text arrives. Notes are kept per chunk with a hash of its
   lines (positions, times and texts) in `recap_notes.json` in the recording's directory; a late sentence changes the
   hash and that chunk is read again. A `PUT` keeps the notes of every chunk whose hash it did not change (an erase
-  repair keeps positions, so only the erased hours are read again).
+  repair keeps positions, so only the erased hours are read again) and drops the others in the same request; notes
+  that are there but cannot be read fail the `PUT` (500, its upload not stored), and the phone sends it again.
 - Nothing reads the whole day at once: each chunk is read once. A merge takes the notes of at most 60 chunks; past
   that, chunks from the middle of the day are left out first (never the newest hours) and the recap is `partial`.
 
@@ -458,8 +462,8 @@ target reads what the hub holds when it runs; the recap's `covers` says how far 
   text the newest recap did not read; once a day, at the first round at or after that time (also after a restart,
   before the owner's midnight);
 - **when the recording becomes `complete`**: the final recap (`final_reason: complete`);
-- **6 hours after its day ended** when it is not complete by then: a final recap of what arrived (`final_reason:
-  cutoff`); a later `complete` writes another final recap;
+- **6 hours after its day ended, and 30 minutes after its last upload**, when it is not complete by then: a final
+  recap of what arrived (`final_reason: cutoff`); a later `complete` writes another final recap;
 - **on `POST …/minutes`** (final only when the recording is complete, or its day ended 6 hours or more before);
 - **at once after a `PUT` that set a new base while a recap exists or is due** (an erase or repair): and until it is
   rewritten, the hub removes from `recap.json`, `recap.md`, `detail.summary` and the search index every timeline entry
@@ -469,13 +473,15 @@ target reads what the hub holds when it runs; the recap's `covers` says how far 
 
 A day with no text when a recap comes due gets none (`recap_state` stays absent). The recap is one merge call over the
 notes, with the day's known meetings as hints (the user's meeting recordings overlapping it, `meetings` and `events`
-items starting that day, each with its time); chunks not noted yet (the hour in progress) are noted first. Notes and
-recaps are committed only while the recording still has the base they were made from, and never after it was deleted
-or trimmed.
+items starting that day, each with its time); chunks not noted yet (the hour in progress) are noted first, while the
+job keeps a call's time for the merge (what is not noted by then is left out, `partial`, and noted after). A named
+meeting is the entry's only when it is there at the entry's time (a calendar item starting within 15 minutes of it).
+Notes and recaps are committed only while the recording still has the base they were made from, and never after it
+was deleted or trimmed; a job that finds it changed before a call stops there.
 
 The model and limits are the minutes' (`kb.compress`, the call and job timeouts, three unusable answers before
 `failed`, the timeout back-off), counted per chunk (base and hash) for notes and per target for the merge, so new text
-arriving every minute neither resets them nor restarts work already done.
+arriving every minute neither resets them nor restarts work already done; `POST …/minutes` starts both over.
 
 ### The push
 
@@ -484,26 +490,38 @@ hub marks the day's push pending from it at once; otherwise it records that the 
 marks the push pending in the same write as that recap (a final recap of a day that had none counts too). A recap
 asked for with `POST …/minutes` before the recap time never makes the push due. Restarts pick up both states.
 
-The push says "Your day recap is ready" with the number of meetings and suggested to-dos, has a stable id per `day`,
-and a tap opens the main chat. The phone notification and each channel (the Lark bot and channels with pushes on, which
-get the same text with the recording's web link, as minutes do) are marked done separately once each was handed over;
-after a restart the phone notification's stable id keeps the phone from showing two, while a channel may get a copy
-twice (at least once). Later versions do not push. A failure does not notify.
+The push says "Your day recap is ready" with the number of meetings and suggested to-dos in the day's recaps (every
+part's), has a stable id per `day`, and a tap opens the main chat. It goes to the phone and to each channel (the Lark
+bot and channels with pushes on, which get the same text with the recording's web link, as minutes do), and is marked
+done only once the phone and every channel took it (or refused it for good: the hub refusing the notification, a
+channel with no conversation to send to, a channel answering with a refusal of its own). Until then it stays pending,
+restarts included, and the hub keeps with it which of them took it: it is sent again 1, 2, 4, 8, then every 16 minutes
+after the last try ended, only to those that did not take it, after a restart too. A push still not taken by all 24
+hours after it became due is given up: marked done (as failed) and logged once. Pending pushes are sent at the start
+of a recap round, the one waiting longest first, and a round starts no more of them once it spent a minute on them,
+so they never hold up the recaps. The phone shows one: it gets no copy once it took the push, and its notification's
+collapse id is derived from the push's stable id, so a copy sent again anyway replaces the one shown. The Lark bot
+gets that id as its key, and each channel the id with its own (`<id>:<channel id>`), so a copy sent again lands once
+where they can tell, and a channel may get a copy twice (at least once). Later versions do not push. A failure does
+not notify.
 
 ## The evening routine
 
 The evening routine's facts (`assistant/routine_facts.md` in [prompts.md](prompts.md), on when the task's `facts` is
-on) gain a section for today's day recordings (those whose span overlaps the owner's today, as at the recap time),
-parts merged by time. It is for the model only: never a row of the routine's card, the `brief` item or a channel message.
+on) gain a section for today's day recordings (those whose span overlaps the owner's today in the owner's time zone,
+as at the recap time), parts merged by time. It is for the model only: never a row of the routine's card, the `brief`
+item or a channel message.
 
-- the coverage (first and last time recorded, the gaps by reason);
+- the coverage: when it was recorded (from its start to its end, or until now while it is open), how far it is
+  transcribed when that is earlier, and the gaps by reason (the six reasons with the most time, the others counted);
 - the recap's summary and its timeline in short (time range, meeting or outside, title; no points), and the
   suggested to-dos not yet confirmed (`who` and `what`);
 - or, without a recap yet, its state (being written, failed), or that nothing was transcribed (with how long it
   recorded) for a day recording with no text.
 
-The section is bounded (about 4000 characters; entries from the middle of the day go first), says when the recap was
-made, and is left out when there is no day recording today. The evening routine is off by default; the push reaches
+The section is bounded: about 4000 characters in all, at most 5 parts (the first and the latest, the others counted),
+then entries from the middle of the day go first. It says when the recap was made, and is left out when there is no
+day recording today. The evening routine is off by default; the push reaches
 the user either way.
 
 ## Retention and privacy

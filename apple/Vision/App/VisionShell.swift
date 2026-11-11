@@ -37,7 +37,7 @@ private struct NeedsYouOrnament: View {
             Text(StateName.needsYou.text)
                 .font(Theme.Font.bodyStrong)
                 .lineLimit(1)
-            CountBadge(count: waiting, look: .solid(Theme.needsYou))
+            CountBadge(count: waiting, look: .needs)
             Button(action: openNext) {
                 Label("Go [Vision Shell a7e9f6]", systemImage: Theme.Icon.forward)
                     .labelStyle(.titleAndIcon)

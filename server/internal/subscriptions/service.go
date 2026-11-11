@@ -118,6 +118,10 @@ type Service struct {
 	running  int
 	asked    map[string]bool // subscriptions asked to run now
 	wake     chan struct{}
+
+	// Push sources (push.go): one push at a time, and each device's items in the last hour.
+	pushMu sync.Mutex
+	pushed map[string][]time.Time
 }
 
 type catalogEntry struct {
@@ -156,7 +160,7 @@ func New(o Options) *Service {
 		o.Delivered = func(Subscription) {}
 	}
 	return &Service{o: o, catalogs: map[string]catalogEntry{}, reading: map[string]bool{}, gates: map[string]*gate{},
-		busy: map[string]bool{}, asked: map[string]bool{}, wake: make(chan struct{}, 1)}
+		busy: map[string]bool{}, asked: map[string]bool{}, wake: make(chan struct{}, 1), pushed: map[string][]time.Time{}}
 }
 
 func (s *Service) now() time.Time { return s.o.Clock.Now().UTC() }
@@ -426,6 +430,9 @@ func (s *Service) DryRun(ctx context.Context, in DryRunRequest) (DryRun, error) 
 		}
 		if sub == nil {
 			return DryRun{}, notFound("subscription")
+		}
+		if IsPush(*sub) {
+			return DryRun{}, pushOnly("recipe")
 		}
 		in.Connector, in.Source = sub.Connector, sub.Source
 		if in.Recipe == nil {
@@ -720,6 +727,9 @@ func (s *Service) Update(ctx context.Context, id string, p Patch, by Actor) (Sub
 	if p.Revision != cur.Revision {
 		return Subscription{}, conflictWith(cur)
 	}
+	if IsPush(*cur) && (p.Recipe != nil || p.IntervalSeconds != nil || p.DailyAt != nil) {
+		return Subscription{}, pushOnly("recipe or schedule")
+	}
 	next, prev := *cur, cur.Revision
 	now := s.now()
 	var changed []string
@@ -769,7 +779,7 @@ func (s *Service) Update(ctx context.Context, id string, p Patch, by Actor) (Sub
 		next.IntervalSeconds, schedule = *p.IntervalSeconds, true
 		changed = append(changed, "interval_seconds")
 	}
-	if fl := floorOf(next.Recipe.Mode, next.SourceMin); next.DailyAt == "" && next.IntervalSeconds < fl {
+	if fl := floorOf(next.Recipe.Mode, next.SourceMin); !IsPush(next) && next.DailyAt == "" && next.IntervalSeconds < fl {
 		return Subscription{}, &Error{Status: http.StatusUnprocessableEntity, Code: CodeIntervalTooShort,
 			Message: fmt.Sprintf("the interval must be at least %d seconds", fl)}
 	}
@@ -809,6 +819,13 @@ func (s *Service) Update(ctx context.Context, id string, p Patch, by Actor) (Sub
 		}
 		next.NextRunAt = &n
 	}
+	if IsPush(next) {
+		// Nothing to pull: its catch-up ends when its Inbox is turned on (what came in the day before comes in now).
+		next.NextRunAt = nil
+		if next.ToInbox && !cur.ToInbox {
+			next.InboxCatchup = &now
+		}
+	}
 	if len(changed) == 0 {
 		return shown(*cur), nil
 	}
@@ -826,7 +843,9 @@ func (s *Service) Update(ctx context.Context, id string, p Patch, by Actor) (Sub
 	}
 	s.o.Audit(ctx, next.Connector, "subscription_updated", by, map[string]any{"subscription": id, "fields": changed})
 	s.o.Changed(shown(next), false)
-	if on(next) && (!wasOn || p.Recipe != nil || turnedOn) {
+	if IsPush(next) && turnedOn {
+		s.o.Delivered(next) // what it holds reaches the destination turned on
+	} else if on(next) && (!wasOn || p.Recipe != nil || turnedOn) {
 		s.poke()
 	}
 	return shown(next), nil
@@ -840,6 +859,9 @@ func (s *Service) RunNow(ctx context.Context, id string, by Actor) (Subscription
 	}
 	if sub == nil {
 		return Subscription{}, notFound("subscription")
+	}
+	if IsPush(*sub) {
+		return Subscription{}, pushOnly("pull")
 	}
 	s.mu.Lock()
 	s.asked[id] = true

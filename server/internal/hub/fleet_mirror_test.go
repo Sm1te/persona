@@ -63,6 +63,16 @@ func (d *mirrorDevices) List() []devices.Summary {
 	return out
 }
 
+func (d *mirrorDevices) Summary(id string) (devices.Summary, bool) {
+	canon := d.Canonical(id)
+	for _, s := range d.List() {
+		if s.ID == canon {
+			return s, true
+		}
+	}
+	return devices.Summary{}, false
+}
+
 func (d *mirrorDevices) MachineResources(string) (*proto.Machine, *proto.MetricSample, *bool) {
 	return nil, nil, nil
 }

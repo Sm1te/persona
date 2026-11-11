@@ -400,6 +400,8 @@ func (s *Service) saveLauncher(ctx context.Context, in launcherInput, old *store
 	case in.Agent != "":
 		l.Agent = in.Agent
 	} // no agent in the request (an app without it): an update keeps what is stored
+	// Stored as the agent reaches it (the address Test connection called): a pasted ".../v1" would run as /v1/v1/messages.
+	l.BaseURL = l.LaunchBaseURL()
 	l.Args = in.Args
 	if in.Preset != "" {
 		l.Preset = in.Preset

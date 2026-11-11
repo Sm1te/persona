@@ -137,8 +137,9 @@ class MessageContentTest {
         val start = Instant.parse("2026-11-02T10:00:00Z")
         val line = ChatLine.Work("w-1", emptyList(), live = true, start = start, end = null, open = false)
         assertEquals("正在工作", workSummary(res, line, null))
-        assertEquals("正在工作，1 分 20 秒", workSummary(res, line, null, start.plusSeconds(80)))
-        assertEquals("正在工作，39 秒", workSummary(res, line, null, start.plusSeconds(39)))
+        // As iOS (#4339 C5): "Working 1m 20s", with its counts after it once there are steps.
+        assertEquals("正在工作 1 分 20 秒", workSummary(res, line, null, start.plusSeconds(80)))
+        assertEquals("正在工作 39 秒", workSummary(res, line, null, start.plusSeconds(39)))
         // A finished line keeps its recorded words.
         assertFalse(workSummary(res, line.copy(live = false), 30, start.plusSeconds(80)).contains("正在"))
     }
@@ -146,8 +147,8 @@ class MessageContentTest {
     @Test fun anExpandedRunningLineKeepsItsSingleSummaryAndTimer() {
         val start = Instant.parse("2026-11-02T10:00:00Z")
         val line = ChatLine.Work("w-1", emptyList(), live = true, start = start, end = null, open = true)
-        assertEquals("正在工作，1 分 20 秒", workSummary(res, line, null, start.plusSeconds(80)))
-        assertEquals("做了 0 步，用时 30 秒", workSummary(res, line.copy(live = false), 30, start.plusSeconds(80)))
+        assertEquals("正在工作 1 分 20 秒", workSummary(res, line, null, start.plusSeconds(80)))
+        assertEquals("30 秒", workSummary(res, line.copy(live = false), 30, start.plusSeconds(80)))
     }
 
     private fun step(id: String, name: String, vararg fields: Pair<String, String>) =
@@ -218,7 +219,7 @@ class MessageContentTest {
             persona.core.domain.lines.Fold(wire.items, wire.tools, wire.thoughts, wire.throughSeq, wire.throughId)))
         assertEquals(4, folded.stepCount())
         val line = ChatLine.Work("w-1", listOf(folded), live = false, start = null, end = null, open = false)
-        assertEquals("做了 4 步", workSummary(res, line, null))
+        assertEquals("工具 3 · 思考 1", workSummary(res, line, null))
     }
 
     @Test fun theLatestTurnsMarkdownIsParsedFirstWithTheTextItsRowsDraw() {

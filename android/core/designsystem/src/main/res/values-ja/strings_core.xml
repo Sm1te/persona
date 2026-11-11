@@ -318,7 +318,7 @@
     <string name="designsystem_core_headline_screen">ターミナルで対応が必要です</string>
     <string name="designsystem_core_headline_needs_you">要対応</string>
     <string name="designsystem_core_ask_question">質問があります</string>
-    <string name="designsystem_core_ask_permission">許可が必要です</string>
+    <string name="designsystem_core_ask_permission">承認を待っています</string>
     <string name="designsystem_core_ask_plan">プランの承認待ち</string>
     <string name="designsystem_core_ask_screen">ターミナルで対応が必要です</string>
     <string name="designsystem_core_ask_elicitation">MCPリクエスト</string>

@@ -1,0 +1,12 @@
+{
+  "forward": "転送",
+  "me": "自分",
+  "messages": "メッセージ",
+  "heading": "{who} から転送",
+  "heading_chat": "{who} から転送 · {chat}",
+  "no_content": "内容がありません",
+  "remove": "転送を解除",
+  "open_original": "元のメッセージを開く",
+  "show_all": "すべて表示",
+  "collapse": "折りたたむ"
+}

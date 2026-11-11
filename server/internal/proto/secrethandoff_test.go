@@ -57,3 +57,27 @@ func TestResolutionFieldsAreOmitempty(t *testing.T) {
 		}
 	}
 }
+
+// Only an explicit allow, with neither dismiss nor cancel, approves: a no with anything beside it is no approval.
+func TestSecretHandoffApproves(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"allow":true}`:                     true,
+		`{"allow":true,"always":true}`:       true,
+		`{"allow":false,"always":true}`:      false,
+		`{"dismiss":true,"always":true}`:     false,
+		`{"allow":true,"dismiss":true}`:      false,
+		`{"allow":true,"cancel":true}`:       false,
+		`{"allow":false,"text":"no"}`:        false,
+		`{}`:                                 false,
+		`{"approve":true}`:                   false,
+		`{"option":"1","answers":{"a":"b"}}`: false,
+	} {
+		var r Resolution
+		if err := json.Unmarshal([]byte(body), &r); err != nil {
+			t.Fatal(err)
+		}
+		if got := SecretHandoffApproves(r); got != want {
+			t.Errorf("%s: approves %v, want %v", body, got, want)
+		}
+	}
+}

@@ -1,0 +1,16 @@
+{
+  "ready_title": "今天的全天回顾整理好了",
+  "ready_body": "{day} · 会议 {meetings} 场 · 建议待办 {actions} 条",
+  "name": "全天 · {date}",
+  "no_text": "这一天还没有转写出文字，没有可以整理的回顾。",
+  "transcript_expired": "这条录音的转写已过保留期，只留下了回顾，无法重新整理。",
+  "stale": "回顾已经更新，请刷新后再试。",
+  "unknown_action": "这份回顾里没有建议待办 {id}。",
+  "no_recap": "这条录音还没有回顾。",
+  "todo_notes": "来自 {day} 的全天回顾，原话在 {clock}。",
+  "not_day": "这条录音不是全天录音。",
+  "base_changed": "这条录音在这个基准之后又被整条上传过，请从最新的上传接着发。",
+  "segments_gap": "前面还缺句子，请从第 {next} 句重新发送。",
+  "day_full": "这一天的这一部分已经满了，请接着发到下一部分。",
+  "kind_changed": "录音只能在第一次上传时成为全天录音，之后也一直是全天录音。"
+}

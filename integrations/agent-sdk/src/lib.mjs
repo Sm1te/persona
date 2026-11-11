@@ -8,7 +8,8 @@ import { join } from 'node:path'
 // The keys of persona_start's options passed on to query() (docs: CONTRACT §3). Anything else is dropped and named
 // (only the name) on stderr: a typo must not silently become a CLI default.
 export const OPTION_KEYS = new Set([
-  'model', 'cwd', 'resume', 'sessionId', 'permissionMode', 'allowedTools', 'tools', 'mcpServers', 'plugins', 'settings',
+  'model', 'cwd', 'resume', 'sessionId', 'permissionMode', 'allowedTools', 'tools', 'mcpServers', 'strictMcpConfig', 'plugins', 'settings',
+  'guestMcpServers',
   'pathToClaudeCodeExecutable', 'includePartialMessages', 'effort', 'extraArgs',
 ])
 

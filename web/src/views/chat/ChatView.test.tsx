@@ -136,19 +136,21 @@ describe("ChatView composer task routing", () => {
 });
 
 describe("ChatView message context availability", () => {
+  // Forward (#3899) goes from any chat but a subagent's read-only view, Persona's included, even one that can't send here
   it.each([
     [false, false, true, true, true],
-    [true, false, true, false, true],
-    [false, true, true, true, false],
+    [true, false, true, true, true],
+    [false, true, true, false, false],
     [false, false, false, true, false],
-  ])("uses the chat's actual send capability (assistant=%s, readOnly=%s, send=%s)", (assistant, readOnly, send, handoff, context) => {
+  ])("uses the chat's actual send capability (assistant=%s, readOnly=%s, send=%s)", (assistant, readOnly, send, forward, context) => {
     captured.items = [{ id: "reply#0", seq: 1, kind: "text", role: "assistant", text: "A reply" }];
     if (!send) {
       captured.session.source_kind = "codex_history";
       captured.session.capabilities = { read: true };
     }
     const html = renderToStaticMarkup(<ChatView mid="hub" sid="c1" assistant={assistant} readOnly={readOnly} />);
-    expect(html.includes('aria-label="交给 Persona"')).toBe(handoff);
+    expect(html.includes('aria-label="转发"')).toBe(forward);
+    expect(html.includes('aria-label="交给 Persona"')).toBe(false);
     expect(html.includes('aria-label="作为上下文"')).toBe(context);
   });
 });

@@ -238,7 +238,9 @@ func providerShaped(l proto.ManagedLauncher) bool {
 // stored (or the hub could not open it), neither credential, so Claude uses whatever sign-in it has; no model, none of
 // the model variables. The Haiku tier is HaikuModel, else SmallModel (what it was), else the model.
 func providerEnv(l proto.ManagedLauncher, model, effort string, mainConversation bool) map[string]string {
-	env := map[string]string{"ANTHROPIC_BASE_URL": l.BaseURL}
+	// Claude Code adds /v1/messages: a provider stored with a trailing /v1, from a hub before it dropped it, would
+	// otherwise call /v1/v1/messages though Test connection passed.
+	env := map[string]string{"ANTHROPIC_BASE_URL": l.LaunchBaseURL()}
 	if l.BaseURL != "" && providerShaped(l) {
 		env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 		env["API_TIMEOUT_MS"] = strconv.Itoa(cmp.Or(l.TimeoutMS, gatewayTimeoutMS))

@@ -86,7 +86,7 @@ func mergeZshrcAliases(machine string, aliases []zshrcAlias, known []knownProvid
 			continue
 		}
 		env := a.Env
-		base := strings.TrimRight(strings.TrimSpace(env["ANTHROPIC_BASE_URL"]), "/")
+		base := proto.MessagesBaseURL(env["ANTHROPIC_BASE_URL"]) // stored as a saved provider is (saveLauncher)
 		if base == "" {
 			continue
 		}
@@ -209,7 +209,8 @@ func (s *Service) knownProviders(stored []storedLauncher) ([]knownProvider, erro
 		if err != nil {
 			return nil, i18n.Err("assistant-models.err_key_decrypt")
 		}
-		known = append(known, knownProvider{name: l.Name, baseURL: l.BaseURL, key: key})
+		// One stored before saving dropped a trailing /v1 is the same gateway.
+		known = append(known, knownProvider{name: l.Name, baseURL: l.LaunchBaseURL(), key: key})
 	}
 	return known, nil
 }

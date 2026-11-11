@@ -209,12 +209,16 @@ fun DecisionDock(
     onCollapsedChange: ((Boolean) -> Unit)? = null,
     onExpand: (() -> Unit)? = null,
     headerActions: (@Composable () -> Unit)? = null,
+    /** One line over the headline saying what the request waits for ("Waiting for your approval", #4883), as the web's
+     *  and iOS's cards do; null draws the dock as before. */
+    kicker: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = PersonaTheme.palette
     val type = PersonaTheme.type
     val style = PersonaTheme.style
     val header: @Composable () -> Unit = {
+        kicker?.let { Text(it, style = type.caption, color = palette.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             when (style) {
                 AppStyle.Glass -> JStatusDot(Status.NeedsYou, size = 8.dp)

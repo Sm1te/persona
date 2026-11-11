@@ -11,7 +11,7 @@ import { waitsForFirstMessage } from "./codex-waiting";
 import type { Interaction, Session } from "./types";
 
 /** What kind of card waits, in a few words (docs/design/DESIGN_SYSTEM.md 5.6): "Has a question" / "Plan awaiting approval" /
- *  "Needs your permission" / "Terminal needs you" / "MCP request". */
+ *  "Waiting for your approval" / "Terminal needs you" / "MCP request". */
 export function interactionKicker(ix: Pick<Interaction, "kind"> | undefined): string {
   switch (ix?.kind) {
     case "plan":

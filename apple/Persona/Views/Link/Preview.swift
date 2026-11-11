@@ -150,7 +150,8 @@ nonisolated enum PreviewLogic {
     }
 
     /// The command line an entry runs, as the confirmation shows it: each word quoted as the node quotes it, its
-    /// `env` in front (`env PORT=8080 go run ./cmd/api`). The web's `commandLine`.
+    /// `env` in front (`env 'PORT=8080' go run ./cmd/api`: `=` is not one of the node's bare characters). The web's
+    /// `commandLine`.
     static func commandLine(_ o: PreviewOption) -> String {
         func q(_ s: String) -> String {
             s.wholeMatch(of: /[A-Za-z0-9_.\/-]+/) != nil ? s : "'" + s.replacingOccurrences(of: "'", with: #"'\''"#) + "'"

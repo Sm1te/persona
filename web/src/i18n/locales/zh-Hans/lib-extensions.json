@@ -84,5 +84,6 @@
   "sandbox_denied_other": "拒绝 {count} 次",
   "machine_missing": "{name}（找不到这台机器）",
   "launcher_missing": "{name}（找不到这个启动器）",
-  "launchers_loading": "正在读启动器…"
+  "launchers_loading": "正在读启动器…",
+  "from_provider": "来自 {provider}"
 }

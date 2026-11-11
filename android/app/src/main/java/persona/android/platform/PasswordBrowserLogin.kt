@@ -1,6 +1,7 @@
 package persona.android.platform
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
@@ -15,6 +16,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import persona.android.R
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
@@ -27,21 +29,21 @@ class PasswordBrowserLogin @Inject constructor(private val application: Applicat
     private val http = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).build()
 
     suspend fun login(address: String): PairingRequest {
-        val base = normalizedPasswordAddress(address)
+        val base = normalizedPasswordAddress(application, address)
         val state = randomValue()
         val verifier = randomValue()
         val challenge = encode(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
         val callback = CompletableDeferred<Uri>()
         synchronized(lock) {
-            check(pending == null) { "已有密码登录正在进行" }
+            check(pending == null) { application.getString(R.string.app_password_login_in_progress) }
             pending = state to callback
         }
         try {
             val stateRequest = Request.Builder().url("${base}api/v1/auth/password/state").build()
             request(stateRequest) { response ->
-                check(response.isSuccessful) { "无法打开密码登录，请确认 HTTPS 地址和证书有效" }
+                check(response.isSuccessful) { application.getString(R.string.app_password_login_unavailable) }
                 val settings = Json.parseToJsonElement(response.body!!.string()).jsonObject
-                check(settings["enabled"]?.jsonPrimitive?.booleanOrNull == true) { "管理员尚未开启密码登录，请使用扫码配对" }
+                check(settings["enabled"]?.jsonPrimitive?.booleanOrNull == true) { application.getString(R.string.app_password_login_disabled) }
             }
             val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".take(70)
             val page = Uri.parse("${base}login/device").buildUpon().fragment(
@@ -58,10 +60,10 @@ class PasswordBrowserLogin @Inject constructor(private val application: Applicat
             val exchange = Request.Builder().url("${base}api/v1/auth/password/exchange")
                 .post(body.toRequestBody("application/json".toMediaType())).build()
             return request(exchange) { response ->
-                check(response.isSuccessful) { "登录授权已失效，请重新登录" }
+                check(response.isSuccessful) { application.getString(R.string.app_password_login_expired) }
                 val data = Json.parseToJsonElement(response.body!!.string()).jsonObject
                 val certificate = response.handshake?.peerCertificates?.firstOrNull() as? X509Certificate
-                    ?: error("无法确认 hub 证书")
+                    ?: error(application.getString(R.string.app_password_login_certificate))
                 val fingerprint = encode(MessageDigest.getInstance("SHA-256").digest(certificate.publicKey.encoded))
                 val token = data.getValue("token").jsonPrimitive.content
                 val deviceId = data.getValue("id").jsonPrimitive.content
@@ -93,11 +95,11 @@ class PasswordBrowserLogin @Inject constructor(private val application: Applicat
     }
 }
 
-internal fun normalizedPasswordAddress(address: String): okhttp3.HttpUrl {
+internal fun normalizedPasswordAddress(context: Context, address: String): okhttp3.HttpUrl {
     val text = address.trim().let { if ("://" in it) it else "https://$it" }
     val url = text.toHttpUrl()
     require(url.isHttps && url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null && url.encodedPath == "/") {
-        "请输入有效的 HTTPS hub 地址，例如 https://hub.example.com"
+        context.getString(R.string.app_password_login_invalid_address)
     }
     return url
 }

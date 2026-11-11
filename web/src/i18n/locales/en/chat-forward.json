@@ -1,0 +1,12 @@
+{
+  "forward": "Forward",
+  "me": "Me",
+  "messages": "Messages",
+  "heading": "Forwarded from {who}",
+  "heading_chat": "Forwarded from {who} · {chat}",
+  "no_content": "No content",
+  "remove": "Remove forward",
+  "open_original": "Open the original message",
+  "show_all": "Show all",
+  "collapse": "Collapse"
+}

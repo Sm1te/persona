@@ -66,7 +66,7 @@ class ChatWaitingTurnTest {
         override suspend fun resolve(id: String, resolution: Resolution) = Unit
     }
 
-    private val clock = Regex("\\d+ min \\d+ s")
+    private val clock = Regex("\\d+m \\d+s")
 
     private fun texts(): List<String> = rule.onAllNodes(SemanticsMatcher("any node") { true }, useUnmergedTree = true).fetchSemanticsNodes().flatMap { node ->
         node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +

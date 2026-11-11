@@ -71,7 +71,7 @@
   "close_failed": "关闭失败：{error}",
   "close_agent_title": "关闭这个 Agent？",
   "close_agent": "关闭 Agent",
-  "close_agent_detail": "会退出 {machine} 上「{where}」里的 Claude 并关掉这个标签页。对话记录还在，之后可以从「最近」里恢复。",
+  "close_agent_detail": "会退出 {machine} 上「{where}」里的 Claude 并关掉这个标签页。对话会留在这里，之后可以在它的终端页恢复。",
   "close_runtime_detail": "会结束 {machine} 上的「{title}」。对话记录会保留。",
   "route_no_images": "直接发给任务暂不支持图片，请移除图片后重试",
   "not_live": "不是实时的",
@@ -108,6 +108,9 @@
   "closeout_found_merged_no": "hub 查到没有合并",
   "closeout_found_deployed_yes": "hub 查到已部署",
   "closeout_found_deployed_no": "hub 查到没有部署",
+  "stopped_line": "这个 Agent 已停止。它的对话和终端都留在这里，但它不再接收消息。",
+  "resume": "恢复",
+  "resume_failed": "没能恢复这个 Agent。{error}",
   "codex_waiting": "Codex 已在 {computer} 上打开。在下面发第一条消息，或直接在它的终端里输入。",
   "codex_first_placeholder": "给 Codex 的第一条消息"
 }

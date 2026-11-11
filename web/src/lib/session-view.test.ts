@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canShowTerminal, otherView, readView, rememberView, resolveView, terminalTarget } from "./session-view";
+import { canShowTerminal, composerSlot, otherView, readView, rememberView, resolveView, terminalTarget, viewOnlyRow } from "./session-view";
 import type { Session } from "./types";
 
 function memory() {
@@ -76,5 +76,37 @@ describe("whether a terminal can be shown", () => {
     expect(canShowTerminal(agent({ state: "offline" }))).toBe(false);
     expect(canShowTerminal(agent({ source_kind: "codex_history", capabilities: {} as never }))).toBe(false);
     expect(canShowTerminal(undefined)).toBe(false);
+  });
+});
+
+describe("a stopped Agent's page (#4754)", () => {
+  const stopped = agent({ status: "offline", state: "offline", capabilities: { read: true, terminal: true } });
+
+  it("shows its terminal: the shell it left, or Resume", () => {
+    expect(canShowTerminal(stopped)).toBe(true);
+    expect(canShowTerminal({ ...stopped, status: "interrupted" })).toBe(true);
+    // an older node's offline row stays as it was: no terminal to switch to
+    expect(canShowTerminal(agent({ status: "offline", state: "offline" }))).toBe(false);
+  });
+
+  it("puts the read-only line with Terminal and Resume where the composer goes", () => {
+    expect(composerSlot(stopped)).toBe("stopped");
+    expect(composerSlot(agent())).toBe("composer");
+    expect(composerSlot(agent({ status: "offline", state: "offline" }))).toBe("composer"); // older node: a message resumes it
+    expect(composerSlot(undefined)).toBe("composer");
+  });
+
+  it("keeps the composer for a side panel's transcript, the assistant's chats and an offline computer", () => {
+    expect(composerSlot(stopped, { readOnly: true })).toBe("composer");
+    expect(composerSlot(stopped, { assistant: true })).toBe("composer");
+    expect(composerSlot(stopped, { offline: true })).toBe("composer");
+  });
+
+  it("calls a row view-only when its capabilities refuse sending, a native one included, never an older node's", () => {
+    expect(viewOnlyRow(agent({ capabilities: { read: true, terminal: true } }))).toBe(true); // a tab on Claude's agents list
+    expect(viewOnlyRow(agent({ source_kind: "codex_history", capabilities: { read: true } }))).toBe(true);
+    expect(viewOnlyRow(agent({ status: "offline", state: "offline" }))).toBe(false);
+    expect(viewOnlyRow(agent({ capabilities: { read: true, send: true } }))).toBe(false);
+    expect(viewOnlyRow(undefined)).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 // Contexts waiting in a composer (picked in the link panel): one chip each above the input — what it is, the passage
 // (or the page's title for a whole document; a workspace's name), × to drop it. They go with the next message as <persona-context>.
+// A forwarded message is a card of its own (views/chat/ForwardCard.tsx ForwardBars), not a chip.
 import { removeContext, useContexts, WHOLE } from "../../lib/links";
 import { EASE } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
@@ -7,7 +8,7 @@ import { QuoteIcon } from "./QuoteIcon";
 import { t } from "../../i18n";
 
 export function ContextChips({ draftKey }: { draftKey: string }) {
-  const refs = useContexts(draftKey);
+  const refs = useContexts(draftKey).filter((r) => r.kind !== "forward");
   if (!refs.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5 px-0.5 pt-0.5" aria-label={t("link-contextchips.label")}>

@@ -12,5 +12,6 @@
   "origin_other": "其他",
   "origin_all": "全部",
   "origin_mine": "我的",
-  "origin_filter": "按来源筛选"
+  "origin_filter": "按来源筛选",
+  "from_extension": "来自扩展"
 }

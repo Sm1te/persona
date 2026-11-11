@@ -100,6 +100,9 @@ func (s *Service) startDue(ctx context.Context) *sync.WaitGroup {
 				g.paused = *p // as it was before a restart
 			}
 		}
+		if IsPush(sub) {
+			continue // filled by its device, never pulled
+		}
 		asked := s.asked[sub.ID]
 		if !asked && (!on(sub) || sub.NextRunAt == nil || sub.NextRunAt.After(now)) {
 			continue

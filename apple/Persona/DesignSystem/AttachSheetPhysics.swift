@@ -49,6 +49,13 @@ nonisolated enum AttachSheetPhysics {
         return 1 - Theme.Attach.restInset / width * restProgress(offset: offset, rest: rest)
     }
 
+    /// How far a keyboard ending at `end` (screen coordinates, as its notification gives them) reaches up from the bottom
+    /// of `screen`: 0 when it ends off the screen (going down) or either is unknown.
+    static func keyboardReach(end: CGRect?, screen: CGRect?) -> CGFloat {
+        guard let end, let screen, !end.isEmpty else { return 0 }
+        return max(0, screen.maxY - max(end.minY, screen.minY))
+    }
+
     /// A spring's starting speed for the way left: the finger's speed over the distance still to go, as a share per second.
     static func springVelocity(_ velocity: CGFloat, remaining: CGFloat) -> CGFloat {
         abs(remaining) > 1 ? abs(velocity / remaining) : 0

@@ -346,7 +346,7 @@
     <string name="designsystem_core_headline_screen">Terminal needs you</string>
     <string name="designsystem_core_headline_needs_you">Needs you</string>
     <string name="designsystem_core_ask_question">Has a question</string>
-    <string name="designsystem_core_ask_permission">Needs your permission</string>
+    <string name="designsystem_core_ask_permission">Waiting for your approval</string>
     <string name="designsystem_core_ask_plan">Plan awaiting approval</string>
     <string name="designsystem_core_ask_screen">Terminal needs you</string>
     <string name="designsystem_core_ask_elicitation">MCP request</string>

@@ -80,7 +80,14 @@ vi.mock("../../lib/ultracode", async (importOriginal) => ({
   ultracodeQueueDone: () => new Promise<boolean>((resolve) => (ultra.release = resolve)),
 }));
 
+// what Delete's toast offers (#4626): no toast stack is drawn here
+vi.mock("../../ui/atoms", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../ui/atoms")>(),
+  toast: vi.fn(),
+}));
+
 const { ChatView } = await import("./ChatView");
+const { toast } = await import("../../ui/atoms");
 const { t } = await import("../../i18n");
 const { getState, setOutbox } = await import("../../lib/store");
 const { setRoute } = await import("../../lib/feed");
@@ -179,6 +186,27 @@ describe("a message that did not go, in an agent's chat (#1122)", () => {
     act(() => button("删除")!.click());
     await flush();
     expect(host.querySelector("[data-outbox]")).toBeNull();
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("its message menu ends in Delete too, which sends nothing and offers Undo (#4626)", async () => {
+    act(() => root.render(<ChatView mid="hub" sid="c1" />));
+    await flush();
+    reply = () => json({ error: "会话已结束" }, 400);
+    await act(async () => void (await captured.onSend!({ text: "你好", images: [] })));
+    await flush();
+    const words = [...host.querySelectorAll<HTMLElement>("[data-outbox] [data-user-bubble] *")].filter((el) => el.textContent === "你好").at(-1)!;
+    act(() => void words.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })));
+    const last = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].at(-1)!;
+    expect(last.textContent?.trim()).toBe("删除");
+    act(() => last.click());
+    await flush();
+    expect(host.querySelector("[data-outbox]")).toBeNull();
+    expect(bodies).toHaveLength(1);
+    expect(toast).toHaveBeenLastCalledWith("消息已删除", "ok", expect.objectContaining({ label: "撤销" }));
+    act(() => vi.mocked(toast).mock.lastCall![2]!.run());
+    await flush();
+    expect(failed()?.textContent).toContain("你好");
     expect(bodies).toHaveLength(1);
   });
 

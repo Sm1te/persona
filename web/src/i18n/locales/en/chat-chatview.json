@@ -71,7 +71,7 @@
   "close_failed": "Couldn't close: {error}",
   "close_agent_title": "Close this agent?",
   "close_agent": "Close agent",
-  "close_agent_detail": "This quits Claude in “{where}” on {machine} and closes the tab. The transcript stays, and you can resume it later from Recent.",
+  "close_agent_detail": "This quits Claude in “{where}” on {machine} and closes the tab. Its conversation stays here, and you can resume it later from its terminal page.",
   "close_runtime_detail": "This ends “{title}” on {machine}. The conversation history stays available.",
   "route_no_images": "Images can't be sent straight to a task yet. Remove the image and try again.",
   "not_live": "Not live",
@@ -108,6 +108,9 @@
   "closeout_found_merged_no": "Hub found it isn't merged",
   "closeout_found_deployed_yes": "Hub found it deployed",
   "closeout_found_deployed_no": "Hub found it isn't deployed",
+  "stopped_line": "This Agent has stopped. Its conversation and terminal stay here; it doesn't take messages.",
+  "resume": "Resume",
+  "resume_failed": "Couldn't resume this Agent. {error}",
   "codex_waiting": "Codex is open on {computer}. Send its first message below, or type it in its terminal.",
   "codex_first_placeholder": "First message to Codex"
 }

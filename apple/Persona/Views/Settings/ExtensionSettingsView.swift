@@ -176,7 +176,7 @@ struct ExtensionSettingsView<Configuration: View, AdvancedInformation: View>: Vi
             Toggle(isOn: Binding(get: { ExtensionText.autoUpgradeShown(detail.plugin) }, set: { on in Task { await page.setAutoUpgrade(on) } })) {
                 Text("Auto-upgrade").lineLimit(1)
             }
-            .disabled(busy || !policy.canAutoUpgrade)
+            .disabled(busy || !policy.canFlipAutoUpgrade(globalAuto: lifecycle.globalAuto))
             .accessibilityIdentifier("plugin-auto-upgrade")
             Text(autoUpgradeReason).font(Theme.Font.label).foregroundStyle(.secondary)
             if let note = detail.plugin.upgradeNote, let text = ExtensionText.upgradeNote(note) {
@@ -217,7 +217,7 @@ struct ExtensionSettingsView<Configuration: View, AdvancedInformation: View>: Vi
             return String(localized: "Auto-upgrade is paused while this extension is off.")
         }
         if !policy.canAutoUpgrade { return policy.updateReason }
-        if lifecycle.globalAuto == false { return String(localized: "Automatic upgrades are paused globally for this assistant.") }
+        if lifecycle.globalAuto == false { return ExtensionSettingsPolicy.globalAutoOffReason }
         return String(localized: "Compatible updates run automatically. Permission changes require review.")
     }
 

@@ -9,7 +9,7 @@ import { fields } from "./elicitation";
 import { interactionCanAnswer } from "./format";
 import { apiOp } from "./ops";
 import { endInteraction, getSession, keepDelegated, useStore } from "./store";
-import { isSecretRun } from "./tool-detail";
+import { isSecretHandoff, isSecretRun } from "./tool-detail";
 import type { Interaction } from "./types";
 
 /** Sent (`already`: it had been answered, here or elsewhere), or why not, as a sentence to show. */
@@ -22,6 +22,16 @@ function isSecretRunAnswer(body: Resolution): boolean {
   if (body.allow === false) return keys.length === 1;
   const values = (body.values ?? {}) as Record<string, unknown>;
   return body.allow === true && keys.length === 2 && Object.keys(values).length === 1 && typeof values.password === "string" && values.password.trim() !== "";
+}
+
+/** What a hand-off card's own approval says on its request, and only there: the hub lets an approval of a hand-off
+ *  card through only from a request that declares it (docs/protocol/protocol.md "Secret hand-off cards"). */
+const HANDOFF_HEADERS = { "X-Persona-Features": "secret_handoff" };
+
+/** Where an answer comes from: the hand-off card's own buttons say so; every other path (Overview, a notification) is
+ *  not that card. */
+export interface AnswerFrom {
+  handoffCard?: boolean;
 }
 
 /** A property name that holds a credential whatever the form says about it (the hub's secretName, answered.go). */
@@ -69,15 +79,18 @@ function sameAnswer(a: unknown, b: unknown): boolean {
  * body (an op id with another body is 409 op_id_reused, docs/lessons/web.md #2459), and the first one may have reached
  * the hub already. Once it ends (delivered, refused, or out of time) the card can be answered again.
  */
-export function answerCard(ix: Interaction, body: Resolution): Promise<CardAnswer> {
+export function answerCard(ix: Interaction, body: Resolution, from: AnswerFrom = {}): Promise<CardAnswer> {
   if (!interactionCanAnswer(ix, getSession(ix.machine_id, ix.session_id))) return Promise.resolve({ ok: false, error: t("chat-interactions.approve_not_allowed") });
   if (isSecretRun(ix) && !isSecretRunAnswer(body)) return Promise.resolve({ ok: false, error: t("chat-interactions.secret_run_card_only") });
+  // a hand-off is approved on its card alone; a no goes from anywhere
+  const handoff = isSecretHandoff(ix) && body.allow === true;
+  if (handoff && !from.handoffCard) return Promise.resolve({ ok: false, error: t("chat-interactions.secret_handoff_card_only") });
   const cur = pending.get(ix.id);
   if (cur) return sameAnswer(cur.body, body) ? cur.done : Promise.resolve({ ok: false, error: t("chat-interactions.answer_pending") });
   const entry: Pending = {
     body,
     shown: redacted(ix, body),
-    done: send(ix, body).finally(() => {
+    done: send(ix, body, handoff ? HANDOFF_HEADERS : undefined).finally(() => {
       if (pending.get(ix.id) !== entry) return;
       pending.delete(ix.id);
       changed();
@@ -125,10 +138,10 @@ export function usePendingLine(ix: Interaction): { pending: boolean; line: strin
   return { pending: true, line: t(offline ? "chat-interactions.pending_offline" : "chat-interactions.pending_sending", { answer: words }) };
 }
 
-async function send(ix: Interaction, body: Resolution): Promise<CardAnswer> {
+async function send(ix: Interaction, body: Resolution, headers?: Record<string, string>): Promise<CardAnswer> {
   try {
     // one op id for this answer: sent again through a gap (a hub restart), it is taken once
-    const res = await apiOp<ResolveResult>(`/interactions/${enc(ix.id)}/resolve`, { method: "POST", json: body });
+    const res = await apiOp<ResolveResult>(`/interactions/${enc(ix.id)}/resolve`, { method: "POST", json: body, headers });
     // Answered already (here, its event missed; or elsewhere): the hub says with what, and the card shows that.
     const already = res?.already === true;
     const r: Resolution = already ? (res.resolution ?? {}) : redacted(ix, body);

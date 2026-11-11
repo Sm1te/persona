@@ -137,6 +137,17 @@ func (d *fleetDevs) MachineResources(string) (*proto.Machine, *proto.MetricSampl
 
 func (d *fleetDevs) Canonical(id string) string { return id }
 
+// Summary is List's entry for id, found without the others as the devices do.
+func (d *fleetDevs) Summary(id string) (devices.Summary, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	n := d.machines[id]
+	if n == nil || !slices.Contains(d.order, id) {
+		return devices.Summary{}, false
+	}
+	return devices.Summary{ID: id, Name: n.name, Home: n.home, Trust: n.trust, Online: true, Reachable: true}, true
+}
+
 func (d *fleetDevs) Sessions(id string) ([]proto.Session, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

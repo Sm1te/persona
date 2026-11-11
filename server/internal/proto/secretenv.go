@@ -26,6 +26,8 @@ const (
 	SecretEnvValueMost  = 16 << 10        // bytes in one value (a provider's values are at most this, extension.SecretMost)
 	SecretEnvValueLeast = 16              // bytes: a shorter value could match ordinary words and paths where it is hidden
 	SecretStageKeep     = 2 * time.Minute // a stage key, and a staged ticket, are good for at most this long
+	// CodeSecretEnvGone: a start named a ticket that is used, dropped or expired.
+	CodeSecretEnvGone = "secret_env_gone"
 )
 
 // SecretEnvVar is one variable of a hand-off, inside the sealed payload (SealSecretEnv). Whoever builds or opens it

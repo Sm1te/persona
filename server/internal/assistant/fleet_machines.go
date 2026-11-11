@@ -38,18 +38,18 @@ func (s *Service) fleetMachines() []fleetMachine {
 	return out
 }
 
-// fleetMachine is the machine id names (an id another one absorbed: that one); false when there is none.
+// fleetMachine is the machine id names (an id another one absorbed: that one); false when there is none. The devices
+// are asked for that one machine: every list a node sends asks several times, and building every machine's summary
+// to pick one read each machine's trust and connection for nothing.
 func (s *Service) fleetMachine(id string) (fleetMachine, bool) {
 	if s.devs == nil || id == "" {
 		return fleetMachine{}, false
 	}
-	canon := s.devs.Canonical(id)
-	for _, m := range s.fleetMachines() {
-		if m.ID == canon {
-			return m, true
-		}
+	d, ok := s.devs.Summary(id)
+	if !ok {
+		return fleetMachine{}, false
 	}
-	return fleetMachine{}, false
+	return fleetMachine{ID: d.ID, Name: d.Name, Home: d.Home, DataDir: d.DataDir, manager: s.id}, true
 }
 
 // machineName is the machine's name, its id when there is none.

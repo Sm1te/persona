@@ -31,11 +31,13 @@ var startWrappers = map[string]string{
 // one of supervisionCalls (or follow a spawned conversation: the relay's Spawned).
 var supervisedStarts = map[string]string{
 	// task_plan: every task's ledger is made as its plan starts, before its agent (startPlan): the planner when it
-	// supervises (the main conversation, a leader), a task leader's agent for its workers, else the main conversation (#4669).
+	// supervises (the main conversation, a leader), a task leader's agent for its workers, else the conversation that planned it.
 	"runPlanTaskStart":    "startPlan",
 	"toolConversationNew": "toolConversationNew", // conversation_new: followed until it reports back (spawned.go, #4669)
 	"runTool":             "quietAgentTask",      // agent_start: a quiet task of the main conversation, or of assistant.agent_tasks (#3638, #3617)
 	"dispatchStart":       "superviseDispatched", // dispatch_start: adopted as the main conversation's task (#3442)
+	// a task whose agents all stopped goes on with a new agent on the same task, its ledger kept (#4754)
+	"startTaskSuccessor": "startTaskSuccessor",
 }
 
 // startOptOuts are the start paths that stay unsupervised on purpose, with why. Each is the user's own conversation or

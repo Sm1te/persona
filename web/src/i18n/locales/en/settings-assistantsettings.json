@@ -121,5 +121,8 @@
   "archive_closed_hint": "A closed session with no open task leaves the lists after this many idle days and stays under Archived. 0 turns it off",
   "archive_closed_unit": "days",
   "background_folded": "Fold background rounds",
-  "background_folded_footer": "Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown."
+  "background_folded_footer": "Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown.",
+  "idle_close": "Stop idle Agents after",
+  "idle_close_hint": "Their terminal stays. 0 turns it off.",
+  "idle_close_unit": "hours"
 }

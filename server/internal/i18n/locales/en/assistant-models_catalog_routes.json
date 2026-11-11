@@ -1,0 +1,5 @@
+{
+  "err_bad_request": "Malformed request: ids must be a list of model IDs",
+  "err_too_many": "Look up at most {max} model IDs at a time",
+  "err_id_too_long": "A model ID is at most {max} bytes"
+}

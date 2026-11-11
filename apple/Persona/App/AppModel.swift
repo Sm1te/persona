@@ -756,7 +756,10 @@ final class AppModel {
         phoneConfirmations.denyAll()
         toolResults.forget(groups: Set(links.map(\.group)))
         // Where Hand to AI sent each source's items: ids on a hub that is gone (#2121).
-        for group in Set(links.map(\.group)).union([hubGroup]) { InboxHandOffMemory.forget(group: group) }
+        for group in Set(links.map(\.group)).union([hubGroup]) {
+            InboxHandOffMemory.forget(group: group)
+            ForwardMemory.forget(group: group) // and where forwards went (#3807)
+        }
         LarkDrafts.shared.forget()
         pairingEngineMachine = nil
         checklistPending = false
@@ -966,6 +969,12 @@ final class AppModel {
         return assistantLists.group == group && assistantLists.shown == shown ? assistantLists : AssistantLists(allSessions, group: group, shown: shown)
     }
 
+    /// Whether this device writes its time zone to the hub: when it differs, and the user did not pick one by hand
+    /// (#1855, on Android); a hub that never says follows the devices, as before.
+    nonisolated static func syncsZone(_ st: APIClient.AssistantState, device zone: String) -> Bool {
+        st.timezonePicked != true && !zone.isEmpty && st.timezone != zone
+    }
+
     /// Loads the assistant config; with no remembered conversation, picks up the newest one.
     func refreshAssistant() async {
         guard let api else { return }
@@ -984,9 +993,9 @@ final class AppModel {
                 }
             }
             // Routines and the assistant's sense of "now" follow this device's time zone (the Mac app writes its
-            // own too; the hub keeps whichever came last).
+            // own too; the hub keeps whichever came last), unless the user picked one by hand (#1855): then it stays.
             let tz = TimeZone.current.identifier
-            if st.timezone != tz, let updated = try? await api.setAssistant(timezone: tz) {
+            if Self.syncsZone(st, device: tz), let updated = try? await api.setAssistant(timezone: tz) {
                 guard showsPage(of: api) else { return }
                 assistantConfig = updated
             }
@@ -1234,6 +1243,9 @@ final class AppModel {
         if let c = chats[key] { return c }
         let c = ChatStore(key: key, cacheFolder: stateFolder)
         c.onArrived = { [weak self] in self?.saveOutbox() }
+        if let current = session(key), current.assistant == true {
+            c.updateQueuePhotoMarks(queued: current.queued, own: current.ownQueuedCount)
+        }
         chats[key] = c
         evictChats()
         return c
@@ -1606,6 +1618,8 @@ final class AppModel {
         registerPhone(link)
         // Phone tool results answered while the socket was down: the hub matches them to their calls by call_id (#4456).
         toolResults.flush(group: group, on: link.live)
+        // Items the Handle Notification shortcut kept while this hub could not be reached (#3848).
+        if let api = api(group) { Task { await ShortcutItemFlow.flush(api) } }
         // The hub resumed its broadcasts (docs/operations/hub-restart.md): what this app missed follows the hello, and the
         // connection's snapshot (machines, sessions, pending interactions) is whole: nothing to fetch again, no Updating….
         let plan = ReconnectPlan(resumed: link.live.resumed)
@@ -1807,6 +1821,9 @@ final class AppModel {
         if lists != sessionsByMachine { sessionsByMachine = lists }
         WatchSync.shared.push(summary: watchSummary())
         for (old, new) in olds {
+            for session in new where session.assistant == true {
+                chats[session.key]?.updateQueuePhotoMarks(queued: session.queued, own: session.ownQueuedCount)
+            }
             notifyTransitions(old: old, new: new)
             AgentSync.shared.sessions(new)
         }
@@ -2288,37 +2305,55 @@ final class AppModel {
     /// Edit or delete one queued message: everything is pulled back out of claude and the others re-queued. One taken
     /// back to edit goes into the composer as it was written (#3022), not as the text Claude's queue keeps of it.
     func editQueued(_ key: SessionKey, index: Int, delete: Bool) async {
-        guard allowSend(key), let api = api(key.group), let queue = session(key)?.queued, queue.indices.contains(index) else { return }
+        guard allowSend(key), let api = api(key.group), let session = session(key), let queue = session.queued,
+              queue.indices.contains(index), index < session.ownQueuedCount else { return }
         do {
-            let pulled = try await api.editQueue(key, keep: queue.indices.filter { $0 != index })
+            let response = try await api.editQueue(key, keep: queue.indices.filter { $0 < session.ownQueuedCount && $0 != index })
+            let pulled = response.queue
             let taken = pulled.indices.contains(index) ? pulled[index] : nil
-            // The photos this phone sent with it are in its outbox copy, which goes with its bubble.
-            let sent = taken.flatMap { t in chat(key).pending.first { $0.state == .sent && PendingMessage.same(t, $0.text) } }?.images ?? []
+            // A Persona hub returns its photos with the queue. An Agent queue has only text, so use this phone's outbox.
+            let local = taken.flatMap { t in chat(key).pending.first { $0.state == .sent && PendingMessage.same(t, $0.text) } }?.images ?? []
+            let sent = response.images.flatMap { images in images.indices.contains(index) ? images[index] : nil } ?? local
             // The one taken out will not reach the transcript: its sent bubble goes now, not when the turn ends.
             if let taken, chat(key).pulledBack(taken) { saveOutbox() }
-            var left = 0
-            if !delete, let taken { left = await restoreQueued(key, QueuedDraft(taken), sent: sent) }
+            var outcome = (left: 0, unpreviewable: 0)
+            if !delete, let taken {
+                outcome = await restoreQueued(key, QueuedDraft(taken, photoCount: sent.count), sent: sent,
+                                              preservePayloads: response.images != nil)
+            }
             Haptics.success()
-            toast = left > 0
-                ? Toast(String(localized: "Moved back to the input box. \(left) attachments couldn't be put back and stay in the message as text."), style: .info)
-                : Toast(delete ? String(localized: "Removed from the queue") : String(localized: "Moved back to the input box. Edit it and send again."), style: .success)
+            if outcome.unpreviewable > 0 {
+                toast = Toast(String(localized: "Moved back to the input box. \(outcome.unpreviewable) photos could not be previewed; their original data is kept."), style: .info)
+            } else {
+                toast = outcome.left > 0
+                    ? Toast(String(localized: "Moved back to the input box. \(outcome.left) attachments couldn't be put back and stay in the message as text."), style: .info)
+                    : Toast(delete ? String(localized: "Removed from the queue") : String(localized: "Moved back to the input box. Edit it and send again."), style: .success)
+            }
         } catch {
             show(error)
         }
     }
 
     /// A queued message taken back to edit (#3022): its words under what the box holds, its photos (the ones this phone
-    /// sent, else read from the conversation's machine by their paths), videos and quotes back in their bars. A photo that
-    /// can't be had, or doesn't fit beside the ones already in the box, leaves its path in the words (a video its tag):
-    /// nothing is lost. Returns how many were left there.
-    private func restoreQueued(_ key: SessionKey, _ draft: QueuedDraft, sent: [ImagePayload]) async -> Int {
+    /// sent, else read from the conversation's machine by their paths), videos and quotes back in their bars. A pathful
+    /// photo that can't be had, or doesn't fit beside the ones already in the box, leaves its path in the words (a video
+    /// its tag). A pathless Persona photo stays in the composer even past the picker's cap, and an unreadable preview
+    /// keeps its original payload: nothing is silently lost. Returns the text fallbacks and unreadable preview counts.
+    private func restoreQueued(_ key: SessionKey, _ draft: QueuedDraft, sent: [ImagePayload],
+                               preservePayloads: Bool) async -> (left: Int, unpreviewable: Int) {
         let held = composerAttachments(key)
         // Each photo with its path on the machine (the outbox's in the order they went, as the paths are).
         var photos: [(path: String?, photo: (UIImage, ImagePayload))] = []
         var left: [String] = []
         var copies: [(UIImage, ImagePayload)] = []
+        var unpreviewable = 0
         for payload in sent {
-            if let photo = await Self.composerPhoto(payload) { copies.append(photo) }
+            if let photo = await Self.composerPhoto(payload) {
+                copies.append(photo)
+            } else if preservePayloads {
+                copies.append((UIImage(), payload))
+                unpreviewable += 1
+            }
         }
         if copies.count >= draft.imagePaths.count {
             photos = copies.enumerated().map { (draft.imagePaths.indices.contains($0.offset) ? draft.imagePaths[$0.offset] : nil, $0.element) }
@@ -2328,8 +2363,11 @@ final class AppModel {
             }
         }
         let room = max(0, MessagePhotos.limit - held.images.count)
-        left += photos.dropFirst(room).compactMap(\.path)
+        let overflow = photos.dropFirst(room)
+        left += overflow.compactMap(\.path)
         held.images += photos.prefix(room).map(\.photo)
+        // A hub photo has no machine path to leave as text. Keep it visible; `sendNow` still enforces the four-photo cap.
+        held.images += overflow.filter { $0.path == nil }.map(\.photo)
         left += held.videos.restore(draft.files).map(\.xml)
         if !draft.contexts.isEmpty { composerContexts[key] = (composerContexts[key] ?? []) + draft.contexts }
         let words = ([draft.text] + left).filter { !$0.isEmpty }.joined(separator: "\n")
@@ -2337,7 +2375,7 @@ final class AppModel {
             let current = drafts[key] ?? ""
             drafts[key] = current.isEmpty ? words : current + "\n" + words
         }
-        return left.count
+        return (left.count, unpreviewable)
     }
 
     /// A photo as the composer holds it, from the bytes a message carried: decoded off the main actor and no larger than
@@ -2362,8 +2400,8 @@ final class AppModel {
 
     /// Moves a queued message one place up or down (#6088): the queue is pulled back and re-queued in the new order.
     func moveQueued(_ key: SessionKey, index: Int, by step: Int) async {
-        guard allowSend(key), let api = api(key.group), let queue = session(key)?.queued,
-              let keep = QueueOrder.moved(count: queue.count, index: index, by: step) else { return }
+        guard allowSend(key), let api = api(key.group), let session = session(key),
+              let keep = QueueOrder.moved(count: session.ownQueuedCount, index: index, by: step) else { return }
         do {
             _ = try await api.editQueue(key, keep: keep)
             Haptics.tap()
@@ -2374,7 +2412,7 @@ final class AppModel {
 
     /// Gives the agent its queued messages now instead of at its next tool boundary (#6088).
     func sendQueuedNow(_ key: SessionKey) async {
-        guard allowSend(key), let api = api(key.group) else { return }
+        guard allowSend(key), let api = api(key.group), (session(key)?.ownQueuedCount ?? 0) > 0 else { return }
         do {
             try await api.sendQueuedNow(key)
             Haptics.success()
@@ -2399,14 +2437,22 @@ final class AppModel {
         return true
     }
 
-    /// Puts the message on screen immediately and sends it in the background; a failure marks it for retry.
-    func sendNow(_ key: SessionKey, text: String, images: [ImagePayload] = []) {
-        guard allowSend(key) else { return }
+    /// Puts the message on screen immediately and sends it in the background; a failure marks it for retry. Returns whether
+    /// the send was accepted, so a composer clears only then (a refusal must leave everything typed or restored in place).
+    @discardableResult
+    func sendNow(_ key: SessionKey, text: String, images: [ImagePayload] = []) -> Bool {
+        guard allowSend(key) else { return false }
+        // Take-back can retain pathless hub photos past the picker's cap; the person removes some before sending.
+        guard images.count <= MessagePhotos.limit else {
+            toast = Toast(String(localized: "Up to 4 at a time"), style: .error)
+            return false
+        }
         let msg = PendingMessage(text: text, images: images)
         chat(key).pending.append(msg)
         saveOutbox()
         Haptics.tap()
         deliver(key, msg)
+        return true
     }
 
     /// Sends /clear to a herdr pane's claude and waits for the pane to show up under its new session id (Claude Code
@@ -2465,9 +2511,26 @@ final class AppModel {
         }
     }
 
+    /// Deletes a message only on this phone (`PendingMessage.onlyHere`: failed, or waiting for the network), from its
+    /// mark's menu or its long press: the bubble and its outbox entry go and nothing is sent. Undo in the toast puts it
+    /// back where it was (#4626).
     func discard(_ key: SessionKey, _ msg: PendingMessage) {
-        chat(key).pending.removeAll { $0.id == msg.id }
+        let store = chat(key)
+        guard let i = store.pending.firstIndex(where: { $0.id == msg.id }) else { return }
+        let gone = store.pending.remove(at: i)
         saveOutbox()
+        toast = .messageDeleted { [weak self] in self?.undoDiscard(key, gone, at: i) }
+    }
+
+    /// `discard`'s Undo: the message comes back as it was, where it was; a waiting one goes out once the app is
+    /// connected. Not when its transcript copy came in meanwhile (one that may have arrived after all).
+    func undoDiscard(_ key: SessionKey, _ msg: PendingMessage, at i: Int) {
+        let store = chat(key)
+        guard !store.pending.contains(where: { $0.id == msg.id }),
+              !store.items.contains(where: { PendingMessage.tied($0, to: msg.id) == true }) else { return }
+        store.pending.insert(msg, at: min(i, store.pending.count))
+        saveOutbox()
+        if msg.state == .waiting { flushOutbox() }
     }
 
     private func deliver(_ key: SessionKey, _ msg: PendingMessage, clearDraft: String? = nil) {
@@ -3108,6 +3171,7 @@ final class AppModel {
             defaultAssistantReads.remove(g)
             assistantItemManagers = assistantItemManagers.filter { $0.key.group != g }
             InboxHandOffMemory.forget(group: g)
+            ForwardMemory.forget(group: g)
             if !keepingPushKeys { PushCrypto.removeKey(group: g) }
         }
         if links.contains(where: { $0.fleet != nil }) { LiveActivityController.shared.apply(mergedFleet()) }
@@ -3525,6 +3589,11 @@ struct Toast: Identifiable, Equatable {
     }
 
     static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+
+    /// A message only on this phone was deleted (#4626): Undo brings it back.
+    static func messageDeleted(undo: @escaping @MainActor () -> Void) -> Toast {
+        Toast(String(localized: "Message deleted"), style: .success, action: Action(title: String(localized: "Undo"), run: undo))
+    }
 }
 
 #if os(visionOS)

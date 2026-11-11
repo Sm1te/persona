@@ -60,6 +60,7 @@ extensions.call:{id} /api/v1/extensions/{id}/
 -                    DELETE /api/v1/connectors/{id}/data
 -                    DELETE /api/v1/extensions/-/operations/{op}
 -                    DELETE /api/v1/extensions/{id}/-/dev
+-                    DELETE /api/v1/extensions/{id}/-/handoff-rules/{rule}
 -                    DELETE /api/v1/extensions/{id}/-/secrets/{name}
 -                    DELETE /api/v1/extensions/{id}/-/{$}
 -                    DELETE /api/v1/imessage/data
@@ -76,6 +77,7 @@ inbox.write          DELETE /api/v1/inbox/policies/{id}
 -                    DELETE /api/v1/managers/{id}
 -                    DELETE /api/v1/model-profiles/{id}
 -                    DELETE /api/v1/recordings/{id}
+-                    DELETE /api/v1/recordings/{id}/photos/{n}
 -                    DELETE /api/v1/sessions/{mid}/{sid}
 -                    DELETE /api/v1/subscriptions/{id}
 -                    DELETE /api/v1/task-trust
@@ -128,6 +130,7 @@ assistant.ask        GET /api/v1/assistant/conversations/{id}/feed
 -                    GET /api/v1/assistant/followups
 leaders.read         GET /api/v1/assistant/leaders
 -                    GET /api/v1/assistant/memory
+-                    GET /api/v1/assistant/north-star
 -                    GET /api/v1/assistant/places
 -                    GET /api/v1/assistant/readiness
 assistant.ask        GET /api/v1/assistant/reporters
@@ -263,6 +266,8 @@ machines.read        GET /api/v1/machines/{mid}/stat
 -                    GET /api/v1/pins
 -                    GET /api/v1/recordings
 -                    GET /api/v1/recordings/{id}/live
+-                    GET /api/v1/recordings/{id}/photos
+-                    GET /api/v1/recordings/{id}/photos/{n}
 agents.read          GET /api/v1/sessions
 agents.read          GET /api/v1/sessions/archived
 agents.read          GET /api/v1/sessions/{mid}/{sid}/info
@@ -416,6 +421,7 @@ agents.control       POST /api/v1/interactions/{id}/resolve
 -                    POST /api/v1/kb-trash/{id}/restore
 -                    POST /api/v1/later/{id}/handled
 -                    POST /api/v1/launchers
+-                    POST /api/v1/launchers/catalog
 -                    POST /api/v1/launchers/discover
 -                    POST /api/v1/launchers/health/check
 -                    POST /api/v1/launchers/import
@@ -483,6 +489,8 @@ notify               POST /api/v1/notify
 -                    POST /api/v1/recordings/{id}/live
 -                    POST /api/v1/recordings/{id}/minutes
 -                    POST /api/v1/recordings/{id}/minutes/todos
+-                    POST /api/v1/recordings/{id}/photos
+-                    POST /api/v1/recordings/{id}/segments
 agents.control       POST /api/v1/sessions
 -                    POST /api/v1/sessions/{mid}/{sid}/archive
 -                    POST /api/v1/sessions/{mid}/{sid}/attach
@@ -503,6 +511,7 @@ agents.control       POST /api/v1/sessions/{mid}/{sid}/seen
 -                    POST /api/v1/sessions/{mid}/{sid}/unarchive
 -                    POST /api/v1/subscriptions
 -                    POST /api/v1/subscriptions/-/dry-run
+-                    POST /api/v1/subscriptions/-/push
 -                    POST /api/v1/subscriptions/-/ui
 -                    POST /api/v1/subscriptions/{id}/generate
 -                    POST /api/v1/subscriptions/{id}/run

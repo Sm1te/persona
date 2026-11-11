@@ -40,12 +40,14 @@ const (
 	RoomStartFailed        = "start_failed"
 )
 
-// The parts of a meeting the apps read again when they change (GET …/live?parts=, the meeting_live event).
+// The parts of a meeting the apps read again when they change (GET …/live?parts=, the meeting_live event). PartPhotos'
+// revision is kept in photos.json (recording_photos.go), the others' in meeting.json.
 const (
 	PartRoom     = "room"
 	PartAsks     = "asks"
 	PartPrivate  = "private"
 	PartFollowup = "followup"
+	PartPhotos   = "photos"
 )
 
 // Meeting is meeting.json.

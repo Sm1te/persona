@@ -35,5 +35,6 @@
   "group_sessions": "会话",
   "group_recent": "最近打开",
   "previous": "上一个",
-  "previous_chat": "回到上一个对话"
+  "previous_chat": "回到上一个对话",
+  "place_terminals": "打开终端列表"
 }

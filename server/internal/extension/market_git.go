@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +72,9 @@ func (m *Market) git(ctx context.Context, dir string, args ...string) error {
 		if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(m.Token, "\r\n") {
 			return i18n.Err("extension-market_security.git_token")
 		}
+		if err := gitReadsConfigEnv(ctx); err != nil {
+			return err
+		}
 		// Environment config avoids argv, clone URLs, and persisted .git/config secrets.
 		header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+m.Token))
 		cmd.Env = append(cmd.Env, "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=http."+m.Spec.URL+".extraHeader", "GIT_CONFIG_VALUE_0="+header,
@@ -97,6 +101,37 @@ func (m *Market) git(ctx context.Context, dir string, args ...string) error {
 			msg = strings.TrimSpace(msg[i+1:])
 		}
 		return fmt.Errorf("git %s：%s", args[0], msg)
+	}
+	return nil
+}
+
+// gitVersion reads "git version 2.30.2" (also "… (Apple Git-146)", "….windows.1").
+var gitVersion = lazyre.New(`^git version (\d+)\.(\d+)`)
+
+// gitVersionOutput runs `git version`; a variable so tests can stand in for an older git.
+var gitVersionOutput = func(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "git", "version").Output()
+}
+
+// gitReadsConfigEnv refuses a token clone on a git older than 2.31. A token's header, the refused redirects and the
+// cleared credential helper reach git only through GIT_CONFIG_COUNT, which an older git ignores without a word: the
+// clone would then run without them and fail with a misleading request error.
+func gitReadsConfigEnv(ctx context.Context) error {
+	out, err := gitVersionOutput(ctx)
+	if errors.Is(err, exec.ErrNotFound) {
+		return i18n.Err("extension-market_git.git_missing")
+	}
+	if err != nil {
+		return fmt.Errorf("git version: %w", err)
+	}
+	m := gitVersion.FindStringSubmatch(strings.TrimSpace(string(out)))
+	if m == nil {
+		return fmt.Errorf("git version: unexpected output %q", strings.TrimSpace(string(out)))
+	}
+	major, _ := strconv.Atoi(m[1]) // digits: the pattern matched them
+	minor, _ := strconv.Atoi(m[2])
+	if major < 2 || major == 2 && minor < 31 {
+		return i18n.Err("extension-market_git.git_too_old", i18n.Args{"version": m[1] + "." + m[2]})
 	}
 	return nil
 }

@@ -22,7 +22,7 @@ import { Icon, type IconName } from "../../ui/icons";
 import { t } from "../../i18n";
 
 /** A photo of a queued message, read back from the session's machine for the composer's tray; null when it can't be. */
-async function readPhoto(mid: string, path: string, cwd?: string): Promise<DraftImage | null> {
+export async function readPhoto(mid: string, path: string, cwd?: string): Promise<DraftImage | null> {
   try {
     const r = await fetch(fileDownloadURL(mid, path, cwd, { inline: true }));
     const blob = r.ok ? await r.blob() : null;

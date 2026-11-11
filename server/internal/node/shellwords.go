@@ -7,6 +7,7 @@ type shellSeg struct {
 	words    []string // quotes removed
 	text     string   // as written
 	subst    bool     // holds $(…), `…` or <(…): it runs something else too
+	argSubst bool     // the substitution is in a command word, not only a redirect target
 	nested   []string // command substitutions, classified separately without executing them
 	redirect string   // its redirections, e.g. "> /tmp/x 2>&1"
 }
@@ -95,7 +96,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 					j++
 					word.WriteRune(r[j])
 				case r[j] == '$' && j+1 < len(r) && r[j+1] == '(', r[j] == '`':
-					seg.subst = true
+					seg.subst, seg.argSubst = true, true
 					at := j
 					open, close := rune('`'), rune('`')
 					if r[j] == '$' {
@@ -117,7 +118,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			}
 			i = j
 		case c == '$' && i+1 < len(r) && r[i+1] == '(':
-			seg.subst, inWord = true, true
+			seg.subst, seg.argSubst, inWord = true, true, true
 			word.WriteRune('$')
 			end, closed := skipGroup(i+1, '(', ')')
 			if !closed {
@@ -125,7 +126,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			}
 			i = end
 		case c == '`':
-			seg.subst, inWord = true, true
+			seg.subst, seg.argSubst, inWord = true, true, true
 			end, closed := skipGroup(i, '`', '`')
 			if !closed {
 				return nil, false
@@ -152,6 +153,23 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 				i++
 			}
 			for i < len(r) && !strings.ContainsRune(" \t\n|;&<>()", r[i]) {
+				if r[i] == '$' && i+1 < len(r) && r[i+1] == '(' || r[i] == '`' {
+					seg.subst = true
+					open, close := '`', '`'
+					at := i
+					if r[i] == '$' {
+						at++
+						open, close = '(', ')'
+					}
+					end, closed := skipGroup(at, open, close)
+					if !closed {
+						return nil, false
+					}
+					i = end + 1
+					word.Reset()
+					inWord = false
+					continue
+				}
 				op += string(r[i])
 				i++
 			}

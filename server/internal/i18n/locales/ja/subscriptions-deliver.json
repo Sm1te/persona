@@ -4,6 +4,7 @@
   "due": "期限：{when}",
   "failing_title": "{label}：{since}から取得できていません",
   "failing_why": "ルール：購読の取得が1日失敗しています",
+  "push_label": "{device} のショートカット",
   "reason.call_failed": "コネクタの呼び出しに失敗しました。",
   "reason.no_list": "取得方法が読むリストが結果に見つかりません。",
   "reason.not_read_only": "コネクタのカタログで、変更を行うツールとされているものがあります。",

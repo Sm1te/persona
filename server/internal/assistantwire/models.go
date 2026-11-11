@@ -155,6 +155,7 @@ var modelRoutes = []string{
 	"GET /api/v1/launchers/presets",
 	"POST /api/v1/launchers/test",
 	"POST /api/v1/launchers/discover",
+	"POST /api/v1/launchers/catalog",
 	"GET /api/v1/launchers/import",
 	"POST /api/v1/launchers/import",
 	"GET /api/v1/launchers/{name}",

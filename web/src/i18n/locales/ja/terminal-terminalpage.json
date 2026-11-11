@@ -9,5 +9,19 @@
   "no_panes": "ペインがありません",
   "space_header": "スペース「{name}」",
   "new_in_space": "「{name}」に新しいターミナル",
-  "tab_header": "タブ「{name}」"
+  "tab_header": "タブ「{name}」",
+  "none_online": "オンラインのコンピューターがありません。",
+  "close_finished": "終了したターミナルを閉じる",
+  "close_finished_title_other": "終了したターミナルを{count}個閉じますか？",
+  "close_finished_detail": "停止したエージェントが残したターミナルです。閉じると中のシェルは終了します。エージェントの会話は残り、「再開」で新しいターミナルが開きます。",
+  "close_finished_kept_other": "ほかに{count}個はプログラムが動いているため、開いたままにします。",
+  "close_finished_confirm": "ターミナルを閉じる",
+  "close_finished_failed": "終了したターミナルを閉じられませんでした。{error}",
+  "closed_finished_other": "ターミナルを{count}個閉じました",
+  "finished_none": "閉じられる終了したターミナルはありません",
+  "terminals": "ターミナル",
+  "view_label": "セッションまたはターミナル",
+  "back_terminals": "ターミナル一覧に戻る",
+  "pick_terminal": "ターミナルを開く",
+  "pick_terminal_detail": "一覧からターミナルを選ぶか、スペースの横の + で新しく開きます。"
 }

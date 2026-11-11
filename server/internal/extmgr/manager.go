@@ -101,6 +101,8 @@ type Options struct {
 
 // Manager is the extensions, connectors and bots as the manager runs them.
 type Manager struct {
+	// handoffRulesMu: one change of the hand-off rules at a time (secret_handoff_rules.go).
+	handoffRulesMu sync.Mutex
 	// errReports: the error reports' pipeline (error_reports.go).
 	errReports errorReports
 	// iphoneTurns: one iphone_do at a time per iPhone, across conversations (iphone.go, iphoneTurn).

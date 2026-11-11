@@ -1,3 +1,4 @@
+import Speech
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -45,6 +46,7 @@ struct LanguageSettingsPage: View {
                     .padding(.vertical, Theme.Space.xs)
                 }
             }
+            DictationLanguageSection()
         }
         .navigationTitle("Language")
         #if os(iOS) || os(visionOS)
@@ -85,6 +87,52 @@ struct LanguageSettingsPage: View {
         }
     }
     #endif
+}
+
+/// The language dictation listens in (#5005, `DictationLanguage`): Automatic, or one the phone recognizes that the owner
+/// uses. Takes effect at the next tap on a mic.
+struct DictationLanguageSection: View {
+    /// "" is Automatic.
+    @State private var choice = UserDefaults.standard.string(forKey: DictationLanguage.choiceKey) ?? ""
+    @State private var options: [String] = []
+
+    var body: some View {
+        Section {
+            Picker(selection: Binding(get: { choice }, set: { pick($0) })) {
+                Text("Automatic").lineLimit(1).tag("")
+                ForEach(options, id: \.self) { locale in
+                    Text(DictationLanguage.name(locale)).lineLimit(1).tag(locale)
+                }
+                // A language picked before that the phone no longer lists among the owner's still shows as picked.
+                if !choice.isEmpty, !options.contains(choice) { Text(DictationLanguage.name(choice)).lineLimit(1).tag(choice) }
+            } label: {
+                Text("Dictation").lineLimit(1)
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("dictation-language")
+        } footer: {
+            Text("Automatic listens for the language you write in the chat, else the one it last listened for, else Persona's language. Choose a language if it often guesses wrong.")
+        }
+        .task { options = await Self.options() }
+    }
+
+    private func pick(_ locale: String) {
+        choice = locale
+        if locale.isEmpty {
+            UserDefaults.standard.removeObject(forKey: DictationLanguage.choiceKey)
+        } else {
+            UserDefaults.standard.set(locale, forKey: DictationLanguage.choiceKey)
+        }
+    }
+
+    /// Asked off the main actor: the recognizer's list is the system's.
+    private static func options() async -> [String] {
+        await Task.detached(priority: .userInitiated) {
+            DictationLanguage.options(interface: AppLanguage.codes, preferred: Locale.preferredLanguages,
+                                      region: Locale.current.region?.identifier,
+                                      supported: SFSpeechRecognizer.supportedLocales().map(\.identifier))
+        }.value
+    }
 }
 
 extension AppLanguage {

@@ -223,9 +223,10 @@ func presetFor(presets []LauncherPreset, preset, baseURL string) (LauncherPreset
 	return LauncherPreset{}, false
 }
 
-// normalGateway compares gateway addresses: no scheme case, host case or trailing slash differences.
+// normalGateway compares launcher gateway addresses: no scheme case, host case, trailing slash or trailing /v1
+// differences (a launcher saved from ".../v1" is stored without it, proto.MessagesBaseURL).
 func normalGateway(u string) string {
-	return strings.TrimRight(strings.ToLower(strings.TrimSpace(u)), "/")
+	return strings.ToLower(proto.MessagesBaseURL(u))
 }
 
 // withPresetModels adds a preset's models to a launcher's /model list (its own entries first, then the gateway's that

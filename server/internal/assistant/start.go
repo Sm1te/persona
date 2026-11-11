@@ -320,7 +320,7 @@ func (s *Service) start(ctx context.Context, p StartParams) (proto.Session, erro
 	return s.startConversationOn(ctx, p, false)
 }
 
-func (s *Service) startConversationOn(ctx context.Context, p StartParams, main bool) (proto.Session, error) {
+func (s *Service) startConversationOn(ctx context.Context, p StartParams, main bool) (sess proto.Session, err error) {
 	machine := p.MachineID
 	if machine == "" {
 		machine = s.settings(ctx).MachineID
@@ -335,18 +335,36 @@ func (s *Service) startConversationOn(ctx context.Context, p StartParams, main b
 	// manager's authorization until the resulting conversation's origin is recorded.
 	finishStart := s.beginAssistantStart(machine)
 	defer finishStart()
-	sess, err := s.startOn(ctx, machine, p, main)
+	guestID := ""
+	if p.GuestTools != nil {
+		if p.NewSessionID != "" {
+			guestID = p.NewSessionID
+		} else {
+			guestID = newGuestSessionID()
+			p.NewSessionID = guestID
+		}
+		// The Agent SDK bridge discovers its tools before assistant.send returns. Register the guest's restriction
+		// first, as roomCreate does, so that first discovery is the declared list rather than an empty one.
+		if err := s.guestSet(ctx, machine, guestID, p.GuestTools); err != nil {
+			return proto.Session{}, err
+		}
+		defer func() {
+			if sess.SessionID != guestID {
+				if err := s.guestDrop(context.WithoutCancel(ctx), guestID); err != nil {
+					s.logf("assistant: forget an unstarted guest conversation %s: %v", short(guestID), err)
+				}
+			}
+		}()
+	}
+	sess, err = s.startOn(ctx, machine, p, main)
 	if errors.Is(err, ErrNoDevice) && p.MachineID == "" {
 		return proto.Session{}, s.missingAssistantMachine(ctx)
 	}
 	if err != nil {
 		return sess, err
 	}
-	if p.GuestTools != nil {
-		if err := s.guestSet(ctx, sess.MachineID, sess.SessionID, p.GuestTools); err != nil {
-			// The node runs it restricted either way; here its calls are refused until the store is readable again.
-			s.logf("assistant: note guest conversation %s: %v", short(sess.SessionID), err)
-		}
+	if guestID != "" && sess.SessionID != guestID {
+		return sess, errors.New("the node did not start the guest under its registered session id")
 	}
 	sess.Origin, sess.OriginRef, sess.OpenedBy = firstNonEmpty(p.Origin, OriginUser), p.OriginRef, p.OpenedBy
 	s.originSet(ctx, sess.MachineID, sess.SessionID, sess.Origin, sess.OriginRef, sess.OpenedBy)
@@ -747,7 +765,13 @@ func (s *Service) SendParams(ctx context.Context, p SendParams) (map[string]any,
 	if text, ok := p.Params["text"].(string); ok {
 		p.Params["text"] = prompts.ProtectUserMessage(text)
 	}
-	return s.sendParams(ctx, p)
+	sent, _ := p.Params["text"].(string)
+	out, err := s.sendParams(ctx, p)
+	if err == nil && p.Human { // the hub's word: a person's own app sent it (secret_handoff.go handoffUserTurn)
+		id, _ := p.Params["client_msg_id"].(string)
+		s.humanSent.note(p.SessionID, id, sent)
+	}
+	return out, err
 }
 
 // sendParams also serves manager-generated notices, which must not be marked as

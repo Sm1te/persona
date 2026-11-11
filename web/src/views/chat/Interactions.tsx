@@ -15,7 +15,7 @@ import { interactionCanAnswer, sessionTitle } from "../../lib/format";
 import { interactionAsk } from "../../lib/inbox";
 import { plainMarkdown } from "../../lib/plain-markdown";
 import { cardToolName, mcpServerLabel } from "../../lib/turns";
-import { isSecretRun, optionDisplay, secretRunInput } from "../../lib/tool-detail";
+import { isSecretHandoff, isSecretRun, optionDisplay, secretHandoffInput, secretRunInput } from "../../lib/tool-detail";
 import { RecommendedTag } from "../../ui/RecommendedTag";
 import { dropAnswered, getSession, useStore, type AnsweredCard as Answered } from "../../lib/store";
 import { Button, Collapse, cx, EASE, Kbd, Menu, SECRET_INPUT, toast, useMenu } from "../../ui/atoms";
@@ -640,6 +640,76 @@ function SecretRunCard({ ix }: { ix: Interaction }) {
   );
 }
 
+/**
+ * The hand-off card (#3962): secret values a provider holds, handed to one Agent run once the user approves here. Only
+ * this card approves it (lib/card-answer.ts sends its approval with the card's feature; Overview's rows and the
+ * notifications open the chat instead), and no key does: Allow is a press of its button. It says what goes where:
+ * each variable with the item it comes from, the Agent and its computer, where it runs and what it is asked.
+ */
+function SecretHandoffCard({ ix }: { ix: Interaction }) {
+  const [busy, setBusy] = useState<"allow" | "always" | "deny" | null>(null);
+  const keys = useCardKeys();
+  const { variables, agent, machine, cwd, prompt } = secretHandoffInput(ix.tool_input);
+  // nothing says what would be handed over: only Deny
+  const ready = variables.length > 0;
+  const go = async (body: Record<string, unknown>, key: "allow" | "always" | "deny") => {
+    setBusy(key);
+    const r = await answerCard(ix, body, { handoffCard: true });
+    if (!r.ok) toast(r.error, "error");
+    else if (r.already) toast(t("chat-interactions.already_answered"), "info");
+    setBusy(null);
+  };
+  const lead = agent
+    ? t("chat-interactions.secret_handoff_lead", { agent, machine })
+    : t("chat-interactions.secret_handoff_lead_unnamed", { machine });
+  return (
+    <Card
+      kicker={t("chat-interactions.permission_kicker")}
+      title={t("chat-interactions.secret_handoff_title")}
+      cardKeys={keys}
+      footer={
+        <>
+          <Button tone="quiet" busy={busy === "deny"} disabled={busy !== null} onClick={() => void go({ allow: false }, "deny")}>
+            {t("chat-interactions.deny")}
+          </Button>
+          <span className="flex gap-1.5">
+            {ix.always_label && (
+              <Button tone="secondary" busy={busy === "always"} disabled={busy !== null || !ready} onClick={() => void go({ allow: true, always: true }, "always")}>
+                {t("chat-interactions.always_allow")}
+              </Button>
+            )}
+            <Button tone="primary" busy={busy === "allow"} disabled={busy !== null || !ready} onClick={() => void go({ allow: true }, "allow")}>
+              {t("chat-interactions.allow")}
+            </Button>
+          </span>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-2">
+        <p className="text-[13px] leading-relaxed text-ink">{machine ? lead : t("chat-interactions.secret_handoff_lead_bare")}</p>
+        <ul className="flex flex-col gap-1">
+          {variables.map((v) => (
+            <li key={v.name} data-handoff-variable className="flex min-w-0 items-baseline gap-2">
+              <code className="shrink-0 font-mono text-[12px] text-ink">{v.name}</code>
+              <span className="min-w-0 break-words text-[13px] text-ink-2">{v.title ? `${v.provider} › ${v.title}` : v.provider}</span>
+            </li>
+          ))}
+        </ul>
+        {(cwd || prompt) && (
+          <div className="flex flex-col gap-0.5 text-[12px] leading-snug text-ink-3">
+            {cwd && <span data-handoff-cwd className="truncate font-mono">{cwd}</span>}
+            {prompt && <span data-handoff-prompt className="line-clamp-2">{prompt}</span>}
+          </div>
+        )}
+        <span className="text-[12px] leading-snug text-ink-3">
+          {t("chat-interactions.secret_handoff_note")}
+          {ix.always_label ? ` ${t("chat-interactions.secret_handoff_always_scope", { scope: ix.always_label })}` : ""}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 function CloseBlockedAgent({ ix, disabled }: { ix: Interaction; disabled: boolean }) {
   const session = useStore(() => getSession(ix.machine_id, ix.session_id));
   const [confirming, setConfirming] = useState(false);
@@ -1094,6 +1164,7 @@ export function InteractionCard({ ix }: { ix: Interaction }) {
     : ix.kind === "question" ? <QuestionCard ix={ix} />
     : ix.kind === "plan" ? <PlanCard ix={ix} />
     : isSecretRun(ix) ? <SecretRunCard key={ix.id} ix={ix} />
+    : isSecretHandoff(ix) ? <SecretHandoffCard key={ix.id} ix={ix} />
     : ix.kind === "permission" ? <PermissionCard ix={ix} />
     : ix.kind === "elicitation" ? <ElicitationCard ix={ix} /> : <ScreenCard ix={ix} />;
   const asked = useVoiceAsking(ix);

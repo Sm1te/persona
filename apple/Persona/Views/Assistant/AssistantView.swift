@@ -41,6 +41,8 @@ struct AssistantView: View {
     @Environment(\.shellRailEdge) private var railEdge
     /// A phone's tabs (iPhone Duo open): the column's own button folds it, at its top (#2623).
     @Environment(\.pageTabSwitch) private var pageTabSwitch
+    /// The conversation's lifted message, drawn over the top bar (`MessageLiftHost`, #3188).
+    @State private var liftHost = MessageLiftHost()
     #if DEBUG
     @State private var showAvatars = false
     #endif
@@ -182,6 +184,9 @@ struct AssistantView: View {
                     // Another assistant's conversation not listed yet: read through the manager it was opened for.
                     ChatView(key: key, style: .assistant, itemManager: model.assistantItemManagers[key])
                         .id(key)
+                        #if os(iOS)
+                        .environment(\.messageLiftHost, liftHost)
+                        #endif
                         // The iPad draws the shell's composer too (`ChatComposerKind.padCard`): the assistant's, as on the iPhone.
                         .environment(\.shellChat, shell != nil || ChatComposerKind.padCard)
                 } else if shell != nil || pageTabSwitch {
@@ -224,7 +229,14 @@ struct AssistantView: View {
                 // At the window's edge only with the history list folded away too (#830).
                 .transformEnvironment(\.macTitleRowLeading) { if columns != .detailOnly { $0 = 0 } }
                 #endif
+                #if os(iOS)
+                .liftBlur(liftHost.menu)
+                #endif
             }
+            #if os(iOS)
+            // A message pressed in the conversation, over the bar too: the whole page dims (#3188).
+            .overlay { if let menu = liftHost.menu { MessageLiftLayer(menu: menu) } }
+            #endif
             #if os(macOS)
             // The bar is the title bar's row, as the list beside it (#830); pushed pages keep their own.
             .ignoresSafeArea(.container, edges: .top)
@@ -466,9 +478,13 @@ struct AssistantView: View {
     }
 
     private func deleteFailed() {
-        let m = shownFailure
-        withAnimation(Theme.Motion.standard) { failedStart.clear { $0 == m } }
         model.readiness.failure = nil
+        guard let m = shownFailure else { return }
+        withAnimation(Theme.Motion.standard) { failedStart.clear { $0 == m } }
+        // As a chat's Delete (#4626): Undo puts it back on its page.
+        model.toast = .messageDeleted { [failedStart] in
+            withAnimation(Theme.Motion.standard) { failedStart.fail(m) }
+        }
     }
 
     /// `space`: the space the conversation opens in (Health passes "health"; it never becomes the main conversation).
@@ -1012,14 +1028,14 @@ struct StarterComposer: View {
                         files: { showFiles = true }, allPhotos: { showPhotos = true }, showsMore: true,
                         more: { AttachMoreRows(panel: attachPanel, sections: moreSections) }) { outcome in
             switch outcome {
-            case .then(let ids, let action):
-                Task { await draft.held.addPicked(ids, machine: machine, model: model) }
+            case .then(let picks, let action):
+                Task { await draft.held.addPicked(picks, machine: machine, model: model) }
                 action()
-            case .closed(let ids):
-                Task { await draft.held.addPicked(ids, machine: machine, model: model) }
-            case .send(let ids):
+            case .closed(let picks):
+                Task { await draft.held.addPicked(picks, machine: machine, model: model) }
+            case .send(let picks):
                 Task {
-                    await draft.held.addPicked(ids, machine: machine, model: model)
+                    await draft.held.addPicked(picks, machine: machine, model: model)
                     submit() // the gate first, as the box's Send
                 }
             }
@@ -1071,7 +1087,11 @@ struct StarterComposer: View {
             #if os(iOS) || os(visionOS)
             PasteImageChip(focused: focused) { add($0) }
             #endif
+            #if os(macOS)
             if !images.isEmpty { ComposerImages(images: imagesBinding) }
+            #else
+            if !images.isEmpty { ComposerImages.editable(draft.held) } // a tap marks it up, as in a conversation
+            #endif
             if let token = mentionToken {
                 ComposerMentionMenu(token: token, text: textBinding, selection: $selection, source: mentionSource) { ref in
                     if !quotes.contains(where: { $0.url == ref.url }) { quotes.append(ref) }
@@ -1230,7 +1250,11 @@ struct BeautifulStarterComposer: View {
                 }
             }
             #endif
+            #if os(macOS)
             if !images.isEmpty { ComposerImages(images: imagesBinding) }
+            #else
+            if !images.isEmpty { ComposerImages.editable(draft.held) } // a tap marks it up, as in a conversation
+            #endif
             PromptComposer(placeholder: placeholder ?? String(localized: "Ask \(model.persona.name)…"), text: textBinding, selection: $selection, focused: $focused,
                            hasAttachments: !images.isEmpty || !videos.items.isEmpty || !quotes.isEmpty, disabled: disabled,
                            attach: PromptItems.attachments(camera: false),

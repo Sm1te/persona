@@ -1,5 +1,6 @@
 {
   "owner_only": "Extensions can only be installed, updated and removed on the hub machine (personad extension …) or in the hub’s admin page",
   "market_only": "This extension can only be installed, updated and removed on the hub machine (personad extension …) or in the hub’s admin page. From a phone you can only install extensions from a marketplace",
-  "node_confirm": "This runs “{name}”’s program on this computer, as the node’s system user and outside a sandbox."
+  "node_confirm": "This runs “{name}”’s program on this computer, as the node’s system user and outside a sandbox.",
+  "no_handoff_rule": "There is no such hand-off rule."
 }

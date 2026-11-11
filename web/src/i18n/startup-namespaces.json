@@ -23,6 +23,7 @@
   "chat-composer",
   "chat-contextgroup",
   "chat-delegate",
+  "chat-forward",
   "chat-fulltext",
   "chat-imageviewer",
   "chat-interactions",

@@ -23,7 +23,8 @@ import (
 //     on the phone first with method, path and body on the card, or deny; none matching is confirmed); lark-cli's
 //     by its own risk level (larkcligate.go). Assistant bypass skips cards only for classified reads and ordinary
 //     writes; Lark sends as the user, deletion and calls it cannot classify still ask. Non-Lark commands such as
-//     rm, git and tee remain outside this gate. Opaque execution requires confirmation when the
+//     rm, git and tee remain outside this gate. Local redirect targets do not change a call's classification.
+//     Opaque execution requires confirmation when the
 //     command text names the CLI (including paths or interpreter code), or an expansion supplies
 //     a command name. A script file with no CLI name in the command text is outside this gate:
 //     its contents may still invoke the CLI. This residual risk is accepted; we do not read scripts.
@@ -50,9 +51,9 @@ type larkVerdict struct {
 	calls    []larkCall
 	deny     string // why the command is refused
 	other    bool   // something besides gated calls and filters: the usual permission flow decides
-	unsure   bool   // a command substitution prevents bypass and requires whole-command confirmation
+	unsure   bool   // a command-word substitution prevents bypass and requires whole-command confirmation
 	unparsed bool   // the command could not be split into its parts at all
-	unknown  bool   // a CLI call, indirect execution or redirection could not be classified
+	unknown  bool   // a CLI call or indirect execution could not be classified
 	cliWrite bool   // a lark-cli call that is not a known read, even in a command the gate cannot follow
 	unread   []int  // gates (indexes in the config's Gates) called in a way the gate could not read
 }

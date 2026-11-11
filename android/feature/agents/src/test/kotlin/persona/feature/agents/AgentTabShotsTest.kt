@@ -95,6 +95,7 @@ class AgentTabShotsTest {
                                 launcher = entry.launcher, branch = entry.branch)
                             is TreeChildrenEntry -> error("Fixture has no Codex subtasks")
                             is TreeIdleEntry -> AgentIdleRow(entry.hidden, {}, depth = entry.depth)
+                            is TreeShowAllEntry -> AgentShowAllRow(entry.count, entry.expanded, {}, depth = entry.depth)
                         }
                     }
                 }

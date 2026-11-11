@@ -1,0 +1,12 @@
+{
+  "forward": "转发",
+  "me": "我",
+  "messages": "消息",
+  "heading": "转发自 {who}",
+  "heading_chat": "转发自 {who} · {chat}",
+  "no_content": "没有内容",
+  "remove": "取消转发",
+  "open_original": "打开原消息",
+  "show_all": "展开全文",
+  "collapse": "收起"
+}

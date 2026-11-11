@@ -236,6 +236,10 @@ func (c *inboxAnswers) gzipped(a *inboxAnswer) []byte {
 
 // mergedInbox answers the merged inbox list: what mergeList answers, reused while it holds (see the top of the file).
 func (h *Hub) mergedInbox(w http.ResponseWriter, r *http.Request, key string, ask func(w http.ResponseWriter, r *http.Request, id string)) {
+	if sinceAsked(r) { // only what changed since a merged list the app holds (inbox_delta.go)
+		h.mergedInboxSince(w, r, key, ask)
+		return
+	}
 	c := &h.inboxAnswers
 	if inboxAnswerTTL <= 0 || c.off || r.Method != http.MethodGet || r.ContentLength != 0 {
 		h.mergeList(w, r, key, ask)

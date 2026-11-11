@@ -9,6 +9,8 @@ import { currentPlatform, modName, type Platform } from "./shortcuts";
 import { href, navigate } from "./router";
 import { getState, putLaunch, upsertSession } from "./store";
 import { ultracodeErrorText, ultracodeRefused } from "./ultracode";
+import type { DraftImage } from "./drafts";
+import type { ContextRef } from "./links";
 import type { Session } from "./types";
 import type { WorkspaceTarget } from "./workspace-target";
 
@@ -207,6 +209,10 @@ export interface NewAgentPreset {
   prompt?: string;
   machineId?: string;
   cwd?: string;
+  /** A message forwarded to a new Agent (#3899): its card over the first message, which carries it in front; and the
+   *  pictures it had, attached. */
+  forward?: ContextRef;
+  images?: DraftImage[];
   /** An exact workspace destination takes precedence over the legacy machine/folder preset. */
   workspace?: WorkspaceTarget;
 }

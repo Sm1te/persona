@@ -80,11 +80,18 @@ func (p *pages) list() wire.View {
 	add("attention", p.t("list.attention"), attention)
 	add("on", p.t("list.on"), on)
 	add("off", p.t("list.off"), off)
+	available := 0
+	// This device's Shortcuts source (#3848) before the connectors' sources: it is the one source of its own.
+	if p.st.C == "" && p.st.Ext == "" {
+		if sec, ok := p.pushSection(subs); ok {
+			v.Sections = append(v.Sections, sec)
+			available++
+		}
+	}
 	cats, _ := p.svc.Catalogs(p.ctx)
 	slices.SortFunc(cats, func(a, b subscriptions.Catalog) int {
 		return cmp.Compare(p.env.Name(a.Connector), p.env.Name(b.Connector))
 	})
-	available := 0
 	for _, c := range cats {
 		if p.st.C != "" && c.Connector != p.st.C || p.st.Ext != "" && c.Extension != p.st.Ext {
 			continue
@@ -117,7 +124,7 @@ func (p *pages) list() wire.View {
 }
 
 // confirm is what a destination's switch asks before it turns on: what, how often, where it is kept, which model.
-func (p *pages) confirm(dest, label, kind, every string) string {
+func (p *pages) confirm(dest, label, kind, every string, push bool) string {
 	purpose := "inbox.triage" // Information filtering triages the Inbox's items
 	if dest == "to_kb" {
 		purpose = "kb" // Information processing summarizes the knowledge base's
@@ -126,16 +133,20 @@ func (p *pages) confirm(dest, label, kind, every string) string {
 	if m := p.modelOf(purpose); m.OK && m.Provider != "" {
 		provider = p.t("confirm.provider", i18n.Args{"name": modelName(m)})
 	}
-	return p.t("confirm."+dest, i18n.Args{"source": label, "noun": p.noun(kind), "every": every, "provider": provider})
+	key := "confirm." + dest
+	if push {
+		key = "confirm.push_" + dest // nothing is pulled: what a shortcut sends is kept as it comes
+	}
+	return p.t(key, i18n.Args{"source": label, "noun": p.noun(kind), "every": every, "provider": provider})
 }
 
-func (p *pages) switches(id, label, kind, every string, inbox, kb, enabled bool) wire.Section {
+func (p *pages) switches(id, label, kind, every string, inbox, kb, enabled, push bool) wire.Section {
 	sw := func(name string, on bool, subtitle string) wire.Component {
 		r := row("d."+name, p.t("dest."+name))
 		r.Subtitle = subtitle
 		act := wire.Action{ID: "dest", Values: map[string]string{"to": name}}
 		if !on {
-			act.Confirm = p.confirm(name, label, kind, every)
+			act.Confirm = p.confirm(name, label, kind, every, push)
 		}
 		r.Control = &wire.RowControl{Kind: "switch", Name: name, On: on, Disabled: !enabled, Action: act}
 		return r
@@ -155,6 +166,9 @@ func (p *pages) source() wire.View {
 	if err != nil {
 		return p.gone()
 	}
+	if subscriptions.IsPush(s) {
+		return p.pushSource(s)
+	}
 	_, src := p.cached(s.Connector, s.Source)
 	v := wire.View{Title: s.Label, State: state{P: pageSource, ID: s.ID}.String()}
 	if where := p.env.Native(s.Service); where != "" {
@@ -165,7 +179,7 @@ func (p *pages) source() wire.View {
 	case subscriptions.StateFailing, subscriptions.StateNeedsRecipe, subscriptions.StateRateLimited, subscriptions.StateNotConnected:
 		v.Sections = append(v.Sections, p.trouble(s))
 	}
-	v.Sections = append(v.Sections, p.switches(s.ID, s.Label, s.Recipe.Kind, p.schedule(s), s.ToInbox, s.ToKB, true))
+	v.Sections = append(v.Sections, p.switches(s.ID, s.Label, s.Recipe.Kind, p.schedule(s), s.ToInbox, s.ToKB, true, false))
 	freq := row("f.interval", p.t("source.interval"))
 	freq.Value = p.schedule(s)
 	freq.Action = open(state{P: pageInterval, ID: s.ID}, p.t("source.interval"))
@@ -290,7 +304,7 @@ func (p *pages) newSource() wire.View {
 		how.Items = append(how.Items, pick)
 		how.Footer = p.t("new.pick_footer")
 	}
-	v.Sections = append(v.Sections, how, p.switches("", src.Name, kind, every, false, false, len(src.Recipes) > 0))
+	v.Sections = append(v.Sections, how, p.switches("", src.Name, kind, every, false, false, len(src.Recipes) > 0, false))
 	freq := row("f.interval", p.t("source.interval"))
 	freq.Value = every
 	v.Sections = append(v.Sections, wire.Section{Key: "freq", Title: p.t("source.freq"), Items: []wire.Component{freq},
@@ -463,7 +477,7 @@ func (p *pages) tools() wire.View {
 // ⑥ Runs: the last twenty, newest first.
 func (p *pages) runs() wire.View {
 	v := wire.View{Title: p.t("source.runs")}
-	_, runs, err := p.svc.Get(p.ctx, p.st.ID)
+	s, runs, err := p.svc.Get(p.ctx, p.st.ID)
 	if err != nil {
 		return p.gone()
 	}
@@ -474,20 +488,24 @@ func (p *pages) runs() wire.View {
 	}
 	okN, failN, newN := 0, 0, 0
 	list := wire.Section{Key: "runs", Title: p.t("runs.each"), Footer: p.t("runs.footer")}
+	if subscriptions.IsPush(s) {
+		list.Footer = p.t("runs.push_footer") // nothing is pulled: no rounds skipped, no rate limit
+	}
 	for i, r := range runs {
 		c := row("r."+itoa(i), p.t("runs.when", i18n.Args{"time": p.clock(&r.At), "trigger": p.t("trigger." + r.Trigger)}))
+		pushed := r.Trigger == subscriptions.TriggerPush // kept as it came: no call to time
 		if r.Error != nil {
 			failN++
-			c.Subtitle = join([]string{p.problemText(r.Error), p.seconds(r.MS)})
+			c.Subtitle = join([]string{p.problemText(r.Error), p.took(r.MS, pushed)})
 			c.Badge = badge(p.t("badge.failing"), "danger")
 		} else {
 			okN++
 			newN += r.New
 			if r.New > 0 {
-				c.Subtitle = join([]string{p.t("runs.new", i18n.Args{"count": r.Count, "new": r.New}), p.seconds(r.MS)})
+				c.Subtitle = join([]string{p.t("runs.new", i18n.Args{"count": r.Count, "new": r.New}), p.took(r.MS, pushed)})
 				c.Badge = badge("+"+itoa(r.New), "positive")
 			} else {
-				c.Subtitle = join([]string{p.t("runs.none_new", i18n.Args{"count": r.Count}), p.seconds(r.MS)})
+				c.Subtitle = join([]string{p.t("runs.none_new", i18n.Args{"count": r.Count}), p.took(r.MS, pushed)})
 			}
 		}
 		list.Items = append(list.Items, c)

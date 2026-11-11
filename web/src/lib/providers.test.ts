@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import {
   autoCheckable,
+  fillFromCatalog,
   formFromView,
   formModel,
   formProblems,
@@ -242,5 +243,28 @@ describe("autoCheckable (#4881)", () => {
     expect(autoCheckable({ ...opened, auth: "api_key" }, saved)).toBe(true);
     // a new address with no key stored and none typed has nothing to sign in with
     expect(autoCheckable({ ...opened, base_url: "https://other.example.com" }, { ...saved, has_key: false })).toBe(false);
+  });
+});
+
+describe("fillFromCatalog", () => {
+  const typed = (over: Partial<ReturnType<typeof formModel>> = {}) => ({ ...formModel({ id: "claude-fable-5-1" }), ...over });
+  const found = [{ id: "claude-fable-5-1", name: "Fable 5.1", context_window: 1000000, efforts: ["low", "medium", "high"], default_effort: "medium" }];
+
+  it("fills a typed model's empty name, window and thinking levels from the hub's catalog (#4975)", () => {
+    const [m] = fillFromCatalog([typed()], found);
+    expect(m).toMatchObject({ id: "claude-fable-5-1", name: "Fable 5.1", context_window: "1000000", efforts: ["low", "medium", "high"], default_effort: "medium", checked: true });
+  });
+
+  it("keeps what the user typed meanwhile, and ignores models not in the list", () => {
+    const rows = [typed({ name: "Mine", context_window: "300000", efforts: ["high"] }), formModel({ id: "other" })];
+    const out = fillFromCatalog(rows, [...found, { id: "nope", context_window: 1 }]);
+    expect(out[0]).toMatchObject({ name: "Mine", context_window: "300000", efforts: ["high"], default_effort: "" });
+    expect(out[1]).toBe(rows[1]);
+    expect(fillFromCatalog(rows, [])).toBe(rows);
+  });
+
+  it("takes no thinking levels for Chat Completions", () => {
+    const [m] = fillFromCatalog([typed()], found, true);
+    expect(m).toMatchObject({ context_window: "1000000", efforts: [], default_effort: "" });
   });
 });

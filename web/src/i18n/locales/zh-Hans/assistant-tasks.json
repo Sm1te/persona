@@ -209,5 +209,6 @@
   "interrupt_batch_title_on_other": "{machine} {cause}，{count} 个任务被打断",
   "interrupt_batch_counts": "→ 已处理 {resolved} / 待处理 {pending}",
   "interrupt_batch_all": "→ 都处理了",
-  "needs_group_another": "其他对话"
+  "needs_group_another": "其他对话",
+  "new_agent_started": "已为这个任务启动新的 Agent"
 }

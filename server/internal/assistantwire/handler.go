@@ -196,6 +196,24 @@ type StartEnded struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+// ConversationSent is session.assistant_sent's params: an app's message the hub sent to the assistant's conversation
+// SessionID, and what became of it. Outcome is ConversationDelivered, ConversationFailed or ConversationUnknown (it may
+// have been typed); Code and Error are the hub's answer when it was not delivered.
+type ConversationSent struct {
+	MachineID string `json:"machine_id"`
+	SessionID string `json:"session_id"`
+	Outcome   string `json:"outcome"`
+	Code      string `json:"code,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// ConversationSent's outcomes.
+const (
+	ConversationDelivered = "delivered"
+	ConversationFailed    = "failed"
+	ConversationUnknown   = "unknown"
+)
+
 // DeviceSessions is sessions.changed's params: the list as the node sent it, and when the node's connection to the hub
 // began (a new one: the node may have restarted and forgotten what it was told, e.g. the herdr todo marks).
 type DeviceSessions struct {

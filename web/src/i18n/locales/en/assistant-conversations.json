@@ -12,5 +12,6 @@
   "origin_other": "Other",
   "origin_all": "All",
   "origin_mine": "Mine",
-  "origin_filter": "Filter by source"
+  "origin_filter": "Filter by source",
+  "from_extension": "From an extension"
 }

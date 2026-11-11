@@ -114,6 +114,11 @@ type SendParams struct {
 	SessionID string         `json:"session_id"`
 	Params    map[string]any `json:"params"`
 	Lang      string         `json:"lang,omitempty"`
+	// Human is the hub's word that a person's own app sent this message: the request's credential is a full device's
+	// (never an extension's, a computer link's or the hub's own token). Set by the hub's auth, never from the request;
+	// the manager's own sends (channels, the inbox, meetings) never set it, and an older hub never sends it. A hand-off's
+	// Always rule spares the card only for a turn of such messages (assistant secret_handoff.go).
+	Human bool `json:"human,omitempty"`
 }
 
 // RenameParams is assistant.rename's params: Params are the app's ({title?, tab_name?}).

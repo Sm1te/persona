@@ -33,7 +33,7 @@ struct MacSidebarRow: View {
                     Text(title).font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(1)
                     Spacer(minLength: Theme.Space.s)
                     switch badge {
-                    case .count(let n): CountBadge(count: n, look: .tone(StatusPalette.needsYou))
+                    case .count(let n): CountBadge(count: n, look: .needs)
                     case .word(let w): Text(w).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
                     case nil: EmptyView()
                     }

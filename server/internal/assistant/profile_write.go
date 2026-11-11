@@ -142,8 +142,9 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 		} else if v.Main == before.Main && v.MainMachineID == "" {
 			v.MainMachineID = mainMachine
 		}
-		if in.Timezone != "" {
-			v.Timezone = in.Timezone
+		v.Timezone = zoneWritten(*v, in.Timezone, in.TimezonePicked)
+		if in.TimezonePicked != nil {
+			v.TimezonePicked = in.TimezonePicked
 		}
 		if in.Notes != nil {
 			v.Notes = in.Notes
@@ -242,4 +243,14 @@ func (s *Service) runtimeAssistantLauncher(ctx context.Context, machine, launche
 		return false
 	}
 	return slices.ContainsFunc(res.Launchers, func(l proto.Launcher) bool { return l.Name == launcher && l.Assistant })
+}
+
+// zoneWritten is the zone a settings write leaves (#1855): one the user picked (`timezone_picked` true) or a device's
+// own once the user goes back to following the devices (false); without `timezone_picked` the write is a device syncing
+// its zone, as apps did before picking was kept, and it lands only while no zone was picked. An empty zone changes nothing.
+func zoneWritten(saved Settings, zone string, picked *bool) string {
+	if zone == "" || (picked == nil && saved.TimezonePicked != nil && *saved.TimezonePicked) {
+		return saved.Timezone
+	}
+	return zone
 }

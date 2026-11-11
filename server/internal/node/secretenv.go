@@ -630,7 +630,7 @@ func (n *Node) scrubB64(data string) string {
 
 const (
 	secretEnvAgentCode = "secret_env_agent"
-	secretEnvGoneCode  = "secret_env_gone"
+	secretEnvGoneCode  = proto.CodeSecretEnvGone
 	secretEnvAgentText = "secrets can be handed only to a new Claude Code start in a terminal, with a provider added in Persona or plain claude"
 )
 

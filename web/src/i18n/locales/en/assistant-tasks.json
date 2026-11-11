@@ -228,5 +228,6 @@
   "interrupt_batch_title_on_other": "{cause} on {machine}: {count} tasks interrupted",
   "interrupt_batch_counts": "→ {resolved} handled / {pending} pending",
   "interrupt_batch_all": "→ all handled",
-  "needs_group_another": "Another conversation"
+  "needs_group_another": "Another conversation",
+  "new_agent_started": "Started a new Agent for this task"
 }

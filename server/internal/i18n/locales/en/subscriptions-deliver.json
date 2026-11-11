@@ -4,6 +4,7 @@
   "due": "Due {when}",
   "failing_title": "{label} hasn't pulled anything since {since}",
   "failing_why": "Rule: a subscription that has failed for a day",
+  "push_label": "Shortcuts on {device}",
   "reason.call_failed": "The connector's call failed.",
   "reason.no_list": "The result no longer has the list the recipe reads.",
   "reason.not_read_only": "The connector's catalog marks a tool as one that changes something.",

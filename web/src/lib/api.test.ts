@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initI18n, t } from "../i18n";
-import { api, ApiError, errorText } from "./api";
+import { api, apiBlob, ApiError, errorText } from "./api";
 import { isOfflineError } from "./feedback";
 import { sessionLoadError } from "./session-link";
 
@@ -112,6 +112,30 @@ describe("an error page from a proxy in front of the hub", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 502 })));
     const text = errorText(await api("/missing", { token: "test-token" }).catch((e: unknown) => e));
     expect(text).toBe(t("lib-api.hub_unavailable", { detail: "HTTP 502" }));
+  });
+});
+
+// A meeting photo's image (#3862 phase 3): an <img> can't send the bearer token or the manager, so the page reads the
+// bytes itself and shows them from an object URL.
+describe("a hub route's bytes", () => {
+  it("sends the credentials and headers api does and gives the body back as it came", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const fetch = vi.fn().mockResolvedValue(new Response(png, { status: 200, headers: { "Content-Type": "image/png" } }));
+    vi.stubGlobal("fetch", fetch);
+    const blob = await apiBlob("/recordings/r1/photos/1", { token: "test-token", headers: { "X-Persona-Manager": "m-1" } });
+    expect(blob.type).toBe("image/png");
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
+    const headers = new Headers(fetch.mock.calls[0][1].headers);
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/recordings/r1/photos/1");
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+    expect(headers.get("X-Persona-Manager")).toBe("m-1");
+  });
+
+  it("fails with the hub's error as api does", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "no such photo", code: "photo_not_found" }), { status: 404 })));
+    const err = await apiBlob("/recordings/r1/photos/9", { token: "test-token" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe("photo_not_found");
   });
 });
 

@@ -1,0 +1,22 @@
+{
+  "title": "Forward to",
+  "search": "Search chats, computers or projects",
+  "preview": "Message to forward",
+  "main_chat": "Main chat",
+  "new_agent": "New agent…",
+  "new_agent_detail": "Pick a computer, folder and model",
+  "recent": "Recent",
+  "no_match": "No matching chats",
+  "failed": "Couldn't forward it: {error}",
+  "photos_lost_one": "1 photo couldn't go with the forward",
+  "photos_lost_other": "{count} photos couldn't go with the forward",
+  "quoting": "Quoting {label}",
+  "file_on": "(File on {machine}: {name})",
+  "file": "(File: {name})",
+  "cut": "(The original is longer and was cut here.)",
+  "route_from_to_persona": "From {from} · to Persona",
+  "route_to_persona": "To Persona",
+  "route_to_agent": "To {agent}",
+  "route_from_to_agent_on": "From {from} · to {agent} on {machine}",
+  "route_to_agent_on": "To {agent} on {machine}"
+}

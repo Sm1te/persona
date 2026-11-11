@@ -443,7 +443,14 @@
     <string name="chat_work_elapsed">%1$s, %2$s</string>
     <string name="chat_work_seconds">%1$d s</string>
     <string name="chat_work_minutes">%1$d min</string>
-    <string name="chat_work_hours_minutes">%1$d h %2$d min</string>
+    <string name="chat_work_hours_minutes">%1$d hr %2$d min</string>
+    <string name="chat_work_working_for">Working %1$s</string>
+    <string name="chat_work_done">Done</string>
+    <string name="chat_work_tools">Tools %1$d</string>
+    <string name="chat_work_thoughts">Thinking %1$d</string>
+    <string name="chat_work_replies">Replies %1$d</string>
+    <string name="chat_work_minutes_seconds">%1$dm %2$ds</string>
+    <string name="chat_work_reading_files">Reading %1$d files</string>
     <plurals name="chat_work_done_steps">
         <item quantity="one">%1$d step</item>
         <item quantity="other">%1$d steps</item>

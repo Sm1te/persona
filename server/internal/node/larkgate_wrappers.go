@@ -179,6 +179,15 @@ func executionWord(word *syntax.Word) (value string, dynamic bool) {
 	return out.String(), dynamic
 }
 
+// dynamicCommandName reports expansions in an executable position. The test
+// command's literal brackets are syntax, not a glob or brace expansion.
+func dynamicCommandName(name string) bool {
+	if name == "[" || name == "[[" {
+		return false
+	}
+	return strings.ContainsAny(name, "$`*?[]{}")
+}
+
 // Inspect partial syntax trees too: a shell can execute complete statements before
 // reporting a later syntax error. Only executable positions expand the gate's scope.
 func shellCommandUnknown(cmd string, includeCLI bool, depth int) bool {
@@ -211,7 +220,7 @@ func shellCommandUnknown(cmd string, includeCLI bool, depth int) bool {
 		if len(rest) == 0 {
 			return true
 		}
-		unknown = dynamic[offset] || strings.ContainsAny(rest[0], "*?[]{}") || includeCLI && isLarkCLI(rest[0])
+		unknown = dynamic[offset] || dynamicCommandName(rest[0]) || includeCLI && isLarkCLI(rest[0])
 		name := filepath.Base(rest[0])
 		if name == "eval" || name == "source" || name == "." {
 			for _, d := range dynamic[offset+1:] {

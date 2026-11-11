@@ -36,6 +36,10 @@ Set up a recurring routine: every day (or on some weekdays) at a time, Persona s
     "enabled": {
       "type": "boolean"
     },
+    "report": {
+      "type": "boolean",
+      "description": "a daily report (such as a leader conversation's): each run opens with Persona's north-star lines (today's interruptions and availability, the change against yesterday until the same time, the source), which the report starts with. Omit to keep an existing routine's"
+    },
     "push": {
       "type": "string",
       "enum": ["every", "asked"],

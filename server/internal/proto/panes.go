@@ -52,6 +52,9 @@ type PaneItem struct {
 	Title     string `json:"title,omitempty"`
 	Cwd       string `json:"cwd,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
+	// Foreground is the program in front of a pane with no agent ("zsh" at its prompt, "vim", "npm"…), as the host
+	// names it; nothing on the screen is read (#4754). "" when the host could not say in time.
+	Foreground string `json:"foreground,omitempty"`
 	// AgentSession is the stopped agent whose terminal this is: a pane Persona opened for that session, with no agent
 	// in it now (#4754). "Close finished terminals" closes these (panes.close_finished).
 	AgentSession string `json:"agent_session,omitempty"`

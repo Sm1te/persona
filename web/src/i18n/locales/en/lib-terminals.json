@@ -1,3 +1,4 @@
 {
-  "terminal": "Terminal"
+  "terminal": "Terminal",
+  "finished": "Finished: {title}"
 }

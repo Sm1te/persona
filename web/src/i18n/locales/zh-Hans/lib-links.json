@@ -10,6 +10,7 @@
   "whiteboard": "画板",
   "see_images": "请看图片",
   "see_context": "参考上面的内容。",
+  "see_forward": "请看上面转发的消息。",
   "edit_with_ask": "按要求修改上面选中的内容：{ask}",
   "edit_plain": "按上面选中的内容修改。"
 }

@@ -80,7 +80,10 @@ type fakeHub struct {
 	noModel       bool
 	asked         []modelCall
 	pushes        []Notification
-	events        []string // the type of each event the apps were sent
+	failNotify    int              // notify.request fails this many more times as when the hub is away and nothing was kept
+	refuseNotify  error            // notify.request is the hub's refusal (answered) while set
+	events        []string         // the type of each event the apps were sent
+	liveEvents    []map[string]any // the meeting_live events as sent
 	snaps         []Snapshot
 
 	// Agents a task starts (session.start a1, a2…) and what was sent to them; a machine offline, a node refusing.
@@ -581,6 +584,13 @@ func (f *fakeHub) NotifyRequest(_ context.Context, p NotifyRequest) error {
 	default:
 		return fmt.Errorf("kind %q", p.Notification.Kind)
 	}
+	if f.refuseNotify != nil {
+		return f.refuseNotify
+	}
+	if f.failNotify > 0 {
+		f.failNotify--
+		return errors.New("the hub is away")
+	}
 	f.pushes = append(f.pushes, p.Notification)
 	return nil
 }
@@ -593,6 +603,11 @@ func (f *fakeHub) Broadcast(_ context.Context, b Broadcast) {
 	_ = json.Unmarshal(b.Message, &ev)
 	f.mu.Lock()
 	f.events = append(f.events, ev.Type)
+	if ev.Type == "meeting_live" {
+		var live map[string]any
+		_ = json.Unmarshal(b.Message, &live)
+		f.liveEvents = append(f.liveEvents, live)
+	}
 	receipt := f.readHooks.receipt
 	f.mu.Unlock()
 	if receipt != nil && ev.Type == "assistant_feed" && ev.Item.Kind == feedReceipt {

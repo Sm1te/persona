@@ -146,9 +146,9 @@ func TestMainReviewKeepsLeaderSupervisor(t *testing.T) {
 	}
 }
 
-// Without leaders nothing changes: a task supervised by a side conversation that is not (or no longer) a leader is
-// told in the main conversation, and a side conversation's task_plan task gets no ledger.
-func TestDigestGoesToMainWithoutLeader(t *testing.T) {
+// Without leaders a task supervised by a side conversation is told in that conversation: the supervisor is the
+// conversation that handed the task out, leader or not, and a task_plan task gets its ledger from it.
+func TestDigestGoesToItsSupervisorWithoutLeader(t *testing.T) {
 	s, f := newQuietService(t)
 	ctx := context.Background()
 	f.known["lead1"] = true
@@ -163,26 +163,26 @@ func TestDigestGoesToMainWithoutLeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.signal(superviseSignal{Todo: todo.ID, Kind: sigReview, Key: "1", Detail: "做完了"})
-	waitFor(t, "the message", func() bool { return len(f.noticesTo("conv1")) == 1 })
-	if n := f.noticesTo("conv1")[0]; strings.Contains(n, "leader") {
-		t.Fatalf("the default message changed:\n%s", n)
+	waitFor(t, "the message", func() bool { return len(f.noticesTo("lead1")) == 1 })
+	if n := f.noticesTo("lead1")[0]; !strings.Contains(n, "由你督办") {
+		t.Fatalf("the side conversation's message does not say it supervises:\n%s", n)
 	}
 	s.supervise.dedupMu.Lock()
 	s.supervise.dedupMu.Unlock() // the digest send has finished before checking the non-recipient
-	if got := f.noticesTo("lead1"); len(got) != 0 {
-		t.Fatalf("a conversation that is not a leader was told: %q", got)
+	if got := f.noticesTo("conv1"); len(got) != 0 {
+		t.Fatalf("the main conversation was told a side conversation's task: %q", got)
 	}
 	if strings.Contains(s.Context(ctx, ContextParams{SessionID: "lead1"}).Text, "leader") {
 		t.Fatal("a side conversation's context says it is a leader")
 	}
 
-	// task_plan from a side conversation that is not a leader: the main conversation supervises it (#4669).
+	// task_plan from a side conversation that is not a leader: it supervises it itself.
 	res, err := s.toolTaskPlan(ctx, "lead1", planArgs(true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(res, "You supervise them") || !strings.Contains(res, "The main conversation supervises them") {
-		t.Fatalf("a side conversation is told it supervises: %s", res)
+	if !strings.Contains(res, "You supervise them") || strings.Contains(res, "The main conversation supervises them") {
+		t.Fatalf("a side conversation is told who supervises: %s", res)
 	}
 	var planned Todo
 	waitFor(t, "the task", func() bool {
@@ -194,8 +194,8 @@ func TestDigestGoesToMainWithoutLeader(t *testing.T) {
 		}
 		return false
 	})
-	if planned.Supervision == nil || planned.Supervision.Supervisor != "conv1" {
-		t.Fatalf("a side conversation's task is not the main conversation's to supervise: %+v", planned.Supervision)
+	if planned.Supervision == nil || planned.Supervision.Supervisor != "lead1" {
+		t.Fatalf("a side conversation's task is not its own to supervise: %+v", planned.Supervision)
 	}
 }
 
@@ -228,7 +228,7 @@ func TestDigestTo(t *testing.T) {
 		{"main's task", leaders, superviseSignal{Todo: mains, Kind: sigReview}, "conv1"},
 		{"leader's task", leaders, superviseSignal{Todo: leads, Kind: sigReview}, "lead1"},
 		{"leader's report", leaders, superviseSignal{Todo: leads, Kind: sigReport, Report: upReportQuestion}, "lead1"},
-		{"no leaders", none, superviseSignal{Todo: leads, Kind: sigReview}, "conv1"},
+		{"no leaders: the supervisor conversation itself", none, superviseSignal{Todo: leads, Kind: sigReview}, "lead1"},
 		{"leader's task waits for the user", leaders, superviseSignal{Todo: waits, Kind: sigIdle}, "conv1"},
 		{"leader's escalation", leaders, superviseSignal{Todo: waits, Kind: sigEscalated}, "conv1"},
 		{"leader's failed start", leaders, superviseSignal{Todo: leads, Kind: sigFailed}, "conv1"},

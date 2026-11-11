@@ -3803,7 +3803,7 @@ nonisolated struct SlotRow: View, Equatable {
                             AgentTimeText(time: time, fallback: session.updatedAt, font: Theme.Font.label)
                             sourceLabel
                             #if os(macOS)
-                            if pendingCount { CountBadge(count: session.pendingInteractions, look: .tone(StatusPalette.needsYou)) }
+                            if pendingCount { CountBadge(count: session.pendingInteractions, look: .needs) }
                             #endif
                             if session.state == .needsYou && !muted && !hideState && !pendingCount { BUIPill(session.state.label, tone: .custom(ink: StatusPalette.needsYou.text, fill: StatusPalette.needsYou.tint)) }
                             if awaitingWord {
@@ -3886,7 +3886,7 @@ nonisolated struct SlotRow: View, Equatable {
                             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
                                 AgentTimeText(time: time, fallback: session.updatedAt, font: Theme.Font.label)
                                 #if os(macOS)
-                                if pendingCount { CountBadge(count: session.pendingInteractions, look: .tone(StatusPalette.needsYou)) }
+                                if pendingCount { CountBadge(count: session.pendingInteractions, look: .needs) }
                                 #endif
                             }
                             sourceLabel
@@ -4114,7 +4114,7 @@ nonisolated struct CompactSlotRow: View, Equatable {
             if muted { ThemedIcon(Theme.Icon.muted).font(CompactList.meta).foregroundStyle(.secondary).accessibilityLabel("Notifications muted") }
             AgentTimeText(time: time, fallback: session.updatedAt, font: CompactList.meta.monospacedDigit())
             #if os(macOS)
-            if pendingCount { CountBadge(count: session.pendingInteractions, look: .tone(StatusPalette.needsYou)) }
+            if pendingCount { CountBadge(count: session.pendingInteractions, look: .needs) }
             #endif
         }
         .opacity(muted ? 0.8 : 1)

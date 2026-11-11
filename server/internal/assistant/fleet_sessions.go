@@ -13,6 +13,7 @@ import (
 	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/identity"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/transcript"
 )
 
@@ -197,7 +198,10 @@ func (s *Service) publishList(machine string) []proto.Session {
 	}
 	f.shown[machine] = awaitingReply(list)
 	f.shownMu.Unlock()
-	s.hub.Tell(assistantwire.EventFleetSessions, json.RawMessage(b))
+	// As json.Marshal wrote them (rpc.Marshaled): the bus puts them into its line as they are. As json.RawMessage its
+	// encoder checked and copied the whole list twice more to write the same line. Nil (the list does not encode) is
+	// told as null either way.
+	s.hub.Tell(assistantwire.EventFleetSessions, rpc.Marshaled(b))
 	s.liveChanged(false)
 	return list
 }

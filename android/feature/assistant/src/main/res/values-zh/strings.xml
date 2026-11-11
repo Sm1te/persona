@@ -33,6 +33,7 @@
     <string name="assistant_compact">压缩上下文</string>
     <string name="assistant_new_main">新建主对话</string>
     <string name="assistant_archive">归档</string>
+    <string name="assistant_archived">已归档</string>
     <string name="assistant_copy_session_id">拷贝会话 ID</string>
     <string name="assistant_new_main_title">新建主对话？</string>
     <string name="assistant_new_main_text">当前的主对话会归档，改名为「旧主对话 · 至 %1$s」，以后仍能找到。发出的下一条消息会开始新的主对话。</string>

@@ -139,7 +139,7 @@ final class PreviewUITests: XCTestCase {
         start.tap()
         let command = app.staticTexts["preview-start-command"]
         see(command, "the command is not shown before starting", timeout: 5, app)
-        XCTAssertEqual(command.label, "env PORT=8080 go run ./cmd/api")
+        XCTAssertEqual(command.label, "env 'PORT=8080' go run ./cmd/api")
         sleep(1)
         shot(app, "start")
         app.buttons["preview-start-confirm"].tap()

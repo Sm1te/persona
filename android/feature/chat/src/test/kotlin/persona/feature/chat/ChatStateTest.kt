@@ -88,7 +88,7 @@ class ChatStateTest {
         val store = listOf(user) + work + answer
         val closed = timeline.lines(store, false, emptySet()).lines.filterIsInstance<ChatLine.Work>().single()
         assertEquals(2, closed.steps.size)
-        assertEquals("做了 2 步", workSummary(res, closed, null))
+        assertEquals("工具 2", workSummary(res, closed, null))
         val open = timeline.lines(store, false, setOf(closed.id)).lines
         assertEquals(2, open.filterIsInstance<ChatLine.Step>().size)
         assertEquals(2, open.filterIsInstance<ChatLine.End>().single().count)

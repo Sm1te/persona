@@ -35,6 +35,11 @@ export interface PaneDTO {
   cwd?: string;
   /** An agent session of this machine runs in the pane. */
   session_id?: string;
+  /** A plain pane Persona opened for an Agent that has stopped since (#4754): that Agent's session. "Close finished
+   *  terminals" closes these. Older nodes never send it. */
+  agent_session?: string;
+  /** The program in front of a plain pane ("zsh" at its prompt, "vim", "npm"…), as the host says; older nodes never send it. */
+  foreground?: string;
 }
 export interface PaneHostDTO {
   kind: string;
@@ -72,6 +77,8 @@ export interface TermPane {
   pane: string;
   /** The agent session in the pane, "" for a plain shell. */
   sessionId: string;
+  /** The stopped Agent whose terminal this plain pane is (#4754), "" for any other pane. */
+  agentSession: string;
   /** What the filter matches: everything the row shows, and the names around it. */
   haystack: string;
 }
@@ -103,13 +110,20 @@ export function paneState(p: PaneDTO, session: Session | undefined): PaneState {
   return HOST_STATUS[p.status ?? ""] ?? "unknown";
 }
 
-/** A pane's row: an agent by its session's title, a shell by what the terminal says (its title, else its directory). */
-export function paneRow(p: PaneDTO, session: Session | undefined): Pick<TermPane, "title" | "detail"> {
+/** A pane's row: an agent by its session's title, a shell by what the terminal says (its title, else its directory). A
+ *  shell a stopped Agent left (#4754) is "Finished: <that Agent's title>" (`finished`: its session, when this computer
+ *  lists it; else a short id). A shell's line under it starts with the program in front of it, when the host says. */
+export function paneRow(p: PaneDTO, session: Session | undefined, finished?: Session): Pick<TermPane, "title" | "detail"> {
   const dir = shortPath(p.cwd);
   if (session) return { title: sessionTitle(session), detail: [p.agent, dir].filter(Boolean).join(" · ") };
   if (p.agent) return { title: p.title?.trim() || p.agent, detail: [p.agent, dir].filter(Boolean).join(" · ") };
+  const front = p.foreground?.trim() ?? "";
+  if (p.agent_session) {
+    const name = finished ? sessionTitle(finished) : p.agent_session.slice(0, 8);
+    return { title: t("lib-terminals.finished", { title: name }), detail: [front, dir].filter(Boolean).join(" · ") };
+  }
   const title = p.title?.trim() || baseName(p.cwd) || t("lib-terminals.terminal");
-  return { title, detail: title === dir ? "" : dir };
+  return { title, detail: [front === title ? "" : front, title === dir ? "" : dir].filter(Boolean).join(" · ") };
 }
 
 /** The id a pane opens by (see TermPane.id). */
@@ -152,7 +166,7 @@ export function buildTerminalTree(res: PanesResponse | undefined, sessions: read
             .sort((a, b) => paneNumber(a) - paneNumber(b) || a.pane.localeCompare(b.pane))
             .map((p): TermPane => {
               const session = p.session_id ? byId.get(p.session_id) : undefined;
-              const row = paneRow(p, session);
+              const row = paneRow(p, session, p.agent_session ? byId.get(p.agent_session) : undefined);
               const label = t.label || t.id;
               return {
                 id: terminalId(p),
@@ -163,6 +177,7 @@ export function buildTerminalTree(res: PanesResponse | undefined, sessions: read
                 state: paneState(p, session),
                 pane: p.pane,
                 sessionId: p.session_id ?? "",
+                agentSession: p.agent_session ?? "",
                 haystack: [row.title, row.detail, p.cwd, label, w.label, w.branch].join(" ").toLowerCase(),
               };
             }),

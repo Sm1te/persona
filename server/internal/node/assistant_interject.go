@@ -17,17 +17,31 @@ import (
 // (Agent SDK 0.2.139).
 var backgroundTasksMinVersion = [3]int{2, 1, 139}
 
-// interjects says whether a message to p now goes in as an interjection: it is Claude on the CLI, busy answering, and
-// its init said a Claude Code that takes background_tasks. Called before the message marks it busy.
-func (p *assistantProc) interjects() bool {
+// midTurn says whether a message to p now comes in the middle of a turn: it is Claude on the CLI, busy answering. Such
+// a message always carries interjectNote, whatever the background setting: without it the model went on with its tool
+// calls for minutes and never said a word to the user who asked what was going on (#4883). Called before the message
+// marks it busy.
+func (p *assistantProc) midTurn() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.agent == "claude" && p.runtime == "" && p.busy && versionAtLeast(p.claudeVersion, backgroundTasksMinVersion)
+	return p.agent == "claude" && p.runtime == "" && p.busy
 }
 
-// interjectNote goes with the message, after the live snapshot: answer this first.
-func interjectNote() map[string]any {
-	return map[string]any{"type": "text", "text": prompts.RenderInterject()}
+// interjects says whether a message to p now goes in as an interjection that moves foreground work to the background:
+// it comes mid-turn, and its init said a Claude Code that takes background_tasks. Called before the message marks it busy.
+func (p *assistantProc) interjects() bool {
+	if !p.midTurn() {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return versionAtLeast(p.claudeVersion, backgroundTasksMinVersion)
+}
+
+// interjectNote goes with a mid-turn message, after the live snapshot: one sentence on what is going on before the next
+// tool call, then answer it. background: its foreground work is being moved to the background for it.
+func interjectNote(background bool) map[string]any {
+	return map[string]any{"type": "text", "text": prompts.RenderInterject(prompts.Interject{Background: background})}
 }
 
 // backgroundForeground moves what p runs in the foreground (Bash commands, subagents) to the background. Best effort:

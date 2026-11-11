@@ -99,6 +99,8 @@ extension Theme {
         static let askFirst = "hand.raised"
         /// bypassPermissions: nothing is asked.
         static let allowEverything = "exclamationmark.shield"
+        /// The auto permission mode: the agent judges the risk itself.
+        static let autoMode = "wand.and.sparkles"
         static let permissions = "lock.shield"
         /// The two little arrows after a value that opens a menu of choices.
         static let choices = "chevron.up.chevron.down"
@@ -122,6 +124,14 @@ extension Theme {
         static let edit = "pencil"
         /// Draw on a picture (the image viewer's Markup, into the composer).
         static let markup = "pencil.tip.crop.circle"
+        /// The image editor's tools (`ImageEditor`): a box round what matters, a free line, cropping and turning the
+        /// picture, the line's width, a crop's shape.
+        static let markupBox = "rectangle"
+        static let markupPen = "scribble"
+        static let crop = "crop"
+        static let rotateLeft = "rotate.left"
+        static let lineWidth = "lineweight"
+        static let cropRatio = "aspectratio"
         static let compose = "square.and.pencil"
         /// Speech to text in the composer (a tap starts, a second one ends).
         static let dictate = "mic"
@@ -171,6 +181,7 @@ extension Theme {
         /// Loads the in-app page again (the link sheet's header).
         static let reload = retry
         static let undo = "arrow.uturn.backward"
+        static let redo = "arrow.uturn.forward"
         static let interrupt = "stop.fill"
         static let stopLoop = "stop.circle"
         static let run = "play.fill"
@@ -548,6 +559,8 @@ extension Theme {
         static let taskPlan = "list.clipboard"
         /// Saying something straight to a task (Message, and Message “xx”).
         static let routeToTask = "arrowshape.turn.up.right"
+        /// Forward a message to another chat (#3807): sending it on, the same arrow as saying something to a task.
+        static let forwardMessage = routeToTask
         /// A pull request a task opened.
         static let pullRequest = "arrow.triangle.pull"
         /// GitHub's thread page: a merged pull request, an open issue, a review asking for changes, a check skipped

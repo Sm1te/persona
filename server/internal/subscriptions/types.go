@@ -30,6 +30,7 @@ const (
 	OriginExtension = "extension"
 	OriginModel     = "model"
 	OriginUser      = "user"
+	OriginPush      = "push" // a push source (#3848): no recipe, its device sends its items
 )
 
 // Error codes: in API errors, Subscription.Error, a dry run's error and its checks.
@@ -129,7 +130,7 @@ type Subscription struct {
 type Run struct {
 	At      time.Time `json:"at"`
 	MS      int64     `json:"ms"`
-	Trigger string    `json:"trigger"` // schedule, now, retry
+	Trigger string    `json:"trigger"` // schedule, now, retry, push
 	New     int       `json:"new"`
 	Count   int       `json:"count"`
 	Error   *Problem  `json:"error"`

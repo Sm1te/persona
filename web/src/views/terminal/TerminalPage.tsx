@@ -1,16 +1,20 @@
-// One browser for work sessions, with standalone shells below it. The session detail still uses the app's /s and /t routes.
+// One browser for work sessions and plain terminals (#4754): a switch at the list's top between the sessions and
+// **Terminals**, every plain terminal of every computer at full height (lib/terminal-list.ts). The session detail still
+// uses the app's /s and /t routes; a terminal opens on the right by its `pane:` address.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, enc, errorText } from "../../lib/api";
+import { isStoppedAgent } from "../../lib/format";
 import { useScopedMachines } from "../../lib/current-assistant";
 import { href, navigate, onLinkClick, type Route } from "../../lib/router";
 import { SESSIONS_LIST_FEATURE } from "../../lib/session-list";
 import { openPanel } from "../../lib/panel";
-import { refresh as refreshSessions, useStore } from "../../lib/store";
+import { getSession, refresh as refreshSessions, useStore } from "../../lib/store";
 import { usePanes, type Listing } from "../../lib/terminal-panes";
 import { buildTerminalTree, keepOnlyShown, keepRecent, paneCwd, paneTrail, sameTerminal, type OpenTerminal, type TermSpace } from "../../lib/terminals";
 import type { Machine } from "../../lib/types";
 import { NARROW, useMedia } from "../../lib/viewport";
-import { Collapse, cx, IconButton, toast } from "../../ui/atoms";
+import { finishedCount, readListView, rememberListView, resolveListView, type TerminalListView } from "../../lib/terminal-list";
+import { Button, Collapse, cx, IconButton, toast } from "../../ui/atoms";
 import { contextMenuProps } from "../../ui/context-menu";
 import type { MenuAt } from "../../ui/menu-model";
 import { machineNode, termPaneNode, termSpaceNode, termTabNode, type MenuNode } from "../../lib/node-actions";
@@ -20,14 +24,15 @@ import { onNodeChanged, setKnownTree } from "../../lib/node-palette";
 import { Icon } from "../../ui/icons";
 import { WorkSessionBrowser } from "../agents/WorkSessionBrowser";
 import { AgentsList } from "../Sidebar";
+import { Segmented } from "../assistant/parts";
 import { Empty } from "../session/files/parts";
 import { TerminalPanel } from "../session/TerminalPanel";
 import { ShellHeaderSlots } from "../ShellSwitch";
+import { useCloseFinished } from "./CloseFinished";
 import { interactiveSessionPane, standaloneShells, type ShellSpace, type ShellTab } from "./work-terminal-layout";
 import { t } from "../../i18n";
 
 type TerminalRoute = Extract<Route, { name: "terminal" }>;
-const browse: TerminalRoute = { name: "terminal" };
 
 export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWorkPane }: {
   route?: TerminalRoute;
@@ -48,8 +53,10 @@ export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWor
   const [menu, setMenu] = useState<{ node: MenuNode; at: MenuAt; header?: string } | null>(null);
   const shown: OpenTerminal | undefined = route?.mid && route.id ? { mid: route.mid, id: route.id } : undefined;
   const selected = detail?.selected;
+  // a stopped Agent (#4754) has its terminal too: the shell it left, or Resume when that is gone
+  const stoppedSelected = useStore(() => Boolean(selected && isStoppedAgent(getSession(selected.mid, selected.sid))));
   const terminalAvailable = Boolean(panesOn && selected && targets.some((m) => m.id === selected.mid && m.online) &&
-    interactiveSessionPane(listing[selected.mid], selected.sid));
+    (interactiveSessionPane(listing[selected.mid], selected.sid) || stoppedSelected));
   const mid = selected?.mid, sid = selected?.sid;
   useEffect(() => {
     onWorkPane?.(terminalAvailable && mid && sid ? { mid, sid } : undefined);
@@ -58,6 +65,18 @@ export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWor
   const hasDetail = Boolean(detail || shown);
   const narrow = useMedia(NARROW);
   const hideList = hasDetail && narrow;
+
+  // Sessions | Terminals: the address's, else this browser's last choice; the sessions beside an open session
+  const [remembered, setRemembered] = useState(readListView);
+  const listView = resolveListView(route?.view, remembered, { panes: panesOn && machines.length > 0, session: Boolean(detail) });
+  const browse: TerminalRoute = listView === "terminals" ? { name: "terminal", view: "terminals" } : { name: "terminal" };
+  const chooseView = (view: TerminalListView) => {
+    rememberListView(view);
+    setRemembered(view);
+    // an open terminal stays open beside the other list; from a session's page the list is the page's own
+    if (detail) navigate({ name: "terminal", view });
+    else navigate({ name: "terminal", ...(shown ? { mid: shown.mid, id: shown.id } : {}), view }, true);
+  };
 
   const trees = useMemo(() => {
     const out: Record<string, TermSpace[]> = {};
@@ -95,16 +114,19 @@ export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWor
     setOpen((list) => list.filter((x) => !sameTerminal(x, item)));
     if (sameTerminal(item, shown)) navigate(browse);
   };
-  const [shellsFolded, toggleShells] = useFolded("work-standalone-shells");
   const openShell = async (mid: string, space: TermSpace) => {
     try {
       const r = await api<{ terminal: string }>(`/machines/${enc(mid)}/panes`, { method: "POST", json: { kind: space.host, workspace_id: space.id } });
       void reload([mid]);
-      navigate({ name: "terminal", mid, id: r.terminal });
+      navigate({ name: "terminal", mid, id: r.terminal, view: "terminals" }); // "New terminal" is the Terminals list's
     } catch (e) {
       toast(t("terminal-terminalpage.new_failed", { error: errorText(e) }), "error");
     }
   };
+
+  // "Close finished terminals" (#4754): previewed, confirmed, then exactly those (CloseFinished.tsx)
+  const finished = useCloseFinished({ spacesOf: (id) => trees[id] ?? [], reload: (id) => void reload([id]) });
+  const listsTerminals = listView === "terminals";
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -114,44 +136,55 @@ export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWor
       </header>
       {hasDetail && (
         <a href={href(browse)} onClick={(e) => onLinkClick(e, browse)} className="touch-hit flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 text-[13px] text-accent-ink lg:hidden">
-          <Icon name="arrowLeft" size={14} />{t("work-entry.back")}
+          <Icon name="arrowLeft" size={14} />{t(listsTerminals ? "terminal-terminalpage.back_terminals" : "work-entry.back")}
         </a>
       )}
       <div className="relative flex min-h-0 flex-1">
-        <section aria-label={t("work-entry.sessions")} inert={hideList || undefined} className={cx("flex min-h-0 w-full min-w-0 flex-col lg:w-[320px] lg:shrink-0 lg:border-r lg:border-line", hasDetail && "max-lg:invisible max-lg:absolute max-lg:inset-0")}>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
-            {legacyList ? <AgentsList route={route ?? browse} onNewAgent={onNewAgent} /> : <WorkSessionBrowser
-              activeSession={selected ? { machineId: selected.mid, sessionId: selected.sid } : undefined}
-              onSelect={(s) => navigate({ name: "session", mid: s.machine_id, sid: s.session_id, work: true })}
-            />}
-          </div>
+        <section aria-label={t(listsTerminals ? "terminal-terminalpage.terminals" : "work-entry.sessions")} inert={hideList || undefined} className={cx("flex min-h-0 w-full min-w-0 flex-col lg:w-[320px] lg:shrink-0 lg:border-r lg:border-line", hasDetail && "max-lg:invisible max-lg:absolute max-lg:inset-0")}>
           {panesOn && machines.length > 0 && (
-            <section aria-label={t("work-entry.shells")} className="flex min-h-0 max-h-[35%] shrink-0 flex-col border-t border-line">
-              <div className="flex shrink-0 items-center gap-1 px-2">
-                <button type="button" aria-expanded={!shellsFolded} onClick={toggleShells} className="touch-hit flex min-h-9 min-w-0 flex-1 items-center gap-2 whitespace-nowrap rounded-control px-2 text-left text-[12px] font-medium text-ink-2 hover:bg-hover">
-                  <Icon name="chevron" size={10} className={shellsFolded ? "-rotate-90" : undefined} />{t("work-entry.shells")}
-                </button>
-                <IconButton icon="retry" label={t("terminal-terminalpage.refresh")} onClick={() => void refresh()} disabled={busy} />
+            <div className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-1">
+              <div className="min-w-0 flex-1">
+                <Segmented<TerminalListView>
+                  label={t("terminal-terminalpage.view_label")}
+                  value={listView}
+                  options={[
+                    { v: "sessions", label: t("work-entry.sessions") },
+                    { v: "terminals", label: t("terminal-terminalpage.terminals") },
+                  ]}
+                  onChange={chooseView}
+                />
               </div>
-              {!shellsFolded && (
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
-                  {machines.filter((m) => m.online).map((m) => (
-                    <MachineBlock
-                      key={m.id}
-                      machine={m}
-                      named={machines.length > 1}
-                      spaces={listing[m.id]?.error ? [] : standaloneShells(trees[m.id] ?? [])}
-                      listing={listing[m.id]}
-                      loading={busy}
-                      shown={shown}
-                      onOpenShell={(sp) => void openShell(m.id, sp)}
-                      onRetry={() => void refresh()}
-                      open={(node, at, header, toggle) => setMenu((prev) => (toggle && at.anchor && prev?.at.anchor === at.anchor ? null : { node, at, header }))}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
+              {listsTerminals && <IconButton icon="retry" label={t("terminal-terminalpage.refresh")} onClick={() => void refresh()} disabled={busy} />}
+            </div>
+          )}
+          {listsTerminals ? (
+            <div data-terminals-list className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+              {!machines.some((m) => m.online) && <p className="px-2.5 py-2 text-[12px] text-ink-3">{t("terminal-terminalpage.none_online")}</p>}
+              {machines.filter((m) => m.online).map((m) => (
+                <MachineBlock
+                  key={m.id}
+                  machine={m}
+                  named={machines.length > 1}
+                  spaces={listing[m.id]?.error ? [] : standaloneShells(trees[m.id] ?? [])}
+                  listing={listing[m.id]}
+                  loading={busy}
+                  shown={shown}
+                  finished={listing[m.id]?.error ? 0 : finishedCount(trees[m.id] ?? [])}
+                  closing={finished.previewing === m.id}
+                  onCloseFinished={() => void finished.start(m.id)}
+                  onOpenShell={(sp) => void openShell(m.id, sp)}
+                  onRetry={() => void refresh()}
+                  open={(node, at, header, toggle) => setMenu((prev) => (toggle && at.anchor && prev?.at.anchor === at.anchor ? null : { node, at, header }))}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+              {legacyList ? <AgentsList route={route ?? browse} onNewAgent={onNewAgent} /> : <WorkSessionBrowser
+                activeSession={selected ? { machineId: selected.mid, sessionId: selected.sid } : undefined}
+                onSelect={(s) => navigate({ name: "session", mid: s.machine_id, sid: s.session_id, work: true })}
+              />}
+            </div>
           )}
         </section>
         {menu && (
@@ -173,9 +206,11 @@ export function TerminalPage({ route, onToggleSidebar, onNewAgent, detail, onWor
           })}
           {detail ? detail.render(terminalAvailable)
             : shown ? !panesOn && <Empty icon="terminal" title={t("work-entry.terminal_unavailable")} />
+            : listsTerminals ? <Empty icon="terminal" title={t("terminal-terminalpage.pick_terminal")} detail={t("terminal-terminalpage.pick_terminal_detail")} />
             : <Empty icon="chat" title={t("work-entry.pick_session")} detail={t("work-entry.pick_session_detail")} />}
         </section>
       </div>
+      {finished.dialog}
     </div>
   );
 }
@@ -225,6 +260,9 @@ function MachineBlock({
   listing,
   loading,
   shown,
+  finished,
+  closing,
+  onCloseFinished,
   onOpenShell,
   onRetry,
   open,
@@ -235,6 +273,10 @@ function MachineBlock({
   listing?: Listing;
   loading: boolean;
   shown?: OpenTerminal;
+  /** How many of its terminals stopped Agents left (#4754): "Close finished terminals" shows when there are any. */
+  finished: number;
+  closing: boolean;
+  onCloseFinished: () => void;
   onOpenShell: (space: TermSpace) => void;
   onRetry: () => void;
 } & Menus) {
@@ -268,6 +310,11 @@ function MachineBlock({
             </p>
           )}
           {machine.online && listing?.data && !listing.error && spaces.length === 0 && <p className="px-2.5 py-2 text-[12px] text-ink-3">{t("terminal-terminalpage.no_panes")}</p>}
+          {finished > 0 && (
+            <div className="flex px-1 pt-1">
+              <Button tone="quiet" icon="x" busy={closing} onClick={onCloseFinished}>{t("terminal-terminalpage.close_finished")}</Button>
+            </div>
+          )}
           {spaces.map((sp) => (
             <SpaceBlock key={`${sp.host}/${sp.id}`} machine={machine} sp={sp} shown={shown} onOpenShell={onOpenShell} open={open} />
           ))}
@@ -327,7 +374,7 @@ function TabBlock({ machine, sp, t: tab, shown, open }: { machine: Machine; sp: 
       <Collapse open={!hide}>
         <div inert={hide || undefined}>
           {tab.panes.map((p) => {
-            const to: Route = { name: "terminal", mid, id: p.id };
+            const to: Route = { name: "terminal", mid, id: p.id, view: "terminals" };
             const on = sameTerminal(shown, { mid, id: p.id });
             // a tab with one pane is that pane: its menu has the tab's rename and close too
             const node = tab.source.panes.length === 1 ? termTabNode(mid, sp, tab.source, machine.online) : termPaneNode(mid, sp, tab.source, p, machine.online);

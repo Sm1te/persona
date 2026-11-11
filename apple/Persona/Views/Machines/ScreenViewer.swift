@@ -47,10 +47,48 @@ struct ScreenOpen: Identifiable, Hashable {
     var id: MachineRef { machine }
 }
 
+#if os(iOS)
+/// Which ways the app turns (#3075): an iPhone stays upright except while the live screen's page is up, which also
+/// turns to either landscape; an iPad turns every way. The app delegate answers with `mask`, which replaces Info.plist's
+/// lists (an iPhone's says upright: it launches upright however it is held), so both are spelled out here.
+@MainActor enum AppOrientation {
+    /// The live screen's page is up (ScreenWindow).
+    private(set) static var screenUp = false
+    private static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    static var mask: UIInterfaceOrientationMask {
+        guard phone else { return .all }
+        return screenUp ? .allButUpsideDown : .portrait
+    }
+
+    /// The live screen's page came up (landscape allowed: the phone turns to how it is held) or went (back upright).
+    static func screen(_ up: Bool, in scene: UIWindowScene?) {
+        guard up != screenUp else { return }
+        screenUp = up
+        guard let scene else { return }
+        // UIKit asks the shell's controllers, and what they present (a machine's page in a sheet), not the screen
+        // window's: every one of them reads the policy again.
+        for w in scene.windows {
+            var c = w.rootViewController
+            while let v = c {
+                v.setNeedsUpdateOfSupportedInterfaceOrientations()
+                c = v.presentedViewController
+            }
+        }
+        // Closed on its side: upright again now, not when the phone next turns.
+        if !up, phone, scene.effectiveGeometry.interfaceOrientation != .portrait {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        }
+    }
+}
+
+#endif
+
 #if os(iOS) || os(visionOS)
 /// The live screen in a window of its own (#1604): over the shell's window and whatever it presents (a sheet, a page
 /// pushed in one), under the toasts' (`ToastWindow`). SwiftUI presents one thing at a time from the root, so a
 /// fullScreenCover there was swallowed while a machine page was up in a sheet. `AppModel.screenOpen` shows and hides it.
+/// On an iPhone it turns to landscape while it is up, and the app goes back upright as it closes (#3075).
 @MainActor final class ScreenWindow {
     static let shared = ScreenWindow()
     private var window: UIWindow?
@@ -58,6 +96,7 @@ struct ScreenOpen: Identifiable, Hashable {
 
     func show(_ open: ScreenOpen?) {
         guard let open else {
+            upright()
             window?.isHidden = true
             window = nil
             before?.makeKey()
@@ -77,6 +116,16 @@ struct ScreenOpen: Identifiable, Hashable {
         w.isHidden = false
         w.makeKey()
         window = w
+        #if os(iOS)
+        AppOrientation.screen(true, in: scene)
+        #endif
+    }
+
+    /// Back to the app's upright policy (an iPhone turns back as the page fades): on closing, before the window goes.
+    func upright() {
+        #if os(iOS)
+        AppOrientation.screen(false, in: window?.windowScene ?? before?.windowScene)
+        #endif
     }
 }
 
@@ -98,6 +147,7 @@ private struct ScreenWindowRoot: View {
     }
 
     private func close() {
+        ScreenWindow.shared.upright()
         withAnimation(Theme.Motion.layout) { visible = false } completion: { AppModel.shared.screenOpen = nil }
     }
 }

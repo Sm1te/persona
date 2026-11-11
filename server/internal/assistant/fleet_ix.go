@@ -485,8 +485,24 @@ func (s *Service) resolveRemembered(id string, r proto.Resolution, remember bool
 }
 
 func (s *Service) resolveWithStanding(id string, r proto.Resolution, remember bool, authorization *standingResolution) error {
+	return s.resolveAnswer(id, r, remember, authorization, nil)
+}
+
+// resolveApproved is resolve for an app's answer the hub relayed, with the device it vouched may approve a hand-off
+// card (nil: none). Only this way does a hand-off card take more than a no (secret_handoff.go).
+func (s *Service) resolveApproved(id string, r proto.Resolution, approver *assistantwire.HandoffApprover) error {
+	return s.resolveAnswer(id, r, true, nil, approver)
+}
+
+func (s *Service) resolveAnswer(id string, r proto.Resolution, remember bool, authorization *standingResolution,
+	approver *assistantwire.HandoffApprover) error {
 	s.fleet.mu.Lock()
 	p := s.fleet.interactions[id]
+	handoff := p != nil && p.ix.ToolName == proto.SecretHandoffTool
+	if handoff && !proto.SecretHandoffDeclines(r) && (approver == nil || approver.DeviceID == "" || authorization != nil) {
+		s.fleet.mu.Unlock()
+		return errHandoffElsewhere // a channel, the assistant, a remembered answer, an older hub: a no only
+	}
 	if p != nil && r.Cancel && (!p.ix.CanCancel || p.ix.Kind != proto.IxQuestion || !r.IsQuestionCancel()) {
 		s.fleet.mu.Unlock()
 		return errInvalidQuestionCancel
@@ -554,6 +570,9 @@ func (s *Service) resolveWithStanding(id string, r proto.Resolution, remember bo
 		if p.resolved == nil {
 			p.resolved = make(chan struct{})
 		}
+	}
+	if p != nil && handoff {
+		s.claimHandoffLocked(id, r, approver) // claimed with this answer: an approval, and who gave it
 	}
 	if p != nil {
 		p.answeredBy, p.answeredReason = r.AnsweredBy, r.Reason // read by finished(), under this lock

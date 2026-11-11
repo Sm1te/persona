@@ -142,7 +142,7 @@ func (s *Service) routeAsk(ix proto.Interaction) bool {
 	shown := ix
 	shown.Delegating = true
 	s.show(shown)
-	s.workEvent(ix.MachineID, ix.SessionID, "ask_routed", map[string]any{"to": ladder[0], "kind": ix.Kind, "todo": todo})
+	s.workEvent(ix.MachineID, ix.SessionID, "ask_routed", map[string]any{"to": ladder[0], "kind": ix.Kind, "todo": todo, "id": ix.ID})
 	s.signalAsk(todo, ladder[0], ix, 0)
 	return true
 }

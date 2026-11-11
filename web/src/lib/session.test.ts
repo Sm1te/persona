@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, attachSession } from "./api";
-import { resumeCommand, sessionCan, shellPath, sessionDeletable, sessionMenuActions, sourceSubtitle } from "./format";
+import { isStoppedAgent, resumeCommand, sessionCan, shellPath, sessionDeletable, sessionMenuActions, sourceSubtitle } from "./format";
 import type { Session, SessionCapabilities } from "./types";
 
 const legacy: Session = { machine_id: "m", session_id: "raw-thread", title: "", cwd: "/tmp/project", status: "working" };
@@ -56,7 +56,7 @@ describe("session capability contract", () => {
     expect(sessionCan(runtime, "close")).toBe(true);
     expect(sessionMenuActions(runtime)).toEqual(["stop", "close"]);
     expect(sessionMenuActions({ ...runtime, status: "offline" })).toEqual([]);
-    expect(sessionMenuActions({ ...legacy, capabilities: { terminal: true, close: false } })).toEqual(["stop", "resume"]);
+    expect(sessionMenuActions({ ...legacy, capabilities: { terminal: true, interrupt: true, close: false } })).toEqual(["stop", "resume"]);
     expect(sessionCan({ ...runtime, capabilities: { terminal: true } }, "close")).toBe(true);
     expect(sessionCan(undefined, "close")).toBe(false);
   });
@@ -84,6 +84,42 @@ describe("session capability contract", () => {
     expect(sourceSubtitle(dsh)).toBe("DSH");
     expect(sessionMenuActions(dsh)).toEqual(["stop"]);
     expect(sourceSubtitle({ ...dsh, capabilities: { read: true }, read_only_reason: "DSH 没有开放从手机发消息" })).toBe("DSH · 仅查看：DSH 没有开放从手机发消息");
+  });
+});
+
+describe("a stopped Agent (#4754)", () => {
+  const stopped: Session = { ...legacy, agent: "claude", status: "offline", capabilities: { read: true, terminal: true }, read_only_reason: "Agent 已停止" };
+
+  it("holds a native row that carries capabilities to them: read and terminal, nothing else", () => {
+    expect(sessionCan(stopped, "read")).toBe(true);
+    expect(sessionCan(stopped, "terminal")).toBe(true);
+    for (const op of ["send", "interrupt", "approve", "model", "modes"] as const) expect(sessionCan(stopped, op)).toBe(false);
+    expect(sessionCan(stopped, "attach")).toBe(false); // attach is a source's, never a native row's
+    expect(sessionCan(stopped, "close")).toBe(true); // close follows terminal on a row that does not say
+    // its node's own words never show as a source line
+    expect(sourceSubtitle(stopped)).toBe("");
+  });
+
+  it("is a native, non-assistant row that is offline or interrupted with read and terminal and no send", () => {
+    expect(isStoppedAgent(stopped)).toBe(true);
+    expect(isStoppedAgent({ ...stopped, status: "interrupted" })).toBe(true);
+    expect(isStoppedAgent({ ...stopped, status: "idle" })).toBe(false); // a live tab on Claude's agents list says the same, but runs
+    expect(isStoppedAgent({ ...stopped, capabilities: { read: true, terminal: true, send: true } })).toBe(false);
+    expect(isStoppedAgent({ ...stopped, capabilities: { read: true } })).toBe(false); // an archive's snapshot: no terminal
+    expect(isStoppedAgent({ ...stopped, source_kind: "claude_cli" })).toBe(false);
+    expect(isStoppedAgent({ ...stopped, assistant: true })).toBe(false);
+    expect(isStoppedAgent(undefined)).toBe(false);
+  });
+
+  it("keeps an older node's offline row as it was: no capabilities, so it may still be sent to (a message resumes it there)", () => {
+    const old: Session = { ...legacy, status: "offline" };
+    expect(isStoppedAgent(old)).toBe(false);
+    for (const op of operations) expect(sessionCan(old, op)).toBe(true);
+  });
+
+  it("is left out of Home's Continue, which offers only rows that take messages", () => {
+    expect(sessionCan(stopped, "send")).toBe(false);
+    expect(sessionCan({ ...stopped, capabilities: { read: true, terminal: true, send: true }, status: "idle" }, "send")).toBe(true);
   });
 });
 

@@ -27,5 +27,16 @@
   "no_text": "Send text, images or both.",
   "meeting_running": "The meeting is still going on. Write in its follow-up once it has ended.",
   "no_material": "This recording has neither a transcript nor minutes to talk about.",
-  "just_me_notify": "Not sent: you asked this privately during a meeting. Your answer stays in this conversation, which the meeting page shows."
+  "just_me_notify": "Not sent: you asked this privately during a meeting. Your answer stays in this conversation, which the meeting page shows.",
+  "bad_photo_at": "at must be a number: the seconds from the start of the recording when the photo was taken.",
+  "bad_photo_mime": "mime must be image/jpeg or image/png.",
+  "bad_photo_data": "data must be a base64 JPEG or PNG image of the type mime names.",
+  "photo_too_large": "A photo is at most {size}.",
+  "photo_too_wide": "A photo is at most {max} pixels on its long side.",
+  "photo_field_too_long": "{field} is over {max} characters.",
+  "transcript_expired": "This recording’s transcript has expired; only its minutes are kept.",
+  "photo_not_found": "This meeting has no such photo.",
+  "photo_deleted": "This photo was deleted, so it can’t be added again.",
+  "photo_id_reused": "This id was already used for another photo.",
+  "photos_full": "This meeting already has {max} photos."
 }

@@ -30,5 +30,9 @@
   "mode_watch_hint": "The pane on the computer stays as it is; you can't type here",
   "mode_label": "Control or watch",
   "grid_panel": "Now {cols} columns × {rows} rows (this panel's size)",
-  "grid_pane": "The pane on the computer is {cols} columns × {rows} rows"
+  "grid_pane": "The pane on the computer is {cols} columns × {rows} rows",
+  "stopped": "This Agent has stopped. Resume runs it again in this terminal.",
+  "stopped_closed": "This Agent has stopped and its terminal was closed. Resume runs it again in a new tab.",
+  "resume": "Resume",
+  "resume_failed": "Couldn't resume this Agent. {error}"
 }

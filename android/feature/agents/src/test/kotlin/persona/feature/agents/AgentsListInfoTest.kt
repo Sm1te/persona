@@ -121,9 +121,9 @@ class AgentsListInfoTest {
 
     @Test fun anotherAgentsCardSaysWhoAsks() {
         val claude = Interaction("ix", kind = "permission", toolName = "Bash")
-        assertEquals("需要你授权", claude.cardTitle(res))
-        assertEquals("Codex 需要你授权", claude.copy(agent = "codex").cardTitle(res))
-        assertEquals("需要你授权", claude.copy(toolName = "mcp__persona__mail_send").cardTitle(res))
+        assertEquals("在等你批准", claude.cardTitle(res))
+        assertEquals("Codex 在等你批准", claude.copy(agent = "codex").cardTitle(res))
+        assertEquals("在等你批准", claude.copy(toolName = "mcp__persona__mail_send").cardTitle(res))
         assertEquals("DSH 在问你", claude.copy(kind = "question", agent = "dsh", agentLabelHint = "DSH").cardTitle(res))
         assertEquals("Claude 在问你", claude.copy(kind = "question", agent = "claude").cardTitle(res))
     }

@@ -30,7 +30,7 @@
   "request_changes": "Request changes",
   "approve": "Approve",
   "approve_mode": "Approval mode",
-  "permission_kicker": "Needs your permission",
+  "permission_kicker": "Waiting for your approval",
   "permission_title": "Allow {tool}?",
   "denied_message": "The user denied this",
   "deny": "Deny",
@@ -99,5 +99,12 @@
   "secret_run_decline": "Decline",
   "secret_run_run": "Run",
   "secret_run_note": "Used once, never saved. The assistant never sees it.",
-  "secret_run_card_only": "Answer it on the card: type the password and Run, or Decline"
+  "secret_run_card_only": "Answer it on the card: type the password and Run, or Decline",
+  "secret_handoff_title": "Hand secrets to an Agent?",
+  "secret_handoff_lead": "“{agent}” on {machine} gets these for this run only:",
+  "secret_handoff_lead_unnamed": "An Agent on {machine} gets these for this run only:",
+  "secret_handoff_lead_bare": "An Agent gets these for this run only:",
+  "secret_handoff_note": "Persona and the assistant never see the values.",
+  "secret_handoff_always_scope": "Always allow {scope}.",
+  "secret_handoff_card_only": "Approve it on its card in the chat."
 }

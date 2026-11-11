@@ -247,7 +247,7 @@ func TestCodexHeldByARunningCLIIsNotResumable(t *testing.T) {
 	if s.Capabilities == nil || s.Capabilities.Send || s.Status != proto.StatusWorking || !strings.HasPrefix(s.ReadOnlyReason, codexHolderCLI) {
 		t.Fatalf("running CLI's thread: status %q reason %q caps %+v", s.Status, s.ReadOnlyReason, s.Capabilities)
 	}
-	if n.codexResumable(startThread) {
+	if n.codexResumable(t.Context(), startThread) {
 		t.Fatal("resumable while a Codex holds its rollout")
 	}
 	// The list's scan may be up to 30 seconds old: a resume looks again.

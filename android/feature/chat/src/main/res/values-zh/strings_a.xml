@@ -419,8 +419,15 @@
     <string name="chat_work_step">%1$s，第 %2$d 步</string>
     <string name="chat_work_elapsed">%1$s，%2$s</string>
     <string name="chat_work_seconds">%1$d 秒</string>
-    <string name="chat_work_minutes">%1$d 分钟</string>
-    <string name="chat_work_hours_minutes">%1$d 小时 %2$d 分钟</string>
+    <string name="chat_work_minutes">%1$d 分</string>
+    <string name="chat_work_hours_minutes">%1$d 小时 %2$d 分</string>
+    <string name="chat_work_working_for">正在工作 %1$s</string>
+    <string name="chat_work_done">已完成</string>
+    <string name="chat_work_tools">工具 %1$d</string>
+    <string name="chat_work_thoughts">思考 %1$d</string>
+    <string name="chat_work_replies">回复 %1$d</string>
+    <string name="chat_work_minutes_seconds">%1$d 分 %2$d 秒</string>
+    <string name="chat_work_reading_files">正在读取 %1$d 个文件</string>
     <plurals name="chat_work_done_steps">
         <item quantity="other">做了 %1$d 步</item>
     </plurals>

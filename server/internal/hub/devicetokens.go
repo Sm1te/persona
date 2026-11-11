@@ -252,8 +252,10 @@ func (h *Hub) lookupToken(ctx context.Context, tok string) (principal, bool, err
 // its method. Something new the watch needs goes here.
 var (
 	answerReads = lazyre.New(`^/api/v1/(machines|sessions|sessions/archived|interactions|inbox|workspace-board|workspaces|sessions/[^/]+/[^/]+/items|` +
-		`extensions/-/(widgets|shortcuts))$`)
+		`extensions/-/(widgets|shortcuts)|personas/nwverse/pet/[A-Za-z0-9_-][A-Za-z0-9._-]*\.(json|png))$`)
 	// The watch draws extensions' widgets on its faces and runs their shortcuts (docs/extensions/extensions.md "System-level placements").
+	// It also fetches the built-in Milk Frog's art for its row and face, and only that: pet/ of the nwverse package
+	// (docs/apple/persona.md "The Milk Frog on the watch"), not another package or an uploaded look.
 	answerWrites = lazyre.New(`^/api/v1/(interactions/[^/]+/(resolve|choose)|sessions/[^/]+/[^/]+/(messages|seen|interrupt)|` +
 		`inbox/[^/]+/(done|reply|draft|suggestion)|extensions/[^/]+/-/(widget|shortcut)/[^/]+)$`)
 	answerPuts = lazyre.New(`^/api/v1/devices/[^/]+/widgets$`)

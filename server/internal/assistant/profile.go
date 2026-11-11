@@ -50,6 +50,10 @@ type Settings struct {
 	DefaultPermissionMode string `json:"default_permission_mode,omitempty"`
 	// Timezone is the phone's (IANA name): routines and the snapshot read times in it, and the hub its own.
 	Timezone string `json:"timezone,omitempty"`
+	// TimezonePicked: the user picked Timezone by hand (#1855); while true, a device's own sync (a `timezone` written
+	// without `timezone_picked`) leaves it alone. false: it follows the devices again. nil: never said (every write
+	// lands, as before).
+	TimezonePicked *bool `json:"timezone_picked,omitempty"`
 	// Notes, once edited in the app, replace manager.json's assistant.notes.
 	Notes *string `json:"notes,omitempty"`
 	// OwnerAliases are the names the user explicitly adds for kb.owner; an empty list clears them.

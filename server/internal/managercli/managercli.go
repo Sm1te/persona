@@ -27,8 +27,11 @@ func Assistant(ctx context.Context, build update.Build, args []string, stdin io.
 	if len(args) > 0 && args[0] == "drop-shared-tables" {
 		return assistant.DropSharedCommand(ctx, args[1:], os.Stdout, os.Stderr)
 	}
+	if len(args) > 0 && args[0] == "north-star" {
+		return assistant.NorthStarCommand(ctx, args[1:], os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 {
-		return clitext.UsageError("usage: " + clitext.CommandName() + " assistant [drop-shared-tables [--yes]]")
+		return clitext.UsageError("usage: " + clitext.CommandName() + " assistant [drop-shared-tables [--yes] | north-star [--date D] [--split T] [--tz Z]]")
 	}
 	// What a parent left inheritable (an older hub's listening socket) stops here, not in every node, extension and
 	// agent the manager starts. Here, not in main: the sandbox's launcher hands its descriptors on by exec.

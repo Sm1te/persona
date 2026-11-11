@@ -18,6 +18,7 @@ var extensionStatusTemplates = sync.OnceValue(func() []deploymentTemplate {
 		return strings.HasPrefix(key, "extension-status.") && key != "extension-status.separator" ||
 			strings.HasPrefix(key, "extension-version.") || strings.HasPrefix(key, "extension-identity.") || key == "hub-extensions.missing" ||
 			key == "hub-extensions.socket_path_too_long" || key == "extension-market_git.git_missing" ||
+			key == "extension-market_git.git_too_old" ||
 			key == "extension-sandbox.probe_tmp"
 	})
 })

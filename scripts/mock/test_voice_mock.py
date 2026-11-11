@@ -14,7 +14,7 @@ import tempfile
 import time
 import unittest
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 HUB = Path(__file__).with_name("mock_hub.py")
 TARGET = {"machine_id": "macbook", "session_id": "a1f3c2d4-0000-4000-8000-000000000001"}
@@ -93,7 +93,7 @@ class VoiceMockTests(unittest.TestCase):
             cls.port = sock.getsockname()[1]
         cls.log = tempfile.TemporaryFile()
         env = {"PATH": os.environ.get("PATH", ""), "PORT": str(cls.port), "MOCK_VOICE": "1", "MOCK_VOICE_PACE": "0.1",
-               "MOCK_VOICE_VOICES_DELAY": "0.3"}
+               "MOCK_VOICE_VOICES_DELAY": "0.3", "MOCK_VOICE_SPEAK_SLOW": "0.3"}
         cls.process = subprocess.Popen([sys.executable, "-I", str(HUB)], env=env, stdout=cls.log, stderr=cls.log)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
@@ -165,6 +165,65 @@ class VoiceMockTests(unittest.TestCase):
         page = self.get("/api/v1/extensions/voice/-/")
         self.assertEqual((page["id"], page["kind"], page["status"]), ("voice", "voice", "running"))
         self.assertTrue(page["form"]["fields"])
+
+    def speak(self, prefix, obj):
+        """POST …/voice/speak: the status, headers and body."""
+        req = Request("http://127.0.0.1:%d%s/voice/speak" % (self.port, prefix), data=json.dumps(obj).encode(), method="POST",
+                      headers={"Content-Type": "application/json", "Authorization": "Bearer mock"})
+        try:
+            with urlopen(req, timeout=10) as r:
+                return r.status, r.headers, r.read()
+        except HTTPError as e:
+            return e.code, e.headers, e.read()
+
+    def test_speak(self):
+        # #5004: a text read aloud, as the built-in extension answers it: the tone at 24 kHz, streamed at about real time.
+        text = {"text": "回归测试由 Bo 负责，周五前完成。", "model": "voice-deep", "voice": "soft", "lang": "zh-CN"}
+        try:
+            state = self.get("/mock/voice2?speak=ok&speak_seconds=0.5")
+            self.assertEqual((state["speak_mode"], state["speak_seconds"]), ("ok", 0.5))
+            self.assertIn("speak", self.get("/api/v1/extensions/voice/info")["features"])
+            began = time.monotonic()
+            code, headers, body = self.speak("/api/v1/extensions", text)
+            took = time.monotonic() - began
+            self.assertEqual((code, headers["Content-Type"], headers["X-Persona-Audio-Rate"]), (200, "audio/pcm", "24000"))
+            self.assertEqual(len(body), 12000 * 2)
+            self.assertTrue(any(body), "a tone, not silence")
+            self.assertGreaterEqual(took, 0.35, "about real time, 100 ms at a time")
+            self.assertEqual(self.get("/mock/voice2")["speaks"][-1], text)
+
+            # The first piece comes long before the last.
+            self.get("/mock/voice2?speak_seconds=1.5")
+            req = Request("http://127.0.0.1:%d/api/v1/plugins/voice/speak" % self.port, data=b'{"text":"hi"}', method="POST",
+                          headers={"Content-Type": "application/json"})
+            began = time.monotonic()
+            with urlopen(req, timeout=10) as r:
+                self.assertEqual(len(r.read(4800)), 4800)
+                first = time.monotonic() - began
+                rest = r.read()
+                self.assertEqual(4800 + len(rest), 36000 * 2)
+            self.assertLess(first, 0.6, "the first 100 ms came as it was made")
+            self.assertGreaterEqual(time.monotonic() - began, 1.2)
+
+            self.get("/mock/voice2?speak=fail")
+            code, _, body = self.speak("/api/v1/extensions", {"text": "hi"})
+            self.assertEqual((code, json.loads(body)["code"]), (502, "upstream_failed"))
+            self.get("/mock/voice2?speak=slow&speak_seconds=0.1")
+            began = time.monotonic()
+            code, _, body = self.speak("/api/v1/extensions", {"text": "hi"})
+            self.assertEqual((code, len(body)), (200, 4800))
+            self.assertGreaterEqual(time.monotonic() - began, 0.3, "slow answers late")
+            self.assertEqual(self.speak("/api/v1/extensions", {"text": " "})[0], 400)
+
+            # An extension from before it: no speak in the features, and no such route.
+            self.get("/mock/voice2?speak=off")
+            self.assertNotIn("speak", self.get("/api/v1/extensions/voice/info")["features"])
+            self.assertEqual(self.speak("/api/v1/extensions", {"text": "hi"})[0], 404)
+            self.assertEqual(self.get("/mock/voice2")["speak_mode"], "off")
+        finally:
+            self.get("/mock/voice2?speak=ok&speak_seconds=3")
+        self.assertEqual([s["text"] for s in self.get("/mock/voice2")["speaks"]][-5:],
+                         [text["text"], "hi", "hi", "hi", " "], "every request, newest last (none while off)")
 
     def test_protocol_2_script(self):
         ws = Socket(self.port, "/api/v1/extensions/voice/ws")

@@ -30,5 +30,9 @@
   "mode_watch_hint": "不改电脑上的窗格，这里不能打字",
   "mode_label": "接管或只看",
   "grid_panel": "现在是 {cols} 列 × {rows} 行（这个面板的大小）",
-  "grid_pane": "电脑上的窗格是 {cols} 列 × {rows} 行"
+  "grid_pane": "电脑上的窗格是 {cols} 列 × {rows} 行",
+  "stopped": "这个 Agent 已停止。点「恢复」会在这个终端里让它接着运行。",
+  "stopped_closed": "这个 Agent 已停止，它的终端也已关闭。点「恢复」会在新标签页里让它接着运行。",
+  "resume": "恢复",
+  "resume_failed": "没能恢复这个 Agent。{error}"
 }

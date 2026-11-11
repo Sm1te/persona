@@ -51,6 +51,8 @@ fun AssistantSidebarContent(
     val resources = LocalResources.current
     val copy = rememberCopy()
     val feedback = LocalAppFeedback.current
+    val haptics = persona.core.designsystem.rememberHaptics()
+    val archivedWords = stringResource(R.string.assistant_archived)
     val words = conversationWords()
     var query by rememberSaveable(choice.hubId, choice.shown) { mutableStateOf("") }
     var ended by remember(management) { mutableStateOf(emptySet<SessionKey>()) }
@@ -105,9 +107,12 @@ fun AssistantSidebarContent(
                 onCopy = { copy(it.sessionId, resources.getString(R.string.assistant_copied_session_id)) },
                 onArchive = management?.takeUnless { demo }?.let { target -> { session: Session ->
                     archived = archived + session.key
+                    // As iOS: a tap now, "Archived" once the hub has it (DESIGN_SYSTEM.md 4.3).
+                    haptics(persona.core.designsystem.Haptic.Tap)
                     operationScope.launch {
                         try {
                             target.archiveConversation(session.key)
+                            feedback?.notice(archivedWords, persona.core.designsystem.FeedbackStyle.Success)
                             onRetired(session.key)
                             repository.refresh()
                             archived = archived - session.key

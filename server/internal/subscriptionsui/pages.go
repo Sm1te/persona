@@ -35,6 +35,8 @@ type Service interface {
 	// ModelOf is what a model purpose runs on now ("kb", "inbox.triage"); RecipeModel the one drafting uses.
 	ModelOf(ctx context.Context, purpose string) subscriptions.ModelInfo
 	RecipeModel(ctx context.Context) subscriptions.ModelInfo
+	// Push makes or fills the device's push source (#3848); no items only makes it.
+	Push(ctx context.Context, by subscriptions.Actor, in subscriptions.PushRequest) (subscriptions.PushResult, error)
 }
 
 // Env is who asks and what the pages need from the rest of the manager.
@@ -54,6 +56,8 @@ type Env struct {
 	UIVersion int
 	// Drafts are the model drafts the manager keeps (#2040); nil: drafting is not offered.
 	Drafts *Drafts
+	// Platform is the asking app's (the UI context's): only "ios" offers to add its own Shortcuts source (#3848).
+	Platform string
 }
 
 // Request is the page's state and, when something was pressed, the action and its values.

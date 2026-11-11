@@ -487,7 +487,7 @@ No new polling: `lookAt` (node's `session.snapshot` on each herdr change) alread
 `panes.list` reads this cache, taking a snapshot only if over 3 seconds old (or host never captured). Response grouped by host:
 `{hosts: [{kind, stream, control, new_tab, workspaces, tabs, panes}]}`; panes include `agent` / `status` (host-reported) / `title` / `cwd` / `session_id` (with Agent session) / `terminal` (address above).
 Hub: `GET /api/v1/machines/{mid}/panes`, feature `terminal_panes`.
-A pane Persona opened for an Agent that has stopped (its `persona_tab` mark, no Agent in it now) carries `agent_session`, the stopped Agent's session (#4754): clients label it as that Agent's terminal, and **Close finished terminals** (`POST /api/v1/machines/{mid}/panes/close_finished`, `docs/protocol/protocol.md`) closes those the user confirms.
+A pane with no Agent carries `foreground`, the program in front as the host names it (`zsh` at its prompt, `vim`, `npm`…; herdr `pane.process_info`, asked for each such pane on every list, at most 1.5 s, nothing on the screen read; #4754). A pane Persona opened for an Agent that has stopped (its `persona_tab` mark, no Agent in it now) carries `agent_session`, the stopped Agent's session (#4754): clients label it as that Agent's terminal, and **Close finished terminals** (`POST /api/v1/machines/{mid}/panes/close_finished`, `docs/protocol/protocol.md`) closes those the user confirms.
 
 ### New terminal: `panes.new` (optional, explicit action)
 
@@ -633,8 +633,8 @@ Same shape as Moshi `worktree/prepare` + `worktree/create`.
   - **Conflicts Orca does not fail on are stopped by the node**: for a branch checked out in another worktree, or a folder that exists (an empty one too), Orca 1.4 does not fail but quietly makes `<branch>-2` in `<name>-2` (measured on Orca 1.4.250 on 2026-11-05; `branchIntent` does not prevent it).
     So the node reads `git worktree list --porcelain` first (and creates nothing when it cannot), answers "branch … is already checked out at …" for a branch in use, and refuses an existing checkout path (an empty directory git could use, Orca cannot); Orca is not called in either case.
     An answer on another branch all the same (checked out elsewhere meanwhile, or Orca's own folder setting taken) is an error naming what Orca made and where (nothing is deleted), not a success.
-- **Old herdr without `worktree`**: node falls back to `git worktree add` (existing local branch unchanged, otherwise `-b` from repository HEAD, no `--force`), then `workspace create` for an ordinary workspace in checkout (no herdr grouping).
-  If checkout succeeds but workspace creation fails, keep checkout and explain in error. Other hosts (herdr-core, botmux) don't support it; menu hidden.
+- **Old herdr without `worktree`, and Herdr App**: node falls back to `git worktree add` (existing local branch unchanged, otherwise `-b` from repository HEAD, no `--force`), then the host opens an ordinary workspace in the checkout (no native worktree grouping).
+  If checkout succeeds but workspace creation fails, keep checkout and explain in error. Other hosts (Tern, botmux) don't support it; menu hidden.
 - **Capability**: each host in `GET /machines/{mid}/panes` adds boolean `worktree` alongside `new_tab`; older nodes without it hide menu.
 - **Default path**: herdr convention `<worktrees.directory>/<repo name>/<branch slug>`, reading `[worktrees] directory` from the config file herdr reads (`$HERDR_CONFIG_PATH`, else `$XDG_CONFIG_HOME/herdr/config.toml`, else `~/.config/herdr/config.toml`, `%APPDATA%\herdr\config.toml` on Windows), default `~/.herdr/worktrees`; `~`/relative paths resolved against user home.
   Slug matches herdr: lowercase, consecutive non-ASCII-alphanumeric characters become one `-`, stripped from ends (`Feat/A_b.c` → `feat-a-b-c`, `fix/中文` → `fix`, demonstrating CJK stripping). Measured on herdr 0.9.5 on 2026-11-05; `herdr.WorktreeSlug` and web `branchSlug` both tested.

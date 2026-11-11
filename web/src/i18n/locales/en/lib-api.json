@@ -10,5 +10,6 @@
   "manager_offline": "The assistant is offline or restarting. Try again shortly.",
   "computer_offline": "This computer is offline. Make sure it's on and connected to the internet and that Persona Link is running, then try again.",
   "computer_dropped": "The connection to this computer dropped. Reconnect it, check whether your last action went through, then try again.",
-  "computer_timeout": "The request timed out. The computer may be busy or the network unstable. Check whether it went through, then try again later."
+  "computer_timeout": "The request timed out. The computer may be busy or the network unstable. Check whether it went through, then try again later.",
+  "agent_stopped": "This Agent has stopped and doesn't take messages. Resume it from its terminal page."
 }

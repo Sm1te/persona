@@ -1153,14 +1153,13 @@ struct BackgroundTasksStrip: View {
 // MARK: - Activity chips
 
 /// "⟳ 13:24 │ ⚙ 2" at the end of the chat header's second row: what keeps an agent going, in one neutral pill as tall
-/// as the tabs beside it. Only the icons carry color (the folded bar's marks, `ChatView.activityMark`); the words are in
-/// its VoiceOver label and its sheet (`ActivitySheet`). At the largest text sizes, with both there, the loop is only its
-/// arrows so the pill leaves the tabs some room.
+/// as the tabs beside it. The background work is a count by a neutral gear: whether it works or only waits is the
+/// agent's state, which the title's line says once (#3719; it used to draw the state's clock or amber gear here too).
+/// The loop's arrows keep their color; the words are in its VoiceOver label and its sheet (`ActivitySheet`). At the
+/// largest text sizes, with both there, the loop is only its arrows so the pill leaves the tabs some room.
 struct ActivityChips: View {
     var loop: LoopInfo?
     var background: [BackgroundTask]
-    /// All that background work only waits (`Session.waitsInBackground`, #6045): the clock, lighter, for the gear.
-    var waiting = false
     var open: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -1185,8 +1184,7 @@ struct ActivityChips: View {
                 }
                 if !background.isEmpty {
                     HStack(spacing: Theme.Space.xxs) {
-                        ThemedIcon(waiting ? Theme.Icon.backgroundWaiting : Self.backgroundSymbol).font(Theme.Font.labelHeavy)
-                            .foregroundStyle(waiting ? StatusPalette.backgroundWaiting.dot : Theme.busy)
+                        ThemedIcon(Self.backgroundSymbol).font(Theme.Font.labelHeavy).foregroundStyle(.secondary)
                         Text("\(background.count)").monospacedDigit().lineLimit(1)
                     }
                 }
@@ -1205,7 +1203,7 @@ struct ActivityChips: View {
 
     /// The loop's and the background work's symbols, shared with the folded bar's mark.
     static let loopSymbol = Theme.Icon.inProgress
-    static let backgroundSymbol = Theme.Icon.backgroundTaskFilled
+    static let backgroundSymbol = Theme.Icon.backgroundTask
 
     private var a11yLabel: String {
         let parts = [loop.map { String(localized: "Looping, \(Self.loopLabel($0, now: .now))") },

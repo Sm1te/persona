@@ -84,5 +84,6 @@
   "sandbox_denied_other": "拒否{count}回",
   "machine_missing": "{name}（このマシンはありません）",
   "launcher_missing": "{name}（このランチャーはありません）",
-  "launchers_loading": "ランチャーを読み込み中…"
+  "launchers_loading": "ランチャーを読み込み中…",
+  "from_provider": "{provider}から"
 }

@@ -98,7 +98,7 @@ class ContentPresentationTest {
         val working = workSummary(res, line, null, now)
         assertEquals(workSummary(res, line, null, now, waiting = false), working)
         assertNotEquals(needsYou, working)
-        assertTrue(working.endsWith("10 min 25 s"))
+        assertTrue(working, working.endsWith("10m 25s"))
         // A finished line is a summary whatever the status says.
         val done = line.copy(live = false, end = now)
         assertEquals(workSummary(res, done, 625), workSummary(res, done, 625, waiting = true))

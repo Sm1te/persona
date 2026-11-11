@@ -88,7 +88,7 @@ extension MarkdownUI.Theme {
                 ReplyQuote(config: config)
                 #endif
             }
-            .table { config in FittedTable(config: config) } // fits the width it gets; scrolls only when it cannot
+            .table { config in FittedTable(config: config).oneBlockInLift() } // fits the width it gets; scrolls only when it cannot
             .tableCell { config in FittedTableCell(config: config).runFonts() }
     }
 }
@@ -132,7 +132,7 @@ extension MarkdownUI.Theme {
     /// below the third level (the secondary level's size), semibold in the quieter ink, more space above than below.
     /// Its label is built as heading1–3's are: a modifier theirs gains (the style's run fonts, say) belongs here too.
     @MainActor static func minorHeading(_ config: BlockConfiguration) -> some View {
-        config.label.markdownMargin(top: ReplyMetrics.heading4.top, bottom: ReplyMetrics.heading4.bottom)
+        config.label.runFonts().markdownMargin(top: ReplyMetrics.heading4.top, bottom: ReplyMetrics.heading4.bottom)
             .markdownTextStyle {
                 FontWeight(.semibold)
                 FontSize(.em(ReplyMetrics.heading4.size))
@@ -214,9 +214,12 @@ struct ImageViewing: Identifiable {
 struct UserBubble: View, Equatable {
     @Environment(\.rowMemoScope) private var memoScope
     var item: Item
+    /// The extension that opened the conversation with this message (#3758): 「来自 飞书 /agent」 under it. Set by the chat
+    /// page on the conversation's first message only.
+    var external: AutoConversationSource? = nil
     /// Only the message itself: the chat page re-evaluates its body on every hub push, and without this every row on
     /// screen (and in the lazy list's buffer) ran its body again too (about 45 a push on a long Persona conversation).
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.item == b.item }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.item == b.item && a.external == b.external }
     @Environment(\.openFile) private var openFile
     @Environment(\.loadImage) private var loadImage
 
@@ -244,8 +247,13 @@ struct UserBubble: View, Equatable {
                 }
             }
             if let openFile { FileChips(paths: d.chips, open: openFile) }
-            // Came in from a channel (WeChat, the Feishu bot…): 「来自 微信」 under it.
-            if ChannelSource.possible(item.clientMsgID) { ChannelSourceLine(clientMsgID: item.clientMsgID) }
+            // Came in from a channel (WeChat, the Feishu bot…): 「来自 微信」 under it; an extension opened the conversation
+            // with it: 「来自 飞书 /agent」.
+            if ChannelSource.possible(item.clientMsgID) {
+                ChannelSourceLine(clientMsgID: item.clientMsgID)
+            } else if let external {
+                ExternalSourceLine(source: external)
+            }
             if d.cardSource != nil {
                 Text("From a card").font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
                     .accessibilityIdentifier("assistant-card-source")
@@ -310,7 +318,7 @@ struct PeerMessage: View {
             .padding(.trailing, Theme.Space.xxl)
             .chatPinned(pinKey)
             .messageLongPress(id: item.id) { card }
-            .messageActionBar(id: item.id, text: item.text ?? "", isUser: false, date: item.ts)
+            .messageActionBar(id: item.id, text: item.text ?? "", isUser: false, date: item.ts, from: from)
     }
 
     /// The message in its card (also what a long press lifts).
@@ -340,6 +348,7 @@ struct PeerMessage: View {
         Markdown(d.markdown)
             .markdownSoftBreakMode(.lineBreak)
             .markdownTheme(.persona)
+            .environment(\.replyKey, RowMemo.key(memoScope, item.id)) // its quotes' folds, the lifted copy's too
             .selectableInLift(item.text ?? "", as: .reply(quiet: false)) // #603
             .frame(maxWidth: .infinity, alignment: .leading)
             #if os(macOS)
@@ -351,7 +360,8 @@ struct PeerMessage: View {
 /// A message just sent from this phone, before the transcript has it: drawn like a sent bubble right away, with a
 /// quiet clock while the request runs, the clock and "Sends when connected" while it waits for the network (Outbox.swift),
 /// and a red "Resend" when it failed. A long press gives an action bar like a sent message's, with Copy, Select Text and
-/// Share (#6427): one that never went out can be copied rather than typed again.
+/// Share (#6427): one that never went out can be copied rather than typed again. One only on this phone (failed or
+/// waiting) ends the bar in Delete / Don't Send, as its mark's menu does (#4626).
 struct PendingBubble: View {
     var msg: PendingMessage
     var retry: () -> Void
@@ -425,7 +435,9 @@ struct PendingBubble: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .messageActionBar(id: msg.id.uuidString, text: shown, isUser: true, date: msg.createdAt, pending: true)
+        // The bar's last item on one only on this phone (#4626): what its mark's menu says, doing the same.
+        .messageActionBar(id: msg.id.uuidString, text: shown, isUser: true, date: msg.createdAt, pending: true,
+                          delete: .of(msg, run: discard))
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
@@ -570,6 +582,7 @@ struct AssistantText: View, Equatable {
             // Inside the theme (applied first), or the theme's text style wins (docs/lessons/ios.md).
             .modifier(QuietMarkdown(on: quiet))
             .markdownTheme(.persona)
+            .environment(\.replyKey, RowMemo.key(memoScope, item.id)) // its quotes' folds, the lifted copy's too
             .selectableInLift(item.text ?? "", as: .reply(quiet: quiet)) // #603
             .frame(maxWidth: .infinity, alignment: .leading)
             .chatBoxed(Theme.ChatBox.persona, on: boxed)
@@ -1157,6 +1170,14 @@ struct LinkedMarkdown: View {
 
     private static let memo = TextMemo<MarkdownContent>(limit: 512)
 
+    /// The paths of a message that are there to open, which it links: none outside a chat. Only a message with paths
+    /// reads the presence (and is drawn again when an answer comes). Also how its words are laid out to select them
+    /// in place (`SelectableInLift`): a path written as code that is linked is drawn as words.
+    static func linkable(_ paths: PathMarkdown, model: AppModel?, scope: FileScope?) -> [String] {
+        guard !paths.paths.isEmpty, let model, let scope else { return [] }
+        return paths.paths.filter { model.filePresence.linkable($0, in: scope) }
+    }
+
     var body: some View { Markdown(content) }
 
     private var content: MarkdownContent {
@@ -1168,11 +1189,7 @@ struct LinkedMarkdown: View {
         let copies = false
         #endif
         let paths = paths
-        // Only a message with paths reads the presence (and is drawn again when an answer comes).
-        guard !paths.paths.isEmpty, let model, let scope else {
-            return copies ? Self.memo(key + "\u{1}") { _ in MarkdownContent(CodeCopyMarkdown.linked(paths.source)) } : plain
-        }
-        let there = paths.paths.filter { model.filePresence.linkable($0, in: scope) }
+        let there = Self.linkable(paths, model: model, scope: scope)
         guard !there.isEmpty else {
             return copies ? Self.memo(key + "\u{1}") { _ in MarkdownContent(CodeCopyMarkdown.linked(paths.source)) } : plain
         }

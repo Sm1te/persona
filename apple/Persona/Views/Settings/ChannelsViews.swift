@@ -540,6 +540,55 @@ private struct ChannelDirectoryLoader: ViewModifier {
     }
 }
 
+/// The mark beside a conversation's title: the extension that opened it (#3758, `AutoConversationSource.external`), else
+/// the channel its latest message came in from. One mark: an extension's conversation has no channel of its own.
+struct ConversationSourceMark: View {
+    var origin: String?
+    var channels: [String]?
+
+    var body: some View {
+        if let source = AutoConversationSource.external(origin) {
+            ExternalSourceMark(source: source)
+                .accessibilityElement()
+                .accessibilityLabel(source.from)
+        } else {
+            ConversationChannelMark(ids: channels)
+        }
+    }
+}
+
+/// Where an external conversation came from, as a mark of `side` points: Lark's brand for Lark /agent, the extensions
+/// symbol for another extension (#3758).
+struct ExternalSourceMark: View {
+    var source: AutoConversationSource
+    var side: CGFloat = Theme.Size.markS
+
+    var body: some View {
+        if let brand = source.brand {
+            BrandMark(brand, side: side)
+        } else {
+            ThemedIcon(source.symbol).font(Theme.Font.caption).foregroundStyle(.secondary)
+                .scaledFrame(width: side, height: side)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// 「来自 飞书 /agent」 under the message an extension opened a conversation with (#3758), as a channel's message has
+/// 「来自 微信」 (`ChannelSourceLine`).
+struct ExternalSourceLine: View {
+    var source: AutoConversationSource
+
+    var body: some View {
+        HStack(spacing: Theme.Space.xs) {
+            ExternalSourceMark(source: source)
+            Text(source.from).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("message-external-source")
+    }
+}
+
 /// The latest channel a conversation had messages from (`Session.channels`), small beside its title in the sidebar.
 struct ConversationChannelMark: View {
     var ids: [String]?

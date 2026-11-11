@@ -30,18 +30,52 @@ const ctl = (id, request) => ({ type: 'control_request', request_id: id, request
 
 test('start: options reach query(), then ready', async () => {
   const b = bridge()
-  b.send(start({ model: 'claude-haiku-4-5', permissionMode: 'default', tools: ['Bash', 'Read', 'Monitor', 'Skill', 'Agent'], settings: { env: { A: '1' } }, bogus: 1, includePartialMessages: false }))
+  b.send(start({ model: 'claude-haiku-4-5', permissionMode: 'default', tools: ['Bash', 'Read', 'Monitor', 'Skill', 'Agent'], strictMcpConfig: true, settings: { env: { A: '1' } }, bogus: 1, includePartialMessages: false }))
   const ready = await b.until((m) => m.type === 'persona_bridge' && m.event === 'ready')
   assert.match(ready.sdk_version, /^\d+\.\d+\.\d+$/)
   const opts = await b.until((m) => m.type === 'fake_options')
   assert.equal(opts.options.model, 'claude-haiku-4-5')
   assert.equal(opts.options.includePartialMessages, true)
   assert.deepEqual(opts.options.tools, ['Bash', 'Read', 'Monitor', 'Skill', 'Agent'])
+  assert.equal(opts.options.strictMcpConfig, true)
   assert.equal(opts.options.bogus, undefined)
   assert.ok(opts.env_keys > 0, 'the bridge passes its env')
   assert.ok(opts.has_stderr)
   assert.match(b.stderr, /ignored option bogus/)
   assert.equal(await b.end(), 0)
+})
+
+test('guest: only the stdio server\'s declared tools cross the SDK boundary', async () => {
+  const b = bridge()
+  b.send(start({
+    guestMcpServers: { persona: {
+      command: process.execPath,
+      args: [fileURLToPath(new URL('./guest-mcp-server.mjs', import.meta.url))],
+      env: { PERSONA_GUEST: '1', PERSONA_SESSION_ID: 'guest-test' },
+    } },
+    mcpServers: {}, allowedTools: ['mcp__persona__exampledocs_search'], strictMcpConfig: true,
+  }))
+  await b.until((m) => m.event === 'ready')
+  const opts = await b.until((m) => m.type === 'fake_options')
+  assert.deepEqual(opts.options.tools, [])
+  assert.deepEqual(opts.options.settingSources, [])
+  assert.equal(opts.options.strictMcpConfig, true)
+  assert.equal(opts.options.guestMcpServers, undefined)
+  assert.equal(opts.options.mcpServers.persona.type, 'sdk')
+  assert.equal(opts.options.mcpServers.persona.name, 'persona')
+  assert.equal(await b.end(), 0)
+})
+
+test('guest: an empty upstream tool directory fails instead of starting unarmed', async () => {
+  const b = bridge()
+  b.send(start({ guestMcpServers: { persona: {
+    command: process.execPath,
+    args: [fileURLToPath(new URL('./guest-mcp-server.mjs', import.meta.url))],
+    env: { EMPTY_TOOLS: '1' },
+  } } }))
+  const failure = await b.until((m) => m.event === 'error')
+  assert.match(failure.error, /advertised no tools/)
+  assert.equal(await b.exited, 1)
 })
 
 test('settings reach query() as a private file, removed at exit', async () => {

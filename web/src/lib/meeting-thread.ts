@@ -1,14 +1,17 @@
 // A recorded meeting's one thread (#3862, docs/assistant/meeting-minutes.md "One thread"): the room conversation's items,
 // oldest first, then the follow-up's, read apart into what the recording detail shows. The room's first message is the
 // meeting header, its batches carry message source `meeting` and collapse to "N lines from the meeting", a heard
-// question shows as "What was just said (m:ss)", and the follow-up's first message holds the meeting's material in a
-// context block before the owner's words. Pure: no DOM, no requests.
+// question shows as "What was just said (m:ss)", a photo forwarded into the room (phase 3: its image and its text, both
+// `photo-<id>`) is one entry, and the follow-up's first message holds the meeting's material in a context block before
+// the owner's words. Pure: no DOM, no requests.
 import type { MeetingRoom, RecordingAsk } from "./kb";
 import { parseUserText } from "./turns";
 import type { Item } from "./types";
 
 /** The hub takes the meeting conversation's phase 1 (protocol.md "Added by the hub"). */
 export const MEETING_CONVERSATION_FEATURE = "meeting_conversation";
+/** The hub takes meeting photos (phase 3, "Phase 3: photos"); it comes only with `meeting_conversation`. */
+export const MEETING_PHOTOS_FEATURE = "meeting_photos";
 
 /** One live line of a batch or a heard question: its clock in the meeting (`m:ss`) and its words. */
 export interface MeetingLine {
@@ -29,6 +32,9 @@ export type ThreadEntry =
   | { kind: "question"; id: string; ts?: string; text: string; via: "typed" | "spoken" | "owner"; ask?: string }
   | { kind: "answer"; id: string; ts?: string; text: string }
   | { kind: "image"; id: string; ts?: string }
+  /** A meeting photo forwarded into the room: `photo` its id, lowercase, which `GET …/photos` resolves (never the room's
+   *  own copy of the image). */
+  | { kind: "photo"; id: string; ts?: string; photo: string }
   /** A context block of the owner's message; the follow-up's first (`seed`) is the meeting's material. */
   | { kind: "material"; id: string; ts?: string; title: string; text: string; seed: boolean };
 
@@ -36,6 +42,9 @@ const LEADING_SOURCE = /^\s*<persona-context\b([^>]*)>([\s\S]*?)<\/persona-conte
 const BLOCK_END = "</persona-context>";
 const LINE = /^\[(\d{1,2}(?::\d{2}){1,2})\]\s?(.*)$/;
 const ASK_MSG = /^ask-([0-9a-f-]{36})-\d+$/;
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const PHOTO_MSG = new RegExp(`^photo-(${UUID})$`);
+const WITHDRAWN_MSG = new RegExp(`^photo-withdrawn-(${UUID})$`);
 
 /** Whether a user line came from the meeting (message source `meeting`): its `source`, else the leading message-source
  *  block the manager persists, which the hub reads only for lines without a client_msg_id (the header and a heard
@@ -75,13 +84,28 @@ function askOf(clientMsgID: string | undefined): string | undefined {
   return ASK_MSG.exec((clientMsgID ?? "").toLowerCase())?.[1];
 }
 
+/** The photo a room message forwarded (`photo-<id>`, "Into the room"), lowercase. */
+export function photoOf(clientMsgID: string | undefined): string | undefined {
+  return PHOTO_MSG.exec((clientMsgID ?? "").toLowerCase())?.[1];
+}
+
 /** The room's items as thread entries. `recordingId` names the header (`meeting-<recording id>`); `asks` tell a spoken
  *  question from a typed one and give a heard question's time when its block has none. */
 export function roomThread(items: Item[], recordingId: string, asks: RecordingAsk[] = []): ThreadEntry[] {
   const header = `meeting-${recordingId}`.toLowerCase();
   const byId = new Map(asks.map((a) => [a.id.toLowerCase(), a]));
+  const photos = new Set<string>();
   const out: ThreadEntry[] = [];
   for (const it of items) {
+    // A photo's image and its text are one entry, read before anything else: its text is from the meeting and would
+    // otherwise read as a batch (or the end batch). The line withdrawing a deleted photo is the hub's to the room only.
+    const photo = it.role === "user" ? photoOf(it.client_msg_id) : undefined;
+    if (photo) {
+      if (!photos.has(photo)) out.push({ kind: "photo", id: it.id, ts: it.ts, photo });
+      photos.add(photo);
+      continue;
+    }
+    if (it.role === "user" && WITHDRAWN_MSG.test((it.client_msg_id ?? "").toLowerCase())) continue;
     if (it.role === "user" && it.kind === "text") {
       const sourced = fromMeeting(it);
       const ask = askOf(it.client_msg_id);

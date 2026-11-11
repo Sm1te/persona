@@ -1,6 +1,6 @@
 # Source subscriptions
 
-Source subscriptions let the manager pull new information from a connector's read-only tools into the Inbox or knowledge base. The design is tracked in #2036. The optional catalog protocol (#2037), the manager's storage, validation, scheduler, runner and API (#2038), delivery to the Inbox and the knowledge base (#2039) and drafting a recipe with a model (#2040) and the pages (#2041, "Pages") are implemented. A catalog alone does not turn on polling or store source content.
+Source subscriptions let the manager pull new information from a connector's read-only tools into the Inbox or knowledge base. The design is tracked in #2036. The optional catalog protocol (#2037), the manager's storage, validation, scheduler, runner and API (#2038), delivery to the Inbox and the knowledge base (#2039) and drafting a recipe with a model (#2040), the pages (#2041, "Pages") and push sources a device fills itself (#3848, "Push sources") are implemented. A catalog alone does not turn on polling or store source content.
 
 ## Source catalog
 
@@ -145,9 +145,10 @@ Reading is open to every device; changing anything, dry runs included, needs ful
 | `PUT /api/v1/subscriptions/{id}` | `{revision, label?, recipe?, to_inbox?, to_kb?, interval_seconds?, daily_at?, triage_rules?, fallback_tier?}`; 409 `conflict` at another revision, 422 `interval_too_short` |
 | `POST /api/v1/subscriptions/{id}/run` | 202: runs as soon as the connector's limits allow, also while it is off |
 | `DELETE /api/v1/subscriptions/{id}?data=1` | 204; removes its seen keys and pending items. With `data=1` it first switches both destinations off and has the Inbox and the knowledge base remove what they took ("Destinations"); 503 `assistant_offline` while the assistant is away, the subscription left off for another delete |
+| `POST /api/v1/subscriptions/-/push` | `{items: [{key?, title?, body?, app?, link?, time?}]}` from a full-access device → `{subscription, new, count}`: the device's push source, made on its first push (no items: only made). 400 `bad_request` for more than 20 items or one with neither a title nor a body, 429 `rate_limited` with `retry_after` past 300 items an hour ("Push sources") |
 | `POST /api/v1/subscriptions/-/ui` | the pages below, with an extension page's request and answer; every device may draw them, actions need full access |
 
-A subscription's `state` is `off` (both destinations off), `ok`, `failing`, `not_connected`, `rate_limited` or `needs_recipe`, with `error {code, message}`. The message is one English sentence without source content; clients localize the code. The manager reports the `source_subscriptions` feature now that subscriptions deliver (`features.deliver`, #2039), and the apps show their entry rows only with it; it broadcasts `subscription` `{id, connector, revision, state, removed}` when one is saved, runs or is deleted.
+A subscription's `state` is `off` (both destinations off), `ok`, `failing`, `not_connected`, `rate_limited` or `needs_recipe`, with `error {code, message}`. The message is one English sentence without source content; clients localize the code. The manager reports the `source_subscriptions` feature now that subscriptions deliver (`features.deliver`, #2039), and the apps show their entry rows only with it; beside it `subscription_push` says a device can push ("Push sources"); it broadcasts `subscription` `{id, connector, revision, state, removed}` when one is saved, runs or is deleted.
 
 ### Destinations
 
@@ -200,6 +201,43 @@ is 403 `read_only_device`.
 - All text is the manager's, in the request's language (en, zh-Hans, ja); the service gives only codes, localized here.
 - An app below UI version 6 gets the hub's usual downgrade (a switch becomes a row that turns it on or off); a source icon only
   version 6 has is drawn as an older one, never as none.
+
+### Push sources
+
+Some things reach the phone only as a notification or something seen in another app, with no connector behind them. A
+push source (#3848, `server/internal/subscriptions/push.go`) takes them from the device instead of pulling: the iOS
+Shortcuts action **Handle Notification** ([intents.md](../apple/intents.md) "Handle Notification") hands an item to
+`POST /api/v1/subscriptions/-/push`, and it goes through the same destinations, triage and history as any subscription.
+
+- **One per device.** Its connector is the reserved `-shortcuts` (no extension or connector id starts with `-`) and its
+  source the device (`device:<id>`). It is made on the device's first push, or from the list's **Shortcuts on This
+  Device** row on an iPhone or iPad (a push without items), with both destinations off like every new subscription. Its
+  label is "Shortcuts on <device name>" in the user's language, its recipe origin `push`, its icon `bell`.
+- **Items.** Only what the shortcut passes is sent: a title, a body, the app it came from, an optional link and time.
+  Nothing reads other apps' notifications (iOS does not allow it). A title is the body's first line when it has none;
+  an item with neither is refused. Titles are cut to 500 characters, bodies to 8000; a link that is not http(s) is
+  dropped; a time more than 5 minutes ahead is now. The app is the item's sender, and the app with the title its
+  thread, so one conversation's messages share an Inbox row and a knowledge-base chat. The kind is `sub_notice`.
+- **Dedup.** `key` is the item's id (`push:<key>` in `subscription_seen`); the action sends a hash of the app, title,
+  body and the minute, so a shortcut that fires twice adds one item. Without a key the manager makes the same hash.
+- **Limits.** At most 20 items a push and 300 a device an hour (429 `rate_limited` with `retry_after`). Pushes are one at
+  a time, so the same item pushed twice at once is kept once.
+- **History.** Each push with items is a run (trigger `push`, `new` and `count`, no duration), so the runs page and the
+  source's last line read as for others; it never fails, pauses or needs a recipe.
+- **No pulling.** The scheduler skips it, and a recipe, an interval, a daily time, Run Now, a dry run and drafting are
+  refused with 400 `push_source`. Turning its Inbox on ends the catch-up at once (nothing has to be pulled first): what
+  came in the day before comes in then. Its page has the destination switches (their consent says what a shortcut
+  sends instead of what is pulled), the last item, runs, how items come, triage rules, the fallback and Delete.
+- **Older hubs and apps.** A hub without `subscription_push` answers 404 and the action says to update it. Pages drawn
+  for the web and Android show the source like any other, and while nobody has one, a line saying how an iPhone or iPad
+  sends items; only iOS (`context.platform` `ios`) offers to add the device's own.
+
+Example automations (Shortcuts › Automation › New Automation, "Run Immediately"):
+
+- **Message**: when a message from a chosen contact arrives, run Handle Notification with the sender as Title, the
+  message as Body and "Messages" as App.
+- **Email**: when an email from a chosen sender arrives, run Handle Notification with the subject as Title, the
+  sender as App and the message's body as Body.
 
 ## Follow-up behavior
 

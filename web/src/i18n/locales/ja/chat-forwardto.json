@@ -1,0 +1,22 @@
+{
+  "title": "転送先",
+  "search": "チャット、コンピュータ、プロジェクトを検索",
+  "preview": "転送するメッセージ",
+  "main_chat": "メインチャット",
+  "new_agent": "新規エージェント…",
+  "new_agent_detail": "コンピュータ、フォルダ、モデルを選びます",
+  "recent": "最近",
+  "no_match": "一致するチャットはありません",
+  "failed": "転送できませんでした：{error}",
+  "photos_lost_one": "1 枚の写真を一緒に転送できませんでした",
+  "photos_lost_other": "{count} 枚の写真を一緒に転送できませんでした",
+  "quoting": "{label}を引用",
+  "file_on": "（{machine} 上のファイル：{name}）",
+  "file": "（ファイル：{name}）",
+  "cut": "（原文はさらに長く、ここで切れています。）",
+  "route_from_to_persona": "{from} から転送 · Persona へ",
+  "route_to_persona": "Persona へ",
+  "route_to_agent": "{agent} へ",
+  "route_from_to_agent_on": "{from} から転送 · {machine} の {agent} へ",
+  "route_to_agent_on": "{machine} の {agent} へ"
+}

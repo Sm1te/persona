@@ -25,8 +25,16 @@ nonisolated struct ContextRef: Identifiable, Hashable, Sendable, Codable {
     /// Which part of the message is quoted (`part="selection"`: words picked in Select Text, #4549); nil for all of it.
     /// Readers that do not know it read the block as a quote of the message.
     var part: String? = nil
+    /// The block's other attributes as written: a forward's metadata (`ForwardMessage`, docs/protocol/protocol.md
+    /// "Forwarded messages"), a workspace's machine and folder. Kept so a block read back writes the same attributes.
+    var extra: [String: String]? = nil
+    /// The composer's line under a forward over the box: where it comes from and where it goes. Shown, never sent.
+    var route: String? = nil
 
     var host: String { URL(string: url)?.host ?? url }
+
+    /// The extra attributes in the order they are written: a forward's metadata first, then any others by name.
+    static let extraOrder = ["role", "author", "chat", "project", "machine", "time"]
 
     var xml: String {
         func esc(_ s: String) -> String {
@@ -35,12 +43,18 @@ nonisolated struct ContextRef: Identifiable, Hashable, Sendable, Codable {
         }
         let msgAttr = msg.isEmpty ? "" : " msg=\"\(esc(msg))\""
         let partAttr = part.map { " part=\"\(esc($0))\"" } ?? ""
-        return "<persona-context kind=\"\(kind)\" title=\"\(esc(title))\" url=\"\(esc(url))\"\(msgAttr)\(partAttr)>\n\(ContextText.inBlock(text))\n</persona-context>"
+        let extras = extra ?? [:]
+        let names = Self.extraOrder.filter { extras[$0] != nil } + extras.keys.filter { !Self.extraOrder.contains($0) }.sorted()
+        let extraAttrs = names.compactMap { name in extras[name].map { " \(name)=\"\(esc($0))\"" } }.joined()
+        return "<persona-context kind=\"\(kind)\" title=\"\(esc(title))\" url=\"\(esc(url))\"\(msgAttr)\(partAttr)\(extraAttrs)>\n\(ContextText.inBlock(text))\n</persona-context>"
     }
 
     /// One `<persona-context>` block, its attributes in any order and any of them missing (a Lark /agent request's context has no url).
     private static let tagRe = try! NSRegularExpression(pattern: "<" + HubNaming.contextPattern + #"\b([^>]*)>\s*([\s\S]*?)\s*</"# + HubNaming.contextPattern + #">\s*"#)
     private static let attrRe = try! NSRegularExpression(pattern: #"(\w+)="([^"]*)""#)
+
+    /// The attributes that have fields of their own; the rest go to `extra`.
+    private static let ownAttributes: Set<String> = ["kind", "title", "url", "msg", "part"]
 
     /// The contexts in a message and the message without them.
     private static let memo = TextMemo<(refs: [ContextRef], rest: String)>()
@@ -63,8 +77,10 @@ nonisolated struct ContextRef: Identifiable, Hashable, Sendable, Codable {
             }
             // Provenance and protected-user sentinels are transport metadata, never selectable context cards.
             guard a["kind"] != "message-source" else { continue }
+            let extra = a.filter { !Self.ownAttributes.contains($0.key) }
             refs.append(ContextRef(kind: a["kind"] ?? "context", title: a["title"] ?? "", url: a["url"] ?? "",
-                                   text: ns.substring(with: m.range(at: 2)), msg: a["msg"] ?? "", part: a["part"]))
+                                   text: ns.substring(with: m.range(at: 2)), msg: a["msg"] ?? "", part: a["part"],
+                                   extra: extra.isEmpty ? nil : extra))
         }
         let rest = tagRe.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: ns.length), withTemplate: "")
         return (refs, rest.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -83,6 +99,7 @@ nonisolated struct ContextRef: Identifiable, Hashable, Sendable, Codable {
         case "instructions": Theme.Icon.info
         case "doc": Theme.Icon.document
         case "edit": Theme.Icon.ai
+        case ForwardMessage.kind: Theme.Icon.forwardMessage
         default: Theme.Icon.quote
         }
     }

@@ -62,6 +62,7 @@ const PLACE_WORDS: Record<string, string> = {
   kb: "knowledge kb people projects docs 知识库 项目 文档 会议", // i18n-ignore
   machines: "machines monitor computers cpu memory 电脑 监控 内存", // i18n-ignore
   terminal: "terminal shell 终端", // i18n-ignore
+  terminals: "terminals terminal shell 终端", // i18n-ignore
   settings: "settings preferences 设置 偏好", // i18n-ignore
 };
 
@@ -79,6 +80,7 @@ export function placeWords(key: string): string {
     kb: t("palette.words_kb"),
     machines: t("palette.words_machines"),
     terminal: t("palette.words_terminal"),
+    terminals: t("palette.words_terminal"),
     settings: t("palette.words_settings"),
   };
   return [PLACE_WORDS[key], own[key]].filter(Boolean).join(" ");
@@ -168,9 +170,11 @@ export function Palette({ open, onClose, onNewAgent, pane, route = HOME }: { ope
     () => [
       ...(hasAssistant ? [{ key: "persona", title: t("palette.place_persona"), icon: "spark" as const, to: { name: "persona" } as Route }, { key: "history", title: t("sidebar.all_chats"), icon: "list" as const, to: { name: "history" } as Route }] : []),
       ...pages.map((p) => ({ key: p.k, title: p.label, icon: p.icon, to: p.to })),
+      // the Sessions and Terminal page's Terminals list (#4754): every plain terminal, to open one and type
+      ...(panesOn ? [{ key: "terminals", title: t("palette.place_terminals"), icon: "terminal" as const, to: { name: "terminal", view: "terminals" } as Route }] : []),
     ].map((p) => ({ ...p, words: placeWords(p.key) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `pages` is new each render; pagesKey says what it holds
-    [hasAssistant, pagesKey],
+    [hasAssistant, pagesKey, panesOn],
   );
   const rows = useRef<(HTMLButtonElement | null)[]>([]);
   const list = useRef<HTMLDivElement>(null);

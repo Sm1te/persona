@@ -155,7 +155,7 @@ func TestPersonaTabsLeftWithAShellStay(t *testing.T) {
 	if err := n.refreshHosts(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // sleep-ok: an asynchronous close would show by then; nothing signals that none comes
 	closesNothing(t, f)
 }
 

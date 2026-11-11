@@ -165,7 +165,7 @@ struct ExtensionSettingsBadge: View {
     var body: some View {
         let total = ExtensionSlots.shared.total
         if total.count > 0 {
-            CountBadge(count: total.count, look: .solid(Theme.countBadge))
+            CountBadge(count: total.count, look: .neutral)
                 .offset(x: Theme.Space.xs, y: -Theme.Space.xs)
         } else if total.dot {
             Circle().fill(Theme.countBadge).scaledFrame(width: Theme.Size.dot, height: Theme.Size.dot)

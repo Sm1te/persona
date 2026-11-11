@@ -116,6 +116,101 @@ func TestGuestConversationStart(t *testing.T) {
 	}
 }
 
+// A guest's first tool discovery happens before assistant.send answers on the Agent SDK. Its registered id and
+// declared tools must already exist at that point, not after the node has started a model with an empty list.
+func TestGuestConversationRegistersBeforeDiscovery(t *testing.T) {
+	f, s, _ := guestService(t)
+	devices := newFleetDevs()
+	devices.add("server", "server")
+	s.devs = devices
+	setHub(s, &startingPrivacyHub{Hub: f, onStart: func(p DeviceCall) error {
+		var send struct {
+			NewSessionID string `json:"new_session_id"`
+		}
+		if err := json.Unmarshal(p.Params, &send); err != nil {
+			t.Fatal(err)
+		}
+		if send.NewSessionID == "" {
+			t.Fatal("guest start has no registered session id")
+		}
+		names := func() []string {
+			raw, _ := json.Marshal(map[string]any{"assistant": true, "session_id": send.NewSessionID, "guest": true})
+			out, handled, err := s.NodeRequest(context.Background(), "server", "mcp.tools", raw)
+			if err != nil || !handled {
+				t.Fatalf("mcp.tools during start: %v handled=%v", err, handled)
+			}
+			var names []string
+			for _, tool := range out.(map[string]any)["tools"].([]proto.Tool) {
+				names = append(names, tool.Name)
+			}
+			return names
+		}()
+		if !slices.Equal(names, []string{"lark_agent_reply"}) {
+			t.Fatalf("tools during guest start: %v", names)
+		}
+		return nil
+	}})
+	w := postConversation(t, s, `{"prompt":"search","guest":{"tools":["lark_agent_reply"]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var out struct {
+		Session proto.Session `json:"session"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	send := f.sends[len(f.sends)-1]
+	if out.Session.SessionID == "" || send["new_session_id"] != out.Session.SessionID {
+		t.Fatalf("registered and started ids differ: %q %q", send["new_session_id"], out.Session.SessionID)
+	}
+}
+
+// A failed start must not leave a registered guest with no process behind it.
+func TestGuestConversationFailedStartForgetsRegistration(t *testing.T) {
+	f, s, _ := guestService(t)
+	f.failAssistant = errors.New("cannot start")
+	guestID := ""
+	f.onAssistantSend = func(_ *fakeHub, send map[string]any) {
+		guestID, _ = send["new_session_id"].(string)
+	}
+	w := postConversation(t, s, `{"prompt":"search","guest":{"tools":["lark_agent_reply"]}}`)
+	if w.Code == http.StatusOK {
+		t.Fatalf("start unexpectedly succeeded: %s", w.Body)
+	}
+	if guestID == "" {
+		t.Fatal("the failed guest was not started under its registered id")
+	}
+	if _, guest, err := s.guestOf(context.Background(), "server", guestID); err != nil || guest {
+		t.Fatalf("failed guest is still registered: guest=%v err=%v", guest, err)
+	}
+}
+
+// A guest keeps the purpose's launcher, model and Agent SDK choice. Its
+// no-built-in-tools restriction is the node's, on either runtime.
+func TestGuestConversationKeepsTheSDK(t *testing.T) {
+	f, s, _ := guestService(t)
+	if err := s.saveModelRecord(context.Background(), "lark.agent", 0, ModelBinding{Provider: "launcher.claude", Runtime: proto.AssistantRuntimeAgentSDK}); err != nil {
+		t.Fatal(err)
+	}
+	w := postConversation(t, s, `{"prompt":"search","purpose":"lark.agent","guest":{"tools":["lark_chats"]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	send := f.sends[len(f.sends)-1]
+	if send["runtime"] != proto.AssistantRuntimeAgentSDK {
+		t.Fatalf("guest runtime: %v", send["runtime"])
+	}
+	if send["launcher"] == nil || send["model_fingerprint"] == nil {
+		t.Fatalf("guest lost its model binding: %v", send)
+	}
+	// The purpose's selection reaches the node without changing the guest contract.
+	binding, err := s.resolveModel(context.Background(), "lark.agent")
+	if err != nil || binding.Runtime != proto.AssistantRuntimeAgentSDK {
+		t.Fatalf("main runtime: %q (%v)", binding.Runtime, err)
+	}
+}
+
 // guest.tools are a connector's tools only, one to eight of them; a guest is not the main conversation or in a space;
 // a node without guest conversations starts none.
 func TestGuestConversationRefusals(t *testing.T) {

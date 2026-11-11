@@ -41,7 +41,7 @@
   "file-read": 1
  },
  "apple/Persona/Views/Assistant/AssistantView.swift": {
-  "image-decode": 2
+  "image-decode": 1
  },
  "apple/Persona/Views/Chat/AttachSheet.swift": {
   "photos-fetch": 2
@@ -111,10 +111,6 @@
   "file-read": 1
  },
  "apple/PersonaLink/Sources/PersonaLink/NativeCompatibility.swift": {
-  "keychain-read": 1
- },
- "apple/PersonaShare/ShareViewController.swift": {
-  "image-decode": 1,
   "keychain-read": 1
  },
  "apple/PersonaWatch/WatchPetView.swift": {

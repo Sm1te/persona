@@ -5,6 +5,8 @@ import {
   askPersonaText,
   contextXml,
   countLabel,
+  dayClock,
+  dayPart,
   dayTitle,
   dirsOf,
   entryFromDetail,
@@ -17,10 +19,14 @@ import {
   hitView,
   initial,
   kindOf,
+  knownZone,
   linkGroups,
   markParts,
+  citedPhoto,
+  meetingKind,
   minutesKeptUntil,
   parseLogLine,
+  recordingPhotos,
   recordingView,
   recordingClock,
   transcriptLineId,
@@ -33,6 +39,8 @@ import {
   projectInfo,
   projectKindLabel,
   rankEntries,
+  recapGaps,
+  recapGroups,
   rowTags,
   shortWhen,
   statusLabel,
@@ -428,4 +436,96 @@ describe("minutesKeptUntil", () => {
     "is unknown for %j and %j", (start, days) => {
       expect(minutesKeptUntil(start, days)).toBeUndefined();
     });
+});
+
+describe("all-day recordings (#4741)", () => {
+  // 08:00 in Tokyo, whatever zone the tests run in.
+  const start = "2026-11-11T08:00:00+09:00";
+  it("labels recap search hits", () => {
+    expect(hitView({ path: "recordings/example/recap.md", line: "- Design review" })).toEqual({ source: t("lib-kb.hit_recap"), text: "Design review", day: null });
+  });
+  it("reads the clock in the recording's zone when this browser knows it, else locally", () => {
+    expect(knownZone("Asia/Tokyo")).toBe(true);
+    for (const zone of ["Not/A_Zone", "", 9, undefined]) expect(knownZone(zone)).toBe(false);
+    expect(recordingClock(start, 3912, "Asia/Tokyo")).toBe("09:05:12");
+    expect(recordingClock(start, 3912, "America/New_York")).toBe("19:05:12");
+    expect(recordingClock(start, 57600, "Asia/Tokyo")).toBe("00:00:00");
+    expect(recordingClock(start, 3912, "Not/A_Zone")).toBe(recordingClock(start, 3912));
+    // Across the end of daylight saving time, and in a zone a quarter hour off the hour.
+    const fallBack = "2026-11-01T00:30:00-04:00";
+    expect([3600, 7200, 10800].map((s) => recordingClock(fallBack, s, "America/New_York"))).toEqual(["01:30:00", "01:30:00", "02:30:00"]);
+    expect(recordingClock("2026-11-11T08:00:00+05:45", 59, "Asia/Kathmandu")).toBe("08:00:59");
+    expect(recordingClock(undefined, 3723, "Asia/Tokyo")).toBe("1:02:03");
+    expect(dayClock(start, 3912, "Asia/Tokyo")).toBe("09:05");
+    expect(dayClock(undefined, 3912, "Asia/Tokyo")).toBe("1:05:12");
+    expect(formatAt(start, new Date(2026, 0, 1), "Asia/Tokyo")).toContain("08:00");
+    expect(formatAt(start, new Date(2026, 0, 1), "Not/A_Zone")).toBe(formatAt(start, new Date(2026, 0, 1)));
+  });
+  it.each([
+    [14340, "morning"], [14400, "afternoon"], [35940, "afternoon"], [36000, "evening"], [57599, "evening"],
+  ])("puts %s s after 08:00 in the %s", (seconds, part) => {
+    expect(dayPart(start, seconds, "Asia/Tokyo")).toBe(part);
+  });
+  it("has no part of the day without a start", () => {
+    expect(dayPart(undefined, 0, "Asia/Tokyo")).toBeUndefined();
+  });
+  it("reads a day recording's day, part and zone, and its transcript on its clock", () => {
+    const v = recordingView("recordings", { kind: "day", day: "2026-11-11", part: 2, tz: "Asia/Tokyo", started_at: start }, [{ start: 3912, end: 3920, text: "x" }])!;
+    expect(v.allDay).toEqual({ day: "2026-11-11", part: 2 });
+    expect(v.tz).toBe("Asia/Tokyo");
+    expect(v.lines[0].clock).toBe("09:05:12");
+    for (const part of [0, 100, 1.5, "2", undefined]) expect(recordingView("recordings", { kind: "day", day: "2026-11-11", part }, [])!.allDay!.part).toBe(1);
+    expect(recordingView("recordings", { kind: "day", tz: "Not/A_Zone" }, [])!.tz).toBeUndefined();
+    const other = recordingView("recordings", { kind: "meeting", tz: "Asia/Tokyo", started_at: start }, [{ start: 3912, end: 3920, text: "x" }])!;
+    expect(other.allDay).toBeUndefined();
+    expect(other.tz).toBeUndefined();
+    expect(other.lines[0].clock).toBe(recordingClock(start, 3912));
+  });
+  it("orders the timeline and cuts it by part of the day", () => {
+    const entry = (from: number, title: string) => ({ from, to: from + 600, kind: "outside", title });
+    const groups = recapGroups([entry(37000, "c"), entry(3600, "a"), entry(16200, "b"), entry(4000, "a2"), entry(Number.NaN, "x")], start, "Asia/Tokyo");
+    expect(groups.map((g) => [g.part, g.entries.map((e) => e.title)])).toEqual([["morning", ["a", "a2"]], ["afternoon", ["b"]], ["evening", ["c"]]]);
+    expect(recapGroups([entry(37000, "c"), entry(3600, "a")], undefined).map((g) => [g.part, g.entries.map((e) => e.title)])).toEqual([[undefined, ["a", "c"]]]);
+    expect(recapGroups(null, start)).toEqual([]);
+  });
+  it("names gaps of a minute or longer in time order", () => {
+    expect(recapGaps([
+      { from: 13000, to: 14000, reason: "paused" },
+      { from: 8400, to: 9900, reason: "interrupted" },
+      { from: 12000, to: 12059, reason: "lost" },
+      { from: 15000, to: 15060, reason: 7 as unknown as string },
+    ], start, "Asia/Tokyo")).toEqual([
+      { from: "10:20", to: "10:45", reason: "interrupted" },
+      { from: "11:36", to: "11:53", reason: "paused" },
+      { from: "12:10", to: "12:11", reason: "" },
+    ]);
+    expect(recapGaps(undefined, start)).toEqual([]);
+  });
+});
+
+// #3862 phase 3: a meeting's photos (GET …/photos) and the minutes items that cite one.
+describe("meeting photos", () => {
+  it("reads the list defensively, oldest first, blank words as absent", () => {
+    const photos = recordingPhotos({ photos: [
+      { n: 2, id: "b", at: 90.5, mime: "image/png", width: 800, height: 600, caption: "  ", text: "Q3 budget", cited: true, forwarded: true, added_at: "2026-11-10T06:02:00Z" },
+      { n: 1, id: "a", at: -3, mime: "image/jpeg", width: 1600, height: 1200, caption: " Whiteboard ", note: "A table.", cited: false, forwarded: false, added_at: "2026-11-10T06:01:00Z" },
+      { n: 0, id: "zero" }, { n: 1.5, id: "half" }, { n: 3 }, null, "x",
+    ] });
+    expect(photos.map((p) => p.n)).toEqual([1, 2]);
+    expect(photos[0]).toEqual({ n: 1, id: "a", at: 0, mime: "image/jpeg", width: 1600, height: 1200, caption: "Whiteboard", note: "A table.", cited: false, forwarded: false, added_at: "2026-11-10T06:01:00Z" });
+    expect(photos[1]).toMatchObject({ text: "Q3 budget", cited: true, forwarded: true });
+    expect(photos[1]).not.toHaveProperty("caption");
+    for (const v of [undefined, null, [], { photos: "x" }, { photos: null }]) expect(recordingPhotos(v)).toEqual([]);
+  });
+
+  it("knows the photo a minutes item cites", () => {
+    expect(citedPhoto({ photo: 3 })).toBe(3);
+    for (const photo of [undefined, 0, -1, 2.5, "3", null]) expect(citedPhoto({ photo })).toBeUndefined();
+  });
+
+  it("takes photos only on a recording whose kind is meeting", () => {
+    expect(meetingKind({ kind: " Meeting " })).toBe(true);
+    expect(meetingKind({ kind: "note", minutes_asked: true })).toBe(false);
+    expect(meetingKind(undefined)).toBe(false);
+  });
 });

@@ -23,6 +23,7 @@ They do not need the app in the foreground and do not use WebSocket: each call r
 | `AskClaudeIntent.swift` / `PersonaStatusIntent.swift` / `ApproveFirstIntent.swift` | The three business intents |
 | `AskPersonaIntent.swift` / `PersonalAgentIntents.swift` / `AddTodoIntent.swift` | Ask Persona, personal Agents, new to-do (`docs/apple/siri.md`) |
 | `ClipboardIntents.swift` | Send Clipboard to Computer / Get Computer's Clipboard (#3064, `docs/apple/ios.md` "Clipboard with your computers"): optional computer (default: the one last sent to, else the first online one that shares its clipboard); Send takes optional Text instead of the clipboard, so a shortcut that starts with Get Clipboard never sees the paste prompt; Get writes the phone's clipboard and returns the text. Listed in Shortcuts, not as App Shortcut phrases; the network part is `ClipboardIntentFlow` (`ClipboardIntentsTests`) |
+| `HandleNotificationIntent.swift` | Handle Notification (#3848, below): an item into this device's Shortcuts subscription source; the network part is `ShortcutItemFlow`, the queue `ShortcutOutbox` (`HandleNotificationTests`) |
 | `IntentAnswerSnippet.swift` | The answer card for Ask Persona (question + full text) |
 | `PersonaShortcuts.swift` | `AppShortcutsProvider`, Chinese phrases and icons |
 
@@ -35,6 +36,27 @@ App Intent parameters are compile-time metadata, so an extension manifest cannot
 Text is returned as both result value and Siri dialog. iOS/visionOS with compiler 6.4+ also show a read-only `ExtensionSurfaceView` snippet and optional Open link preserving the original group. Xcode 26.x, macOS and watchOS use the text/dialog fallback. This does not raise the minimum compiler. Widget and action details, cache/revocation behavior and device acceptance boundaries are in [Extensions](../extensions/extensions.md) ("Apple system surface boundaries").
 
 No Apple build, metadata extraction, simulator screenshot or device acceptance was run for this implementation while builds were paused; the Swift tests are additions, not passing evidence.
+
+## Handle Notification
+
+**Handle Notification** (#3848) hands one item to Persona as this device's Shortcuts source, a subscription the device
+fills itself ([subscriptions.md](../extensions/subscriptions.md) "Push sources"): Title, Body, App (where it came from),
+an optional Link and Time (default now). People put it in their own shortcuts and personal automations, such as one
+that runs when a message or an email arrives, or one run from the share sheet. Only what the shortcut passes is sent;
+nothing reads other apps' notifications, and the action's description says so. It is listed in Shortcuts, not as an
+App Shortcut phrase.
+
+- **Runs in the background** (`.background`) and talks to the selected hub group (`IntentSupport.selectedClient`) with
+  `POST /api/v1/subscriptions/-/push`. A title is the body's first line when it has none; neither is "Nothing to send".
+- **Dedup key**: a hash of the app, title, body and the minute, so a shortcut that fires twice for one notification
+  adds one item.
+- **Queued when the hub can't be reached** (offline, a network error, 502 to 504): the item waits on the phone
+  (`ShortcutOutbox`, Application Support, by group, at most 200, none older than a week) and goes with the next run,
+  or when the app connects to that group (`AppModel.didConnect`). Each send takes what waits with it, 20 a push.
+- **Result**: the value `sent` or `queued`, for a shortcut that goes on depending on it, and a sentence: sent; sent,
+  but turn on a destination for the source in Settings › Subscriptions (both are off at first); or queued.
+- **Refusals** say what to do: a hub without push sources (404) "update it", a view-only device, too many items in an
+  hour (429), and the usual pairing and connection sentences. A refused item is not kept.
 
 ## Selection rules
 

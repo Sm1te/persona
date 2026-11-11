@@ -187,6 +187,111 @@ import Testing
         #expect(RecordingMinutesModel.state(minutes: m, status: nil, meeting: false, synced: true) == .ready(m))
     }
 
+    // MARK: Action items as to-dos, and Regenerate (#4062)
+
+    /// A meeting recorded, transcribed and done: what the page loads minutes for.
+    private func doneMeeting() -> RecordingEntry {
+        var e = RecordingEntry(id: UUID(), createdAt: now, source: .phone, title: "Weekly", active: false, expectedSegments: 1)
+        e.meeting = RecordingMeeting(title: "Weekly")
+        e.segments = [RecordingSegment(index: 0, start: 0, duration: 60, sentences: [RecordingSentence(start: 1, end: 9, text: "Bo adds the test.")])]
+        return e
+    }
+
+    private func detail(version: Int, added: String = "", state: String = "ready", trimmed: Bool = false) -> String {
+        """
+        {"detail": {"meta": {"minutes_state": "\(state)"\(trimmed ? #", "trimmed_at": "2026-11-20T00:00:00Z""# : "")},
+         "minutes": {"version": \(version), "points": [{"text": "Export", "at": 1}],
+          "actions": [{"id": "a1", "who": "Bo", "what": "Add the test.", "by": "Friday", "due_date": "2026-11-13", "at": 2, "todo_id": "\(added)"},
+                      {"id": "a2", "what": "Write the notes.", "at": 3, "todo_id": ""}]}}}
+        """
+    }
+
+    @Test func actionItemsDecodeTheirIDsAndTodos() throws {
+        let answer = try JSONDecoder().decode(RecordingMinutesModel.Answer.self, from: Data(detail(version: 2, added: "t1", trimmed: true).utf8))
+        let m = try #require(answer.detail.minutes)
+        #expect(m.version == 2)
+        #expect(m.actions.map(\.id) == ["a1", "a2"])
+        #expect(m.actions[0].added && !m.actions[1].added)
+        #expect(m.actions[0].dueDate == "2026-11-13")
+        #expect(answer.detail.meta?.trimmedAt == "2026-11-20T00:00:00Z")
+        // The date it resolves to goes with the deadline as said.
+        #expect(RecordingMinutes.byline(m.actions[0])?.hasPrefix("Bo · Friday · ") == true)
+        // What the watch is sent keeps them.
+        let again = try JSONDecoder().decode(RecordingMinutes.self, from: JSONEncoder().encode(m))
+        #expect(again == m)
+    }
+
+    /// Add sends the version shown and those actions, shows them added, and reads the recording back before anything else.
+    @Test func addSendsTheVersionShownAndReadsBack() async throws {
+        let hub = FakeHub()
+        let entry = doneMeeting()
+        let path = "/api/v1/recordings/\(entry.id.uuidString.lowercased())/minutes/todos"
+        var added = ""
+        hub.on("GET", "/api/v1/kb/recordings/\(entry.id.uuidString.lowercased())") { _ in Data(self.detail(version: 2, added: added).utf8) }
+        hub.on("POST", path) { req in
+            let body = try JSONSerialization.jsonObject(with: req.body ?? Data()) as? [String: Any]
+            #expect(body?["version"] as? Int == 2)
+            #expect(body?["actions"] as? [String] == ["a1", "a2"])
+            added = "t1"
+            return Data(#"{"todos": [{"id": "t1"}], "minutes": {"version": 2, "actions": [{"id": "a1", "what": "Add the test.", "todo_id": "t1"}]}}"#.utf8)
+        }
+        let model = RecordingMinutesModel(api: { hub.client })
+        await model.load(entry, synced: true)
+        await model.add(["a1", "a2"], to: entry, synced: true)
+        #expect(hub.sent("POST", path).count == 1)
+        #expect(hub.sent("GET", "/api/v1/kb/recordings/\(entry.id.uuidString.lowercased())").count == 2)
+        guard case .ready(let m) = model.state else { Issue.record("not ready: \(model.state)"); return }
+        #expect(m.actions[0].added)
+        #expect(!model.asking)
+    }
+
+    /// Rewritten since they were shown: the new ones are read and shown, nothing is sent again, and the page says so.
+    @Test func staleMinutesAreReadAgainNotResent() async throws {
+        let hub = FakeHub()
+        let entry = doneMeeting()
+        let path = "/api/v1/recordings/\(entry.id.uuidString.lowercased())/minutes/todos"
+        var version = 2
+        hub.on("GET", "/api/v1/kb/recordings/\(entry.id.uuidString.lowercased())") { _ in Data(self.detail(version: version).utf8) }
+        hub.on("POST", path) { _ in
+            version = 3
+            throw APIError(status: 409, message: "stale", fields: ["code": "minutes_stale"])
+        }
+        let model = RecordingMinutesModel(api: { hub.client })
+        await model.load(entry, synced: true)
+        await model.add(["a1"], to: entry, synced: true)
+        #expect(hub.sent("POST", path).count == 1)
+        guard case .ready(let m) = model.state else { Issue.record("not ready"); return }
+        #expect(m.version == 3)
+        #expect(!m.actions[0].added)
+        #expect(AppModel.shared.toast?.message.isEmpty == false)
+    }
+
+    /// Regenerate goes with minutes shown only when the transcript is whole on the hub, nothing is being written and it
+    /// hasn't expired; asked, the minutes stay shown as Updating.
+    @Test func regenerateKeepsTheMinutesShown() async throws {
+        let hub = FakeHub()
+        let entry = doneMeeting()
+        let id = entry.id.uuidString.lowercased()
+        var state = "ready", trimmed = false
+        hub.on("GET", "/api/v1/kb/recordings/\(id)") { _ in Data(self.detail(version: 2, state: state, trimmed: trimmed).utf8) }
+        hub.on("POST", "/api/v1/recordings/\(id)/minutes") { _ in Data(#"{"state": "pending"}"#.utf8) }
+        let model = RecordingMinutesModel(api: { hub.client })
+        await model.load(entry, synced: true)
+        #expect(model.canRegenerate(entry, synced: true))
+        #expect(!model.canRegenerate(entry, synced: false))
+        await model.regenerate(entry.id)
+        guard case .ready = model.state else { Issue.record("the minutes went"); return }
+        #expect(model.updating && model.waiting)
+        #expect(!model.canRegenerate(entry, synced: true))
+        state = "pending"
+        await model.load(entry, synced: true)
+        #expect(model.updating)
+        state = "ready"; trimmed = true
+        await model.load(entry, synced: true)
+        #expect(!model.updating && model.trimmed)
+        #expect(!model.canRegenerate(entry, synced: true))
+    }
+
     // MARK: The Live Activity
 
     private func entry(marks: [Double] = [], meeting: Bool = true) -> RecordingEntry {

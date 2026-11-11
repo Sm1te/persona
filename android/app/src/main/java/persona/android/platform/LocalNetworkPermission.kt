@@ -83,7 +83,7 @@ class LocalNetworkPermission @Inject constructor(private val application: Applic
 
 @Singleton
 class PlatformPairing @Inject constructor(
-    application: Application,
+    private val application: Application,
     private val delegate: WiredPairingService,
     private val runtime: ConnectionRuntime,
     private val permission: LocalNetworkPermission,
@@ -98,7 +98,7 @@ class PlatformPairing @Inject constructor(
     }
     override suspend fun pair(request: PairingRequest) = pair(request) { }
     override suspend fun passwordLogin(address: String, progress: (PairingProgress) -> Unit) {
-        permission.ensureAllowedAddress(normalizedPasswordAddress(address).toString())
+        permission.ensureAllowedAddress(normalizedPasswordAddress(application, address).toString())
         pair(passwordBrowser.login(address), progress)
     }
     override suspend fun pair(request: PairingRequest, progress: (PairingProgress) -> Unit) {
@@ -120,7 +120,7 @@ class PlatformPairing @Inject constructor(
         // The pairing page warns that a new pairing replaces the current one while paired; adding replaces nothing.
         override val isPaired: kotlinx.coroutines.flow.StateFlow<Boolean> = none
         override suspend fun passwordLogin(address: String, progress: (PairingProgress) -> Unit) {
-            permission.ensureAllowedAddress(normalizedPasswordAddress(address).toString())
+            permission.ensureAllowedAddress(normalizedPasswordAddress(application, address).toString())
             pair(passwordBrowser.login(address), progress)
         }
         override suspend fun pair(request: PairingRequest) = pair(request) { }

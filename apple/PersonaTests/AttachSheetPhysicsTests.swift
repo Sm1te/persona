@@ -58,4 +58,16 @@ struct AttachSheetPhysicsTests {
         #expect(AttachSheetPhysics.springVelocity(1200, remaining: 600) == 2)
         #expect(AttachSheetPhysics.springVelocity(1200, remaining: 0) == 0)
     }
+
+    /// The caption rides on the keyboard (#3004): how far it reaches up from the screen's bottom, 0 once it goes down.
+    @Test func keyboardReach() {
+        let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+        #expect(AttachSheetPhysics.keyboardReach(end: CGRect(x: 0, y: 538, width: 402, height: 336), screen: screen) == 336)
+        #expect(AttachSheetPhysics.keyboardReach(end: CGRect(x: 0, y: 874, width: 402, height: 336), screen: screen) == 0)
+        #expect(AttachSheetPhysics.keyboardReach(end: CGRect(x: 0, y: 900, width: 402, height: 336), screen: screen) == 0)
+        #expect(AttachSheetPhysics.keyboardReach(end: CGRect(x: 0, y: -10, width: 402, height: 900), screen: screen) == 874)
+        #expect(AttachSheetPhysics.keyboardReach(end: nil, screen: screen) == 0)
+        #expect(AttachSheetPhysics.keyboardReach(end: .zero, screen: screen) == 0)
+        #expect(AttachSheetPhysics.keyboardReach(end: CGRect(x: 0, y: 538, width: 402, height: 336), screen: nil) == 0)
+    }
 }

@@ -7,10 +7,13 @@ nonisolated struct AutoConversationSource: Hashable, Identifiable, Sendable {
     var id: String
     var name: String
     var symbol: String
+    /// Its brand's mark (`Theme.Brand`), drawn instead of `symbol` where there is one.
+    var brand: String? = nil
 
     static let inbox = AutoConversationSource(id: "inbox", name: String(localized: "Inbox"), symbol: Theme.Icon.inbox)
     static let task = AutoConversationSource(id: "task", name: String(localized: "Scheduled Tasks"), symbol: Theme.Icon.schedule)
-    static let larkAgent = AutoConversationSource(id: "lark_agent", name: String(localized: "Lark /agent"), symbol: Theme.Icon.feishuChats)
+    static let larkAgent = AutoConversationSource(id: "lark_agent", name: String(localized: "Lark /agent"), symbol: Theme.Icon.feishuChats,
+                                                  brand: Theme.Brand.lark)
     static let spawned = AutoConversationSource(id: "spawned", name: String(localized: "Spawned from Chats"), symbol: Theme.Icon.conversation)
     static let extensionSource = AutoConversationSource(id: "extension", name: String(localized: "Extensions"), symbol: Theme.Icon.plugins)
     static let other = AutoConversationSource(id: "other", name: String(localized: "Other"), symbol: Theme.Icon.ai)
@@ -25,6 +28,22 @@ nonisolated struct AutoConversationSource: Hashable, Identifiable, Sendable {
 
     /// The origins of the user's own conversations: made in the app or the web, or with /new in a channel.
     static let usersOwn: Set<String> = ["", "user", "channel"]
+
+    /// Where a conversation an extension opened came from (#3758): Lark /agent or another extension; nil for any other
+    /// (the user's, the inbox's, a task's, one another conversation started, an origin this app does not know).
+    static func external(_ origin: String?) -> AutoConversationSource? {
+        switch origin?.trimmingCharacters(in: .whitespaces) {
+        case larkAgent.id: larkAgent
+        case extensionSource.id: extensionSource
+        default: nil
+        }
+    }
+
+    /// 「来自 飞书 /agent」, 「来自扩展」: where an external conversation came from, under its first message and for
+    /// VoiceOver on its row.
+    var from: String {
+        id == Self.extensionSource.id ? String(localized: "From an extension") : String(localized: "From \(name)")
+    }
 
     /// The hub's feature for `origin` (docs/protocol/protocol.md「Origin of assistant chats」).
     static let feature = "conversation_origin"

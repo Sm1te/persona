@@ -25,6 +25,7 @@ import persona.core.contracts.SessionKey
 import persona.core.contracts.api.*
 import persona.core.designsystem.AppFeedback
 import persona.core.designsystem.LocalAppFeedback
+import persona.core.designsystem.feedbackType
 import persona.core.navigation.AppTab
 import persona.core.navigation.Navigator
 
@@ -37,6 +38,8 @@ class AssistantArchiveNavigationTest {
     private val first = Session(machineId = "hub", sessionId = "a", title = "第一个任务")
     private val second = Session(machineId = "hub", sessionId = "b", title = "第二个任务")
     private val navigations = mutableListOf<Any>()
+    private val notices = mutableListOf<Pair<String, persona.core.designsystem.FeedbackStyle>>()
+    private val haptics = mutableListOf<androidx.compose.ui.hapticfeedback.HapticFeedbackType>()
     private val navigator = object : Navigator {
         override fun navigate(key: NavKey) { navigations += key }
         override fun back() { navigations += "back" }
@@ -53,6 +56,14 @@ class AssistantArchiveNavigationTest {
                     return true
                 }
                 override fun notice(message: String) = false
+                override fun notice(message: String, style: persona.core.designsystem.FeedbackStyle): Boolean {
+                    notices += message to style
+                    return true
+                }
+            }, androidx.compose.ui.platform.LocalHapticFeedback provides object : androidx.compose.ui.hapticfeedback.HapticFeedback {
+                override fun performHapticFeedback(hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType) {
+                    haptics += hapticFeedbackType
+                }
             }) {
                 AssistantScreen(navigator, hub, hub, startConversation = { error("Unexpected creation") },
                     requestedSession = active.key, management = hub, composerService = null,
@@ -80,6 +91,17 @@ class AssistantArchiveNavigationTest {
         rule.onAllNodesWithText(second.title!!).assertCountEquals(0)
         assertEquals(listOf(first.key, second.key), hub.archived)
         assertTrue(navigations.isEmpty())
+    }
+
+    // As iOS (#4209, DESIGN_SYSTEM.md 4.3): a tap on archiving, then "Archived" once the hub has it.
+    @Test fun archivingIsFeltAndSaysArchived() {
+        show()
+        haptics.clear()
+        archiveFirst()
+        rule.runOnIdle {
+            assertTrue(persona.core.designsystem.Haptic.Tap.feedbackType() in haptics)
+            assertEquals(listOf("已归档" to persona.core.designsystem.FeedbackStyle.Success), notices)
+        }
     }
 
     @Test fun archivingTheActiveConversationClearsItsSelectionWithoutClosingTheList() {

@@ -3,11 +3,12 @@
 // A preset needs only ② the key: it is tested on its own (POST /launchers/test with the preset) and saved with
 // assign, and (3) says what now runs on it. The gateway goes (2) "Connect" (address, auth, key; once they are in it fetches the models
 // and tests one by itself, and "Test connection" and "Fetch models" stay for doing it by hand) (3) "Choose models"
-// (context window, thinking levels, the default), the rest under "Advanced". Editing opens at "Connect" with the same form. The logic
-// is lib/providers.ts and lib/launcher-presets.ts. It reads the main conversation's readiness (4.3 B.3 / B.4): with a
+// (context window, thinking levels, the default; an ID typed by hand is looked up in the hub's catalog) and, for Claude Code, its tiers
+// (#4975: filled in from the checked models, a summary with Adjust), the rest under "Advanced". Editing opens at "Connect" with the
+// same form. The logic is lib/providers.ts, lib/provider-tiers.ts and lib/launcher-presets.ts. It reads the main conversation's readiness (4.3 B.3 / B.4): with a
 // Claude Code that already answers, "Use it for the main conversation and new Agents" starts off; a key saved for a computer with no Claude Code
 // says so (the main conversation still starts claude there) with how to install it.
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, enc, errorText } from "../../lib/api";
 import {
   assignByDefault,
@@ -34,6 +35,7 @@ import {
 import {
   autoCheckable,
   EFFORT_LEVELS,
+  fillFromCatalog,
   formFromView,
   formModel,
   formProblems,
@@ -50,6 +52,7 @@ import {
   type ProviderView,
   type TestResult,
 } from "../../lib/providers";
+import { applyTiers, checkedIds, hasTiers, setTier, tierAdvice, tierLines, tiersSplit, withAutoTiers, type TierAdvice, type TierRow, type Tiers, type TierSlot } from "../../lib/provider-tiers";
 import { formScope, newScope, scopeBody, scopeFromView, scopeProblem, scopeShown, scopeSummary, type ScopeForm } from "../../lib/provider-scope";
 import { claudeMissing, claudeWorks, currentReadiness, readinessChanged, readinessSettled, useReadiness, type Readiness } from "../../lib/readiness";
 import { effortLabel } from "../../lib/routines";
@@ -78,6 +81,9 @@ const stepTitle = (s: Step) =>
     devices: t("settings-providerwizard.step_devices"),
   })[s];
 
+/** What a single-line field keeps of pasted text: no line breaks, no space at the ends. */
+const oneLine = (s: string) => s.replace(/[\r\n]+/g, "").trim();
+
 /** A preset's key test: running, or what it answered. */
 type KeyTest = { running: true } | { running: false; result: TestResult };
 
@@ -92,10 +98,16 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const isNew = existing === "new";
   const old = existing && existing !== "new" ? existing : null;
   const [step, setStep] = useState<Step>("pick");
-  const [f, setF] = useState<ProviderForm>(() => newForm());
+  const [f, setForm] = useState<ProviderForm>(() => newForm());
+  // Every change goes through the tiers' fill-in (#4975): a new Claude Code provider's tiers follow the checked models
+  // and the default until the user picks one, in the same render; a saved provider's never change by themselves.
+  const setF = useCallback<React.Dispatch<React.SetStateAction<ProviderForm>>>((u) => setForm((x) => withAutoTiers(typeof u === "function" ? u(x) : u)), []);
+  // one per opening: an answer for an earlier one is dropped (Settings keeps the wizard mounted)
+  const opening = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [tiersOpen, setTiersOpen] = useState(false);
   const [clearLegacyChat, setClearLegacyChat] = useState(false);
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -107,11 +119,15 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const connectionTestSeq = useRef(0);
   // The Connect step's own check (#4881): whether this connection was already checked (by itself or by hand); the
   // discovery (its sequence number) whose end starts the check's test, 0 when none; whether the address is being typed
-  // (a key never goes to a half-typed address: it counts once pasted or left), and whether the next change is a paste.
+  // (a key never goes to a half-typed address: it counts once its field is left, the step is, or a paste fills all of
+  // it), and the text such a paste is putting there.
   const [checked, setChecked] = useState(false);
   const testAfter = useRef(0);
   const [urlTyping, setUrlTyping] = useState(false);
-  const urlPasting = useRef(false);
+  const urlPaste = useRef<string | null>(null);
+  // the latest test still standing: its model and how it went, so fetching the list again never repeats a test of the
+  // same model that is running or passed (a ref: the effect that reads it may run before a newer answer renders)
+  const lastTest = useRef<{ model: string; state: "running" | "ok" | "failed" } | null>(null);
   const modelToTest = probeModel.trim() || testModel(f);
   // the hub's providers (built-in ones, then the extensions'); null while loading
   const [presets, setPresets] = useState<LauncherPreset[] | null>(null);
@@ -149,6 +165,7 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     setTesting(false);
     setTest(null);
     setChecked(false);
+    lastTest.current = null;
     return () => { ++connectionGeneration.current; };
   }, [existing, choice, f.kind, f.agent, f.api, f.base_url, f.auth, f.api_key, f.headers, f.headers_touched]);
 
@@ -157,13 +174,16 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     ++connectionTestSeq.current;
     setTesting(false);
     setTest(null);
+    lastTest.current = null;
     return () => { ++connectionTestSeq.current; };
   }, [modelToTest]);
 
   useEffect(() => {
     if (existing === null) return;
+    ++opening.current;
     setError("");
     setAdvanced(false);
+    setTiersOpen(false);
     setClearLegacyChat(false);
     setTest(null);
     setFound(null);
@@ -239,16 +259,22 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const runTest = async () => {
     if (hasLegacyChat) return;
     setChecked(true);
+    const model = modelToTest;
+    lastTest.current = { model, state: "running" };
     const generation = connectionGeneration.current;
     const seq = ++connectionTestSeq.current;
     const current = () => generation === connectionGeneration.current && seq === connectionTestSeq.current;
+    const answered = (result: TestResult) => {
+      lastTest.current = { model, state: result.ok ? "ok" : "failed" };
+      setTest(result);
+    };
     setTesting(true);
     setTest(null);
     try {
-      const result = await api<TestResult>("/launchers/test", { method: "POST", json: probeBody(f, old?.name ?? null, modelToTest) });
-      if (current()) setTest(result);
+      const result = await api<TestResult>("/launchers/test", { method: "POST", json: probeBody(f, old?.name ?? null, model) });
+      if (current()) answered(result);
     } catch (e) {
-      if (current()) setTest({ ok: false, ms: 0, error: errorText(e) });
+      if (current()) answered({ ok: false, ms: 0, error: errorText(e) });
     } finally {
       if (current()) setTesting(false);
     }
@@ -285,7 +311,8 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   };
   // A gateway's address and key are checked by themselves once they stop changing, once per connection (#4881):
   // the models are fetched, then the connection is tested.
-  const autoCheck = existing !== null && step === "connect" && !checked && !hasLegacyChat && !urlTyping && autoCheckable(f, old);
+  const autoReady = existing !== null && step === "connect" && !checked && !hasLegacyChat && autoCheckable(f, old);
+  const autoCheck = autoReady && !urlTyping;
   useEffect(() => {
     if (!autoCheck) return;
     const timer = setTimeout(() => void runDiscover(true), AUTO_TEST_MS);
@@ -293,14 +320,19 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   }, [autoCheck, existing, f.kind, f.agent, f.api, f.base_url, f.auth, f.api_key, f.headers, f.headers_touched]);
 
   // The check's test, after the render that put the fetched models in the form (and retired any test of the model
-  // before them): the default model, else the first found, else the one typed to test with. A failed or empty fetch
-  // still tests a model already known (a gateway may list none); none known, nothing to test. A test or fetch pressed
-  // by hand meanwhile takes over (testAfter is 0).
+  // before them): the default model, else the first found, else the one typed to test with, whatever the list said (a
+  // key may answer without being allowed to list models); none known, nothing is tested. A test of the same model that
+  // is running or passed is not sent again (Retry on the list); a test or fetch pressed by hand meanwhile takes over.
   useEffect(() => {
     if (!found || found.seq !== testAfter.current) return;
     testAfter.current = 0;
-    if (modelToTest) void runTest();
+    const standing = lastTest.current?.model === modelToTest && lastTest.current.state !== "failed";
+    if (modelToTest && !standing) void runTest();
   }, [found]);
+  // Leaving the step is leaving the URL field (a field removed while focused never blurs).
+  useEffect(() => {
+    if (step !== "connect") setUrlTyping(false);
+  }, [step]);
 
   const save = async () => {
     if (busy || !canSave) return;
@@ -477,12 +509,21 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
             )}
             <TextField label={t("settings-providerwizard.base_url")} value={f.base_url} mono inputMode="url" placeholder="https://…"
               onChange={(v) => {
-                setUrlTyping(!urlPasting.current);
-                urlPasting.current = false;
+                // typed, or a paste into part of it; a paste over all of it is the address as the user has it
+                setUrlTyping(urlPaste.current === null || oneLine(urlPaste.current) !== v.trim());
+                urlPaste.current = null;
                 set("base_url")(v);
               }}
-              onPaste={() => void (urlPasting.current = true)}
-              onBlur={() => setUrlTyping(false)}
+              onPaste={(e) => {
+                const el = e.currentTarget;
+                const whole = el.selectionStart === 0 && el.selectionEnd === el.value.length;
+                const text = e.clipboardData.getData("text/plain");
+                urlPaste.current = whole ? text : null;
+                // the same text again changes nothing, so no change follows: it counts here
+                if (whole && oneLine(text) === el.value.trim()) setUrlTyping(false);
+              }}
+              // left for another field or the page; the window losing focus keeps the field focused, and the URL unfinished
+              onBlur={(e) => document.activeElement !== e.currentTarget && setUrlTyping(false)}
               hint={f.kind === "api" && f.api === "chat" ? t("settings-providerwizard.url_chat_hint") : openAI ? t("settings-providerwizard.url_responses_hint") : t("settings-providerwizard.url_gateway_hint")} />
             {!openAI && (
               <Labelled label={t("settings-providerwizard.auth")} hint={f.auth === "bearer" ? t("settings-providerwizard.auth_bearer_hint") : t("settings-providerwizard.auth_key_hint")}>
@@ -509,7 +550,7 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
                     testing={testing}
                     test={test}
                     // before anything ran: a new gateway says it checks itself, and both say when it is about to
-                    waiting={autoCheck ? "wait" : isNew && !checked ? "hint" : null}
+                    waiting={autoCheck ? "wait" : autoReady ? "leave" : isNew && !checked ? "hint" : null}
                     onRetryFetch={() => void runDiscover(!!found?.check)}
                     onRetryTest={testByHand}
                   />
@@ -522,8 +563,10 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
 
         {step === "models" && (
           <div className="flex flex-col gap-3">
-            <ModelList f={f} setF={setF} />
-            <Disclosure title={t("settings-providerwizard.advanced")} open={advanced} onToggle={() => setAdvanced((o) => !o)} badge={advanced ? undefined : t("settings-providerwizard.advanced_badge")}>
+            <ModelList f={f} setF={setF} opening={opening} />
+            {hasTiers(f) && <ClaudeTiers f={f} setF={setF} saved={!!old} open={tiersOpen} onToggle={() => setTiersOpen((o) => !o)} />}
+            <Disclosure title={t("settings-providerwizard.advanced")} open={advanced} onToggle={() => setAdvanced((o) => !o)}
+              badge={advanced ? undefined : hasTiers(f) ? t("settings-providerwizard.advanced_badge_claude") : t("settings-providerwizard.advanced_badge")}>
               <Advanced f={f} setF={setF} set={set} hadHeaders={!!old?.has_headers} hadEnv={!!old?.has_env} />
             </Disclosure>
           </div>
@@ -722,37 +765,37 @@ function ConnectStatus({ discovering, found, testing, test, waiting, onRetryFetc
   found: Found | null;
   testing: boolean;
   test: TestResult | null;
-  /** Nothing ran yet: "wait" the address and key are in and the check starts when typing stops; "hint" it will once they are. */
-  waiting: "wait" | "hint" | null;
+  /** Nothing ran yet: "wait" the address and key are in and the check starts when typing stops; "leave" it starts once
+   *  the address being typed is left; "hint" it will once they are in. */
+  waiting: "wait" | "leave" | "hint" | null;
   /** Fetches again, and tests too when the failed fetch was the step's check. */
   onRetryFetch: () => void;
   onRetryTest: () => void;
 }) {
-  const busy = (text: string) => <BusyLine>{text}</BusyLine>;
-  const retry = (onClick: () => void) => <LineAction onClick={onClick}>{t("settings-providerwizard.retry")}</LineAction>;
   if (!discovering && !found && !testing && !test) {
     if (!waiting) return null;
-    return <p className="text-[11.5px] leading-relaxed text-ink-3">{waiting === "wait" ? t("settings-providerwizard.check_wait") : t("settings-providerwizard.check_hint")}</p>;
+    const line = waiting === "wait" ? t("settings-providerwizard.check_wait") : waiting === "leave" ? t("settings-providerwizard.check_leave_url") : t("settings-providerwizard.check_hint");
+    return <p className="text-[11.5px] leading-relaxed text-ink-3">{line}</p>;
   }
   return (
     <>
       {testing
-        ? busy(t("settings-providerwizard.testing"))
+        ? <BusyLine>{t("settings-providerwizard.testing")}</BusyLine>
         : test && (
             <div role="status" className={cx("flex items-start gap-1.5 text-[12px]", test.ok ? "text-green" : "text-red")}>
               <Icon name={test.ok ? "check" : "warning"} size={12} stroke={2.4} className="mt-0.5 shrink-0" />
               <span className="min-w-0 flex-1 break-words">{testText(test)}</span>
-              {!test.ok && retry(onRetryTest)}
+              {!test.ok && <LineAction onClick={onRetryTest}>{t("settings-providerwizard.retry")}</LineAction>}
             </div>
           )}
       {discovering
-        ? busy(t("settings-providerwizard.discovering"))
+        ? <BusyLine>{t("settings-providerwizard.discovering")}</BusyLine>
         : found && (
             <div role="status" className={cx("flex items-start gap-1.5 text-[12px]", found.error ? "text-orange" : "text-ink-2")}>
               <span className="min-w-0 flex-1 break-words">
                 {found.error ? t("settings-providerwizard.discover_failed", { error: found.error }) : t("settings-providerwizard.discover_found", { count: found.n })}
               </span>
-              {found.error && retry(onRetryFetch)}
+              {found.error && <LineAction onClick={onRetryFetch}>{t("settings-providerwizard.retry")}</LineAction>}
             </div>
           )}
     </>
@@ -821,7 +864,7 @@ function DoneStep({ added, readiness }: { added: Added; readiness: Readiness | n
 }
 
 /** ③: the models this provider offers. Checked ones are saved; the default is one of them. */
-function ModelList({ f, setF }: { f: ProviderForm; setF: React.Dispatch<React.SetStateAction<ProviderForm>> }) {
+function ModelList({ f, setF, opening }: { f: ProviderForm; setF: React.Dispatch<React.SetStateAction<ProviderForm>>; opening: React.RefObject<number> }) {
   const [adding, setAdding] = useState("");
   const update = (i: number, patch: Partial<FormModel>) =>
     setF((x) => {
@@ -833,8 +876,21 @@ function ModelList({ f, setF }: { f: ProviderForm; setF: React.Dispatch<React.Se
   const add = () => {
     const id = adding.trim();
     if (!id) return;
+    const known = f.models.some((m) => m.id === id);
     setF((x) => (x.models.some((m) => m.id === id) ? { ...x, models: x.models.map((m) => (m.id === id ? { ...m, checked: true } : m)) } : { ...x, models: [...x.models, formModel({ id })], model: x.model || id }));
     setAdding("");
+    if (!known) void lookUp(id);
+  };
+  // What the hub's catalog knows of a typed ID (#4975), as discovery fills a listed one: only what is still empty.
+  const lookUp = async (id: string) => {
+    const at = opening.current;
+    try {
+      const r = await api<{ models?: ProviderModel[] }>("/launchers/catalog", { method: "POST", json: { ids: [id] } });
+      const found = r.models ?? [];
+      if (found.length && at === opening.current) setF((x) => ({ ...x, models: fillFromCatalog(x.models, found, x.kind === "api" && x.api === "chat") }));
+    } catch {
+      // an older hub has no catalog: the row keeps what was typed
+    }
   };
   const checked = f.models.filter((m) => m.checked).length;
   const chat = f.kind === "api" && f.api === "chat";
@@ -930,7 +986,7 @@ function Advanced({ f, setF, set, hadHeaders, hadEnv }: {
   hadEnv: boolean;
 }) {
   const list = useId();
-  const ids = useMemo(() => f.models.filter((m) => m.checked).map((m) => m.id), [f.models]);
+  const ids = useMemo(() => checkedIds(f), [f.models]);
   const launcher = f.kind !== "api";
   const chat = !launcher && f.api === "chat";
   if (chat) return <p className="text-[11.5px] leading-relaxed text-ink-3">{t("settings-providerwizard.chat_advanced_hint")}</p>;
@@ -946,7 +1002,20 @@ function Advanced({ f, setF, set, hadHeaders, hadEnv }: {
           <option key={id} value={id} />
         ))}
       </datalist>
-      {launcher && (
+      {launcher && hasTiers(f) && (
+        // the tiers people change most are in "Claude Code tiers" above (#4975); Fable and forcing stay here
+        <div className="grid items-start gap-3 sm:grid-cols-2">
+          <TierSelect label={t("settings-providerwizard.tier_model", { tier: "Fable" })} value={f.fable_model} ids={ids} def={f.model.trim()} auto={f.tier_source.fable === "auto"} onChange={(v) => setF((x) => setTier(x, "fable", v))} />
+          <div className="flex items-center gap-3 sm:pt-5">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] font-medium text-ink-2">{t("settings-providerwizard.force_subagent")}</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-3">{t("settings-providerwizard.force_subagent_hint")}</span>
+            </span>
+            <Switch on={f.subagent_force} onChange={set("subagent_force")} label={t("settings-providerwizard.force_subagent")} />
+          </div>
+        </div>
+      )}
+      {launcher && !hasTiers(f) && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
             {tier("opus_model", t("settings-providerwizard.tier_model", { tier: "Opus" }))}
@@ -1032,5 +1101,135 @@ function Advanced({ f, setF, set, hadHeaders, hadEnv }: {
         </>
       )}
     </>
+  );
+}
+
+/** A tier's model: empty (the session's model, `def` unless the session picks another; `empty` names what else it
+ *  follows) or one of the checked models; a stored one that is not checked stays on the list. The default model is not
+ *  offered again by name: set by name the node runs it without its 1M marker. "Auto" when it filled itself in (#4975). */
+function TierSelect({ label, hint, value, ids, def, auto, empty, onChange }: { label: string; hint?: string; value: string; ids: string[]; def: string; auto: boolean; empty?: string; onChange: (v: string) => void }) {
+  const id = useId();
+  const options = [...ids.filter((m) => m !== def || m === value), ...(value && !ids.includes(value) ? [value] : [])];
+  return (
+    <Labelled htmlFor={id} hint={hint} label={
+      // one height with or without the pill, so fields side by side line up
+      <span className="inline-flex min-h-5 items-center gap-1.5">
+        {label}
+        {auto && <Pill>{t("settings-providerwizard.tier_auto")}</Pill>}
+      </span>
+    }>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className={cx(INPUT, "font-mono")}>
+        <option value="">{empty ?? (def ? t("settings-providerwizard.same_as_default_named", { model: def }) : t("settings-providerwizard.same_as_default"))}</option>
+        {options.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+    </Labelled>
+  );
+}
+
+const TIER_NAME: Record<TierSlot, () => string> = {
+  opus: () => "Opus",
+  sonnet: () => "Sonnet",
+  light: () => t("settings-providerwizard.tier_light"),
+  fable: () => "Fable",
+};
+const ROW_NAME: Record<TierRow, () => string> = {
+  opus: TIER_NAME.opus,
+  sonnet: TIER_NAME.sonnet,
+  light: TIER_NAME.light,
+  haiku: () => "Haiku",
+  small: () => t("settings-providerwizard.small_model"),
+  subagent: () => t("settings-providerwizard.tier_subagents"),
+};
+const ROW_HINT: Partial<Record<TierRow, () => string>> = {
+  light: () => t("settings-providerwizard.tier_light_hint"),
+  small: () => t("settings-providerwizard.small_model_hint"),
+  subagent: () => t("settings-providerwizard.subagent_hint"),
+};
+
+/** "Sonnet → x, Haiku / small model → y": what taking a suggestion sets. */
+const tierList = (tiers: Tiers) =>
+  (Object.keys(TIER_NAME) as TierSlot[])
+    .filter((s) => tiers[s])
+    .map((s) => t("settings-providerwizard.tier_pair", { tier: TIER_NAME[s](), model: tiers[s]! }))
+    .join(t("settings-providerwizard.tier_separator"));
+
+/** The suggestion line's words: which of the Haiku tier and the background requests sit on the Opus model, if any. */
+function adviceText(a: TierAdvice): string {
+  const list = tierList(a.tiers);
+  if (!a.sameAsOpus) return t("settings-providerwizard.tiers_suggested", { list });
+  const v = { model: a.sameAsOpus, list };
+  if (a.haiku && a.small) return t("settings-providerwizard.tiers_same_as_opus", v);
+  return a.haiku ? t("settings-providerwizard.tiers_haiku_as_opus", v) : t("settings-providerwizard.tiers_small_as_opus", v);
+}
+
+/** ③ for a Claude Code provider (#4975): the model each tier, the background requests and subagents run, under the
+ *  models, with "Auto" on what filled itself in; Adjust opens the editor in place. Below it, when the Haiku tier lands
+ *  on the Opus model while a lighter one is checked, or a saved provider's empty tiers could use a checked model, one
+ *  line says so and Apply takes it. Fable and forcing the subagent model stay under Advanced. */
+function ClaudeTiers({ f, setF, saved, open, onToggle }: { f: ProviderForm; setF: React.Dispatch<React.SetStateAction<ProviderForm>>; saved: boolean; open: boolean; onToggle: () => void }) {
+  const titleId = useId();
+  const bodyId = useId();
+  const ids = useMemo(() => checkedIds(f), [f.models]);
+  const def = f.model.trim();
+  // apart or together as the step opened: a row never disappears under the user while they edit it
+  const [split] = useState(() => tiersSplit(f));
+  const lines = tierLines(f, split);
+  const advice = tierAdvice(f, saved);
+  const value = (row: TierRow) => ({ opus: f.opus_model, sonnet: f.sonnet_model, light: f.small_model, haiku: f.haiku_model, small: f.small_model, subagent: f.subagent_model })[row];
+  const change = (row: TierRow) => (v: string) =>
+    setF((x) => (row === "haiku" ? { ...x, haiku_model: v } : row === "subagent" ? { ...x, subagent_model: v } : setTier(x, row === "small" ? "light" : row, v)));
+  return (
+    <section aria-labelledby={titleId} className="flex flex-col gap-2.5 rounded-card bg-inset p-3 shadow-hairline">
+      <div className="flex items-start gap-3">
+        <span className="min-w-0 flex-1">
+          <span id={titleId} className="block text-[12.5px] font-medium text-ink-2">{t("settings-providerwizard.tiers_title")}</span>
+          <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-3">{t("settings-providerwizard.tiers_intro")}</span>
+        </span>
+        <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={bodyId}
+          className="touch-hit inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[12px] font-medium text-accent hover:underline">
+          {open ? t("settings-providerwizard.tiers_close") : t("settings-providerwizard.tiers_adjust")}
+          <Icon name="chevron" size={10} stroke={2.4} className="transition-transform duration-150" style={{ transform: open ? "rotate(180deg)" : "none" }} />
+        </button>
+      </div>
+      <div id={bodyId}>
+        {open ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {lines.map((l) => (
+              <TierSelect key={l.row} label={ROW_NAME[l.row]()} hint={ROW_HINT[l.row]?.()} value={value(l.row)} ids={ids} def={def} auto={l.auto} onChange={change(l.row)}
+                // left empty, the Haiku tier runs the small model
+                empty={l.row === "haiku" && f.small_model.trim() ? t("settings-providerwizard.same_as_small", { model: f.small_model.trim() }) : undefined} />
+            ))}
+          </div>
+        ) : (
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
+            {lines.map((l) => (
+              <div key={l.row} className="contents">
+                <dt className="text-[11.5px] text-ink-3">{ROW_NAME[l.row]()}</dt>
+                <dd className="flex min-w-0 items-center gap-1.5">
+                  <span className={cx("truncate font-mono text-[12px]", l.model ? "text-ink" : "text-ink-3")}>{l.model || t("settings-providerwizard.same_as_default")}</span>
+                  {l.auto ? <Pill>{t("settings-providerwizard.tier_auto")}</Pill> : l.follows && l.model ? (
+                    <span className="shrink-0 whitespace-nowrap text-[11px] text-ink-3">{l.follows === "small" ? t("settings-providerwizard.tier_follows_small") : t("settings-providerwizard.tier_is_default")}</span>
+                  ) : null}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+      {lines.some((l) => l.auto) && <p className="text-[11px] leading-relaxed text-ink-3">{t("settings-providerwizard.tiers_auto_note")}</p>}
+      {advice && (
+        <div role="status" className={cx("flex items-start gap-1.5 text-[12px] leading-relaxed", advice.sameAsOpus ? "text-orange" : "text-ink-2")}>
+          <Icon name={advice.sameAsOpus ? "warning" : "sparkles"} size={12} stroke={2.2} className="mt-1 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">
+            {adviceText(advice)}
+          </span>
+          <LineAction onClick={() => setF((x) => applyTiers(x, advice.tiers))}>{t("settings-providerwizard.tiers_apply")}</LineAction>
+        </div>
+      )}
+    </section>
   );
 }

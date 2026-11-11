@@ -145,8 +145,8 @@
     <string name="agents_repo_worktree">ワークツリー</string>
     <string name="agents_card_question">Claudeから質問があります</string>
     <string name="agents_card_question_by">%1$sから質問があります</string>
-    <string name="agents_card_permission">許可が必要です</string>
-    <string name="agents_card_permission_by">%1$sに許可が必要です</string>
+    <string name="agents_card_permission">承認を待っています</string>
+    <string name="agents_card_permission_by">%1$sが承認を待っています</string>
     <string name="agents_card_plan">プランの承認待ち</string>
     <string name="agents_card_screen">ターミナルで対応が必要です</string>
     <string name="agents_card_other">要対応</string>

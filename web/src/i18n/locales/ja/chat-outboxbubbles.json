@@ -2,5 +2,7 @@
   "failed": "送信できませんでした：{error}",
   "clear_and_send": "クリアして送信",
   "retry": "再試行",
-  "delete": "削除"
+  "delete": "削除",
+  "deleted": "メッセージを削除しました",
+  "undo": "元に戻す"
 }

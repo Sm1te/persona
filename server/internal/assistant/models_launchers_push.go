@@ -86,6 +86,7 @@ func (s *Service) nodeLaunchers(stored []storedLauncher) ([]proto.ManagedLaunche
 
 func (s *Service) openStoredLauncher(l storedLauncher) (proto.ManagedLauncher, error) {
 	m := l.ManagedLauncher
+	m.BaseURL = m.LaunchBaseURL() // a node from before it normalized one stored with a trailing /v1 itself (#4886)
 	var err error
 	if m.APIKey, err = s.openKey(l.KeySealed); err != nil {
 		return m, i18n.Err("assistant-models.err_key_decrypt")

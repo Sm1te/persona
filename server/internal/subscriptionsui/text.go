@@ -167,6 +167,9 @@ func (p *pages) destinations(s subscriptions.Subscription) string {
 
 // schedule is every() for a subscription.
 func (p *pages) schedule(s subscriptions.Subscription) string {
+	if subscriptions.IsPush(s) {
+		return p.t("every.push")
+	}
 	if s.Recipe.Mode == wire.ConnectorSubscriptionModeSnapshot {
 		at := s.DailyAt
 		if at == "" && s.IntervalSeconds >= 86400 {
@@ -181,6 +184,9 @@ func (p *pages) schedule(s subscriptions.Subscription) string {
 
 // lastLine is what the last run did: 3 minutes ago, 2 new; or not run yet.
 func (p *pages) lastLine(s subscriptions.Subscription) string {
+	if s.LastOKAt == nil && subscriptions.IsPush(s) {
+		return p.t("last.push_never")
+	}
 	if s.LastOKAt == nil {
 		return p.t("last.never")
 	}
@@ -293,6 +299,14 @@ func shortPath(path string) string {
 		return "$"
 	}
 	return s
+}
+
+// took is how long a run took, "" for a push (kept as it came).
+func (p *pages) took(ms int64, pushed bool) string {
+	if pushed {
+		return ""
+	}
+	return p.seconds(ms)
 }
 
 func (p *pages) seconds(ms int64) string {

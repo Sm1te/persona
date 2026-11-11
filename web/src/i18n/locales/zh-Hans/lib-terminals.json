@@ -1,3 +1,4 @@
 {
-  "terminal": "终端"
+  "terminal": "终端",
+  "finished": "已结束：{title}"
 }

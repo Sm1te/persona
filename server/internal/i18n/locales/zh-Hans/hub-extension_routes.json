@@ -1,5 +1,6 @@
 {
   "owner_only": "扩展只能在 hub 机器上（personad extension …）或 hub 的管理界面里装、升级和卸载",
   "market_only": "这个扩展只能在 hub 机器上（personad extension …）或 hub 的管理界面里装、升级和卸载；手机上只能装扩展市场里的",
-  "node_confirm": "将在这台电脑上运行「{name}」的程序：以 node 的系统用户运行，不在沙箱里。"
+  "node_confirm": "将在这台电脑上运行「{name}」的程序：以 node 的系统用户运行，不在沙箱里。",
+  "no_handoff_rule": "没有这条交付规则。"
 }

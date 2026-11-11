@@ -221,7 +221,7 @@ struct MessagesChatRow: View {
                     Text(preview).font(Theme.Font.secondary).lineHeight(.secondary).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
                     if let n = chat.unread, n > 0 {
-                        CountBadge(count: n, look: .solid(Theme.accent))
+                        CountBadge(count: n, look: .accent)
                     }
                 }
             }

@@ -2,7 +2,6 @@
   "title": "会话与终端",
   "short": "会话",
   "sessions": "会话",
-  "shells": "独立 Shell",
   "content": "会话或终端内容",
   "back": "返回会话列表",
   "terminal_unavailable": "当前无法打开终端",

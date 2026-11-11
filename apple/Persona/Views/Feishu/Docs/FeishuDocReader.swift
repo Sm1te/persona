@@ -429,8 +429,8 @@ struct FeishuDocReader: View {
                 Button { showComments = true } label: {
                     Image(systemName: Theme.Icon.conversation)
                         .overlay(alignment: .topTrailing) {
-                            if let n = model.info?.comments, n > 0 {
-                                Text(n > 99 ? "99+" : "\(n)")
+                            if let n = model.info?.comments, let text = CountBadge.text(n) {
+                                Text(text)
                                     .font(.system(size: 9, weight: .bold).monospacedDigit()) // type-scale: glyph (a count on an icon)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, Theme.Space.xs)

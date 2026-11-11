@@ -671,7 +671,7 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 	if n.codexBlocked(p.ResumeSessionID) && devicewire.IsSessionStart(method) {
 		return nil, refusal("identity_conflict", "会话 ID 与另一来源重复，不能恢复", nil)
 	}
-	if devicewire.IsSessionStart(method) && n.externalCodex(p.ResumeSessionID) && !n.codexResumable(p.ResumeSessionID) { // codex_resume.go
+	if devicewire.IsSessionStart(method) && n.externalCodex(p.ResumeSessionID) && !n.codexResumable(withStartHost(ctx, p.Host), p.ResumeSessionID) { // codex_resume.go
 		return nil, refusal("codex_read_only", "外部 Codex 会话只能接入原 app-server，不能用启动器恢复", nil)
 	}
 	if n.externalCodex(p.SessionID) {
@@ -964,6 +964,9 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 	case "session.start.options":
 		return n.workSessionOptions(ctx, p.Name, p.ConfiguredAgent, "", p.Configured, true)
 	case "session.start", devicewire.MethodStartWorkSession:
+		if p.ResumeSessionID != "" && p.Host == "" {
+			p.Host = n.startKind(n.withResumeHost(ctx, p.ResumeSessionID))
+		}
 		var work workStartOptions
 		if method == devicewire.MethodStartWorkSession {
 			if p.ResumeSessionID != "" {
@@ -1260,7 +1263,11 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 		return n.terminalWatch(ctx, p.SessionID, a.Control)
 	case "panes.list": // the terminal browser: every workspace, tab and pane, agent or shell (panes.go)
 		n.configured()
-		return n.listPanes(ctx)
+		res, err := n.listPanes(ctx)
+		if err == nil {
+			n.paneForegrounds(ctx, &res)
+		}
+		return res, err
 	case "panes.new": // an explicit "New terminal" from the browser: a shell tab in a workspace (panes.go)
 		var a struct {
 			Kind        string `json:"kind"`

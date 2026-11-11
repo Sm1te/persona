@@ -68,7 +68,25 @@ func (n *Node) markStopped(s *proto.Session) {
 	default:
 		return
 	}
-	if _, runtime := engineRuntimes[n.defaultKind()]; runtime || n.defaultHost() == nil {
+	if h, _, known := n.runtimes.belongs(s.SessionID); h != nil || known || n.runtimes.unlistedTranscripts()[s.SessionID] {
+		return
+	}
+	kind := s.Host
+	if kind == "" {
+		st, _ := n.state.get(s.SessionID)
+		pane := st.Pane
+		if pane == "" {
+			n.mu.Lock()
+			pane = n.lastPanes[s.SessionID]
+			n.mu.Unlock()
+		}
+		if pane != "" {
+			kind = host.ParsePane(pane).Kind
+		} else {
+			kind = n.defaultKind() // Older transcripts may have no recorded host.
+		}
+	}
+	if _, runtime := engineRuntimes[kind]; runtime || n.hosts.Get(kind) == nil {
 		return
 	}
 	if n.isAssistantSession(s.SessionID) || n.runtimeAssistant(s.SessionID) || n.freshFork(s.SessionID) {

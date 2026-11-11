@@ -180,6 +180,17 @@ struct MeetingExchangeRow: View {
     private var speaking: some View {
         Label("Speaking", systemImage: Theme.Icon.voiceSpeaking)
             .font(Theme.Font.secondary).foregroundStyle(Theme.ai).lineLimit(1)
+            .accessibilityIdentifier(Self.speakingID(speaker.voice))
+    }
+
+    /// Which voice says it, for UI tests (an identifier, never read out): the realtime voice, the on-device one, or
+    /// neither yet (the realtime voice is being asked for).
+    static func speakingID(_ voice: MeetingSpeaker.Voice?) -> String {
+        switch voice {
+        case .realtime?: "meeting-speaking-realtime"
+        case .onDevice?: "meeting-speaking-device"
+        case nil: "meeting-speaking"
+        }
     }
 
     private var stopSpeaking: some View {

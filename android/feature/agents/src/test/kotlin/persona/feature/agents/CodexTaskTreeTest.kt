@@ -26,7 +26,8 @@ class CodexTaskTreeTest {
         assertEquals(listOf("root"), agentTreeEntries(list, "").filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })
         val open = agentTreeEntries(list, "", expandedTasks = setOf("machine/root", "machine/child"))
         assertEquals(listOf("root", "child", "leaf"), open.filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })
-        assertEquals(listOf(1, 2, 3), open.filterIsInstance<TreeRowEntry>().map { it.depth })
+        // One computer: no heading, so the tree starts a step out (#4338 A7).
+        assertEquals(listOf(0, 1, 2), open.filterIsInstance<TreeRowEntry>().map { it.depth })
         assertEquals(listOf(false, true, true), open.filterIsInstance<TreeRowEntry>().map { it.nested })
         assertEquals(1, list.counts[AgentQuickFilter.Working])
         assertEquals(listOf("root"), agentTreeEntries(list, "").filterIsInstance<TreeRowEntry>().map { it.row.session.sessionId })
@@ -69,7 +70,8 @@ class CodexTaskTreeTest {
         assertEquals(1, list.counts[AgentQuickFilter.NeedsYou])
         assertEquals(1, list.counts[AgentQuickFilter.Working])
         assertEquals(2, list.machines.single().sessionCount)
-        assertEquals(listOf(1, 1, 0), list.machines.single().headingCounts.map { it.second })
+        // A computer heading counts idle ones too, as iOS's StateCounts (#4338 A7): none here.
+        assertEquals(listOf(1, 1, 0, 0), list.machines.single().headingCounts.map { it.second })
         assertEquals(listOf(1, 1, 0), list.groups.single().headingCounts.map { it.second })
         assertEquals(2, machineCounts(machines, list.groups.flatMap { it.rows }).single().count)
         assertEquals(2, list.groups.sumOf { group -> group.rows.count { !it.isNestedSubtask } })

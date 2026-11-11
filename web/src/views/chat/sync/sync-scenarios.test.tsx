@@ -40,7 +40,7 @@ vi.mock("../../assistant/Tasks", () => ({
   FeedLineView: () => null,
   QuickResultCard: () => null,
   RouteChip: () => null,
-  AssistantActionBar: ({ ownPending }: { ownPending?: import("react").ReactNode }) => ownPending,
+  AssistantActionBar: () => null,
   TaskDock: () => null,
   TaskQuestions: () => null,
 }));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { autoConversations, autoOrigin, matchesOrigin, parseOriginFilter, recentConversations } from "./conversation-origins";
-import type { Session } from "./types";
+import { autoConversations, autoOrigin, externalFrom, externalOpening, externalOrigin, matchesOrigin, parseOriginFilter, recentConversations } from "./conversation-origins";
+import type { Item, Session } from "./types";
 
 const conv = (id: string, extra: Partial<Session> = {}) => ({ machine_id: "hub", session_id: id, title: id, cwd: "", status: "idle", ...extra }) as Session;
 
@@ -43,6 +43,34 @@ describe("conversation origins (docs/protocol/protocol.md「Origin of assistant 
     expect(matchesOrigin(conv("a", { origin: "inbox" }), "inbox")).toBe(true);
     expect(matchesOrigin(conv("a", { origin: "task" }), "inbox")).toBe(false);
     expect(matchesOrigin(conv("a", { origin: "task" }), "all")).toBe(true);
+  });
+
+  it("counts only Lark /agent and other extensions as external, by the trimmed origin (#3758)", () => {
+    expect(externalOrigin(conv("a", { origin: "lark_agent" }))).toBe("lark_agent");
+    expect(externalOrigin(conv("a", { origin: " extension " }))).toBe("extension");
+    for (const origin of [undefined, "", "user", "channel", "inbox", "task", "spawned", "other", "something_new", "Extension"]) {
+      expect(externalOrigin(conv("a", { origin })), String(origin)).toBeUndefined();
+    }
+    expect(externalOrigin(undefined)).toBeUndefined();
+  });
+
+  it("says where an external conversation came from with the channel line's words (tests run in zh-Hans)", () => {
+    expect(externalFrom("lark_agent")).toBe("来自 飞书 /agent");
+    expect(externalFrom("extension")).toBe("来自扩展");
+  });
+
+  it("finds the message an external conversation was opened with only once the items reach its start", () => {
+    const item = (id: string, role: string, kind: string, extra: Partial<Item> = {}) => ({ id, seq: 0, role, kind, ...extra }) as Item;
+    const items = [item("n", "assistant", "notice"), item("tool-pic", "user", "image", { tool_use_id: "t1" }), item("u1#0", "user", "text"), item("a1", "assistant", "text"), item("u2#0", "user", "text")];
+    const lark = conv("c", { origin: "lark_agent" });
+    expect(externalOpening(lark, items, false)).toEqual({ id: "u1#0", origin: "lark_agent" });
+    // earlier items still to load: the first one here is not the first
+    expect(externalOpening(lark, items, true)).toBeUndefined();
+    // a message that starts with a picture is opened by that picture's item, as lib/turns.ts groups it
+    expect(externalOpening(conv("c", { origin: "extension" }), [item("p1#0", "user", "image"), item("p1#1", "user", "text")], false)).toEqual({ id: "p1#0", origin: "extension" });
+    expect(externalOpening(lark, [item("a1", "assistant", "text")], false)).toBeUndefined();
+    expect(externalOpening(conv("c", { origin: "channel" }), items, false)).toBeUndefined();
+    expect(externalOpening(conv("c"), items, false)).toBeUndefined();
   });
 });
 

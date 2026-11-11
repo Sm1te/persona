@@ -28,6 +28,12 @@
     <string name="app_connection_certificate">ハブの証明書が変わりました</string>
     <string name="app_connection_revoked">ペアリングが無効になりました</string>
     <string name="app_pairing_unreadable">ペアリング情報を読み込めません。元のデータは保持されています。</string>
+    <string name="app_password_login_in_progress">別のパスワードログインが進行中です</string>
+    <string name="app_password_login_unavailable">パスワードログインを開けません。HTTPS アドレスと証明書が有効か確認してください</string>
+    <string name="app_password_login_disabled">管理者がパスワードログインを有効にしていません。QR コードでペアリングしてください</string>
+    <string name="app_password_login_expired">ログインの認可が期限切れです。もう一度ログインしてください</string>
+    <string name="app_password_login_certificate">ハブの証明書を確認できません</string>
+    <string name="app_password_login_invalid_address">有効な HTTPS ハブアドレスを入力してください（例：https://hub.example.com）</string>
     <string name="app_retry">再試行</string>
     <string name="app_local_network_title">ローカルネットワークへのアクセスを許可</string>
     <string name="app_local_network_denied">ローカルネットワークの許可がオフです。アプリの権限で許可してから戻り、ペアリングを続けてください。</string>

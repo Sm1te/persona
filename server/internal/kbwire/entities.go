@@ -31,6 +31,8 @@ type Detail struct {
 	Segments []RecordingSegment `json:"segments,omitempty"`
 	// Minutes: a recording's meeting minutes (minutes.json, docs/assistant/meeting-minutes.md), once written.
 	Minutes json.RawMessage `json:"minutes,omitempty"`
+	// Recap: an all-day recording's recap (recap.json, docs/assistant/day-recap.md), once written.
+	Recap json.RawMessage `json:"recap,omitempty"`
 	// Points: a topic's knowledge points (points.json, docs/assistant/knowledge.md "Topics"), grouped by Path.
 	Points []TopicPoint `json:"points,omitempty"`
 }
@@ -98,6 +100,9 @@ type RecordingSegment struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
 	Text  string  `json:"text"`
+	// N is an all-day recording's line number: its upload position plus one, what the recap cites
+	// (docs/assistant/day-recap.md); 0 (absent) for every other recording.
+	N int `json:"n,omitempty"`
 }
 
 // Hit is one search result.

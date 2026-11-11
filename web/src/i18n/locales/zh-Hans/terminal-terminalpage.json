@@ -9,5 +9,19 @@
   "no_panes": "没有窗格",
   "space_header": "空间 {name}",
   "new_in_space": "在「{name}」新建终端",
-  "tab_header": "标签页 {name}"
+  "tab_header": "标签页 {name}",
+  "none_online": "没有在线的电脑。",
+  "close_finished": "关闭已结束的终端",
+  "close_finished_title_other": "关闭 {count} 个已结束的终端？",
+  "close_finished_detail": "这些是已停止的 Agent 留下的终端。关闭后其中的 shell 会结束；Agent 的对话会保留，点「恢复」会新开一个终端。",
+  "close_finished_kept_other": "另有 {count} 个仍有程序在运行，会保持打开。",
+  "close_finished_confirm": "关闭终端",
+  "close_finished_failed": "没能关闭已结束的终端。{error}",
+  "closed_finished_other": "已关闭 {count} 个终端",
+  "finished_none": "没有可关闭的已结束终端",
+  "terminals": "终端",
+  "view_label": "会话或终端",
+  "back_terminals": "返回终端列表",
+  "pick_terminal": "打开一个终端",
+  "pick_terminal_detail": "从列表里选一个终端，或点空间旁的 + 新开一个。"
 }

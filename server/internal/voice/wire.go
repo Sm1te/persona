@@ -36,6 +36,9 @@ type session struct {
 	Model, Voice, Instructions string
 	InputRate                  int
 	Tools                      []toolDecl
+	// ReadAloud: the session only reads texts aloud (speak.go). The services are told so by Instructions alone; the
+	// fake dialect, which has no voice, answers such a session with a little silence.
+	ReadAloud bool
 }
 
 type toolDecl struct {

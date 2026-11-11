@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nwverse/persona/server/internal/host"
@@ -200,4 +202,55 @@ func (n *Node) spaceOf(kind, ws string) (host.Space, bool) {
 	defer n.mu.Unlock()
 	s, ok := n.layouts[kind].spaces[ws]
 	return s, ok
+}
+
+// paneForegroundWait bounds how long panes.list waits for the programs in front of its plain panes.
+var paneForegroundWait = 1500 * time.Millisecond
+
+// paneForegrounds names the program in front of each pane with no agent (herdr: pane.process_info) for the terminal
+// list (#4754): "zsh" at a prompt, "vim", "npm"… Nothing on the screen is read; a pane the host cannot answer for in
+// time keeps none.
+func (n *Node) paneForegrounds(ctx context.Context, out *proto.PanesResponse) {
+	ctx, cancel := context.WithTimeout(ctx, paneForegroundWait)
+	defer cancel()
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 8)
+	for hi := range out.Hosts {
+		fg, ok := n.hosts.Get(out.Hosts[hi].Kind).(host.ForegroundNamer)
+		if !ok {
+			continue
+		}
+		for pi := range out.Hosts[hi].Panes {
+			p := &out.Hosts[hi].Panes[pi]
+			if p.Agent != "" {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				slots <- struct{}{}
+				defer func() { <-slots }()
+				if names, err := fg.PaneForeground(ctx, n.hosts.Ref(p.Pane)); err == nil {
+					p.Foreground = frontProgram(names)
+				}
+			}()
+		}
+	}
+	wg.Wait()
+}
+
+// frontProgram is the program a pane shows in front: the first that is not a shell, else its shell, without a login
+// shell's leading "-" or a directory.
+func frontProgram(names []string) string {
+	pick := ""
+	for _, name := range names {
+		if !shellProgram(name) {
+			pick = name
+			break
+		}
+		if pick == "" {
+			pick = name
+		}
+	}
+	return filepath.Base(strings.TrimPrefix(pick, "-"))
 }

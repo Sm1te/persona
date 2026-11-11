@@ -6,8 +6,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nwverse/persona/server/internal/host"
+	"github.com/nwverse/persona/server/internal/proto"
 )
 
 // "New worktree…" against real temp Git repositories and a fake herdr (docs/integrations/terminal.md "New worktree").
@@ -321,6 +323,127 @@ func TestWorktreeCreateWithoutHerdrsWorktree(t *testing.T) {
 	}
 	if got := w.f.trace("workspace.create"); len(got) != 0 {
 		t.Errorf("a workspace was opened for a failed checkout: %v", got)
+	}
+}
+
+// herdrCoreWorktreeNode is a task source checkout known to Herdr App, on a core
+// with terminal and layout APIs but no native worktree API.
+func herdrCoreWorktreeNode(t *testing.T) (worktreeFixture, *fakeHC) {
+	t.Helper()
+	w := worktreeNode(t)
+	hc := newFakeHC(t)
+	w.n.hosts = host.NewRegistry(hcHost(hc))
+	w.n.eng.name = proto.EngineHerdrCore
+	hc.doc = appDoc(w.repo)
+	hc.setTerminals(hcTerminal("t1", "", "", 50, "zsh", w.repo, "S1", "T1", "proj / 1"))
+	return w, hc
+}
+
+// A writable task's prepare/create/start sequence keeps its engine: Persona
+// adds the checkout with git, then herdr-core starts the agent in that cwd.
+func TestHerdrCoreTaskWorktreeFallsBackToGitAndStartsThere(t *testing.T) {
+	w, hc := herdrCoreWorktreeNode(t)
+	w.n.claudeStart, w.n.claudeReady = 200*time.Millisecond, 200*time.Millisecond
+	prep, err := request(t, w.n, "worktree.prepare", map[string]any{"cwd": w.repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := hc.trace("terminal.run", "doc.set"); len(calls) != 0 {
+		t.Fatalf("prepare changed the engine: %v", calls)
+	}
+	dest := filepath.Join(str(prep["path"]), "task-test")
+	created, err := request(t, w.n, "worktree.create", map[string]any{
+		"cwd": w.repo, "branch": "task/test", "path": dest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created["path"] != dest || created["branch"] != "task/test" || created["workspace_id"] == "" || dest == w.repo {
+		t.Fatalf("create = %v", created)
+	}
+	panes, err := w.n.listPanes(t.Context())
+	if err != nil || len(panes.Hosts) != 1 || !panes.Hosts[0].Worktree {
+		t.Fatalf("herdr-core does not advertise its worktree fallback: hosts=%+v err=%v", panes.Hosts, err)
+	}
+	if canWorktree(&ternHost{}) {
+		t.Fatal("the herdr-core fallback enabled an unrelated launcher")
+	}
+	if got := branchOf(t, dest); got != "task/test" {
+		t.Fatalf("checkout branch = %q", got)
+	}
+	if got := branchOf(t, w.repo); got != "main" {
+		t.Fatalf("source checkout changed to %q", got)
+	}
+	if head, source := runPullGit(t, dest, "rev-parse", "HEAD"), runPullGit(t, w.repo, "rev-parse", "HEAD"); head != source {
+		t.Fatal("the task checkout did not start at the source HEAD")
+	}
+
+	// The fake shell never runs claude. Reaching its terminal.run and typed start
+	// proves the created cwd entered the real herdr-core launch flow.
+	hc.reset()
+	_, err = request(t, w.n, "session.start", map[string]any{
+		"session_id": "0e000000-0000-4000-8000-000000001112", "cwd": dest,
+		"workspace_id": created["workspace_id"], "prompt": "write code", "permission_mode": "bypassPermissions",
+	})
+	if err == nil {
+		t.Fatal("the fake shell unexpectedly started claude")
+	}
+	runs := hc.trace("terminal.run")
+	if len(runs) != 1 || !strings.Contains(runs[0], `"cwd":"`+dest+`"`) {
+		t.Fatalf("agent did not enter startup in the new checkout: runs=%v err=%v", runs, err)
+	}
+	if sends := hc.trace("terminal.send"); len(sends) != 1 {
+		t.Fatalf("agent launch command was not typed: %v", sends)
+	}
+	if calls := w.f.trace("worktree.create", "workspace.create"); len(calls) != 0 {
+		t.Fatalf("task fell back to classic herdr: %v", calls)
+	}
+}
+
+func TestHerdrCoreTaskWorktreeDoesNotOverwriteExistingDirectory(t *testing.T) {
+	w, hc := herdrCoreWorktreeNode(t)
+	dest := mkdir(t, filepath.Join(w.home, "existing-worktree"))
+	keep := filepath.Join(dest, "keep.txt")
+	if err := os.WriteFile(keep, []byte("existing work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := request(t, w.n, "worktree.create", map[string]any{
+		"cwd": w.repo, "branch": "task/test", "path": dest,
+	})
+	if err == nil || !strings.Contains(err.Error(), "不是空目录") {
+		t.Fatalf("non-empty destination was not refused: %v", err)
+	}
+	if b, readErr := os.ReadFile(keep); readErr != nil || string(b) != "existing work\n" {
+		t.Fatalf("existing directory changed: %q, %v", b, readErr)
+	}
+	if calls := hc.trace("terminal.run", "doc.set"); len(calls) != 0 {
+		t.Fatalf("failed preparation opened or placed a terminal: %v", calls)
+	}
+}
+
+func TestHerdrCoreTaskWorktreeOpenFailureKeepsCheckout(t *testing.T) {
+	w, hc := herdrCoreWorktreeNode(t)
+	dest := filepath.Join(w.home, "trees", "task-test")
+	hc.handle("terminal.run", func(map[string]any) any { return hcFail{Kind: "unavailable"} })
+	params := map[string]any{"cwd": w.repo, "branch": "task/test", "path": dest}
+	created, err := request(t, w.n, "worktree.create", params)
+	if err == nil || !strings.Contains(err.Error(), "检出已创建，但没能打开工作区") {
+		t.Fatalf("workspace open failure = %v", err)
+	}
+	if created["workspace_id"] != "" || created["path"] != "" || branchOf(t, dest) != "task/test" || branchOf(t, w.repo) != "main" {
+		t.Fatalf("partial checkout was lost or misreported: created=%v", created)
+	}
+	if kills := hc.trace("terminal.kill"); len(kills) != 0 {
+		t.Fatalf("an existing terminal was closed: %v", kills)
+	}
+
+	// A blind retry cannot adopt or overwrite the partial checkout.
+	hc.reset()
+	if _, err = request(t, w.n, "worktree.create", params); err == nil || !strings.Contains(err.Error(), "不是空目录") {
+		t.Fatalf("retry did not preserve the partial checkout: %v", err)
+	}
+	if calls := hc.trace("terminal.run", "doc.set"); len(calls) != 0 {
+		t.Fatalf("retry touched the engine: %v", calls)
 	}
 }
 

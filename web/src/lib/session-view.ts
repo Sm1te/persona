@@ -3,7 +3,7 @@
 // `?view=chat|term`; an address without it shows what that agent's page showed last (kept per browser), else the
 // conversation. Pure helpers here, so they are tested without a DOM; the hook is the page's side of it.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sessionCan, stateOf } from "./format";
+import { isStoppedAgent, sessionCan, stateOf } from "./format";
 import { paneRoute } from "./herdr-tree";
 import { navigate, useRoute, type Route, type SessionView } from "./router";
 import { isPaneAddress } from "./terminals";
@@ -17,9 +17,23 @@ type Store = Pick<Storage, "getItem" | "setItem">;
 
 export const otherView = (v: SessionView): SessionView => (v === "term" ? "chat" : "term");
 
-/** The agent has a terminal to show in place: its pane is live and its source lets a terminal open. */
+/** The agent has a terminal to show in place: its source lets a terminal open, and its pane is live or it is a stopped
+ *  Agent (#4754), whose terminal is the shell it left, or Resume when that is gone. */
 export function canShowTerminal(s: Session | undefined): boolean {
-  return Boolean(s && sessionCan(s, "terminal") && stateOf(s) !== "offline");
+  return Boolean(s && sessionCan(s, "terminal") && (stateOf(s) !== "offline" || isStoppedAgent(s)));
+}
+
+/** What sits where an agent chat's composer goes: the composer, or a stopped Agent's read-only line (#4754) with
+ *  Terminal and Resume. Not for a side panel's read-only transcript, the assistant's chats, or while the computer is
+ *  offline (the composer's offline line says that, and Resume could not reach it). */
+export function composerSlot(s: Session | undefined, o: { readOnly?: boolean; assistant?: boolean; offline?: boolean } = {}): "composer" | "stopped" {
+  return !o.readOnly && !o.assistant && !o.offline && isStoppedAgent(s) ? "stopped" : "composer";
+}
+
+/** The composer says "view-only": a row whose source or capabilities refuse sending. A native row from an older node
+ *  (no capabilities) is not one: a message still resumes it there. */
+export function viewOnlyRow(s: Session | undefined): boolean {
+  return Boolean(s && !sessionCan(s, "send") && (s.source_kind || s.capabilities));
 }
 
 /** The view to draw: the address's, else the one remembered, else the conversation; always the conversation when there is no terminal. */

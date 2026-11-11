@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ type fake struct {
 	updateErr error
 	ran       []string
 	deleted   []string
+	pushed    []subscriptions.Actor // devices whose push source was added (#3848)
 	generate  bool
 	model     subscriptions.ModelInfo
 	// gen answers Generate; release (when set) holds it until closed.
@@ -62,7 +64,15 @@ func (f *fake) RecipeModel(context.Context) subscriptions.ModelInfo { return f.m
 
 func (f *fake) List(_ context.Context, fl subscriptions.Filter) ([]subscriptions.Subscription, subscriptions.Features, error) {
 	var out []subscriptions.Subscription
-	for _, id := range []string{"sub_outlook", "sub_slack", "sub_github", "sub_broker", "sub_notion", "sub_new"} {
+	order := []string{"sub_outlook", "sub_slack", "sub_github", "sub_broker", "sub_notion", "sub_new"}
+	var more []string // made by a test (a push source): after these, by id
+	for id := range f.subs {
+		if !slices.Contains(order, id) {
+			more = append(more, id)
+		}
+	}
+	slices.Sort(more)
+	for _, id := range append(order, more...) {
 		s, ok := f.subs[id]
 		if !ok || fl.Extension != "" && s.Extension != fl.Extension || fl.Connector != "" && s.Connector != fl.Connector {
 			continue

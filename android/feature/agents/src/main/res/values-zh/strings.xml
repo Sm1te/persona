@@ -145,8 +145,8 @@
     <string name="agents_repo_worktree">工作树</string>
     <string name="agents_card_question">Claude 在问你</string>
     <string name="agents_card_question_by">%1$s 在问你</string>
-    <string name="agents_card_permission">需要你授权</string>
-    <string name="agents_card_permission_by">%1$s 需要你授权</string>
+    <string name="agents_card_permission">在等你批准</string>
+    <string name="agents_card_permission_by">%1$s 在等你批准</string>
     <string name="agents_card_plan">计划等你审批</string>
     <string name="agents_card_screen">终端等你处理</string>
     <string name="agents_card_other">需要你</string>

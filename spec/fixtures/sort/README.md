@@ -27,7 +27,7 @@
 | 快速筛选下置顶空间领先，其余空间仅按更新时间和完整空间 id 排序，并取消空闲空间容器。 | ChatsView 的 `body` | `quick_spaces_use_updated_time` |
 | 空间标题按需要你、工作中、完成未看、空闲的顺序朗读数量，unknown 合并到空闲。 | `StateCounts.spoken`；`AgentFilterTests.foldedHeaderSpeaksItsCounts` | `space_header_counts`、`spaces_pin_busy_muted_quiet` |
 | 助手、机器条件和搜索先决定 base，快速筛选计数取 base 中当前状态，全部标签不显示数字。 | ChatsView 的 `base`、`counts`、`QuickFilterBar` | `machine_search_before_counts`、`empty_list`、`filter_all` |
-| 搜索不区分大小写，查 title、cwd、last_text、space_name、slot_name。 | ChatsView 的 `base` | `machine_search_before_counts`、`search_expands_idle` |
+| 搜索不区分大小写，按空白分词，每个词都要出现在 title、cwd、repo_root、branch、last_text、asks、space_name、slot_name、Agent 名、model、launcher、start_error、turn_error 之一；`machine:`、`project:`、`agent:`、`model:`、`state:`、`is:pinned`、`is:error`、`since:` 是条件，不是词（`AgentParsedQuery`）。 | ChatsView 的 `base` | `machine_search_before_counts`、`search_expands_idle` |
 | 需要你、未读、工作中分别匹配对应 state。 | `AgentFilter.matches`；`AgentFilterTests.eachFilterKeepsItsState` | `filter_needsyou`、`filter_unread`、`filter_working` |
 | 后台等待中（`backgroundWaiting`）只算 state 为 working 且 `background_waiting` 为真的会话，工作中不再算它们（#6045）。 | `AgentFilter.matches`、`Session.countedState` | 各用例的 `counts` |
 | kept 保留已经匹配过的会话，但不能绕过 base；重新选择筛选会重建 kept。 | ChatsView 的 `body`、`choose`、`onChange(of: matching)` | `unread_keeps_seen_rows`、`unread_reselected_drops_seen_rows`、`kept_cannot_escape_base` |

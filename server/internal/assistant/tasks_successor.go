@@ -66,6 +66,9 @@ func (s *Service) startTaskSuccessor(ctx context.Context, t Todo, last proto.Ses
 	if err := link(sctx, t.ID, m.ID, c.SessionID, t.Title, cmp.Or(c.Cwd, last.Cwd), cmp.Or(c.Agent, last.Agent)); err != nil {
 		s.logf("task %s: new agent %s/%s not linked: %v", t.ID, m.ID, short(c.SessionID), err)
 	}
+	// The task's ledger goes on with the new agent: an open task without a supervisor gets one, as any Agent Persona
+	// starts does (#4669); a done one is left as it is.
+	s.ensureSupervisor(sctx, t.ID)
 	s.logf("task %s: its agents had stopped; started %s/%s for the user's message", t.ID, m.ID, short(c.SessionID))
 	return c, nil
 }

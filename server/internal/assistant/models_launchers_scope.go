@@ -303,7 +303,7 @@ func (s *Service) nodeLaunchersFor(ctx context.Context, stored []storedLauncher,
 			continue
 		}
 		pub := l.ManagedLauncher
-		pub.Rev = l.rev()
+		pub.BaseURL, pub.Rev = pub.LaunchBaseURL(), l.rev()
 		catalog = append(catalog, pub.Public())
 		if l.SkipsOwnService() {
 			if st, ok := s.ownServiceCached(machine, l.AgentType()); ok && st.Known && st.Own {

@@ -63,10 +63,11 @@ class ToolPresentationTest {
     @Test fun theRunningLineSaysTheNamedToolsWords() {
         fun running(item: Item) = workSummary(res, ChatLine.Work("w", listOf(WorkItem.Tool(ToolCall(item.asLineItem(), null, emptyList()))),
             live = true, start = null, end = null, open = false), null)
-        assertEquals("操控电脑 macbook，第 1 步", running(tool("mcp__persona__computer_run", "machine" to "macbook")))
-        assertEquals("归档对话，第 1 步", running(tool("mcp__persona__conversation_archive")))
-        assertEquals("正在读取 a.kt，第 1 步", running(tool("Read", "file_path" to "/w/a.kt")))
-        assertEquals("GitHub · Create issue，第 1 步", running(tool("mcp__github__create_issue")))
+        // The step it is on, as iOS's running line (#4339 C5); with no clock yet, no time.
+        assertEquals("操控电脑 macbook", running(tool("mcp__persona__computer_run", "machine" to "macbook")))
+        assertEquals("归档对话", running(tool("mcp__persona__conversation_archive")))
+        assertEquals("正在读取 a.kt", running(tool("Read", "file_path" to "/w/a.kt")))
+        assertEquals("GitHub · Create issue", running(tool("mcp__github__create_issue")))
     }
 
     @Test fun namedToolsHaveTheirIcons() {
@@ -78,5 +79,20 @@ class ToolPresentationTest {
         assertEquals(PhIcons.EnvelopeSimple, toolCategory("mcp__persona__mail_send"))
         assertEquals(PhIcons.Eye, toolCategory("Read"))
         assertEquals(PhIcons.Wrench, toolCategory("mcp__github__create_issue"))
+    }
+
+    // As iOS's `WorkNow` (#4339 C5): the newest running call and "+N" for those beside it; several reads as one; a
+    // thought by its first line; bookkeeping tools never named; no step yet: "Working" and its time.
+    @Test fun theRunningLineNamesItsStepAsIOS() {
+        val start = java.time.Instant.parse("2026-11-12T10:00:00Z")
+        fun call(id: String, name: String, vararg fields: Pair<String, String>) = WorkItem.Tool(ToolCall(
+            Item(id, kind = "tool_use", toolName = name, toolInput = buildJsonObject { fields.forEach { (k, v) -> put(k, v) } }).asLineItem(), null, emptyList()))
+        fun line(vararg steps: WorkItem) = workSummary(res, ChatLine.Work("w", steps.toList(), live = true, start = start, end = null, open = false),
+            null, start.plusSeconds(39))
+        assertEquals("正在读取 a.kt +2 · 39 秒", line(call("1", "Grep", "pattern" to "x"), call("2", "Bash", "command" to "ls"), call("3", "Read", "file_path" to "/w/a.kt")))
+        assertEquals("正在读取 2 个文件 · 39 秒", line(call("1", "Read", "file_path" to "/w/a.kt"), call("2", "Read", "file_path" to "/w/b.kt")))
+        assertEquals("先看看工作行 · 39 秒", line(WorkItem.Thought(Item("t", kind = "thinking", text = "\n先看看工作行\n再画").asLineItem())))
+        assertEquals("正在读取 a.kt · 39 秒", line(call("1", "Read", "file_path" to "/w/a.kt"), call("2", "TodoWrite")))
+        assertEquals("正在工作 39 秒", line())
     }
 }

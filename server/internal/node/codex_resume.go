@@ -35,10 +35,12 @@ const codexResumeHold = 2 * time.Minute
 var codexResumes sync.Map
 
 // codexResumable: thread id is a Codex history row that may be resumed in a terminal of this machine's engine.
-func (n *Node) codexResumable(id string) bool { return n.codexResumableIn(id, nil) }
+func (n *Node) codexResumable(ctx context.Context, id string) bool {
+	return n.codexResumableIn(ctx, id, nil)
+}
 
 // codexResumableIn is codexResumable within a list pass (codexListPass).
-func (n *Node) codexResumableIn(id string, pass *codexListPass) bool {
+func (n *Node) codexResumableIn(ctx context.Context, id string, pass *codexListPass) bool {
 	src, ok := n.codexSource(id)
 	if !ok || src.path == "" || src.thread != id || n.codexBlocked(id) || n.isAssistantSessionIn(id, pass) || n.ownedAssistantSource(src.thread) {
 		return false
@@ -46,10 +48,11 @@ func (n *Node) codexResumableIn(id string, pass *codexListPass) bool {
 	if _, live := n.agent(id); live {
 		return false
 	}
-	if _, runtime := engineRuntimes[n.engine()]; runtime || n.engine() == proto.EngineOrca {
+	kind := n.startKind(n.withResumeHost(ctx, id))
+	if _, runtime := engineRuntimes[kind]; runtime || kind == proto.EngineOrca {
 		return false
 	}
-	if _, err := hostCap[host.Launcher](n); err != nil {
+	if _, err := hostCapFor[host.Launcher](n, kind); err != nil {
 		return false
 	}
 	n.codices.mu.Lock()
@@ -209,7 +212,7 @@ func (n *Node) resumeCodexSession(ctx context.Context, id, launcher, prompt, mod
 		return n.sessionFor(id, a), nil
 	}
 	st, mine := n.state.get(id)
-	if !n.codexResumable(id) && (n.externalCodex(id) || !mine || st.Launcher == "" || st.Cwd == "") {
+	if !n.codexResumable(ctx, id) && (n.externalCodex(id) || !mine || st.Launcher == "" || st.Cwd == "") {
 		return nil, refusal(codexResumeRefused, "这个 Codex 会话正被别的程序打开，或不是在终端里开的：请在电脑上恢复（codex resume）。", nil)
 	}
 	if err := n.resumeCodexThread(ctx, id, launcher, prompt, nil, mode); err != nil {

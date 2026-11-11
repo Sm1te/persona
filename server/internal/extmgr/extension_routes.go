@@ -53,6 +53,8 @@ type ExtensionDetail struct {
 	SecretsCleared []string `json:"secrets_cleared,omitempty"`
 	// SecretUsers: for a secret provider, the other extensions' secrets that hold its references (secret_refs.go).
 	SecretUsers []SecretUserView `json:"secret_users,omitempty"`
+	// HandoffRules: for a secret provider, the Always rules of hand-offs of its values (secret_handoff_rules.go).
+	HandoffRules []HandoffRuleView `json:"handoff_rules,omitempty"`
 	// DataDir is its data directory on the manager's machine, the one its program is given there (an attached package
 	// keeps it): for the master token over loopback and the admin UI only, never a device; none for one installed from
 	// remote:, one from hub.json or manager.json, or one with no program on the manager.
@@ -133,6 +135,9 @@ func (ps *extensions) detail(ctx context.Context, p *extension.Extension) Extens
 			d.Secrets = append(d.Secrets, view)
 		}
 		d.SecretUsers = ps.secretUsers(ctx, p, l)
+	}
+	if p.Full != nil && len(p.Full.SecretProviders()) > 0 { // a read-only provider's rules apply all the same
+		d.HandoffRules = ps.h.handoffRulesOf(ctx, p.Record.ID)
 	}
 	return d
 }
@@ -354,6 +359,20 @@ func (h *Manager) extensionRoutes(api *http.ServeMux) {
 			writeExtensionResponseError(w, r, http.StatusBadRequest, code, err)
 			return
 		}
+		writeExtensionJSON(w, r, detailOut(r, ps().detail(r.Context(), ps().reg.Get(p.Record.ID))))
+	}))
+	// An Always rule of a hand-off of the provider's values (secret_handoff_rules.go): removed, the next hand-off asks.
+	api.HandleFunc("DELETE /api/v1/extensions/{id}/-/handoff-rules/{rule}", full(func(w http.ResponseWriter, r *http.Request, p *extension.Extension) {
+		n, err := h.removeHandoffRules(r.Context(), p.Record.ID, r.PathValue("rule"))
+		if err != nil {
+			writeExtensionResponseError(w, r, http.StatusServiceUnavailable, "rules_unavailable", err)
+			return
+		}
+		if n == 0 {
+			writeExtensionResponseError(w, r, http.StatusNotFound, "no_rule", i18n.Err("hub-extension_routes.no_handoff_rule"))
+			return
+		}
+		h.logf("plugin %s: hand-off rule %s removed by %s", p.Record.ID, r.PathValue("rule"), actor(r)) // a rule's id: hex
 		writeExtensionJSON(w, r, detailOut(r, ps().detail(r.Context(), ps().reg.Get(p.Record.ID))))
 	}))
 	api.HandleFunc("DELETE /api/v1/extensions/{id}/-/secrets/{name}", full(func(w http.ResponseWriter, r *http.Request, p *extension.Extension) {

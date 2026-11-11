@@ -32,15 +32,15 @@ The Agents page on Android shows the same sessions as on iOS, in the same groupi
 
 - Repository: iOS draws a card with the folder, the bold name and a chevron, no counts, with its actions in the long-press menu. Android draws a plain heading with marks, state counts and a ⋯ sheet.
 - Worktree: iOS shows a Primary chip on the main one, the branch when it differs from the name, "Detached HEAD @sha" as a caution, "N agents" or "Idle", and dims it when the computer is offline. Android shows the icon, the name and counts.
-- Computer: iOS draws it only when the list shows more than one computer, with a background-waiting clock and an idle count. Android draws it always.
+- Computer: iOS draws it only when the list shows more than one computer, with a background-waiting clock and an idle count. Android draws it always. Done (11-12): only with more than one computer and no computer chosen (`AgentsTreeTest`); its counts as iOS's `StateCounts`: needing you, working without those that only wait in the background, unread, a clock for those, idle (`HeadingCountsShotsTest`).
 
 **A8. Idle repositories.** iOS gives each computer an "Idle Repositories" section with a count, each idle repository one row with "N agents · tab names" and when it last moved; idle sessions show as "2 idle · review · research" with a "Hide N Idle" row. Android keeps idle repositories inline after the busy ones, without times, and "N more idle" can't be folded again.
 
 **A9. Row content.** The work-item row in section 3.4, as iOS's default Avatar style draws it:
 
 - Leading: the agent mark in a round well with the state on its corner. Android puts the agent mark and the state mark side by side.
-- Line 2: up to two lines of the latest words, a state word only for Needs You, Awaiting Reply and Waiting in the background. Android writes a state word for every state but Seen.
-- Line 3: source · tab · space › tab · computer (the computer only when the list mixes computers), the model's short name, a to-do chip and the muted bell. Android shows "computer / space" only outside the tree and never the model.
+- Line 2: up to two lines of the latest words, a state word only for Needs You, Awaiting Reply and Waiting in the background. Android writes a state word for every state but Seen. Done (11-12, owner review): the state word only for those three (`rowStatusText`); TalkBack still hears every row's state.
+- Line 3: source · tab · space › tab · computer (the computer only when the list mixes computers), the model's short name, a to-do chip and the muted bell. Android shows "computer / space" only outside the tree and never the model. The model is now among the row's facts (11-12); the rest of line 3 is still to do.
 - Row styles: Avatar, Two Lines, State Cards and Compact List in ⋯ › Display and in Settings. Android has Compact and Detailed only.
 
 **A10. Search.** iOS matches every word across twelve fields (path, repository root, question, model, agent and errors among them) and takes `machine:`, `project:`, `agent:`, `model:`, `state:`, `is:pinned`, `is:error` and `since:`. Android matches the whole query as one substring in five fields. Requirement: as on iOS.
@@ -48,8 +48,8 @@ The Agents page on Android shows the same sessions as on iOS, in the same groupi
 **A11. Smaller differences.**
 
 - A "Waiting in the background" quick filter, and the selected chip in its own state's color (Android always tints it like Needs You). Done (11-12): `AgentQuickFilter.BackgroundWaiting` with its clock, out of Working's count (a paged list takes the hub's `background_waiting` out of working); the Glass home's chosen chip takes its state's color (`ByStatusTest`, `ByStatusShotsTest`). Its lighter tone is still to come.
-- Collapse All keeps the computer headings open.
-- A long list shows 20 rows, then "Show All N".
+- Collapse All keeps the computer headings open. Done (11-12): it folds the sections on top of what is folded, so a computer heading stays as it is (`AgentsFoldAllTest`).
+- A long list shows 20 rows, then "Show All N". Done (11-12): `AgentRowCap` (20, or all up to 25) and `AgentShowAllRow` with "Collapse" once open; every row while searching, filtering or paged (`AgentsTreeTest`, `ShowAllRowShotsTest`).
 - Sort not under By Status (iOS hides it there: the sections are the states). Done (11-12): the list settings leave Sort out under By Status (`AgentsHomeAffordancesTest`).
 - Interrupt in the row's long-press menu. Done (11-12): after Pin while the agent works or needs you and can be interrupted, on the list and the space page (`AgentOperations.interruptSession`, `AgentsHomeAffordancesTest`).
 - A tab with several agents shows as a tab row in By Repository too, not only by computer.
@@ -110,6 +110,7 @@ Each becomes an iOS issue or a row in the intentional-differences list, decided 
 
 - The grouping pill: `AgentHomeComponents.kt` takes the grouping's icon; the picker is a `JMenu` with the groupings only. Done (11-11) in `AgentsScreen.kt`: the pill shows the grouping's own icon and name with a chevron and opens a Group By sheet with the groupings only; with the home chrome the rest of the list's settings sit behind a ⋯ button until they move under the Agents switch (A4's second half). By Status has no generated glyph for iOS's two dots and shows a board of columns.
 - Computers, hub, range and sort move to a menu under the Agents switch, as `AgentsMenus.swift` does; display options into ⋯ › Display.
+  Checked (11-12): on Glass a tap on the selected Agents switch opens the list settings (computers, range, sort, display, Collapse and Expand All, Machines), as iOS's switch opens `ListMenu`'s items, and ⋯ opens the same; Brief and Board keep their segmented switch (decision 8). Collapse all's check mark now reads the sections only (`allCollapsed`), since Collapse All leaves the computers open.
 - The "Only <computer>" chip clears `machineFilter`. Done (11-11): with the home chrome, a chosen computer shows as a selected "Only <computer>" chip above the grouping pill (`AgentsHomeAffordancesTest`); the computers and range menu (A4) is still to move.
 
 ### A5
@@ -130,6 +131,8 @@ Each becomes an iOS issue or a row in the intentional-differences list, decided 
 ### A10
 
 Port `AgentListProjection.swift`'s query parser to core/domain with its cases as tests.
+
+Done (11-12): `AgentSearch.kt` (`AgentQuery.parse`, `searchFields`, `admits`) with `AgentSearchTest`: every word in one of twelve fields, and the conditions with iOS's aliases. A paged list sends the hub the words only (it matches one piece of text) and checks the conditions here. Not ported: iOS's search scopes and evidence snippets.
 
 ### Order of work
 

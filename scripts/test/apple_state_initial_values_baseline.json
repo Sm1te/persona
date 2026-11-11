@@ -11,9 +11,6 @@
   "ChatFullPage": 1,
   "ChatScratch": 1
  },
- "apple/Persona/Views/Chat/MessageMenu.swift": {
-  "LiftPlace": 1
- },
  "apple/Persona/Views/Chat/PromptComposer.swift": {
   "Dictation": 1
  },

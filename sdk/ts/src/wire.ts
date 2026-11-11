@@ -4719,6 +4719,8 @@ export interface KBDetail {
   segments?: KBRecordingSegment[];
   /** A recording's meeting minutes, once written (docs/assistant/meeting-minutes.md); kept as the hub sends them. */
   minutes?: unknown;
+  /** An all-day recording's day recap, once written (docs/assistant/day-recap.md); kept as the hub sends them. */
+  recap?: unknown;
   /** A topic's knowledge points (docs/assistant/knowledge.md "Topics"). */
   points?: KBTopicPoint[];
 }
@@ -4769,6 +4771,11 @@ export interface KBRecordingSegment {
   start: number;
   end: number;
   text: string;
+  /**
+   * An all-day recording's line number: the segment's 1-based position in its uploads (docs/assistant/day-recap.md);
+   * absent on other recordings.
+   */
+  n?: number;
 }
 
 /**

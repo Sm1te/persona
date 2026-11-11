@@ -3,8 +3,10 @@ import XCTest
 /// A terminal question of several (#2970): Previous and Next press ← and →, a question gone back to shows the answer it
 /// had, and the answers are reviewed before they go. Against scripts/mock/mock_hub.py started with MOCK_SCREEN_STEPS=1,
 /// whose dialog moves as the terminal does (TEST_RUNNER_PERSONA_STEPS_HUB=http://127.0.0.1:<port>;
-/// TEST_RUNNER_PERSONA_SHOTS=<dir> keeps the screenshots); both styles (TEST_RUNNER_PERSONA_UI_STYLE=beautiful).
-final class ScreenStepsCardTests: XCTestCase {
+/// TEST_RUNNER_PERSONA_SHOTS=<dir> keeps the screenshots). ScreenStepsCardBeautifulTests below runs it all in BeautifulUI.
+class ScreenStepsCardTests: XCTestCase {
+    /// The style the card is drawn in.
+    var style: String { UITestStyle.name }
     private let review = "a1f3c2d4-0000-4000-8000-000000000006"
     private var hub = ""
 
@@ -40,7 +42,13 @@ final class ScreenStepsCardTests: XCTestCase {
             shot(app, "back-\(scheme)")
             guard scheme == "light" else { app.terminate(); continue }
             // Next keeps it and goes on; the second question comes back although this device ended its card.
-            if app.buttons["screen-step-next"].exists { app.buttons["screen-step-next"].tap() } else { app.buttons["发送"].firstMatch.tap() }
+            if app.buttons["screen-step-next"].exists {
+                app.buttons["screen-step-next"].tap()
+            } else {
+                // BeautifulUI's card says Next on a question gone back to, not Send.
+                XCTAssertFalse(app.buttons["发送"].exists, "Send on a question gone back to")
+                app.buttons["下一题"].firstMatch.tap()
+            }
             XCTAssertTrue(app.staticTexts["哪些平台要一起发？"].waitForExistence(timeout: 10), "Next did not go on")
             option(app, "手表").tap()
             app.buttons["下一题"].firstMatch.tap()
@@ -84,13 +92,36 @@ final class ScreenStepsCardTests: XCTestCase {
         XCTAssertTrue(waitUntil(10) { self.state()["done"] as? String == "submitted" }, "Submit did not submit")
     }
 
+    /// At the largest accessibility text size the card scrolls: the review's buttons stack, the main one first, and each
+    /// can be reached above the message box; the question it goes back to is drawn whole too.
+    @MainActor func testTheLargestTextSize() throws {
+        for scheme in ["light", "dark"] {
+            mock("/mock/screen-steps?reset=review")
+            let app = launch(scheme, size: "UICTContentSizeCategoryAccessibilityXXXL")
+            let goAnswer = app.buttons["screen-review-answer"]
+            XCTAssertTrue(goAnswer.waitForExistence(timeout: 20), "no review with a question left:\n\(app.debugDescription)")
+            shot(app, "largest-review-\(scheme)")
+            XCTAssertTrue(reach(app, app.buttons["screen-review-submit-anyway"]), "Submit Without Them can't be reached")
+            XCTAssertTrue(reach(app, app.buttons["screen-card-terminal"].firstMatch), "the card's last row can't be reached")
+            shot(app, "largest-review-end-\(scheme)")
+            guard scheme == "light" else { app.terminate(); continue }
+            XCTAssertTrue(reach(app, goAnswer, down: true), "the main button can't be reached")
+            goAnswer.tap()
+            XCTAssertTrue(app.staticTexts["发完通知谁？"].waitForExistence(timeout: 10), "did not go back to the question left")
+            shot(app, "largest-question")
+            app.terminate()
+        }
+    }
+
     // MARK: Helpers
 
-    @MainActor private func launch(_ scheme: String) -> XCUIApplication {
+    @MainActor private func launch(_ scheme: String, size: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         let pair = "persona://pair?url=" + hub.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&token=mock"
         app.launchArguments = ["-pairURL", pair, "-openSession", "macbook/" + review, "-ui.scheme", scheme]
-        app.launchPinned()
+        if let size { app.launchArguments += ["-UIPreferredContentSizeCategoryName", size] }
+        app.launchArguments += ["-ui.style", style]
+        app.launchPersona()
         dismissAlerts()
         return app
     }
@@ -124,6 +155,17 @@ final class ScreenStepsCardTests: XCTestCase {
         return !add.exists || e.frame.maxY <= add.frame.minY
     }
 
+    /// Scrolls the cards (up, or back down) until `e` is clear of the message box: at the largest text sizes a review
+    /// is several swipes tall.
+    @MainActor private func reach(_ app: XCUIApplication, _ e: XCUIElement, down: Bool = false) -> Bool {
+        let cards = app.scrollViews["pending-cards"]
+        for _ in 0..<5 {
+            if clear(app, e) { return true }
+            if down { cards.swipeDown() } else { cards.swipeUp() }
+        }
+        return clear(app, e)
+    }
+
     private func mock(_ path: String) { _ = try? Data(contentsOf: URL(string: hub + path)!) }
 
     private func state() -> [String: Any] {
@@ -135,11 +177,11 @@ final class ScreenStepsCardTests: XCTestCase {
     @MainActor private func shot(_ app: XCUIApplication, _ name: String) {
         dismissAlerts()
         let a = XCTAttachment(screenshot: app.screenshot())
-        a.name = name
+        a.name = "\(style)-\(name)"
         a.lifetime = .keepAlways
         add(a)
         if let dir = ProcessInfo.processInfo.environment["PERSONA_SHOTS"] {
-            try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/steps-\(name).png"))
+            try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/steps-\(style)-\(name).png"))
         }
     }
 
@@ -151,4 +193,10 @@ final class ScreenStepsCardTests: XCTestCase {
         }
         return false
     }
+}
+
+/// The same in BeautifulUI, whose card is its own (its own capsules, and Next on a question gone back to), so a run in
+/// the default style covers both.
+final class ScreenStepsCardBeautifulTests: ScreenStepsCardTests {
+    override var style: String { "beautiful" }
 }

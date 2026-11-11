@@ -43,6 +43,7 @@ func (h *Manager) subscriptionUI(w http.ResponseWriter, r *http.Request) {
 		Name:      h.subscriptionConnectorName,
 		Native:    h.subscriptionNative,
 		Drafts:    h.subscriptionDrafts(),
+		Platform:  in.Context.Platform,
 	}
 	res, err := subscriptionsui.Handle(ctx, h.subs, env, subscriptionsui.Request{State: in.State, Action: in.Action, Values: in.Values})
 	switch {

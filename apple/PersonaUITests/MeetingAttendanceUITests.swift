@@ -167,6 +167,56 @@ final class MeetingAttendanceUITests: XCTestCase {
         try shot(app, "answered-aloud")
     }
 
+    /// Taking part with the hub's realtime voice (#5004; needs the mock with MOCK_VOICE=1): the answer goes to the voice
+    /// extension's `speak` with the model of `plugin.voice` and the voice picked in Settings, and plays in that voice. When
+    /// the extension refuses, the phone's on-device voice says it; an older extension without `speak` is never asked.
+    @MainActor func testTakingPartTheAnswerIsSaidInTheRealtimeVoice() throws {
+        let hub = try mockHub()
+        try voiceMock(hub, speak: "ok")
+        try attendance(hub, on: true)
+        // The voice picked in Settings › Extensions › the voice extension.
+        var app = launch(hub, ["-tab", "settings", "-openExtension", "voice"])
+        let picker = app.buttons["voice-timbre-setting"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 30), "no Voice row:\n\(app.debugDescription)")
+        picker.tap()
+        let calm = app.buttons["沉稳"].firstMatch
+        XCTAssertTrue(calm.waitForExistence(timeout: 10), app.debugDescription)
+        calm.tap()
+        app.terminate()
+
+        app = launch(hub, ["-openShellPage", "recordings", "-showMeetingSample", "taking-part"])
+        let before = try speaks(hub).count
+        askAndWaitForTheAnswer(app, hub)
+        XCTAssertTrue(waitFor(20) { ((try? self.speaks(hub)) ?? []).count > before }, "the realtime voice was not asked")
+        let asked = try XCTUnwrap(try speaks(hub).last)
+        XCTAssertTrue((asked["text"] as? String)?.contains("回归测试由 Bo 负责") == true, "\(asked)")
+        XCTAssertEqual(asked["voice"] as? String, "calm", "the voice picked in Settings")
+        XCTAssertEqual(asked["model"] as? String, "voice-deep", "the model of plugin.voice")
+        let realtime = app.descendants(matching: .any)["meeting-speaking-realtime"].firstMatch
+        XCTAssertTrue(realtime.waitForExistence(timeout: 15), "not said in the realtime voice:\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["meeting-stop-speaking"].exists, "Stop Speaking while it plays")
+        try shot(app, "answered-realtime")
+
+        // The extension refuses (its service is down): the phone's own voice says the next answer.
+        try voiceMock(hub, speak: "fail")
+        let refused = try speaks(hub).count
+        askAndWaitForTheAnswer(app, hub, waitForAnswer: false)
+        XCTAssertTrue(waitFor(30) { ((try? self.speaks(hub)) ?? []).count > refused }, "the realtime voice was not asked")
+        let device = app.descendants(matching: .any)["meeting-speaking-device"].firstMatch
+        XCTAssertTrue(device.waitForExistence(timeout: 15), "the on-device voice did not take over:\n\(app.debugDescription)")
+        app.terminate()
+
+        // An older voice extension (no speak in /info): never asked, the phone's own voice says it.
+        try voiceMock(hub, speak: "off")
+        app = launch(hub, ["-openShellPage", "recordings", "-showMeetingSample", "taking-part"])
+        let older = try speaks(hub).count
+        askAndWaitForTheAnswer(app, hub)
+        XCTAssertTrue(app.descendants(matching: .any)["meeting-speaking-device"].firstMatch.waitForExistence(timeout: 15),
+                      "the on-device voice did not say it:\n\(app.debugDescription)")
+        XCTAssertEqual(try speaks(hub).count, older, "an extension without speak is never asked")
+        try voiceMock(hub, speak: "ok")
+    }
+
     /// The answers so far with the newest being said (a made-up meeting, for the screenshot of it).
     @MainActor func testAnswerBeingSaid() throws {
         let hub = try mockHub()
@@ -218,6 +268,36 @@ final class MeetingAttendanceUITests: XCTestCase {
         let done = expectation(description: "attendance")
         URLSession.shared.dataTask(with: request) { _, _, _ in done.fulfill() }.resume()
         wait(for: [done], timeout: 5)
+    }
+
+    /// Taps Ask Persona in the made-up meeting Persona takes part in, and (unless told not to) waits for its answer.
+    @MainActor private func askAndWaitForTheAnswer(_ app: XCUIApplication, _ hub: String, waitForAnswer: Bool = true) {
+        let notice = app.descendants(matching: .any)["meeting-attending"].firstMatch
+        scrollTo(notice, in: app)
+        XCTAssertTrue(notice.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(waitFor(20) { (try? self.meeting(hub))?.role(self.live) == "participant" }, "the upload carried the role")
+        let ask = app.buttons["meeting-ask"]
+        scrollTo(ask, in: app)
+        XCTAssertTrue(waitFor(20) { ask.isEnabled }, "no question is being answered")
+        ask.tap()
+        guard waitForAnswer else { return }
+        let answer = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "回归测试由 Bo 负责")).firstMatch
+        scrollTo(answer, in: app)
+        XCTAssertTrue(answer.waitForExistence(timeout: 25), app.debugDescription)
+    }
+
+    /// The mock's voice extension (MOCK_VOICE): how its `speak` answers from now on (`ok`, `fail`, `slow`, `off`).
+    private func voiceMock(_ hub: String, speak mode: String) throws {
+        guard let data = try? Data(contentsOf: URL(string: hub + "/mock/voice2?speak=" + mode)!),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], json["speak_mode"] as? String == mode else {
+            throw XCTSkip("needs scripts/mock/mock_hub.py with MOCK_VOICE=1")
+        }
+    }
+
+    /// What the app asked the mock's voice extension to say (`GET /mock/voice2` `speaks`), oldest first.
+    private func speaks(_ hub: String) throws -> [[String: Any]] {
+        let data = try Data(contentsOf: URL(string: hub + "/mock/voice2")!)
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["speaks"] as? [[String: Any]] ?? []
     }
 
     /// What the mock hub holds about meetings (`GET /mock/meeting_attendance`): each recording's role, live log and asks.

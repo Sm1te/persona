@@ -14,12 +14,25 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
         var who: String?
         /// An action item's deadline, as said ("Friday").
         var by: String?
+        /// An action item's name within one `version` of the minutes ("a1"): what confirming it as a to-do sends.
+        var id: String?
+        /// An action item's deadline as a date (`YYYY-MM-DD`), when the one said resolves to a single day.
+        var dueDate: String?
+        /// The to-do an action item became once the user confirmed it (#4062); absent or empty while it is a suggestion.
+        var todoID: String?
 
-        init(text: String, at: Double? = nil, who: String? = nil, by: String? = nil) {
-            self.text = text; self.at = at; self.who = who; self.by = by
+        init(text: String, at: Double? = nil, who: String? = nil, by: String? = nil, id: String? = nil, dueDate: String? = nil,
+             todoID: String? = nil) {
+            self.text = text; self.at = at; self.who = who; self.by = by; self.id = id; self.dueDate = dueDate; self.todoID = todoID
         }
 
-        enum CodingKeys: String, CodingKey { case text, what, at, who, by }
+        /// An action item already confirmed as a to-do.
+        var added: Bool { todoID?.isEmpty == false }
+
+        enum CodingKeys: String, CodingKey {
+            case text, what, at, who, by, id
+            case dueDate = "due_date", todoID = "todo_id"
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -27,6 +40,9 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
             at = try? c.decodeIfPresent(Double.self, forKey: .at)
             who = try c.decodeIfPresent(String.self, forKey: .who)
             by = try c.decodeIfPresent(String.self, forKey: .by)
+            id = try c.decodeIfPresent(String.self, forKey: .id)
+            dueDate = try c.decodeIfPresent(String.self, forKey: .dueDate)
+            todoID = try c.decodeIfPresent(String.self, forKey: .todoID)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -35,9 +51,14 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
             try c.encodeIfPresent(at, forKey: .at)
             try c.encodeIfPresent(who, forKey: .who)
             try c.encodeIfPresent(by, forKey: .by)
+            try c.encodeIfPresent(id, forKey: .id)
+            try c.encodeIfPresent(dueDate, forKey: .dueDate)
+            try c.encodeIfPresent(todoID, forKey: .todoID)
         }
     }
 
+    /// Goes up each time the hub writes them again; sent back when confirming action items as to-dos (#4062).
+    var version: Int?
     var title: String?
     /// "2026-11-10 14:00–15:10", as the hub writes it.
     var when: String?
@@ -55,12 +76,13 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case title, when, attendees, points, decisions, actions
+        case version, title, when, attendees, points, decisions, actions
         case place = "where", openQuestions = "open"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try? c.decodeIfPresent(Int.self, forKey: .version)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         when = try c.decodeIfPresent(String.self, forKey: .when)
         place = try c.decodeIfPresent(String.self, forKey: .place)
@@ -80,9 +102,10 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
         return sentences.lastIndex { $0.start <= seconds + 1 } ?? 0
     }
 
-    /// An item's line under its text: who, by when.
+    /// An item's line under its text: who, by when (as said, and the date it resolves to).
     static func byline(_ item: Item) -> String? {
-        let parts = [item.who, item.by].compactMap { $0?.isEmpty == false ? $0 : nil }
+        let due = item.dueDate.flatMap { $0.isEmpty ? nil : String(localized: "Due \($0)") }
+        let parts = [item.who, item.by, due].compactMap { $0?.isEmpty == false ? $0 : nil }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

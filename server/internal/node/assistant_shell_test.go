@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -15,16 +16,40 @@ import (
 // The shell the assistant's launcher runs in is the login shell's, never a bare bash on Windows: there it is WSL, and a
 // claude handed to WSL exited at once (#1994).
 func TestInteractiveShellIsTheLoginShell(t *testing.T) {
-	sh, err := interactiveShell()
 	if runtime.GOOS != "windows" {
-		if err != nil || (sh != "zsh" && sh != "bash") {
-			t.Fatalf("%q %v", sh, err)
-		}
-		if _, zerr := exec.LookPath("zsh"); zerr == nil && sh != "zsh" {
-			t.Fatalf("%q with zsh installed", sh)
+		// zsh wherever it is installed, except for a bash user with no ~/.zshrc (loginShellProgram). The login shell
+		// and home are set here, so the machine running the test does not decide the answer.
+		_, zerr := exec.LookPath("zsh")
+		for _, tc := range []struct {
+			name, login string
+			zshrc       bool
+			want        string
+		}{
+			{name: "zsh user", login: "/bin/zsh", want: "zsh"},
+			{name: "bash user with a .zshrc", login: "/bin/bash", zshrc: true, want: "zsh"},
+			{name: "bash user without a .zshrc", login: "/bin/bash", want: "bash"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("SHELL", tc.login)
+				if tc.zshrc {
+					if err := os.WriteFile(filepath.Join(home, ".zshrc"), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				want := tc.want
+				if zerr != nil {
+					want = "bash" // no zsh on this machine
+				}
+				if sh, err := interactiveShell(); err != nil || sh != want {
+					t.Fatalf("got %q %v, want %q", sh, err, want)
+				}
+			})
 		}
 		return
 	}
+	sh, err := interactiveShell()
 	if loginShellProgram() == "" { // Git Bash not found
 		if err == nil || !strings.Contains(err.Error(), "Git Bash") {
 			t.Fatalf("no Git Bash: %q %v", sh, err)

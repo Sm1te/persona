@@ -8,7 +8,9 @@ export function interactiveSessionPane(listing: Listing | undefined, sessionId: 
   return Boolean(sessionId && listing && !listing.error && listing.data?.hosts.some((host) => host.control && host.panes.some((pane) => pane.session_id === sessionId)));
 }
 
-/** Preserve the original tab for its node menu: hiding its agent panes must not turn "Close pane" into "Close tab". */
+/** The Terminals list (#4754): every plain pane, the ones a stopped Agent left (`agent_session`) included, never a
+ *  running Agent's. Preserve the original tab for its node menu: hiding its agent panes must not turn "Close pane" into
+ *  "Close tab". */
 export function standaloneShells(spaces: TermSpace[]): ShellSpace[] {
   return spaces.flatMap((space) => {
     const tabs = space.tabs.flatMap((tab) => {

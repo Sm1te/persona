@@ -41,8 +41,9 @@ export type Route =
   // one space of a machine by its name (lib/space-page.ts): its agents, the todos it hangs on, what can be done to it
   | { name: "space"; mid: string; space: string }
   // the terminal browser (docs/integrations/terminal.md "Standalone terminal"): every pane of every machine; `id` is the terminal opened (an agent
-  // session's id, or "pane:<pane>" for a plain shell)
-  | { name: "terminal"; mid?: string; id?: string }
+  // session's id, or "pane:<pane>" for a plain shell); `view` is the list beside it, `?view=sessions|terminals`
+  // (lib/terminal-list.ts): without it the one this browser chose last
+  | { name: "terminal"; mid?: string; id?: string; view?: "sessions" | "terminals" }
   | { name: "settings" }
   | { name: "agents"; id?: string }
   // the phone's "Agents" page (#1996): the sidebar's Agents block on a page of its own, next to the assistant
@@ -93,7 +94,11 @@ export function parse(path: string, search = ""): Route {
   if (p[0] === "kb") return { name: "kb", kind: p[1], id: p[2] };
   if (p[0] === "space" && p[1] && p[2]) return { name: "space", mid: p[1], space: p[2] };
   if (p[0] === "machines") return p[1] ? { name: "machine", mid: p[1] } : { name: "machines" };
-  if (p[0] === "terminal") return p[1] && p[2] ? { name: "terminal", mid: p[1], id: p[2] } : { name: "terminal" };
+  if (p[0] === "terminal") {
+    const list = new URLSearchParams(search).get("view");
+    const shown = list === "sessions" || list === "terminals" ? { view: list as "sessions" | "terminals" } : {};
+    return p[1] && p[2] ? { name: "terminal", mid: p[1], id: p[2], ...shown } : { name: "terminal", ...shown };
+  }
   if (p[0] === "a") return { name: "agents", id: p[1] };
   if (p[0] === "agents") return p[1] === "archived" ? { name: "agent-archives" } : { name: "agent-list" };
   if (p[0] === "settings") return { name: "settings" };
@@ -173,8 +178,10 @@ export function routePath(r: Route): string {
       return `/machines/${encodeURIComponent(r.mid)}`;
     case "space":
       return `/space/${encodeURIComponent(r.mid)}/${encodeURIComponent(r.space)}`;
-    case "terminal":
-      return r.mid && r.id ? `/terminal/${encodeURIComponent(r.mid)}/${encodeURIComponent(r.id)}` : "/terminal";
+    case "terminal": {
+      const path = r.mid && r.id ? `/terminal/${encodeURIComponent(r.mid)}/${encodeURIComponent(r.id)}` : "/terminal";
+      return r.view ? `${path}?view=${r.view}` : path;
+    }
     case "workspace-board":
       return "/workspace-board";
     case "settings":

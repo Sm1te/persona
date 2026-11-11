@@ -318,7 +318,7 @@
     <string name="designsystem_core_headline_screen">终端等你处理</string>
     <string name="designsystem_core_headline_needs_you">需要你</string>
     <string name="designsystem_core_ask_question">在问你</string>
-    <string name="designsystem_core_ask_permission">需要你授权</string>
+    <string name="designsystem_core_ask_permission">在等你批准</string>
     <string name="designsystem_core_ask_plan">计划等你审批</string>
     <string name="designsystem_core_ask_screen">终端等你处理</string>
     <string name="designsystem_core_ask_elicitation">MCP 请求</string>

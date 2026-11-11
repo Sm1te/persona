@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/apierr"
+	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/kb"
 )
 
@@ -31,9 +32,16 @@ func (s *Service) recordingRoutes(engine func(http.ResponseWriter, *http.Request
 		}
 		put, err := e.PutRecording(r.PathValue("id"), u, time.Now())
 		status := put.Status
+		var full kb.DayFullError
 		switch {
 		case errors.Is(err, kb.ErrRecordingDeleted):
 			apierr.WriteCode(w, http.StatusGone, codeRecordingDeleted, err)
+			return
+		case errors.Is(err, kb.ErrKindChanged): // to or from an all-day recording (kb_day.go)
+			apierr.WriteCode(w, http.StatusConflict, codeKindChanged, i18n.Err("assistant-day-recap.kind_changed"))
+			return
+		case errors.As(err, &full): // a day over its limits: the phone splits it into parts
+			writeDayFull(w, full.Next)
 			return
 		case errors.Is(err, kb.ErrBadRecording):
 			apierr.Write(w, http.StatusBadRequest, err)
@@ -43,12 +51,16 @@ func (s *Service) recordingRoutes(engine func(http.ResponseWriter, *http.Request
 			return
 		}
 		id, _ := kb.RecordingID(r.PathValue("id"))
-		if status == kb.RecordingStored && u.Complete {
-			s.kbWake() // its summary and minutes now, not at the next round
+		day := dayUpload(u)
+		if status == kb.RecordingStored && (u.Complete || day) {
+			s.kbWake() // its summary and minutes now, not at the next round; a day's recap repaired or final
 		}
 		// The role in effect, always (an older manager leaves it out, so the phone stops attending), and what was
 		// wrong with the upload's attendance fields, which never fail it.
 		out := map[string]any{"id": id, "revision": u.Revision, "status": status, "attendance": put.Attendance}
+		if day {
+			putDayFields(out, put)
+		}
 		if put.AttendanceProblem != "" {
 			out["attendance_problem"] = put.AttendanceProblem
 		}
@@ -90,4 +102,5 @@ func (s *Service) recordingRoutes(engine func(http.ResponseWriter, *http.Request
 	})
 	s.minutesRoutes(engine)
 	s.meetingRoutes()
+	s.dayRoutes()
 }

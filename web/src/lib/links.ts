@@ -17,7 +17,7 @@ import { uuid } from "./format";
 import { openPanel } from "./panel";
 import { navigate, parse as parseRoute } from "./router";
 import { BASE, stripBase } from "./base";
-import { contextBody } from "./context-body";
+import { contextXML } from "./context-xml";
 import { otherManager } from "./manager-choice";
 import { localhostLink, PREVIEW_FEATURE } from "./preview";
 import type { PortLink } from "./port-links";
@@ -307,39 +307,23 @@ export function prefetchLink(url: string | undefined, manager?: string) {
 /** A piece of a page the user picked (LinkSheet.swift ContextRef). `text` is "(whole document)" in Chinese for a whole document. */
 export interface ContextRef {
   id: string;
-  /** "workspace": a folder on a computer picked in the @ menu, carrying `machine` and `cwd` (docs/protocol/protocol.md "Tags in messages"). */
-  kind: "context" | "edit" | "workspace";
+  /** "workspace": a folder on a computer picked in the @ menu, carrying `machine` and `cwd` (docs/protocol/protocol.md "Tags in messages").
+   *  "forward": a message forwarded from another chat (lib/forward.ts, docs/protocol/protocol.md "Forwarded messages"). */
+  kind: "context" | "edit" | "workspace" | "forward";
   title: string;
   url: string;
   text: string;
-  /** Extra attributes written on the tag after kind / title / url (a workspace's `machine` and `cwd`). */
+  /** Extra attributes written on the tag after kind / title / url (a workspace's `machine` and `cwd`, a forward's `msg` and metadata). */
   attrs?: Record<string, string>;
+  /** A forward's line under its card over the box: which computer it comes from and where it goes. Shown, never sent. */
+  route?: string;
 }
 
 // i18n-ignore: a marker inside <persona-context>, the app (QuoteViews.swift) matches it
 export const WHOLE = "（整篇）";
 
-function escAttr(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** `<persona-context kind="…" title="…" url="…">\ntext\n</persona-context>`, as the phone writes it. */
-export function contextXML(r: Pick<ContextRef, "kind" | "title" | "url" | "text" | "attrs">): string {
-  const body = contextBody(r.text);
-  const extra = Object.entries(r.attrs ?? {})
-    .filter(([k]) => /^[a-z_]+$/.test(k) && k !== "kind" && k !== "title" && k !== "url")
-    .map(([k, v]) => ` ${k}="${escAttr(v)}"`)
-    .join("");
-  return `<persona-context kind="${escAttr(r.kind)}" title="${escAttr(r.title)}" url="${escAttr(r.url)}"${extra}>\n${body}\n</persona-context>`;
-}
-
-/** A message with its picked contexts in front (ChatView.swift sendText). */
-export function withContexts(refs: Pick<ContextRef, "kind" | "title" | "url" | "text" | "attrs">[], text: string, hasImages = false): string {
-  const typed = text.trim();
-  if (!refs.length) return typed;
-  const body = typed || (hasImages ? t("lib-links.see_images") : t("lib-links.see_context"));
-  return `${refs.map(contextXML).join("\n")}\n\n${body}`;
-}
+// writing the tags: lib/context-xml.ts (no store, no router: New agent and the tests take it alone)
+export { contextXML, withContexts } from "./context-xml";
 
 /** "AI edit": the picked text and what to do with it, sent at once (LinkSheet.swift sendEdit). */
 export function editMessage(r: Pick<ContextRef, "title" | "url" | "text">, ask: string): string {

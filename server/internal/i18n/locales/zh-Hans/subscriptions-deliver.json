@@ -4,6 +4,7 @@
   "due": "截止：{when}",
   "failing_title": "{label} 从 {since} 起拉不到新内容",
   "failing_why": "规则：订阅连续一天拉取失败",
+  "push_label": "{device} 的快捷指令",
   "reason.call_failed": "连接器调用出错。",
   "reason.no_list": "结果里找不到订阅方式读的那个列表了。",
   "reason.not_read_only": "连接器的目录把某个工具标成了会改动内容的。",

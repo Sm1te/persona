@@ -27,5 +27,16 @@
   "no_text": "请发送文字、图片或两者都发。",
   "meeting_running": "会议还在进行，结束后再在会后对话里继续。",
   "no_material": "这条录音既没有转写也没有纪要，没什么可聊的。",
-  "just_me_notify": "没有发送：这是你在会议中私下问的。回答留在这个对话里，会议页面会显示。"
+  "just_me_notify": "没有发送：这是你在会议中私下问的。回答留在这个对话里，会议页面会显示。",
+  "bad_photo_at": "at 必须是数字：拍照时距录音开始的秒数。",
+  "bad_photo_mime": "mime 只能是 image/jpeg 或 image/png。",
+  "bad_photo_data": "data 必须是 base64 编码的 JPEG 或 PNG 图片，类型与 mime 一致。",
+  "photo_too_large": "一张照片最多 {size}。",
+  "photo_too_wide": "照片的长边最多 {max} 像素。",
+  "photo_field_too_long": "{field} 超过了 {max} 个字。",
+  "transcript_expired": "这条录音的转写已过期，只保留了纪要。",
+  "photo_not_found": "这场会没有这张照片。",
+  "photo_deleted": "这张照片已删除，不能再添加。",
+  "photo_id_reused": "这个 id 已经用于另一张照片。",
+  "photos_full": "这场会已经有 {max} 张照片了。"
 }

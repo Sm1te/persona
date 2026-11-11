@@ -11,6 +11,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/herdr"
 	"github.com/nwverse/persona/server/internal/host"
+	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/screen"
 )
@@ -492,7 +493,7 @@ const (
 func (n *Node) orcaContinues(id string) bool { return n.claudeTranscript(id, true) != "" }
 
 func (n *Node) notRunningRefusal(ctx context.Context, id string) error {
-	h := n.defaultHost()
+	h := n.hosts.Get(n.startKind(ctx))
 	if h == nil {
 		return nil
 	}
@@ -515,6 +516,6 @@ func (n *Node) notRunningRefusal(ctx context.Context, id string) error {
 		return nil
 	}
 	log.Printf("send %s: not on the live list (last pane %q): refused as not running", id, pane)
-	name := n.defaultEngineName()
+	name := proto.EngineNames[h.Kind()]
 	return refusal(notRunning, fmt.Sprintf("这个会话现在没有在运行（可能被挂起或已退出），%s 里的会话要在电脑上重新打开，这次没有发送。", name), nil)
 }

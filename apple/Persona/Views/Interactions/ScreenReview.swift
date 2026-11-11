@@ -81,55 +81,57 @@ struct ScreenReview: View {
         }
     }
 
-    /// Previous and the main button; with a question left, Submit Without Them beside them when the row has room, else
-    /// under them.
-    @ViewBuilder private var footer: some View {
-        if missing != nil, answer != nil {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Theme.Space.m) {
-                    previous
-                    Spacer(minLength: 0)
-                    withoutThem
-                    main
-                }
-                VStack(alignment: .trailing, spacing: Theme.Space.m) {
-                    HStack(spacing: Theme.Space.m) {
-                        previous
-                        Spacer(minLength: 0)
-                        main
-                    }
-                    withoutThem
-                }
-            }
-            .controlSize(.regular)
-            .disabled(sending != nil)
-        } else {
+    /// Previous and the main button in a row, with a question left Submit Without Them beside them; when the row has no
+    /// room, Submit Without Them goes under it; at the largest text sizes all three stack, the main button first and full
+    /// width (docs/design/HIG_AUDIT.md, HIG-003), each label still on one line.
+    private var footer: some View {
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: Theme.Space.m) {
-                previous
+                previous(wide: false)
                 Spacer(minLength: 0)
-                main
+                if leftOne { withoutThem }
+                main(wide: false)
             }
-            .controlSize(.regular)
-            .disabled(sending != nil)
+            VStack(alignment: .trailing, spacing: 0) {
+                HStack(spacing: Theme.Space.m) {
+                    previous(wide: false)
+                    Spacer(minLength: 0)
+                    main(wide: false)
+                }
+                if leftOne { withoutThem }
+            }
+            VStack(spacing: Theme.Space.s) {
+                main(wide: true)
+                previous(wide: true)
+                if leftOne { withoutThem }
+            }
         }
+        .controlSize(.regular)
+        .disabled(sending != nil)
     }
 
-    @ViewBuilder private var previous: some View {
+    private var leftOne: Bool { missing != nil && answer != nil }
+
+    @ViewBuilder private func previous(wide: Bool) -> some View {
         if let back {
-            Button { back() } label: { Text("Previous [Interaction Views 39b1c2]").lineLimit(1) }
-                .themedButton()
-                .accessibilityIdentifier("screen-review-back")
+            Button { back() } label: {
+                Text("Previous [Interaction Views 39b1c2]").lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: wide ? .infinity : nil)
+            }
+            .themedButton()
+            .accessibilityIdentifier("screen-review-back")
         }
     }
 
-    @ViewBuilder private var main: some View {
+    @ViewBuilder private func main(wide: Bool) -> some View {
         if let missing, let answer {
             Button { answer(missing) } label: {
                 HStack(spacing: Theme.Space.sm) {
                     if sending == "walk" { ProgressView().controlSize(.small).tint(.white) }
-                    Text("Answer “\(missing.label)”").lineLimit(1)
+                    Text(missing.label.isEmpty ? String(localized: "Answer Question \(missing.index + 1)") : String(localized: "Answer “\(missing.label)”"))
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
                 .padding(.horizontal, Theme.Space.s)
+                .frame(maxWidth: wide ? .infinity : nil)
             }
             .themedButton(prominent: true)
             .accessibilityIdentifier("screen-review-answer")
@@ -137,21 +139,27 @@ struct ScreenReview: View {
             Button { submit() } label: {
                 HStack(spacing: Theme.Space.sm) {
                     if sending == "submit" { ProgressView().controlSize(.small).tint(.white) }
-                    Text("Submit \(rows.count) Answers").lineLimit(1)
+                    Text("Submit \(rows.count) Answers").lineLimit(1).minimumScaleFactor(0.8)
                 }
                 .padding(.horizontal, Theme.Space.s)
+                .frame(maxWidth: wide ? .infinity : nil)
             }
             .themedButton(prominent: true)
             .accessibilityIdentifier("screen-review-submit")
         }
     }
 
+    /// A text button, with a finger's room around its words.
     private var withoutThem: some View {
-        Button { submit() } label: { Text("Submit Without Them").lineLimit(1) }
-            .buttonStyle(.plain)
-            .font(Theme.Font.captionMedium)
-            .foregroundStyle(Theme.accent)
-            .accessibilityIdentifier("screen-review-submit-anyway")
+        Button { submit() } label: {
+            Text("Submit Without Them").lineLimit(1).minimumScaleFactor(0.8)
+                .scaledFrame(minHeight: Theme.Size.tapTarget)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .font(Theme.Font.captionMedium)
+        .foregroundStyle(Theme.accent)
+        .accessibilityIdentifier("screen-review-submit-anyway")
     }
 }
 

@@ -82,7 +82,7 @@ class AgentsRequestSheetTest {
 
         // Answered in the sheet: it closes once delivered, and the page says what was answered.
         // Both cards read the same title (#3690); Bash's is first (the list sorts by id).
-        rule.onAllNodesWithText("Needs your permission", useUnmergedTree = true)[0].performClick()
+        rule.onAllNodesWithText("Waiting for your approval", useUnmergedTree = true)[0].performClick()
         rule.waitForIdle()
         assertEquals("the card's title opens its sheet", true, shown("Handle request"))
         rule.onNode(inSheet("Handle request", "Deny")).performClick()
@@ -96,7 +96,7 @@ class AgentsRequestSheetTest {
         assertEquals("Denied: notes.md", notices.last())
         rule.onNodeWithText("Requests and history").performClick()
         rule.onNodeWithText("History 2").performClick()
-        rule.onAllNodesWithText("Needs your permission")[0].performClick()
+        rule.onAllNodesWithText("Waiting for your approval")[0].performClick()
         rule.mainClock.advanceTimeBy(2_500)
         rule.waitForIdle()
         assertEquals("an answered history item stays open", true, shown("Request history"))

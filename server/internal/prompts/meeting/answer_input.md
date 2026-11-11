@@ -11,6 +11,8 @@ This meeting, being recorded now (times are minutes:seconds from its start):
 {{end}}{{with .Asks}}Already answered in this meeting:
 {{range .}}- Q: {{attr .Question}}
   A: {{attr .Answer}}
+{{end}}{{end}}{{with .Photos}}Photos taken in it (the owner's caption, the text recognized in it on the phone, a note on it):
+{{range .}}[{{.At}}] photo {{.N}}{{with .Caption}} · caption: {{attr .}}{{end}}{{with .Text}} · text: {{attr .}}{{end}}{{with .Note}} · note: {{attr .}}{{end}}
 {{end}}{{end}}</this_meeting>
 
 {{if .EarlierAvailable}}Earlier meetings, by their minutes:

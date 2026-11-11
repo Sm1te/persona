@@ -5,20 +5,22 @@ import { getSession, getState } from "../../lib/store";
 import { agentStatus, subagentFor } from "../../lib/tasks";
 import { turnImages } from "../../lib/turn-images";
 import { TurnImages } from "./TurnImages";
-import { exchangeSteps, segmentIdentity, isLoopTick, isOwnMessage, type Segment, type UserMessage } from "../../lib/turns";
+import { exchangeSteps, segmentIdentity, isLoopTick, isOwnMessage, type Context, type Segment, type UserMessage } from "../../lib/turns";
 import type { Item } from "../../lib/types";
 import { thinkingDurations, workBlocks, type ToolStep, type WorkNode } from "../../lib/work-groups";
 import { NO_WORKFLOW_CALLS } from "../../lib/workflows";
 import { channelOf, useChannels } from "../../lib/channels";
 import { splitQuotes } from "../../lib/drafts";
 import { EASE } from "../../ui/atoms";
-import { ChannelMark } from "../../ui/ChannelMark";
+import { ChannelMark, OriginMark } from "../../ui/ChannelMark";
+import { externalFrom, type ExternalOrigin } from "../../lib/conversation-origins";
 import { Markdown } from "../../ui/Markdown";
 import { CardConversation, CardItem } from "../../ui/AssistantCard";
 import { cardReply } from "../../lib/assistant-blocks";
 import { InjectedHint, LoopTick, MergedBubble, PeerMessage } from "./Messages";
 import { SourceMessage } from "./SourceMessage";
 import { ContextGroup } from "./ContextGroup";
+import { ForwardBlock } from "./ForwardCard";
 import { AttachedPhotos } from "./AttachedPhotos";
 import { useFullText } from "./FullText";
 import { FileCards, ReplyFiles } from "./FileCards";
@@ -66,8 +68,16 @@ export function segmentHeight(user: UserMessage | undefined, nodes: WorkNode[]):
  *  (spec/fixtures/sync); the transcript's own bubbles have none. `starting`: the first message of a conversation still
  *  starting (the new-conversation page, #1697): drawn as it will be once sent, without actions (there is nothing yet to
  *  act on) and without "Sending…" (the page says it is preparing). */
-export function UserBubble({ msg, mid, sid, pending, sendState, starting }: { msg: UserMessage; mid: string; sid: string; pending?: boolean; sendState?: "sending" | "sent" | "failed"; starting?: boolean }) {
+/** `onDelete`: a message only on this device (a failed send): its menu ends in Delete, and it has no Rewind (it is not in
+ *  the transcript to go back to). */
+export function UserBubble({ msg, mid, sid, pending, sendState, starting, onDelete }: { msg: UserMessage; mid: string; sid: string; pending?: boolean; sendState?: "sending" | "sent" | "failed"; starting?: boolean; onDelete?: () => void }) {
   const own = isOwnMessage(msg);
+  // the message an extension opened the conversation with (#3758)
+  const { opening } = useChatContext();
+  const openedBy = opening && opening.id === msg.id ? opening.origin : undefined;
+  // forwards (#3899) are cards at the top of the bubble; the other contexts fold in the row above it
+  const forwards = msg.contexts.filter((c) => c.kind === "forward");
+  const contexts = forwards.length ? msg.contexts.filter((c) => c.kind !== "forward") : msg.contexts;
   return (
     <div className="ml-auto flex max-w-[488px] min-w-0 flex-col items-end gap-1.5 pl-[12%]" style={pending ? { animation: `fade-up 300ms ${EASE} both` } : undefined} data-user-bubble data-send-state={sendState} data-items={pending || starting ? undefined : [msg.id, ...msg.images.map((i) => i.id)].join(" ")}>
       {msg.images.length > 0 && (
@@ -78,20 +88,21 @@ export function UserBubble({ msg, mid, sid, pending, sendState, starting }: { ms
         </div>
       )}
       {msg.photos && <AttachedPhotos paths={msg.photos} mid={mid} sid={sid} />}
-      {msg.contexts.length > 0 && <ContextGroup contexts={msg.contexts} />}
+      {contexts.length > 0 && <ContextGroup contexts={contexts} />}
       {msg.files && <FileCards files={msg.files} mid={mid} />}
-      {msg.text &&
+      {(msg.text || forwards.length > 0) &&
         (starting ? (
-          <BubbleText text={msg.text} mid={mid} sid={sid} own={own} />
+          <BubbleText text={msg.text} forwards={forwards} mid={mid} sid={sid} own={own} />
         ) : pending ? (
-          <BubbleText text={msg.text} mid={mid} sid={sid} own={own} pending />
+          <BubbleText text={msg.text} forwards={forwards} mid={mid} sid={sid} own={own} pending />
         ) : (
-          <MessageActions text={msg.text} isUser ts={msg.ts} side messageId={msg.id} className="max-w-full">
-            <BubbleText text={msg.text} ts={msg.ts} mid={mid} sid={sid} own={own} />
+          <MessageActions text={msg.text} isUser ts={msg.ts} side messageId={onDelete ? undefined : msg.id} onDelete={onDelete}
+            images={msg.images} photos={msg.photos} className="max-w-full">
+            <BubbleText text={msg.text} forwards={forwards} ts={msg.ts} mid={mid} sid={sid} own={own} />
           </MessageActions>
         ))}
       {(pending || msg.queued) && <span className="text-[11px] text-ink-3">{pending ? t("chat-segmentview.sending") : t("chat-segmentview.queued")}</span>}
-      {!pending && !starting && <ChannelSource clientMsgId={msg.client_msg_id} />}
+      {!pending && !starting && <ChannelSource clientMsgId={msg.client_msg_id} openedBy={openedBy} />}
     </div>
   );
 }
@@ -99,7 +110,7 @@ export function UserBubble({ msg, mid, sid, pending, sendState, starting }: { ms
 /** The bubble's words, folded to ten lines past fourteen; the fold scrolls (the wheel, a trackpad, a finger), with a
  *  fade at its bottom while there is more (fold-scroll.ts). `pending` (still being sent): dimmed, the same fold. A
  *  leading `> ` block ("Quote") is a folded quote card at its top instead of `>` lines (Quote.tsx). */
-function BubbleText({ text: full, ts, mid, sid, own, pending }: { text: string; ts?: string; mid: string; sid: string; own: boolean; pending?: boolean }) {
+function BubbleText({ text: full, forwards, ts, mid, sid, own, pending }: { text: string; forwards?: Context[]; ts?: string; mid: string; sid: string; own: boolean; pending?: boolean }) {
   const fill = own ? "bg-user-bubble" : "bg-neutral-bubble";
   // a reply sent from a card (in an assistant conversation): its words, without the hub's tag, marked "From a card"
   const fromCard = useContext(CardConversation) ? cardReply(full) : undefined;
@@ -142,9 +153,10 @@ function BubbleText({ text: full, ts, mid, sid, own, pending }: { text: string; 
           {t("ui-assistantcard.from_card")}
         </span>
       )}
-      {split ? (
+      {split || forwards?.length ? (
         <div className={`flex max-w-full flex-col gap-1.5 rounded-[12px] ${fill} px-4 py-2.5 text-ink ${pending ? "opacity-60" : ""}`} title={clock(ts)}>
-          <QuoteStack blocks={split.quotes} mid={mid} sid={sid} />
+          {forwards?.map((c, i) => <ForwardBlock key={i} c={c} />)}
+          {split && <QuoteStack blocks={split.quotes} mid={mid} sid={sid} />}
           {words}
         </div>
       ) : (
@@ -161,9 +173,18 @@ function BubbleText({ text: full, ts, mid, sid, own, pending }: { text: string; 
   );
 }
 
-/** "From WeChat" under a message that came from a channel (its client_msg_id is `<channel>-…`, docs/extensions/channels.md). */
-function ChannelSource({ clientMsgId }: { clientMsgId?: string }) {
+/** "From WeChat" under a message that came from a channel (its client_msg_id is `<channel>-…`, docs/extensions/channels.md);
+ *  else, under the message an extension opened the conversation with, "From Lark /agent" / "From an extension" (#3758). */
+function ChannelSource({ clientMsgId, openedBy }: { clientMsgId?: string; openedBy?: ExternalOrigin }) {
   const via = channelOf(clientMsgId, useChannels());
+  if (!via && openedBy) {
+    return (
+      <span data-opened-by={openedBy} className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-3">
+        <OriginMark origin={openedBy} size={14} decorative />
+        {externalFrom(openedBy)}
+      </span>
+    );
+  }
   if (!via) return null;
   return (
     <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-3">

@@ -1,3 +1,4 @@
 {
-  "git_missing": "ハブのマシンに git がありません。git マーケット（git:…、git@…、ssh://…）には git が必要です。github: と、インデックスの URL を直接指定する https:// マーケットには不要です。"
+  "git_missing": "ハブのマシンに git がありません。git マーケット（git:…、git@…、ssh://…）には git が必要です。github: と、インデックスの URL を直接指定する https:// マーケットには不要です。",
+  "git_too_old": "ハブのマシンの git は {version} です。トークン付きの git マーケットには git 2.31 以降が必要です（トークンをコマンドラインに出さずに渡せるため）。そのマシンの git を更新してください。"
 }

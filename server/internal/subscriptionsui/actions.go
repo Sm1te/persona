@@ -56,6 +56,13 @@ func (p *pages) act(action string, values map[string]string) (wire.ActionResult,
 		return p.saveRaw(values["recipe"])
 	case "draft":
 		return p.startDraft(sourceKey(p.st.C, p.st.S), p.st.C, subscriptions.GenerateRequest{Connector: p.st.C, Source: p.st.S})
+	case "push_add":
+		// This device's own Shortcuts source, before its first item (#3848): the list again, with it under Off.
+		if _, err := p.svc.Push(p.ctx, p.env.By, subscriptions.PushRequest{}); err != nil {
+			return p.errorResult(err)
+		}
+		v := p.draw()
+		return wire.ActionResult{View: &v, Toast: p.t("toast.push_added")}, nil
 	case "regenerate":
 		s, _, err := p.svc.Get(p.ctx, p.st.ID)
 		if err != nil {

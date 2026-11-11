@@ -30,7 +30,7 @@
   "request_changes": "修正を依頼",
   "approve": "承認",
   "approve_mode": "承認方法",
-  "permission_kicker": "許可が必要です",
+  "permission_kicker": "承認を待っています",
   "permission_title": "{tool}の使用を許可しますか？",
   "denied_message": "ユーザーが拒否しました",
   "deny": "拒否",
@@ -96,5 +96,12 @@
   "secret_run_decline": "拒否",
   "secret_run_run": "実行",
   "secret_run_note": "1回だけ使い、保存しません。アシスタントにも見えません。",
-  "secret_run_card_only": "カードで回答してください：パスワードを入力して実行するか、拒否してください"
+  "secret_run_card_only": "カードで回答してください：パスワードを入力して実行するか、拒否してください",
+  "secret_handoff_title": "シークレットを Agent に渡しますか？",
+  "secret_handoff_lead": "{machine} の「{agent}」が今回の実行だけ受け取ります：",
+  "secret_handoff_lead_unnamed": "{machine} の Agent が今回の実行だけ受け取ります：",
+  "secret_handoff_lead_bare": "Agent が今回の実行だけ受け取ります：",
+  "secret_handoff_note": "Persona とアシスタントは値を見ません。",
+  "secret_handoff_always_scope": "常に許可：{scope}。",
+  "secret_handoff_card_only": "チャットのカードで承認してください。"
 }

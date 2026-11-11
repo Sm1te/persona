@@ -9,11 +9,13 @@
 // way to each other with a short slide and fade. Each surface draws its own controls into the header's slot.
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { sessionTitle } from "../../lib/format";
+import { resumeAgent, useResume } from "../../lib/agent-resume";
+import { isStoppedAgent, sessionTitle, stateOf } from "../../lib/format";
 import { machineWithHub } from "../../lib/mesh";
 import { registerShortcut } from "../../lib/shortcuts";
 import { getSession, useStore } from "../../lib/store";
 import { lineCount } from "../../lib/terminal";
+import { isPaneAddress } from "../../lib/terminals";
 import { shouldRefocus, terminalMenu, wantsOwnMenu, type TerminalMenuKey } from "../../lib/terminal-details";
 import { FIND_CLOSED, findReducer, isFindShortcut, queryFromSelection } from "../../lib/terminal-search";
 import {
@@ -64,6 +66,8 @@ function PaneTerminal({
   onFiles,
   slot,
   live,
+  resumable,
+  onOffline,
 }: {
   mid: string;
   sid: string;
@@ -72,6 +76,10 @@ function PaneTerminal({
   slot: HTMLElement | null;
   /** False while this surface is on its way out. */
   live: boolean;
+  /** The panel offers Resume for this Agent (#4754): its own line says why the terminal is not running, not the link's. */
+  resumable?: boolean;
+  /** Whether the stream says the session is not running (the panel's Resume line says the terminal is gone). */
+  onOffline?: (offline: boolean) => void;
 }) {
   const session = useStore(() => getSession(mid, sid));
   const canDrive = useStore((s) => s.features.includes("terminal_control"));
@@ -101,6 +109,20 @@ function PaneTerminal({
   useEffect(() => {
     if (feed) feed.cwd = dir;
   }, [feed, dir]);
+
+  // Resume (#4754): once the Agent is back (the hub answered, or its row no longer says stopped) the stream is asked for
+  // again at once instead of after the back-off.
+  const offline = Boolean(v?.offline);
+  useEffect(() => onOffline?.(offline), [offline, onOffline]);
+  const resumedAt = useResume(mid, sid);
+  const back = resumedAt.phase === "done" ? resumedAt.at : 0;
+  const stopped = isStoppedAgent(session);
+  // read when they change, not on the feed's arrival: its first subscribe is its own
+  const feedNow = useRef(feed);
+  feedNow.current = feed;
+  useEffect(() => {
+    if (back || !stopped) feedNow.current?.retry();
+  }, [back, stopped]);
 
   const streaming = v?.mode === "stream";
   const takeBack = Boolean(v && streaming && v.wants && v.control === "declined" && v.why !== "unsupported");
@@ -295,7 +317,7 @@ function PaneTerminal({
         )}
         {feed && v && (
           <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-col gap-1.5">
-            {v.stale && <LinkStatus feed={feed} />}
+            {v.stale && !(resumable && v.offline) && <LinkStatus feed={feed} />}
             {v.uploading && <UploadStatus text={v.uploading} />}
             {takeBack && (
               <div className="pointer-events-auto flex items-center gap-2 rounded-control bg-surface py-1.5 pr-1.5 pl-2.5 text-[12px] text-ink-2 shadow-raised" style={{ animation: "fade-in 160ms ease-out both" }}>
@@ -491,6 +513,14 @@ export function TerminalPanel({
     [key, mid],
   );
 
+  // A stopped Agent (#4754), or an Agent the stream says is not running: Resume, the one way it runs again, sits over the
+  // terminal in either surface, and stays while a Resume is out (the row may say running before the hub answers). A
+  // failed one shows its error there for as long as the Agent is still not running.
+  const [paneOffline, setPaneOffline] = useState(false);
+  const resume = useResume(mid, sid);
+  const agentRow = Boolean(session && !session.source_kind && !session.assistant && !isPaneAddress(sid));
+  const resumable = agentRow && (isStoppedAgent(session) || (paneOffline && stateOf(session!) === "offline") || resume.phase === "resuming");
+
   const dir = cwd || session?.cwd || "";
   const subtitle = [label ?? (session ? sessionTitle(session) : ""), machine].filter(Boolean).join(" · ");
   // pane → full: the pane surface still drives its own pane while it fades, so the other opens after it
@@ -520,13 +550,14 @@ export function TerminalPanel({
           }
         />
       )}
+      {resumable && <ResumeLine mid={mid} sid={sid} closed={paneOffline} />}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {order.map((mode) => {
           const leaving = mode === surfaces.leaving;
           return (
             <Surface key={mode} leaving={leaving} enter={!leaving && surfaces.from !== null} dir={slideFrom(surfaces.shown)}>
               {mode === "pane" ? (
-                <PaneTerminal mid={mid} sid={sid} cwd={cwd} onFiles={onFiles} slot={slot} live={!leaving} />
+                <PaneTerminal mid={mid} sid={sid} cwd={cwd} onFiles={onFiles} slot={slot} live={!leaving} resumable={resumable} onOffline={setPaneOffline} />
               ) : (
                 <FullTerminal
                   mid={mid}
@@ -544,6 +575,23 @@ export function TerminalPanel({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** A stopped Agent's terminal (#4754): what happened, and Resume (`POST /sessions` with its id, no message). The chat's
+ *  read-only line starts the same Resume, so both show its progress and its error (lib/agent-resume.ts). `closed`: the
+ *  stream says the terminal it left is gone, so Resume opens a new tab. */
+function ResumeLine({ mid, sid, closed }: { mid: string; sid: string; closed: boolean }) {
+  const resume = useResume(mid, sid);
+  return (
+    <div role="status" data-resume-line className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-inset px-3 py-2 text-xs text-ink-2">
+      <Icon name="stop" size={13} className="shrink-0 text-ink-3" />
+      <span className="min-w-0 flex-1 basis-48 break-words">{t(closed ? "session-terminalpanel.stopped_closed" : "session-terminalpanel.stopped")}</span>
+      <Button tone="secondary" icon="play" busy={resume.phase === "resuming"} onClick={() => void resumeAgent(mid, sid)}>
+        {t("session-terminalpanel.resume")}
+      </Button>
+      {resume.phase === "failed" && <p role="alert" className="w-full break-words text-red">{t("session-terminalpanel.resume_failed", { error: resume.error })}</p>}
     </div>
   );
 }

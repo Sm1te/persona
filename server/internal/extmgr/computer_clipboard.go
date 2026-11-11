@@ -1,9 +1,9 @@
 package extmgr
 
 // The Mac's clipboard for the app's VNC (#1343): GET reads it, POST {"text": …} puts text on it, through its node
-// (computer.clipboard: pbcopy, pbpaste). For the text RFB's own clipboard cannot carry (anything outside Latin-1, and
-// what a Chinese input method types, pasted with ⌘V). Only for a Mac whose screen the app may show (the plugin cua or
-// ego on for it), and never logged beyond its length.
+// (computer.clipboard: pbcopy, pbpaste), and answers once it is there. The app's pastes come this way before their ⌘V
+// (#3075): RFB's own clipboard carries only Latin-1 and has no answer. Only for a Mac whose screen the app may show (the
+// plugin cua or ego on for it), and never logged beyond its length.
 
 import (
 	"context"

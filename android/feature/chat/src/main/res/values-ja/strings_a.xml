@@ -421,6 +421,13 @@
     <string name="chat_work_seconds">%1$d秒</string>
     <string name="chat_work_minutes">%1$d分</string>
     <string name="chat_work_hours_minutes">%1$d時間%2$d分</string>
+    <string name="chat_work_working_for">作業中%1$s</string>
+    <string name="chat_work_done">完了</string>
+    <string name="chat_work_tools">ツール%1$d</string>
+    <string name="chat_work_thoughts">思考%1$d</string>
+    <string name="chat_work_replies">返信%1$d</string>
+    <string name="chat_work_minutes_seconds">%1$d分%2$d秒</string>
+    <string name="chat_work_reading_files">%1$d件のファイルを読み込み中</string>
     <plurals name="chat_work_done_steps">
         <item quantity="other">%1$dステップ</item>
     </plurals>

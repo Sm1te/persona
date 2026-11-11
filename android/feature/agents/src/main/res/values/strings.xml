@@ -156,8 +156,8 @@
     <string name="agents_repo_worktree">Worktree</string>
     <string name="agents_card_question">Claude has a question</string>
     <string name="agents_card_question_by">%1$s has a question</string>
-    <string name="agents_card_permission">Needs your permission</string>
-    <string name="agents_card_permission_by">%1$s needs your permission</string>
+    <string name="agents_card_permission">Waiting for your approval</string>
+    <string name="agents_card_permission_by">%1$s is waiting for your approval</string>
     <string name="agents_card_plan">Plan awaiting approval</string>
     <string name="agents_card_screen">Terminal needs you</string>
     <string name="agents_card_other">Needs you</string>

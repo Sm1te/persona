@@ -3,10 +3,12 @@ package node
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/host"
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
@@ -32,6 +34,68 @@ func TestStoppedAgentRowIsReadOnly(t *testing.T) {
 	}
 	if s := rows[sidB]; s.Capabilities != nil || s.ReadOnlyReason != "" {
 		t.Errorf("a fresh branch is read-only: %+v (%+v)", s, s.Capabilities)
+	}
+}
+
+func TestRetiredAgentRowUsesSessionHost(t *testing.T) {
+	for _, def := range []string{proto.EnginePaseo, proto.EngineHerdr} {
+		for _, remembered := range []string{"state", "last pane"} {
+			t.Run(def+"/"+remembered, func(t *testing.T) {
+				withStop(t, 1, 50*time.Millisecond)
+				n, f, home := herdrNode(t)
+				choice := proto.EngineChoice{Hosts: []string{proto.EngineHerdr, proto.EnginePaseo}, Default: def}
+				n.eng.name, n.eng.set = proto.LegacyEngine(choice), &choice
+				cwd := mkdir(t, filepath.Join(home, "proj"))
+				writeTranscript(t, home, cwd, sidA, time.Now().Add(-time.Hour),
+					`{"type":"user","cwd":"`+cwd+`","message":{"role":"user","content":"hi"},"uuid":"u1"}`,
+					`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"`+strings.Repeat("done ", 600)+`"}]},"uuid":"a1","parentUuid":"u1"}`)
+				n.agents[sidA] = host.Agent{Agent: "claude", PaneID: "w1:p1", TabID: "w1:t1", WorkspaceID: "w1", AgentStatus: proto.StatusDone}
+				if remembered == "state" {
+					n.state.put(sidA, sessionState{Pane: "w1:p1", Launcher: "cc", Cwd: cwd})
+				} else {
+					n.lastPanes = map[string]string{sidA: "w1:p1"}
+				}
+				quitsOn(f, "w1:p1", sidA, nil, shellPane("w1:p1", "w1:t1", "w1", cwd, sidA))
+				res, err := request(t, n, "session.retire", map[string]any{"session_id": sidA})
+				if err != nil || res["closed"] != true {
+					t.Fatalf("retire = %v, %v", res, err)
+				}
+				row := byID(listSessions(t, n))[sidA]
+				want := &proto.SessionCapabilities{Read: true, Terminal: true}
+				if row.SessionID != sidA || row.Status != proto.StatusOffline || !reflect.DeepEqual(row.Capabilities, want) || row.ReadOnlyReason != stoppedReason {
+					t.Fatalf("retired row: status=%q capabilities=%+v reason=%q", row.Status, row.Capabilities, row.ReadOnlyReason)
+				}
+				closesNothing(t, f)
+			})
+		}
+	}
+}
+
+func TestStoppedRuntimeRowIsUnchanged(t *testing.T) {
+	for _, def := range []string{proto.EnginePaseo, proto.EngineHerdr} {
+		for _, ownership := range []string{"known", "unlisted"} {
+			t.Run(def+"/"+ownership, func(t *testing.T) {
+				n, _, home := herdrNode(t)
+				choice := proto.EngineChoice{Hosts: []string{proto.EngineHerdr, proto.EnginePaseo}, Default: def}
+				n.eng.name, n.eng.set = proto.LegacyEngine(choice), &choice
+				cwd := mkdir(t, filepath.Join(home, "proj"))
+				writeTranscript(t, home, cwd, sidA, time.Now().Add(-time.Hour),
+					`{"type":"user","cwd":"`+cwd+`","message":{"role":"user","content":"hi"},"uuid":"u1"}`,
+					`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"`+strings.Repeat("done ", 600)+`"}]},"uuid":"a1","parentUuid":"u1"}`)
+				// A runtime takeover can leave the old terminal in the node's state.
+				n.state.put(sidA, sessionState{Pane: "w1:p1", Launcher: "cc", Cwd: cwd})
+				n.runtimes = newRuntimeRegistry()
+				if ownership == "known" {
+					n.runtimes.known[sidA] = knownSession{runtime: proto.EnginePaseo, label: "Paseo", at: time.Now()}
+				} else {
+					n.runtimes.unlisted = map[string]unlistedOf{proto.EnginePaseo: {set: map[string]bool{sidA: true}}}
+				}
+				row := byID(listSessions(t, n))[sidA]
+				if row.SessionID != sidA || row.Status != proto.StatusOffline || row.Capabilities != nil || row.ReadOnlyReason != "" {
+					t.Fatalf("runtime history row: status=%q capabilities=%+v reason=%q", row.Status, row.Capabilities, row.ReadOnlyReason)
+				}
+			})
+		}
 	}
 }
 
@@ -128,5 +192,29 @@ func TestCloseFinishedTerminals(t *testing.T) {
 	}
 	if got := f.trace("tab.close", "pane.close"); len(got) != 1 || !strings.Contains(got[0], "w1:t1") {
 		t.Errorf("closed %q", got)
+	}
+}
+
+// panes.list names the program in front of each pane with no agent (#4754: plain terminals in the apps' lists),
+// asking the host, never reading the screen; an agent's pane is not asked.
+func TestPanesListNamesTheProgramInFront(t *testing.T) {
+	n, f, home := herdrNode(t)
+	cwd := mkdir(t, filepath.Join(home, "proj"))
+	f.reply("session.snapshot", snapshot(nil, nil, []any{claudeAgent(sidA, proto.StatusIdle, "w1:p1", "w1:t1", "w1", cwd, "")},
+		[]any{shellPane("w1:p2", "w1:t2", "w1", cwd, "")}))
+	f.reply("pane.process_info", map[string]any{"process_info": map[string]any{"foreground_processes": []any{
+		map[string]any{"pid": 1, "name": "zsh", "argv0": "-zsh"}, map[string]any{"pid": 2, "name": "vim", "argv0": "vim"}}}})
+	listSessions(t, n)
+	f.reset()
+	res, err := request(t, n, "panes.list", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res)
+	if s := string(b); !strings.Contains(s, `"foreground":"vim"`) || strings.Count(s, `"foreground"`) != 1 {
+		t.Fatalf("panes.list = %s", s)
+	}
+	if got := f.trace("pane.read"); len(got) != 0 {
+		t.Errorf("read a screen: %q", got)
 	}
 }

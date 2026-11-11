@@ -10,6 +10,7 @@
   "whiteboard": "Whiteboard",
   "see_images": "See the images",
   "see_context": "Refer to the content above.",
+  "see_forward": "Please look at the forwarded message above.",
   "edit_with_ask": "Edit the selected content above as asked: {ask}",
   "edit_plain": "Edit based on the selected content above."
 }

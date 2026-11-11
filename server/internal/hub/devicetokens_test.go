@@ -187,6 +187,7 @@ func call(t *testing.T, h http.Handler, method, path, token, body string) (int, 
 func TestDeviceTokens(t *testing.T) {
 	h := newTestHub(t)
 	h.store = &tokenStore{memStore: *newMemStore(), rows: map[string]db.DeviceToken{}, rev: map[string]bool{}}
+	h.builtinLooks = builtinPersonaFS() // the Milk Frog the watch fetches below
 	mux := h.routes()
 	master := h.cfg.Token
 
@@ -237,10 +238,14 @@ func TestDeviceTokens(t *testing.T) {
 	if code != 200 || len(list["tokens"].([]any)) != 2 {
 		t.Fatalf("%d %v", code, list)
 	}
-	for _, p := range []string{"/api/v1/ws", "/api/v1/auth/tokens", "/api/v1/machines/m/file"} {
+	for _, p := range []string{"/api/v1/ws", "/api/v1/auth/tokens", "/api/v1/machines/m/file", "/api/v1/personas/nwverse/persona.json"} {
 		if code, _ := call(t, mux, "GET", p, watchTok, ""); code != http.StatusForbidden {
 			t.Fatalf("watch GET %s: %d", p, code)
 		}
+	}
+	// The Milk Frog's art reaches the watch through the whole chain, auth and the package's own file check (#4869).
+	if code, pet := call(t, mux, "GET", "/api/v1/personas/nwverse/pet/pet.json", watchTok, ""); code != 200 || pet["clips"] == nil {
+		t.Fatalf("watch GET the frog's manifest: %d %v", code, pet)
 	}
 }
 
@@ -265,7 +270,21 @@ func TestAnswerRoleOnlyWhatTheWatchDoes(t *testing.T) {
 		{"POST", "/api/v1/inbox/x/draft", true},
 		{"POST", "/api/v1/inbox/x/reply", true},
 		{"POST", "/api/v1/inbox/x/suggestion", true}, // what it may do with it the manager checks
+		// The Milk Frog's art for the watch's row and face (WatchPetPack.fetch), and nothing else of any package.
+		{"GET", "/api/v1/personas/nwverse/pet/pet.json", true},
+		{"GET", "/api/v1/personas/nwverse/pet/face-needs_you.png", true},
+		{"GET", "/api/v1/personas/nwverse/pet/working.png", true},
 
+		{"GET", "/api/v1/personas", false},
+		{"GET", "/api/v1/personas/nwverse/persona.json", false},
+		{"GET", "/api/v1/personas/nwverse/pet/", false},
+		{"GET", "/api/v1/personas/nwverse/pet/..", false},
+		{"GET", "/api/v1/personas/nwverse/pet/.hidden.png", false},
+		{"GET", "/api/v1/personas/nwverse/pet/sub/x.png", false},
+		{"GET", "/api/v1/personas/nwverse/pet/notes.txt", false},
+		{"GET", "/api/v1/personas/u-0123abcd/pet/pet.json", false}, // an uploaded look
+		{"GET", "/api/v1/personas/other/pet/pet.json", false},
+		{"POST", "/api/v1/personas/nwverse/pet/pet.json", false},
 		{"GET", "/api/v1/ws", false},
 		{"GET", "/api/v1/machines/m/file", false},
 		{"GET", "/api/v1/machines/m/file/download", false},

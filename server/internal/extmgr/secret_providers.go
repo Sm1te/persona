@@ -67,8 +67,9 @@ type keptWords struct {
 }
 
 // ResolveSecret is reference's value for purpose, from the provider that claims its scheme. approvedBy is who approved
-// this use: "settings" (a reference saved in Settings), "rule" (an Always rule) or the approving device's id; it goes
-// into the record of the use with the reference and the purpose. Errors are *SecretError.
+// this use: "settings" (a reference saved in Settings), "rule" (an Always rule) or "device:<id>" (the device that
+// approved its hand-off card); it goes into the record of the use with the reference and the purpose. Errors are
+// *SecretError.
 func (h *Manager) ResolveSecret(ctx context.Context, reference string, purpose wire.SecretPurpose, approvedBy string) (string, error) {
 	if h.extensions == nil || !h.ready(ctx) {
 		return "", secretErr("provider_off", i18n.Args{"provider": schemeOf(reference)})

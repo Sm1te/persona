@@ -37,9 +37,6 @@ const (
 	// leader's task id), as sourceReview marks a reviewer.
 	sourceLeader = "leader"
 	sourceWorker = "worker"
-	// permBypass is the only permission a task that changes files may be planned with: it starts at once, with nobody
-	// there to answer a permission prompt.
-	permBypass = "bypassPermissions"
 	// leaderWorkersMost bounds the workers of one leader that are open at a time.
 	leaderWorkersMost = 8
 )

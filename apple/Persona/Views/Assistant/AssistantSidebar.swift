@@ -1168,7 +1168,7 @@ struct AssistantSidebar: View {
                     Text("Main Chat").font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if let main { mark(main) }
+                if let main { RowStateMark(state: main.state) }
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Sidebar.rowPadding)
@@ -1211,7 +1211,7 @@ struct AssistantSidebar: View {
         if AppStyle.current.usesBeautifulUI {
             // SidebarNav's primary items.
             BUISidebarRow(title, symbol: Theme.Icon.styled(symbol), action: run) {
-                if count > 0 { CountBadge(count: count, look: .solid(Theme.needsYou)) }
+                if count > 0 { CountBadge(count: count, look: .needs) }
             }
             .accessibilityIdentifier(id ?? "sidebar-" + title)
         } else {
@@ -1228,7 +1228,7 @@ struct AssistantSidebar: View {
                     .scaledFrame(width: Theme.Sidebar.glyphColumn)
                 Text(title).font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(1)
                 Spacer(minLength: 0)
-                if count > 0 { CountBadge(count: count, look: .solid(Theme.needsYou)) }
+                if count > 0 { CountBadge(count: count, look: .needs) }
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Sidebar.rowPadding)
@@ -1390,13 +1390,13 @@ struct AssistantSidebar: View {
                     ConversationMark(id: s.sessionID)
                 }
                 titleText(title, named: !isMain)
-                ConversationChannelMark(ids: s.channels) // the channel its latest message came in from
+                ConversationSourceMark(origin: s.origin, channels: s.channels) // the extension that opened it, or its latest message's channel
                 Spacer(minLength: Theme.Space.xs)
                 // A direction's work at this moment ("N working · N need you"), never a zero part (#4331).
                 if let counts {
                     Text(counts).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
                 }
-                mark(s)
+                RowStateMark(state: s.state)
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Sidebar.rowPadding)
@@ -1412,7 +1412,7 @@ struct AssistantSidebar: View {
         .buttonStyle(.plain)
         .tag(s.key)
         .macListRow(selected: selected, in: Rectangle(), drawsShade: false) // the row draws its own (`selectedFill`)
-        .accessibilityLabel([title, counts, isMain && s.title != title ? s.title : nil, stateWord(s), preview.isEmpty ? nil : preview]
+        .accessibilityLabel([title, counts, isMain && s.title != title ? s.title : nil, AutoConversationSource.external(s.origin)?.from, stateWord(s), preview.isEmpty ? nil : preview]
             .compactMap { $0 }.joined(separator: String(localized: ", ", comment: "Separator between parts of an accessibility label")))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(isMain ? "sidebar-main" : "sidebar-conversation")
@@ -1464,16 +1464,6 @@ struct AssistantSidebar: View {
             }
             .padding(Theme.Space.l)
             .frame(width: Theme.Size.box280, alignment: .leading)
-        }
-    }
-
-    /// Waiting for you, working or unread at the end of the row; nothing otherwise.
-    @ViewBuilder private func mark(_ s: Session) -> some View {
-        switch s.state {
-        case .working: ProgressView().controlSize(.mini)
-        case .needsYou: Circle().fill(Theme.needsYou).scaledFrame(width: Theme.Size.dot, height: Theme.Size.dot)
-        case .unread: Circle().fill(Theme.accent).scaledFrame(width: Theme.Size.dot, height: Theme.Size.dot)
-        default: EmptyView()
         }
     }
 

@@ -2,7 +2,6 @@
   "title": "セッションとターミナル",
   "short": "セッション",
   "sessions": "セッション",
-  "shells": "独立したシェル",
   "content": "セッションまたはターミナル",
   "back": "セッション一覧に戻る",
   "terminal_unavailable": "ターミナルを利用できません",

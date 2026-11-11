@@ -97,7 +97,7 @@ func TestRoomMeetingNeverInMeta(t *testing.T) {
 	e.PutRecording(recID, roomUploadJSON(t, body(4, `,"room":{"attendance":"participant"}`)), now)
 	r = recordingNow(t, e, recID)
 	putMeetingMinutes(t, e, recID, Minutes{Version: 1, Title: "Design review", When: "w"})
-	if trimmed, err := e.Store.trimRecording(r, now); err != nil || !trimmed {
+	if trimmed, _, err := e.Store.trimRecording(r, now); err != nil || !trimmed {
 		t.Fatalf("trim %v %v", trimmed, err)
 	}
 	noMeta("trim")
@@ -214,7 +214,7 @@ func TestPrivateMarkAndDetail(t *testing.T) {
 
 	// A trimmed recording takes the mark too.
 	putMeetingMinutes(t, e, recID, Minutes{Version: 1, Title: "x", When: "y"})
-	if _, err := e.Store.trimRecording(recordingNow(t, e, recID), now); err != nil {
+	if _, _, err := e.Store.trimRecording(recordingNow(t, e, recID), now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.SetPrivate(recID, false); err != nil {

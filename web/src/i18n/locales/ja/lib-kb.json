@@ -64,5 +64,6 @@
   "duration_hours": "{h} 時間 {m} 分",
   "duration_minutes": "{m} 分 {s} 秒",
   "duration_seconds": "{s} 秒",
-  "hit_minutes": "議事録"
+  "hit_minutes": "議事録",
+  "hit_recap": "1日のまとめ"
 }

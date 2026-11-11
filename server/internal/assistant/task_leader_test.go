@@ -206,8 +206,6 @@ func TestTaskLeaderTaskPlanCallEnforcement(t *testing.T) {
 	refused("a leader taking another todo", call("s1", workerArgs(map[string]any{"todo_id": other.ID})), "todo_id")
 	refused("a leader making a leader", call("s1", workerArgs(map[string]any{"role": "leader"})), "role")
 	refused("a leader attaching files", call("s1", workerArgs(map[string]any{"attachments": []string{"/tmp/a.png"}})), "attachments")
-	refused("a writable worker with no permission", call("s1", workerArgs(map[string]any{"permission": ""})), "bypassPermissions")
-	refused("a writable worker with another permission", call("s1", workerArgs(map[string]any{"permission": "acceptEdits"})), "bypassPermissions")
 	if got := len(todosOpenedBy(s, "box/s1")); got != 0 {
 		t.Fatalf("refused calls opened %d todos", got)
 	}
@@ -334,9 +332,9 @@ func TestLeaderIdentityIsMachineAndSession(t *testing.T) {
 	}
 }
 
-// The writable task's permission is explicit, from any caller: refused before anything is planned, readably; read-only
-// tasks are not affected.
-func TestWritableTaskPlanNeedsExplicitBypassPermissions(t *testing.T) {
+// A writable task needs no explicit permission: without one it takes the usual default, and any mode is accepted. A
+// read-only task is unaffected.
+func TestWritableTaskPlanNeedsNoExplicitPermission(t *testing.T) {
 	s, f := newQuietService(t)
 	f.known["lead1"] = true
 	f.setSessions("server", proto.Session{SessionID: "conv1", MachineID: "server", Assistant: true, Status: proto.StatusIdle},
@@ -353,34 +351,41 @@ func TestWritableTaskPlanNeedsExplicitBypassPermissions(t *testing.T) {
 		return s.toolTaskPlan(ctx, self, raw)
 	}
 	for _, self := range []string{"conv1", "lead1"} {
-		for _, permission := range []string{"", "default", "acceptEdits", "auto", "plan"} {
-			_, err := plan(self, false, permission)
-			if err == nil || !strings.Contains(err.Error(), `permission must be "bypassPermissions"`) ||
-				!strings.Contains(err.Error(), "Nothing was planned") {
+		for _, permission := range []string{"", "default", "acceptEdits", "auto", "plan", "bypassPermissions"} {
+			if _, err := plan(self, false, permission); err != nil {
 				t.Fatalf("%s, permission %q: %v", self, permission, err)
 			}
-		}
-		if _, err := plan(self, false, "bypassPermissions"); err != nil {
-			t.Fatalf("%s, bypassPermissions: %v", self, err)
 		}
 		if _, err := plan(self, true, ""); err != nil {
 			t.Fatalf("%s, read-only: %v", self, err)
 		}
 	}
-	// Only the accepted plans were saved: a refusal leaves no plan, card or todo.
-	if got := len(s.tasks.plans); got != 4 {
+	if got := len(s.tasks.plans); got != 14 {
 		t.Fatalf("plans saved: %d", got)
 	}
 }
 
-// role leader is the supervising conversations' to give; a side conversation or a bad role is refused with the rest.
-func TestTaskPlanRoleIsForSupervisors(t *testing.T) {
+// Any conversation may give role leader: the conversation that plans it supervises its task. A made-up role is refused
+// with the rest, and a card edit still cannot change the role.
+func TestTaskPlanRoleFromAnyConversation(t *testing.T) {
 	s, f := newQuietService(t)
 	f.setSessions("server", proto.Session{SessionID: "conv1", MachineID: "server", Assistant: true, Status: proto.StatusIdle},
 		proto.Session{SessionID: "conv2", MachineID: "server", Assistant: true, Status: proto.StatusIdle})
 	ctx := context.Background()
-	if _, err := s.toolTaskPlan(ctx, "conv2", leaderPlanArgs("leader")); err == nil || !strings.Contains(err.Error(), "main conversation or a leader conversation") {
-		t.Fatalf("a side conversation made a leader: %v", err)
+	res, err := s.toolTaskPlan(ctx, "conv2", leaderPlanArgs("leader"))
+	if err != nil {
+		t.Fatalf("a side conversation's leader: %v", err)
+	}
+	if _, err := s.startPlan(ctx, planIDRe.FindString(res), nil, false); err != nil {
+		t.Fatalf("%s: %v", res, err)
+	}
+	waitFor(t, "the leader's link", func() bool { return len(onlyTodo(s).Agents) == 1 })
+	todo := onlyTodo(s)
+	if v := todo.Supervision; v == nil || v.Supervisor != "conv2" || todo.Origin != "conv2" {
+		t.Fatalf("the side conversation supervises its own leader: %+v (origin %q)", todo.Supervision, todo.Origin)
+	}
+	if a := todo.Agents[0]; a.Source != sourceLeader || a.SessionID != "s1" || a.MachineID != "box" {
+		t.Fatalf("the leader's link: %+v", a)
 	}
 	if _, err := s.toolTaskPlan(ctx, "conv1", leaderPlanArgs("boss")); err == nil || !strings.Contains(err.Error(), `"boss" is not one`) {
 		t.Fatalf("a made-up role: %v", err)
@@ -646,7 +651,7 @@ func TestTaskLeaderListWaitsForItsLink(t *testing.T) {
 
 // The messages the leader and its workers are given.
 func TestTaskLeaderMessages(t *testing.T) {
-	for _, want := range []string{"you are the leader of this task", "task_plan", "bypassPermissions", "Persona · supervision", "task_review", "stop and ask the user"} {
+	for _, want := range []string{"you are the leader of this task", "task_plan", "default permission mode", "Persona · supervision", "task_review", "stop and ask the user"} {
 		if !strings.Contains(prompts.RenderTaskLeader(), want) {
 			t.Errorf("the leader's brief lacks %q", want)
 		}
@@ -1187,7 +1192,7 @@ func TestTaskLeaderNeverLandsOnWorkTrustMachine(t *testing.T) {
 	s, f := newQuietService(t)
 	ctx := context.Background()
 	f.hello.Assistant.WorkMachines = []string{"box"}
-	_, _, err := s.startTaskAgent(ctx, &PlanTask{Title: "L", Prompt: "p", Machine: "box", Cwd: "/code/app", Role: roleLeader, Permission: permBypass}, true)
+	_, _, err := s.startTaskAgent(ctx, &PlanTask{Title: "L", Prompt: "p", Machine: "box", Cwd: "/code/app", Role: roleLeader, Permission: "bypassPermissions"}, true)
 	if err == nil || !strings.Contains(err.Error(), "work-trust computer") {
 		t.Fatalf("starting a task leader on a work-trust computer: %v", err)
 	}
@@ -1237,8 +1242,8 @@ func TestHealthDetourSkipsWorkTrustForTaskLeaders(t *testing.T) {
 	}
 }
 
-// A plan saved before the permission rule does not get past it on a retry or a remedy retry either.
-func TestRetryAlsoChecksWritablePermission(t *testing.T) {
+// A plan saved without a permission retries as it is: no permission is required of a writable task.
+func TestRetryNeedsNoPermission(t *testing.T) {
 	s, f := newQuietService(t)
 	ctx := context.Background()
 	res, err := s.toolTaskPlan(ctx, "conv1", json.RawMessage(`{"tasks":[{"title":"Fix","permission":"bypassPermissions","prompt":"Fix it","machine":"box","cwd":"/code/app"}]}`))
@@ -1256,7 +1261,7 @@ func TestRetryAlsoChecksWritablePermission(t *testing.T) {
 	if err := s.failTodo(ctx, todo, "did not start"); err != nil {
 		t.Fatal(err)
 	}
-	// The plan as it was saved before the rule: a writable task with no permission.
+	// The plan as an older one saved it: a writable task with no permission.
 	p, err := s.loadPlan(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -1265,25 +1270,12 @@ func TestRetryAlsoChecksWritablePermission(t *testing.T) {
 	if err := s.savePlan(ctx, p); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.retryTask(ctx, todo); err == nil || !strings.Contains(err.Error(), "bypassPermissions") {
+	if _, err := s.retryTask(ctx, todo); err != nil {
 		t.Fatalf("retrying a saved plan with no permission: %v", err)
 	}
-	f.mu.Lock()
-	starts := len(f.starts)
-	f.mu.Unlock()
-	if starts != 1 { // only the first start above
-		t.Fatalf("a retry started %d agents", starts)
-	}
-	if cur := todoNow(s, todo); cur.DoneAt == nil {
-		t.Fatalf("the failed todo was reopened before the check: %+v", cur)
-	}
-	// And with the permission restored the retry works, so the test does not pass because the task is unretryable.
-	p.Tasks[0].Permission = "bypassPermissions"
-	if err := s.savePlan(ctx, p); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.retryTask(ctx, todo); err != nil {
-		t.Fatalf("the retry once it has the permission: %v", err)
+	waitFor(t, "the retry's start", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.starts) == 2 })
+	if cur := todoNow(s, todo); cur.DoneAt != nil {
+		t.Fatalf("the failed todo was not reopened: %+v", cur)
 	}
 }
 
@@ -1362,9 +1354,8 @@ func mustJSON(v any) json.RawMessage {
 	return raw
 }
 
-// The permission rule is held on every start of a plan task (runPlanTaskStart), so a retry, a remedy retry or a recovered
-// start of a saved plan cannot get past it: nothing is started and the to-do fails with the reason.
-func TestPlanTaskStartHoldsTheWritablePermissionRule(t *testing.T) {
+// Every start of a plan task (runPlanTaskStart) needs no permission: without one the task takes the default mode.
+func TestPlanTaskStartNeedsNoPermission(t *testing.T) {
 	s, f := newQuietService(t)
 	ctx := context.Background()
 	res, err := s.toolTaskPlan(ctx, "conv1", json.RawMessage(`{"tasks":[{"title":"Fix","permission":"bypassPermissions","prompt":"Fix it","machine":"box","cwd":"/code/app"}]}`))
@@ -1382,16 +1373,11 @@ func TestPlanTaskStartHoldsTheWritablePermissionRule(t *testing.T) {
 	for _, perm := range []string{"", "default", "acceptEdits"} {
 		task := started.Tasks[0]
 		task.Permission = perm
+		want := len(f.starts) + 1
 		s.startPlanTask(id, "conv1", 0, task, true)
-		f.mu.Lock()
-		starts := len(f.starts)
-		f.mu.Unlock()
-		if starts != 1 {
-			t.Fatalf("permission %q: a start went out (%d starts)", perm, starts)
-		}
-		cur := todoNow(s, todo)
-		if cur.DoneAt == nil || !strings.Contains(cur.StartError, "bypassPermissions") {
-			t.Fatalf("permission %q: the to-do after the refused start: %+v", perm, cur)
+		waitFor(t, "the start with permission "+perm, func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.starts) == want })
+		if cur := todoNow(s, todo); cur.StartError != "" {
+			t.Fatalf("permission %q: the to-do after the start: %+v", perm, cur)
 		}
 	}
 }

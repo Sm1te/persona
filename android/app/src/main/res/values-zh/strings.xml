@@ -28,6 +28,12 @@
     <string name="app_connection_certificate">hub 的证书变了</string>
     <string name="app_connection_revoked">配对已失效</string>
     <string name="app_pairing_unreadable">现在读不出配对信息。原来的数据还在，没有删。</string>
+    <string name="app_password_login_in_progress">已有密码登录正在进行</string>
+    <string name="app_password_login_unavailable">无法打开密码登录，请确认 HTTPS 地址和证书有效</string>
+    <string name="app_password_login_disabled">管理员尚未开启密码登录，请使用扫码配对</string>
+    <string name="app_password_login_expired">登录授权已失效，请重新登录</string>
+    <string name="app_password_login_certificate">无法确认 hub 证书</string>
+    <string name="app_password_login_invalid_address">请输入有效的 HTTPS hub 地址，例如 https://hub.example.com</string>
     <string name="app_retry">重试</string>
     <string name="app_local_network_title">允许访问本地网络</string>
     <string name="app_local_network_denied">本地网络权限未开启。请到应用权限里允许访问本地网络，返回后继续配对。</string>

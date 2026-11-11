@@ -114,6 +114,9 @@ func (d *boardDevs) List() []devices.Summary {
 	}
 	return out
 }
+func (d *boardDevs) Summary(id string) (devices.Summary, bool) {
+	return summaryIn(d.List(), d.Canonical(id))
+}
 func (d *boardDevs) MachineResources(string) (*proto.Machine, *proto.MetricSample, *bool) {
 	return nil, nil, nil
 }

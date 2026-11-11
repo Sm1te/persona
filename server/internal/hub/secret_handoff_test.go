@@ -30,6 +30,7 @@ type handoffManager struct {
 	raw     []string // the audits' params as they came
 	fail    error    // what an audit is answered, when set (nothing recorded)
 	tries   int      // the audits asked
+	sends   []assistantwire.SendParams
 }
 
 func (m *handoffManager) handle(_ context.Context, method string, params json.RawMessage) (any, error) {
@@ -44,6 +45,15 @@ func (m *handoffManager) handle(_ context.Context, method string, params json.Ra
 		m.mu.Unlock()
 		return assistantwire.HTTPResponse{Status: http.StatusOK, Header: map[string][]string{"Content-Type": {"application/json"}},
 			Body: []byte(`{"ok":true}`)}, nil
+	case assistantwire.MethodSendParams:
+		var p assistantwire.SendParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		m.mu.Lock()
+		m.sends = append(m.sends, p)
+		m.mu.Unlock()
+		return map[string]any{"params": p.Params}, nil
 	case extwire.MethodHubCall:
 		var c extwire.HubCall
 		if err := json.Unmarshal(params, &c); err != nil {
@@ -76,6 +86,58 @@ func (m *handoffManager) took() ([]assistantwire.HTTPRequest, []extwire.Audit, [
 	return r, a, raw
 }
 
+// handoffBusHub is a hub with handoffManager on the bus as the assistant.
+func handoffBusHub(t *testing.T) (*Hub, *handoffManager) {
+	t.Helper()
+	h := newTestHub(t)
+	h.store = &tokenStore{memStore: *newMemStore(), rows: map[string]db.DeviceToken{}, rev: map[string]bool{}}
+	if h.busStore() == nil {
+		h.bus.idents = &memIdents{}
+	}
+	busMux := http.NewServeMux()
+	h.busRoutes(busMux)
+	busSrv := httptest.NewServer(busMux)
+	t.Cleanup(busSrv.Close)
+	m := &handoffManager{}
+	raw := dialRawBusWith(t, busSrv, busToken(t, h, assistantwire.AssistantID, "assistant"), m.handle)
+	if err := raw.call("manager.hello", map[string]any{"id": assistantwire.AssistantID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	return h, m
+}
+
+// A message for an assistant conversation is marked as a person's own (SendParams.Human) only when the hub's auth
+// found a full device's credential: never an extension's, an answer-only device's, the hub's own token, or a client's
+// word for it.
+func TestAssistantSendsSayWhetherAPersonSentThem(t *testing.T) {
+	h, m := handoffBusHub(t)
+	for _, c := range []struct {
+		name  string
+		who   *principal
+		human bool
+	}{
+		{"a full device", &principal{ID: "d1", Name: "iPhone", Role: roleFull}, true},
+		{"an extension's token", &principal{ID: "x1", Role: roleExtension, Extension: "helper"}, false},
+		{"an answer-only device", &principal{ID: "w1", Role: roleAnswer}, false},
+		{"the hub's own token", &principal{Role: roleFull}, false},
+		{"no credential", nil, false},
+	} {
+		ctx := context.Background()
+		if c.who != nil {
+			ctx = context.WithValue(ctx, principalKey{}, *c.who)
+		}
+		if _, err := h.asstOf("").SendParams(ctx, "box", "s1", map[string]any{"client_msg_id": "c1", "human": true}); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		m.mu.Lock()
+		got := m.sends[len(m.sends)-1]
+		m.mu.Unlock()
+		if got.Human != c.human {
+			t.Fatalf("%s: human %v, want %v", c.name, got.Human, c.human)
+		}
+	}
+}
+
 // handoffCard is a hand-off card of two providers' values (one named twice); its items' titles end in a marker that no
 // record may carry.
 func handoffCard(id, kind string) proto.Interaction {
@@ -95,20 +157,7 @@ func handoffCard(id, kind string) proto.Interaction {
 // approve reaches the manager outside the headers, on a hand-off card and on a card the hub does not hold, and on no
 // other card.
 func TestOnlyADeviceThatShowsTheHandoffCardApprovesIt(t *testing.T) {
-	h := newTestHub(t)
-	h.store = &tokenStore{memStore: *newMemStore(), rows: map[string]db.DeviceToken{}, rev: map[string]bool{}}
-	if h.busStore() == nil {
-		h.bus.idents = &memIdents{}
-	}
-	busMux := http.NewServeMux()
-	h.busRoutes(busMux)
-	busSrv := httptest.NewServer(busMux)
-	t.Cleanup(busSrv.Close)
-	m := &handoffManager{}
-	raw := dialRawBusWith(t, busSrv, busToken(t, h, assistantwire.AssistantID, "assistant"), m.handle)
-	if err := raw.call("manager.hello", map[string]any{"id": assistantwire.AssistantID}, nil); err != nil {
-		t.Fatal(err)
-	}
+	h, m := handoffBusHub(t)
 	mux := h.routes()
 	master := h.cfg.Token
 	_, phone := call(t, mux, "POST", "/api/v1/auth/tokens", master, `{"name":"iPhone","kind":"phone"}`)

@@ -1,56 +1,73 @@
 import XCTest
 
-/// The + panel's grid picks the photo under the finger (#3689, fixed with #3702). A thumbnail is drawn filling its square
-/// cell (`scaledToFill`) and clipped to it; a wide or tall picture's thumbnail used to keep taking taps past its cell, so
-/// the photo to the right or below took a tap meant for its neighbour. `AttachGridTests` taps each of the first cells'
-/// rings; this taps all over every cell on screen and checks the picks' numbers. Demo Mode (Demo.json) with pictures of
-/// mixed shapes in the simulator's library (`xcrun simctl addmedia`): wide desktop screenshots and panoramas, tall phone
-/// screenshots, squares. A library of squares alone never shows it. The Photos prompt, if it comes, is allowed.
+/// The + panel's grid takes a tap on the cell under the finger (#3689, fixed with #3702): its ring picks it, the rest of
+/// it opens that photo in the editor (#4963). A thumbnail is drawn filling its square cell (`scaledToFill`) and clipped to
+/// it; a wide or tall picture's thumbnail used to keep taking taps past its cell, so the photo to the right or below took a
+/// tap meant for its neighbour. `AttachGridTests` taps each of the first cells' rings; this taps all over the cells on
+/// screen and checks the picks' numbers, a photo opened being picked with the editor's Select. Demo Mode (Demo.json) with
+/// pictures of mixed shapes in the simulator's library (`xcrun simctl addmedia`): wide desktop screenshots and panoramas,
+/// tall phone screenshots, squares. A library of squares alone never shows it. The Photos prompt, if it comes, is allowed.
 /// iPhone only: the iPad keeps the + menu. PERSONA_SHOTS saves the screenshots there too.
 final class AttachGridTapTests: XCTestCase {
     private let claude = "macbook/a1f3c2d4-0000-4000-8000-000000000006"
-    /// Where in a cell the map test taps, as fractions of its side: the middle and near each corner.
+    /// Where in a cell the map test taps, as fractions of its side: on the ring (the top right corner), and the middle and
+    /// near the other corners, which open the photo.
+    private static let ring = CGVector(dx: 0.88, dy: 0.12)
     private static let spots: [CGVector] = [
-        CGVector(dx: 0.5, dy: 0.5), CGVector(dx: 0.12, dy: 0.12), CGVector(dx: 0.88, dy: 0.12),
-        CGVector(dx: 0.12, dy: 0.88), CGVector(dx: 0.88, dy: 0.88),
+        CGVector(dx: 0.5, dy: 0.5), CGVector(dx: 0.12, dy: 0.12), CGVector(dx: 0.12, dy: 0.88), CGVector(dx: 0.88, dy: 0.88),
     ]
+    /// The cells the map test goes through (each spot opens the editor and picks with Select: a few seconds a spot).
+    private static let mapped = 6
     private static var allowing: NSPredicate {
         NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label IN %@", "Allow Full", "允许完全", ["Allow", "允许"])
     }
 
-    /// Every spot of every cell on screen: a tap there picks that cell and only it, and a second tap there unpicks it.
-    /// Runs on to the end and lists every tap that picked another cell.
-    @MainActor func testATapPicksThePhotoUnderTheFinger() throws {
+    /// A cell's ring picks that cell and only it, and a second tap unpicks it; a tap anywhere else on it opens that photo
+    /// (the editor's Select picks the one it opened, and only it). Runs on to the end and lists every tap that went to
+    /// another cell.
+    @MainActor func testTheRingPicksAndThePictureOpensItsOwnPhoto() throws {
         guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the iPad keeps the + menu") }
         let app = try openPanel(scheme: "light")
         let cells = visibleCells(app)
         XCTAssertGreaterThanOrEqual(cells.count, 6, "too few cells on screen to say anything:\n\(app.debugDescription)")
+        let canvas = app.descendants(matching: .any)["image-edit-canvas"].firstMatch
         var wrong: [String] = []
-        for (i, cell) in cells.enumerated() {
+        for (i, cell) in cells.prefix(Self.mapped).enumerated() {
+            let ring = at(app, cell, Self.ring)
+            ring.tap()
+            let picked = pickedCells(app, cells)
+            if picked != [i] { wrong.append("cell \(i + 1)'s ring picked \(picked.map { $0 < 0 ? "?" : "\($0 + 1)" })") }
+            ring.tap() // again: whatever it picked goes
+            if !pickedCells(app, cells).isEmpty {
+                wrong.append("cell \(i + 1): a second tap on its ring left \(pickedCells(app, cells).map { $0 + 1 }) picked")
+                clear(app, cells)
+            }
             for spot in Self.spots {
-                let point = at(app, cell, spot)
-                point.tap()
+                at(app, cell, spot).tap()
+                guard canvas.waitForExistence(timeout: 10) else {
+                    wrong.append("cell \(i + 1) at (\(spot.dx), \(spot.dy)) opened no editor; picked \(pickedCells(app, cells).map { $0 + 1 })")
+                    clear(app, cells)
+                    continue
+                }
+                app.buttons["image-edit-done"].tap() // Select: picks the photo it opened
+                _ = canvas.waitForNonExistence(timeout: 10)
                 let picked = pickedCells(app, cells)
                 if picked != [i] {
-                    wrong.append("cell \(i + 1) at (\(spot.dx), \(spot.dy)) picked \(picked.map { $0 < 0 ? "?" : "\($0 + 1)" })")
+                    wrong.append("cell \(i + 1) at (\(spot.dx), \(spot.dy)) opened \(picked.map { $0 < 0 ? "?" : "\($0 + 1)" })")
                 }
-                point.tap() // the same spot again: whatever it picked goes
-                if !pickedCells(app, cells).isEmpty {
-                    wrong.append("cell \(i + 1) at (\(spot.dx), \(spot.dy)): a second tap left \(pickedCells(app, cells).map { $0 + 1 }) picked")
-                    clear(app, cells)
-                }
+                clear(app, cells)
             }
         }
-        let report = XCTAttachment(string: wrong.isEmpty ? "every tap picked its own cell" : wrong.joined(separator: "\n"))
+        let report = XCTAttachment(string: wrong.isEmpty ? "every tap went to its own cell" : wrong.joined(separator: "\n"))
         report.name = "attach-grid-tap-map"
         report.lifetime = .keepAlways
         add(report)
-        XCTAssertTrue(wrong.isEmpty, "\(wrong.count) of \(cells.count * Self.spots.count) taps picked another cell:\n" + wrong.joined(separator: "\n"))
+        XCTAssertTrue(wrong.isEmpty, "\(wrong.count) of \(min(cells.count, Self.mapped) * (Self.spots.count + 1)) taps went to another cell:\n" + wrong.joined(separator: "\n"))
         app.buttons["attach-close"].firstMatch.tap()
     }
 
-    /// Picks number in the order of the taps; a picked photo tapped again goes, and the ones after it move up. Light
-    /// and dark, with a screenshot of each.
+    /// Picks number in the order of the taps on their rings; a picked photo's ring tapped again unpicks it, and the ones
+    /// after it move up. Light and dark, with a screenshot of each.
     @MainActor func testPicksAreNumberedInTheOrderOfTheTaps() throws {
         guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the iPad keeps the + menu") }
         for scheme in ["light", "dark"] {
@@ -60,14 +77,14 @@ final class AttachGridTapTests: XCTestCase {
             // The first photo, then the one after it and one further down: next to wide and tall pictures in the library.
             let order = [1, 0, 4]
             for (n, i) in order.enumerated() {
-                at(app, cells[i], CGVector(dx: 0.5, dy: 0.5)).tap()
+                at(app, cells[i], Self.ring).tap()
                 XCTAssertEqual(number(app, cells[i]), n + 1, "photo \(i + 1), tapped in turn \(n + 1), is numbered \(n + 1) (\(scheme))")
             }
             XCTAssertEqual(pickedCells(app, cells), order.sorted(), "only the photos tapped are picked (\(scheme))")
             settle()
             shot(app, "attach-grid-picked-\(scheme)")
 
-            at(app, cells[0], CGVector(dx: 0.5, dy: 0.5)).tap()
+            at(app, cells[0], Self.ring).tap()
             XCTAssertNil(number(app, cells[0]), "the first photo tapped again is no longer picked (\(scheme))")
             XCTAssertEqual(number(app, cells[1]), 1, "the photo picked before it keeps 1 (\(scheme))")
             XCTAssertEqual(number(app, cells[4]), 2, "the photo picked after it moves up to 2 (\(scheme))")
@@ -154,12 +171,14 @@ final class AttachGridTapTests: XCTestCase {
         return Int(value.filter { $0.isASCII && $0.isNumber }) // the one number in it, in any language
     }
 
-    /// Unpicks whatever is picked, tapping the middle of each (`tap()` lands near the top-left corner on iOS 27.0).
-    /// Best effort where taps go astray: a few rounds at most.
+    /// Unpicks whatever is picked, tapping the ring of each (`tap()` lands near the top-left corner on iOS 27.0, which
+    /// opens the photo now). Closes an editor left open first. Best effort where taps go astray: a few rounds at most.
     @MainActor private func clear(_ app: XCUIApplication, _ cells: [CGRect]) {
+        let cancel = app.buttons["image-edit-cancel"].firstMatch
+        if cancel.exists { cancel.tap(); _ = cancel.waitForNonExistence(timeout: 5) }
         for _ in 0..<8 {
             guard let frame = pickedFrames(app).first else { return }
-            at(app, frame, CGVector(dx: 0.5, dy: 0.5)).tap()
+            at(app, frame, Self.ring).tap()
         }
     }
 

@@ -24,6 +24,7 @@ import { AttachmentTray } from "../../ui/AttachmentTray";
 import { cx, EASE, Spinner, toast } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { ContextChips } from "../link/ContextChips";
+import { ForwardBars } from "./ForwardCard";
 import { QuoteBars } from "./Quote";
 import { MentionMenu, useMentionRows, type MentionRow, type MentionSource } from "./MentionMenu";
 import { HistorySearch } from "./HistorySearch";
@@ -755,6 +756,7 @@ export const Composer = memo(function Composer({
           </div>
         )}
         <ContextChips draftKey={draftKey} />
+        <ForwardBars draftKey={draftKey} onRemove={() => input.current?.focus()} />
         {quote && (
           <QuoteBars
             draftKey={draftKey}

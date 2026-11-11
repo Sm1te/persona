@@ -58,21 +58,33 @@ final class ElementPicker {
     static let handler = "personaPreviewPick"
     private weak var view: WKWebView?
     private var onPick: ((PickedElement) -> Void)?
+    /// Each start and stop moves it on: a start that waited for the script and was stopped (or started again) meanwhile
+    /// does nothing.
+    private var turn = 0
 
     /// The page's own world: the pick function reads what a dev build left on the element (React's fibers, Vue's and
     /// Svelte's markers), which an isolated world cannot see.
-    func start(in v: WKWebView, color: String, onPick: @escaping (PickedElement) -> Void) {
+    func start(in v: WKWebView, color: String, onPick: @escaping (PickedElement) -> Void) async {
         stop()
+        let mine = turn
+        let pick = await Self.pickFunction.value
+        guard mine == turn else { return }
+        install(in: v, script: Self.script(color: color, pick: pick), onPick: onPick)
+    }
+
+    /// The handler, then the script. The script's result is `undefined`, which the async `evaluateJavaScript` does not take.
+    private func install(in v: WKWebView, script: String, onPick: @escaping (PickedElement) -> Void) {
         self.onPick = onPick
         let c = v.configuration.userContentController
         c.removeScriptMessageHandler(forName: Self.handler)
         c.add(WeakPickHandler(self), name: Self.handler)
         view = v
-        v.evaluateJavaScript(Self.script(color: color))
+        v.evaluateJavaScript(script)
     }
 
     /// Ends picking: the page's listeners and outline go, and the handler.
     func stop() {
+        turn += 1
         guard let v = view else { return }
         v.evaluateJavaScript("window.__personaPick && window.__personaPick.off()")
         v.configuration.userContentController.removeScriptMessageHandler(forName: Self.handler)
@@ -87,16 +99,20 @@ final class ElementPicker {
         onPick?(el)
     }
 
-    private static let pickFunction: String = Bundle.main.url(forResource: "preview_pick", withExtension: "js")
-        .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "function () { return null; }"
+    /// The bundled pick function, read off the main actor (docs/apple/performance.md P1). The link card asks for it as it
+    /// appears (`PreviewPage`), so it has been read by the time Pick is tapped.
+    static let pickFunction = Task.detached(priority: .utility) { () -> String in
+        let file = Bundle.main.url(forResource: "preview_pick", withExtension: "js")
+        return file.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "function () { return null; }" // perf-ok: in its own Task.detached
+    }
 
     /// A tap (a touch that did not scroll) picks the element under it, a pointer's click too; the page's own handlers
     /// never see either. The picked element keeps an outline and a label with its size until picking ends; another tap
     /// picks another.
-    static func script(color: String) -> String {
+    static func script(color: String, pick: String) -> String {
         #"""
         (function () {
-          const pick = (\#(pickFunction));
+          const pick = (\#(pick));
           if (window.__personaPick) window.__personaPick.off();
           const color = \#(jsString(color));
           const box = document.createElement("div");
@@ -274,6 +290,8 @@ struct PreviewPage: View {
                 startPicking()
             }
         }
+        // The pick script is read off the main actor now, so it is there when Pick is tapped.
+        .task { _ = await ElementPicker.pickFunction.value }
         .onDisappear { picker.stop() }
     }
 
@@ -350,10 +368,14 @@ struct PreviewPage: View {
                 if whole { image = try await PageShot.whole(v) } else { image = try await PageShot.visible(v) }
                 attach(image)
             } catch {
-                Haptics.error()
-                model.toast = Toast(String(localized: "Couldn't take the screenshot. Try again."), style: .error)
+                shotFailed()
             }
         }
+    }
+
+    private func shotFailed() {
+        Haptics.error()
+        model.toast = Toast(String(localized: "Couldn't take the screenshot. Try again."), style: .error)
     }
 
     /// The screenshot goes to the message box, like a photo attached there.
@@ -387,9 +409,12 @@ struct PreviewPage: View {
         picked = nil
         note = ""
         picking = true
-        picker.start(in: v, color: ElementPicker.css(Theme.accent, in: v)) { el in
-            picked = el
-            writing = true
+        let color = ElementPicker.css(Theme.accent, in: v)
+        Task {
+            await picker.start(in: v, color: color) { el in
+                picked = el
+                writing = true
+            }
         }
     }
 

@@ -1,3 +1,4 @@
 {
-  "terminal": "ターミナル"
+  "terminal": "ターミナル",
+  "finished": "終了：{title}"
 }

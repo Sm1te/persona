@@ -16,6 +16,7 @@ import (
 	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/transcript"
 )
 
@@ -107,7 +108,7 @@ func (s *Service) tellLive(st FleetState) {
 	if same {
 		return
 	}
-	if s.hub.Tell(assistantwire.EventFleetLive, json.RawMessage(b)) == nil {
+	if s.hub.Tell(assistantwire.EventFleetLive, rpc.Marshaled(b)) == nil { // json.Marshal's bytes: into the line as they are
 		l.mu.Lock()
 		l.sent = string(b)
 		l.mu.Unlock()

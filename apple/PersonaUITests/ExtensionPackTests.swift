@@ -76,11 +76,11 @@ final class ExtensionPackTests: XCTestCase {
 
             // The market page's Uninstall: the confirmation names the members (#4072).
             app = try launch(["-openMarketExtension", "\(market)/example-pack"] + look.args)
-            let remove = app.buttons["market-uninstall"]
+            let remove = app.buttons["market-uninstall"].firstMatch
             XCTAssertTrue(remove.waitForExistence(timeout: 15))
             reveal(remove, in: app)
             remove.tap()
-            let withMembers = app.buttons["market-uninstall-members"]
+            let withMembers = app.buttons["market-uninstall-members"].firstMatch // a dialog lists its buttons twice
             XCTAssertTrue(withMembers.waitForExistence(timeout: 5))
             if check { XCTAssertTrue(labeled(app, "Example Notes").label.contains("example-mail")) }
             shot(app, "confirm", look.name)
@@ -97,7 +97,7 @@ final class ExtensionPackTests: XCTestCase {
                 }
             }
             shot(app, "partial", look.name)
-            let retry = app.buttons["extension-operation-retry"]
+            let retry = app.buttons["extension-operation-retry"].firstMatch
             if !retry.isHittable {
                 reveal(retry, in: app)
                 shot(app, "partial-retry", look.name)
@@ -105,11 +105,11 @@ final class ExtensionPackTests: XCTestCase {
 
             // A pack's install preview names its members: one installed, one installed with it (#4122).
             app = try launch(["-openMarketExtension", "\(market)/example-suite"] + look.args)
-            let install = app.buttons["market-install"]
+            let install = app.buttons["market-install"].firstMatch
             XCTAssertTrue(install.waitForExistence(timeout: 15))
             reveal(install, in: app)
             install.tap()
-            XCTAssertTrue(app.buttons["market-confirm"].waitForExistence(timeout: 15), "the preview")
+            XCTAssertTrue(app.buttons["market-confirm"].firstMatch.waitForExistence(timeout: 15), "the preview")
             let calendar = labeled(app, "example-calendar")
             XCTAssertTrue(calendar.waitForExistence(timeout: 5))
             reveal(calendar, in: app)

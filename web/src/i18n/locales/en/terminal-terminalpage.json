@@ -9,5 +9,22 @@
   "no_panes": "No panes",
   "space_header": "Space {name}",
   "new_in_space": "New terminal in “{name}”",
-  "tab_header": "Tab {name}"
+  "tab_header": "Tab {name}",
+  "none_online": "No computer is online.",
+  "close_finished": "Close finished terminals",
+  "close_finished_title_one": "Close {count} finished terminal?",
+  "close_finished_title_other": "Close {count} finished terminals?",
+  "close_finished_detail": "Agents that have stopped left these terminals. Closing them ends the shells in them; the Agents' conversations stay, and Resume opens a new terminal.",
+  "close_finished_kept_one": "{count} more stays open because a program is running in it.",
+  "close_finished_kept_other": "{count} more stay open because a program is running in them.",
+  "close_finished_confirm": "Close terminals",
+  "close_finished_failed": "Couldn't close the finished terminals. {error}",
+  "closed_finished_one": "Closed {count} terminal",
+  "closed_finished_other": "Closed {count} terminals",
+  "finished_none": "No finished terminals to close",
+  "terminals": "Terminals",
+  "view_label": "Sessions or terminals",
+  "back_terminals": "Back to terminals",
+  "pick_terminal": "Open a terminal",
+  "pick_terminal_detail": "Choose a terminal from the list, or open a new one with + beside a space."
 }

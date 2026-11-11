@@ -2,7 +2,6 @@
   "title": "Sessions and Terminal",
   "short": "Sessions",
   "sessions": "Sessions",
-  "shells": "Standalone shells",
   "content": "Session or terminal",
   "back": "Back to sessions",
   "terminal_unavailable": "Terminal unavailable",

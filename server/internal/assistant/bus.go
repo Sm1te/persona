@@ -131,7 +131,8 @@ func NewBusHub(o BusOptions) *BusHub {
 			return map[string]any{"id": id, "host": host, "os": runtime.GOOS, "arch": runtime.GOARCH,
 				"deploy": o.Deploy, "version": o.Version, "capabilities": []string{assistantwire.CapabilityConfigOwn, assistantwire.CapabilityAgentSessionArchives,
 					assistantwire.CapabilityAgentSessionArchiveClose, assistantwire.CapabilityMachinesOwn,
-					assistantwire.CapabilityMeetingAttendance, assistantwire.CapabilityMeetingConversation, devicewire.SharingCapability}}
+					assistantwire.CapabilityMeetingAttendance, assistantwire.CapabilityMeetingConversation, assistantwire.CapabilityMeetingPhotos, assistantwire.CapabilityRecordingDay,
+					devicewire.SharingCapability}}
 		},
 		OnHello: b.onHello,
 		// A node's tool call that its caller stopped waiting for ends at the hub too (fleet_tools.go).
@@ -545,6 +546,7 @@ func (b *BusHub) request(ctx context.Context, method string, params json.RawMess
 		}
 		params, err := s.SendParams(ctx, p)
 		if err != nil {
+			s.appSendRefused(p.MachineID, p.SessionID, err) // the hub sends nothing: no ConversationSent (north_star.go)
 			return nil, err
 		}
 		return map[string]any{"params": params}, nil
@@ -763,6 +765,12 @@ func (b *BusHub) event(ctx context.Context, ev busEvent) error {
 			return err
 		}
 		go s.StartEnded(context.WithoutCancel(ctx), p)
+	case assistantwire.EventConversationSent:
+		var p ConversationSent
+		if err := decode(&p); err != nil {
+			return err
+		}
+		go s.ConversationSent(context.WithoutCancel(ctx), p)
 	case assistantwire.EventInteractionResolved:
 		var p InteractionResolved
 		if err := decode(&p); err != nil {

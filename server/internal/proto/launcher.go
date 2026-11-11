@@ -1,5 +1,10 @@
 package proto
 
+import (
+	"net/url"
+	"strings"
+)
+
 type Launcher struct {
 	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
@@ -267,4 +272,51 @@ func (l ManagedLauncher) AgentType() string {
 		return l.Agent
 	}
 	return "claude"
+}
+
+// MessagesBase: the provider's Base URL reaches its agent as ANTHROPIC_BASE_URL (node managedEnv), which gets
+// /v1/messages added to it: a Messages provider whose agent is not Codex or agy (they take OPENAI_BASE_URL /
+// GOOGLE_GEMINI_BASE_URL). Responses and Chat Completions bases keep their /v1.
+func (l ManagedLauncher) MessagesBase() bool {
+	if a := l.AgentType(); a == "codex" || a == "agy" {
+		return false
+	}
+	return l.API == "" || l.API == "messages"
+}
+
+// LaunchBaseURL is the Base URL as the provider's agent takes it: a Messages base through MessagesBaseURL, any other as
+// stored. The hub stores and delivers it, and the node launches with it, so a provider saved before the hub dropped a
+// trailing /v1 still reaches what Test connection called.
+func (l ManagedLauncher) LaunchBaseURL() string {
+	if l.MessagesBase() {
+		return MessagesBaseURL(l.BaseURL)
+	}
+	return l.BaseURL
+}
+
+// MessagesBaseURL is a gateway address as ANTHROPIC_BASE_URL takes it. Claude Code and the Anthropic SDKs add
+// /v1/messages themselves, so the /v1 many gateways put at the end of their documented address would make
+// /v1/v1/messages: the /v1 ending the path goes with any trailing slashes, a deployment prefix before it stays
+// ("https://gw/prefix/v1/" → "https://gw/prefix"). It is idempotent (a run of /v1 goes whole): the hub stores its
+// result and the node applies it again at launch, and both must reach what Test connection called. Anything else (no
+// host, a query) is only trimmed.
+func MessagesBaseURL(base string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" {
+		return base
+	}
+	authority := strings.Index(base, "//") + len("//")
+	slash := strings.IndexByte(base[authority:], '/')
+	if slash < 0 {
+		return base // no path
+	}
+	root, path := base[:authority+slash], base[authority+slash:]
+	for {
+		rest, ok := strings.CutSuffix(path, "/v1")
+		if !ok {
+			return root + path
+		}
+		path = strings.TrimRight(rest, "/")
+	}
 }

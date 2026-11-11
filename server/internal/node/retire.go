@@ -88,9 +88,6 @@ func (n *Node) stoppable(id string, retire bool) (unlock func(), a host.Agent, o
 	case n.externalCodex(id) || h != nil || known || terminalOnly:
 		return no(noTerminal, "this session belongs to another tool")
 	}
-	if _, runtime := engineRuntimes[n.defaultKind()]; runtime {
-		return no(noTerminal, "this engine runs its agents without a terminal")
-	}
 	unlock = n.typing.lock(id) // not while a message is on its way in (a send may be resuming it right now)
 	fail := func(code, why string) (func(), host.Agent, bool, error) {
 		unlock()
@@ -102,6 +99,13 @@ func (n *Node) stoppable(id string, retire bool) (unlock func(), a host.Agent, o
 	if a, ok = n.agent(id); !ok {
 		unlock()
 		return nil, a, false, nil
+	}
+	kind := host.ParsePane(a.PaneID).Kind
+	if _, runtime := engineRuntimes[kind]; runtime {
+		return fail(noTerminal, "this engine runs its agents without a terminal")
+	}
+	if n.hosts.Get(kind) == nil {
+		return fail(noTerminal, "this session host is not available")
 	}
 	if retire {
 		if a.AgentStatus == proto.StatusWorking || a.AgentStatus == proto.StatusBlocked {
@@ -210,10 +214,11 @@ func (n *Node) resumeTabName(id string) string {
 // Resume (#4754): with the launcher, directory and model to resume with (st): the session's own, or
 // what a Codex thread started outside Persona is resumed with (codex_resume.go).
 func (n *Node) resumeOtherWith(ctx context.Context, id string, st sessionState, text string, images []proto.Image) error {
+	ctx = n.withResumeHost(ctx, id)
 	if r := n.notRunningRefusal(ctx, id); r != nil {
 		return r
 	}
-	launch, err := hostCap[host.Launcher](n)
+	launch, err := n.launcherFor(n.startKind(ctx))
 	if err != nil {
 		return err
 	}

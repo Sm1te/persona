@@ -5,20 +5,14 @@ import Testing
 /// `JSON.parseDate` reads the hub's usual timestamp straight from its bytes (#4681): the same `Date` as the
 /// ISO8601DateFormatter path it replaced, which still decides every other shape.
 struct JSONDateTests {
-    /// The path before #4681, kept here as the reference.
-    private static let fractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-    private static let plain: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
+    /// The path before #4681, kept here as the reference. Its formatters are made per call: a formatter is not
+    /// Sendable, and the cases run in parallel.
     private static func reference(_ s: String) -> Date? {
         guard !s.isEmpty else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
         var t = s
         if let dot = t.firstIndex(of: "."), let end = t[dot...].firstIndex(where: { $0 == "Z" || $0 == "+" || $0 == "-" }) {
             let frac = t[t.index(after: dot)..<end]

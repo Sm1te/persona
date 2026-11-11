@@ -14,8 +14,10 @@ import Testing
         private(set) var waiting: [(String, CheckedContinuation<Bool, Never>)] = []
         private(set) var mostWaiting = 0
         private var command = false
+        /// How long a new session drops keys (none unless a test signs in).
+        var settle: Duration = .zero
 
-        lazy var queue = RFBInputQueue(send: { [unowned self] e in self.sent(e) }, write: { [unowned self] text in
+        lazy var queue = RFBInputQueue(settle: settle, send: { [unowned self] e in self.sent(e) }, write: { [unowned self] text in
             await withCheckedContinuation { k in
                 self.waiting.append((text, k))
                 self.mostWaiting = max(self.mostWaiting, self.waiting.count)
@@ -46,6 +48,72 @@ import Testing
         func drain() async {
             for _ in 0..<100 where !queue.idle { await answer() }
         }
+    }
+
+    /// Polls (on the main actor, so the queue runs meanwhile) until `done` or two seconds pass.
+    private func eventually(_ done: () -> Bool) async {
+        for _ in 0..<100 where !done() { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
+    /// Signed in a moment ago (#3075): the Mac would drop keys now, so they wait out the session's first seconds, in
+    /// order, and keys after that go out at once.
+    @Test func keysWaitOutANewSessionsFirstSeconds() async {
+        let w = Wire()
+        w.settle = .milliseconds(300)
+        w.queue.signedIn()
+        w.queue.type("ab") {}
+        w.queue.press(0x63)
+        #expect(w.out.isEmpty)
+        #expect(!w.queue.idle)
+        await eventually { w.out.count == 3 }
+        #expect(w.out == ["a", "b", "c"])
+        await eventually { w.queue.idle }
+        w.queue.press(0x64)
+        #expect(w.out == ["a", "b", "c", "d"])
+    }
+
+    /// A paste just after signing in: its clipboard write starts at once, its ⌘V only once the Mac takes keys.
+    @Test func aPastesCommandVWaitsOutANewSessionButItsWriteDoesNot() async {
+        let w = Wire()
+        w.settle = .milliseconds(300)
+        w.queue.signedIn()
+        w.queue.paste("x")
+        await w.answer()
+        #expect(w.out == ["[x]"])
+        await eventually { w.out.count == 2 }
+        #expect(w.out == ["[x]", "⌘V"])
+    }
+
+    /// Signed in again (a reconnect) while keys wait: they wait for the new session, not the old one.
+    @Test func aNewSignInWhileWaitingWaitsForTheNewSession() async {
+        let w = Wire()
+        w.settle = .milliseconds(600)
+        w.queue.signedIn()
+        w.queue.type("a") {}
+        try? await Task.sleep(for: .milliseconds(300))
+        w.queue.signedIn()
+        try? await Task.sleep(for: .milliseconds(450))
+        #expect(w.out.isEmpty, "the first session's 600 ms are over, the new one's are not")
+        await eventually { w.out == ["a"] }
+        #expect(w.out == ["a"])
+    }
+
+    /// A pause counts from when the keys before it went out (One-Tap Unlock: a Shift, time for the lock screen to wake,
+    /// then the password), just after signing in too, when those keys wait out the session's first seconds.
+    @Test func aPauseCountsFromWhenTheKeysBeforeItWentOut() async {
+        let w = Wire()
+        w.settle = .milliseconds(300)
+        w.queue.signedIn()
+        let start = ContinuousClock.now
+        w.queue.press(0x78)
+        w.queue.pause(.milliseconds(400))
+        w.queue.press(0x79)
+        await eventually { w.out == ["x"] }
+        let x = ContinuousClock.now - start
+        await eventually { w.out == ["x", "y"] }
+        let y = ContinuousClock.now - start
+        #expect(x >= .milliseconds(300), "x waited out the session's first 300 ms: \(x)")
+        #expect(y - x >= .milliseconds(350), "y came the pause after x went out: \(x) then \(y)")
     }
 
     @Test func keysGoOutAtOnceWithNothingPending() {

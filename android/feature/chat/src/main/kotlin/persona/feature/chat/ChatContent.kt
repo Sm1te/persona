@@ -344,7 +344,10 @@ internal fun ChatLineContent(
                     { onToggle(line.id) }, running = line.live && !waits) {}
             }
         }
-        is ChatLine.Step -> WorkStep(line.step, session, loader, onFold, folding, foldErrors, onFullText, style, textUpdates, workRunning, lastWorkStep, plan)
+        // Every open step sits on the work line's rail, the plan and its items too (Glass, iOS's timeline, #4339 C5).
+        is ChatLine.Step -> Box(Modifier.fillMaxWidth().workRail(lastWorkStep)) {
+            WorkStep(line.step, session, loader, onFold, folding, foldErrors, onFullText, style, textUpdates, workRunning, lastWorkStep, plan)
+        }
         is ChatLine.End -> TimelineMark(pluralStringResource(R.plurals.chat_content_collapse_steps, line.count, line.count),
             Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { onToggle(line.groupId) })
         is ChatLine.Wakes -> ChatSystemLine(pluralStringResource(R.plurals.chat_content_wakes, line.turn.wakes.size, line.turn.wakes.size))

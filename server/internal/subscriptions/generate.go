@@ -90,6 +90,9 @@ func (s *Service) Generate(ctx context.Context, in GenerateRequest, by Actor) (G
 		if sub == nil {
 			return Generated{}, notFound("subscription")
 		}
+		if IsPush(*sub) {
+			return Generated{}, pushOnly("recipe")
+		}
 		if in.Revision != 0 && in.Revision != sub.Revision {
 			return Generated{}, conflictWith(sub)
 		}

@@ -80,7 +80,9 @@ func TestAssistantInterjectBackgroundsForegroundWork(t *testing.T) {
 	}
 }
 
-// With the setting off, or on a Claude Code without background_tasks, the message goes in as before.
+// With the setting off, or on a Claude Code without background_tasks, the work stays in the foreground, but the message
+// still says it came mid-turn and asks for one sentence on what is going on first (#4883: with the setting off, the
+// owner's "what happened?" got six minutes of tool calls and no word).
 func TestAssistantInterjectOffOrOldClaude(t *testing.T) {
 	for _, tc := range []struct {
 		name, version string
@@ -88,30 +90,69 @@ func TestAssistantInterjectOffOrOldClaude(t *testing.T) {
 	}{{"off", "2.1.322", false}, {"old claude", "2.1.138", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			after := interjectSecond(t, tc.version, tc.on)
-			if strings.Contains(after, "background_tasks") || strings.Contains(after, "插话") {
-				t.Fatalf("interjected:\n%s", after)
+			if strings.Contains(after, "background_tasks") || strings.Contains(after, "已经转到后台") {
+				t.Fatalf("moved work to the background:\n%s", after)
+			}
+			if !strings.Contains(after, `title=\"插话\"`) || !strings.Contains(after, "在调用下一个工具之前，先用一句话回应用户") {
+				t.Fatalf("the mid-turn message carries no note:\n%s", after)
 			}
 		})
 	}
 }
 
-// Only a busy Claude on the CLI whose init named a Claude Code with background_tasks interjects.
+// The note asks for one sentence in the user's language before the next tool call: what it is doing, how long or what
+// it waits for; it says the work went to the background only when it did.
+func TestInterjectNote(t *testing.T) {
+	for _, background := range []bool{false, true} {
+		text := interjectNote(background)["text"].(string)
+		for _, want := range []string{`title="插话"`, "在调用下一个工具之前", "用用户的语言", "你正在做什么，还要多久或在等什么"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("background %v: no %q in\n%s", background, want, text)
+			}
+		}
+		if got := strings.Contains(text, "已经转到后台"); got != background {
+			t.Errorf("background %v: says it went to the background: %v\n%s", background, got, text)
+		}
+	}
+}
+
+// The first message of an idle conversation is no interjection: no note.
+func TestAssistantFirstMessageHasNoInterjectNote(t *testing.T) {
+	interjectClaude(t, "2.1.322")
+	n := codexTestNode(t)
+	withFakeHub(t, n)
+	id, err := n.assistantSend(context.Background(), "", t.TempDir(), "claude", "first", nil, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { n.stopAssistant(id) })
+	sdkWait(t, "the first message", func() bool { return strings.Contains(interjectLog(t), "first") })
+	if strings.Contains(interjectLog(t), "插话") {
+		t.Fatalf("a message to an idle conversation carries the note:\n%s", interjectLog(t))
+	}
+}
+
+// Only a busy Claude on the CLI whose init named a Claude Code with background_tasks interjects; any busy Claude on the
+// CLI takes a message mid-turn.
 func TestAssistantInterjects(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		agent, rt, v  string
-		busy, expects bool
+		name                   string
+		agent, rt, v           string
+		busy, expects, midTurn bool
 	}{
-		{"busy", "claude", "", "2.1.139", true, true},
-		{"idle", "claude", "", "2.1.322", false, false},
-		{"before init", "claude", "", "", true, false},
-		{"old", "claude", "", "2.1.138", true, false},
-		{"codex", "codex", "", "2.1.322", true, false},
-		{"agent sdk", "claude", "agentsdk", "2.1.322", true, false},
+		{"busy", "claude", "", "2.1.139", true, true, true},
+		{"idle", "claude", "", "2.1.322", false, false, false},
+		{"before init", "claude", "", "", true, false, true},
+		{"old", "claude", "", "2.1.138", true, false, true},
+		{"codex", "codex", "", "2.1.322", true, false, false},
+		{"agent sdk", "claude", "agentsdk", "2.1.322", true, false, false},
 	} {
 		p := &assistantProc{agent: tc.agent, runtime: tc.rt, claudeVersion: tc.v, busy: tc.busy}
 		if got := p.interjects(); got != tc.expects {
 			t.Errorf("%s: interjects %v, want %v", tc.name, got, tc.expects)
+		}
+		if got := p.midTurn(); got != tc.midTurn {
+			t.Errorf("%s: midTurn %v, want %v", tc.name, got, tc.midTurn)
 		}
 	}
 }

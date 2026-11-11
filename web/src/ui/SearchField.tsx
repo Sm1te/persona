@@ -27,6 +27,7 @@ export function SearchField({
   icon = true,
   onKeyDown,
   className,
+  autoFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -40,6 +41,7 @@ export function SearchField({
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   /** Placement only (margins, shrink); the look is the tone's. */
   className?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <label className={cx("flex items-center gap-2 rounded-control", size === "sm" ? "h-8 px-2.5" : "h-9 px-3", TONE[tone], SEARCH_FOCUS, className)}>
@@ -48,6 +50,7 @@ export function SearchField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
+        autoFocus={autoFocus}
         placeholder={placeholder}
         aria-label={label ?? placeholder}
         className={cx("min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-3", size === "sm" ? "text-[12.5px]" : "text-[13px]")}

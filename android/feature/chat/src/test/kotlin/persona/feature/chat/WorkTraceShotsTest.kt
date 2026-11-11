@@ -117,9 +117,10 @@ class WorkTraceShotsTest {
         }
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Step 2/3").assertDoesNotExist()
-        rule.onNodeWithText("第 7 步", substring = true).assertIsDisplayed()
+        // As iOS (#4339 C5): the running line names its step and its time; done, its counts and its time.
+        rule.onNodeWithText("./gradlew :feature:chat:testDebugUnitTest", substring = true).assertIsDisplayed()
         rule.onNodeWithText("workSummary").assertDoesNotExist()
-        rule.onNodeWithText("做了 7 步，用时 1 分钟").assertIsDisplayed()
+        rule.onNodeWithText("工具 6 · 思考 1 · 1 分 23 秒").assertIsDisplayed()
         // Latest plan card plus every older update remain inspectable; collapsed work draws none of them.
         rule.onAllNodesWithText("画计划卡").assertCountEquals(2)
         rule.onNodeWithText("旧计划第一项").assertIsDisplayed()

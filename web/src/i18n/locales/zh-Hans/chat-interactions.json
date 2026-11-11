@@ -30,7 +30,7 @@
   "request_changes": "打回修改",
   "approve": "批准",
   "approve_mode": "批准方式",
-  "permission_kicker": "需要你授权",
+  "permission_kicker": "在等你批准",
   "permission_title": "允许使用 {tool}？",
   "denied_message": "用户拒绝了",
   "deny": "拒绝",
@@ -96,5 +96,12 @@
   "secret_run_decline": "拒绝",
   "secret_run_run": "运行",
   "secret_run_note": "只用这一次，不会保存，助手也看不到。",
-  "secret_run_card_only": "请在卡片上答复：填密码后点运行，或拒绝"
+  "secret_run_card_only": "请在卡片上答复：填密码后点运行，或拒绝",
+  "secret_handoff_title": "把密钥交给 Agent？",
+  "secret_handoff_lead": "{machine} 上的「{agent}」只在这一次运行中拿到：",
+  "secret_handoff_lead_unnamed": "{machine} 上的 Agent 只在这一次运行中拿到：",
+  "secret_handoff_lead_bare": "Agent 只在这一次运行中拿到：",
+  "secret_handoff_note": "Persona 和助手都看不到这些值。",
+  "secret_handoff_always_scope": "总是允许：{scope}。",
+  "secret_handoff_card_only": "请在聊天里的卡片上批准。"
 }

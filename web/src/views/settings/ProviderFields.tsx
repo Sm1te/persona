@@ -34,15 +34,15 @@ export function TextField({ label, value, onChange, hint, error, placeholder, mo
   mono?: boolean;
   disabled?: boolean;
   inputMode?: "numeric" | "url";
-  /** Fires before the change a paste makes (the provider wizard's address counts as entered once pasted). */
-  onPaste?: () => void;
-  onBlur?: () => void;
+  onPaste?: React.ClipboardEventHandler<HTMLInputElement>;
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
 }) {
   const id = useId();
   const noteId = useId();
   return (
     <Labelled label={label} hint={hint} error={error} htmlFor={id} describedById={noteId}>
-      <input id={id} aria-invalid={error ? true : undefined} aria-describedby={error || hint ? noteId : undefined} value={value} onChange={(e) => onChange(e.target.value)} onPaste={onPaste} onBlur={onBlur} disabled={disabled} placeholder={placeholder} inputMode={inputMode} autoComplete="off" spellCheck={false} className={cx(INPUT, mono && "font-mono")} />
+      <input id={id} aria-invalid={error ? true : undefined} aria-describedby={error || hint ? noteId : undefined} value={value}
+        onChange={(e) => onChange(e.target.value)} onPaste={onPaste} onBlur={onBlur} disabled={disabled} placeholder={placeholder} inputMode={inputMode} autoComplete="off" spellCheck={false} className={cx(INPUT, mono && "font-mono")} />
     </Labelled>
   );
 }

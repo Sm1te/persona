@@ -44,7 +44,7 @@ final class ExtensionMarketTests: XCTestCase {
         shot(app, "artwork-installed-detail")
     }
 
-    @MainActor private func marketRequest(_ method: String, path: String, body: [String: String]? = nil) throws {
+    @MainActor private func marketRequest(_ method: String, path: String, body: [String: Any]? = nil) throws {
         guard let hub = env["PERSONA_EXTENSIONS_HUB"], let url = URL(string: hub + path) else { throw XCTSkip("needs the extensions mock") }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -181,6 +181,47 @@ final class ExtensionMarketTests: XCTestCase {
         app.buttons["plugin-upgrade"].firstMatch.tap()
         XCTAssertTrue(app.buttons["market-confirm"].waitForExistence(timeout: 10), "the upgrade's preview did not open:\n\(app.debugDescription)")
         shot(app, "auto-upgrade-confirm")
+    }
+
+    /// The master switch off (#4747, as the web's #1828): the extension's Auto-upgrade switch keeps its saved value, on
+    /// and off, greyed out, and its footer says the setting applies again; with the master switch on it can be flipped.
+    /// Both switches are put back on after.
+    @MainActor func testMasterSwitchOffGreysOutTheExtensionsSwitch() throws {
+        let master = "/api/v1/plugins/-/upgrades", own = "/api/v1/plugins/example-gateway/-/auto-upgrade"
+        defer {
+            try? marketRequest("PUT", path: master, body: ["auto": true])
+            try? marketRequest("PUT", path: own, body: ["auto": true])
+        }
+        let paused = NSPredicate(format: "label CONTAINS %@", "重新打开后恢复")
+        try marketRequest("PUT", path: master, body: ["auto": false])
+        for saved in [true, false] {
+            try marketRequest("PUT", path: own, body: ["auto": saved])
+            let app = try launch(["-openExtension", "example-gateway"])
+            let toggle = app.switches["plugin-auto-upgrade"].firstMatch
+            scrollTo(toggle, in: app)
+            XCTAssertTrue(toggle.waitForExistence(timeout: 15), "no Auto-upgrade switch:\n\(app.debugDescription)")
+            // The master switch is read after the page opens: its footer says so once it is known.
+            XCTAssertTrue(app.staticTexts.matching(paused).firstMatch.waitForExistence(timeout: 10),
+                          "the footer does not say the setting comes back:\n\(app.debugDescription)")
+            XCTAssertEqual(toggle.value as? String, saved ? "1" : "0", "the saved value is not shown")
+            XCTAssertFalse(toggle.isEnabled, "the switch can be flipped while the master switch is off")
+            toggle.switches.firstMatch.tap()
+            sleep(1)
+            XCTAssertEqual(toggle.value as? String, saved ? "1" : "0", "a tap changed a greyed-out switch")
+            shot(app, "master-off-saved-\(saved ? "on" : "off")")
+            app.terminate()
+        }
+        try marketRequest("PUT", path: master, body: ["auto": true])
+        try marketRequest("PUT", path: own, body: ["auto": true])
+        let app = try launch(["-openExtension", "example-gateway"])
+        let toggle = app.switches["plugin-auto-upgrade"].firstMatch
+        scrollTo(toggle, in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15), "no Auto-upgrade switch:\n\(app.debugDescription)")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed, "the switch stays greyed out with the master switch on")
+        XCTAssertEqual(toggle.value as? String, "1", "the saved value is not shown")
+        XCTAssertFalse(app.staticTexts.matching(paused).firstMatch.exists, "the paused footer stays with the master switch on")
+        shot(app, "master-on")
     }
 
     @MainActor func testRemovedMarketKeepsPreferenceButPausesUpdates() throws {

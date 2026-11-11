@@ -101,6 +101,8 @@ internal fun InteractionPanel(
         onPrevious = { select(index - 1) }, onNext = { select(index + 1) }, onList = { all = true },
         collapsed = collapsed, onCollapsedChange = onCollapsedChange, onExpand = { full = true },
         headerActions = closeCard,
+        // an approval says it waits for the user, in the chat as on the web and iOS (#4883)
+        kicker = if (request.kind == "permission" && !request.isSecretRun) stringResource(DecisionKind.Tool.labelRes) else null,
     ) {
         if (!full && !all) body(false)
     }

@@ -127,34 +127,72 @@ final class VNCScreenUIView: UIView, UIGestureRecognizerDelegate {
         display.frame = port.framebufferFrame(screenSize)
         if let s = session {
             let at = toView(s.pointer)
-            if let c = s.cursor, c.width > 0, let image = Self.image(c) {
-                let scale = 1 / port.pixelsPerPoint
-                pointerLayer.contents = image
-                pointerLayer.frame = CGRect(x: at.x - CGFloat(c.hotX) * scale, y: at.y - CGFloat(c.hotY) * scale,
-                                            width: CGFloat(c.width) * scale, height: CGFloat(c.height) * scale)
+            // The Mac's pointer at a size that reads, with the rings it needs (VNCPointerArt, #3075); the app's own arrow
+            // while it sends none (macOS's never does).
+            if let art = pointerArt(s.cursor, natural: 1 / port.pixelsPerPoint) {
+                pointerLayer.contents = art.image
+                pointerLayer.frame = CGRect(x: at.x - art.hot.x, y: at.y - art.hot.y, width: art.size.width, height: art.size.height)
             } else {
-                let side = Theme.Size.icon
-                pointerLayer.contents = Self.arrow
-                pointerLayer.frame = CGRect(x: at.x - side * 0.3, y: at.y - side * 0.15, width: side, height: side)
+                pointerLayer.contents = nil
             }
             pointerLayer.isHidden = s.phase != .live || !port.visible.contains(s.pointer)
             #if DEBUG
-            accessibilityValue = String(format: "fps=%.0f;latency=%.0f;mode=%@", s.fps, s.latency ?? -1, mode.rawValue) // UI tests measure
+            // UI tests measure (the frame rate, the latency) and look (the pointer's size in points, #3075).
+            accessibilityValue = String(format: "fps=%.0f;latency=%.0f;mode=%@;pointer=%.0fx%.0f", s.fps, s.latency ?? -1, mode.rawValue, // i18n-ignore
+                                        pointerLayer.frame.width, pointerLayer.frame.height)
             #endif
         }
         CATransaction.commit()
     }
 
-    private static let arrow: CGImage? = UIImage(systemName: Theme.Icon.pointer)?
-        .withTintColor(.white, renderingMode: .alwaysOriginal)
-        .applyingSymbolConfiguration(.init(pointSize: Theme.Size.icon, weight: .bold))?.cgImage
+    /// The pointer as last drawn: for which cursor, at how many device pixels a pixel of it.
+    private var drawnPointer: (cursor: RFBClient.Cursor, k: CGFloat, art: VNCPointerArt.Art)?
 
-    private static func image(_ c: RFBClient.Cursor) -> CGImage? {
-        guard let provider = CGDataProvider(data: Data(c.pixels) as CFData) else { return nil }
-        return CGImage(width: c.width, height: c.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: c.width * 4,
-                       space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    /// The Mac's pointer as drawn, `natural` points a pixel of the picture; nil: the app's own arrow.
+    private func pointerArt(_ mac: RFBClient.Cursor?, natural: CGFloat) -> VNCPointerArt.Art? {
+        // The trait's, not the window's screen (which visionOS does not have); 0 only before the view is in a window.
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 2
+        // The app's own arrow is drawn at the screen's scale already: as it is, a pixel a device pixel.
+        let c: RFBClient.Cursor, perPoint: CGFloat, least: CGFloat
+        if let mac, mac.width > 0 { (c, perPoint, least) = (mac, natural, Theme.Size.pointer) } else { (c, perPoint, least) = (Self.arrow(scale), 1 / scale, 0) }
+        let k = VNCPointerArt.devicePixelsPerPixel(c, natural: perPoint, minHeight: least, scale: scale)
+        if let d = drawnPointer, d.k == k, d.cursor.hotX == c.hotX, d.cursor.hotY == c.hotY, d.cursor.width == c.width, d.cursor.pixels == c.pixels {
+            return d.art
+        }
+        guard let art = VNCPointerArt.render(c, natural: perPoint, minHeight: least, scale: scale) else { return nil }
+        pointerLayer.contentsScale = scale
+        drawnPointer = (c, k, art)
+        return art
+    }
+
+    private static var arrows: [CGFloat: RFBClient.Cursor] = [:]
+
+    /// The app's own arrow, where the Mac's pointer is: macOS's Screen Sharing sends none (it draws its own into the
+    /// picture, at the Mac's size), so this is the one that shows. Black like the Mac's, `Theme.Size.icon` points square
+    /// at this scale, its tip the hot spot, as a cursor of the Mac's: drawn the same way, it gets the white ring the Mac's
+    /// has. It used to come out solid black with nothing around it, lost on a dark screen (#3075): meant white, it was
+    /// tinted before `applyingSymbolConfiguration`, and a symbol's `cgImage` ignores the tint anyway.
+    static func arrow(_ scale: CGFloat) -> RFBClient.Cursor {
+        if let a = arrows[scale] { return a }
+        let side = Int((Theme.Size.icon * scale).rounded())
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let symbol = UIImage(systemName: Theme.Icon.pointer, withConfiguration: UIImage.SymbolConfiguration(pointSize: Theme.Size.icon, weight: .bold))?
+            .withTintColor(.black, renderingMode: .alwaysOriginal)
+        pixels.withUnsafeMutableBytes { buf in
+            guard let symbol, let ctx = CGContext(data: buf.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+            else { return }
+            // UIKit's drawing, in points from the top-left: its first row the buffer's first, as a cursor's is.
+            ctx.translateBy(x: 0, y: CGFloat(side))
+            ctx.scaleBy(x: scale, y: -scale)
+            UIGraphicsPushContext(ctx)
+            symbol.draw(in: AVMakeRect(aspectRatio: symbol.size, insideRect: CGRect(x: 0, y: 0, width: Theme.Size.icon, height: Theme.Size.icon)))
+            UIGraphicsPopContext()
+        }
+        let a = RFBClient.Cursor(width: side, height: side, hotX: side * 3 / 10, hotY: side * 3 / 20, pixels: pixels)
+        arrows[scale] = a
+        return a
     }
 
     // MARK: Touches
