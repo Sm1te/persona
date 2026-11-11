@@ -718,7 +718,26 @@ func (n *Node) sendFirstCodexCall(ctx context.Context, w *codexWait, params json
 	var s *proto.Session
 	sent := time.Now()
 	err := n.sends.once(opts.ClientMsgID, func() error {
-		var err error
+		// One first message at a time (two phones, a quick second tap): the second finds the thread the first began
+		// and goes to it as any message does.
+		unlock, err := n.inputTurn(ctx, w.id)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		if n.codexWaitByID(w.id) != w {
+			thread := n.codexAttachedThread(w.id)
+			if thread == "" {
+				return n.stoppedRefusal(w.id) // Codex left its tab before a first message
+			}
+			if err := n.send(ctx, thread, text, images, opts); err != nil {
+				return err
+			}
+			if a, ok := n.agent(thread); ok {
+				s = n.sessionFor(thread, a)
+			}
+			return nil
+		}
 		s, err = n.sendFirstCodex(ctx, w, text, images)
 		return err
 	})

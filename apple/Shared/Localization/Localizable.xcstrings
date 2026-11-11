@@ -32804,6 +32804,75 @@
       },
       "extractionState": "manual"
     },
+    "Codex is open on %@. Send its first message here, or type it in its terminal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex is open on %1$@. Send its first message here, or type it in its terminal."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex は %1$@ で開いています。ここで最初のメッセージを送るか、ターミナルに直接入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 已在 %1$@ 上打开。在这里发第一条消息，或直接在它的终端里输入。"
+          }
+        }
+      }
+    },
+    "Waiting for its first message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for its first message"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初のメッセージ待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等第一条消息"
+          }
+        }
+      }
+    },
+    "What should Codex do? (Optional: you can also send it later, here or in its terminal)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should Codex do? (Optional: you can also send it later, here or in its terminal)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codexに何をさせますか？（任意：あとでここかターミナルで送ることもできます）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "想让 Codex 做什么？（可选：也可以之后在这里或它的终端里再发）"
+          }
+        }
+      }
+    },
     "Codex takes no attachments": {
       "extractionState": "manual",
       "localizations": {
