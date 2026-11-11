@@ -23,6 +23,12 @@ final class ExtensionRowLargeTextTests: XCTestCase {
             for label in ["允许", "Allow"] where springboard.buttons[label].waitForExistence(timeout: 3) { springboard.buttons[label].tap() }
             XCTAssertTrue(app.switches["plugin-ui-switch-light.main"].waitForExistence(timeout: 20), app.debugDescription)
             guard let dir = env["PERSONA_SHOTS"] else { continue }
+            // The app icon follows the color scheme, and the system says so in an alert over the page: closed first.
+            if springboard.alerts.firstMatch.waitForExistence(timeout: 2) {
+                for label in ["OK", "好"] where springboard.alerts.buttons[label].exists { // i18n-ignore: the system's own button
+                    springboard.alerts.buttons[label].tap(); sleep(1); break
+                }
+            }
             try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appending(path: "row-icon-\(size)-\(scheme).png"))
         } }
     }
