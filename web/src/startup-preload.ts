@@ -134,9 +134,12 @@ export async function brotliCopies(dir: string, files: string[]): Promise<{ file
  * against 9d3f343d3, which came 17 B short). Then 1,939 B less for the image editor's geometry leaving the first screen
  * (#5142: ja 594,290 B at 5d97a6e77 to 592,351 B, the 15 B of room kept): the image viewer imported fitRect from
  * lib/image-edit.ts, which put that whole module, otherwise only the lazy editor's, on the first screen; fitIn and
- * fitRect now live in lib/image-zoom.ts. Raise it on purpose, in the change that needs it.
+ * fitRect now live in lib/image-zoom.ts. And 265 B for a Codex opened with no first message (#4961 added 478 B to ja,
+ * 592,153 B at 76b9cf3b4a to 592,631 B, 213 B of it in the room left): the waiting row's line in the list, its chat's
+ * note and placeholder, the page following the pane to the thread its first message began, and their words. Raise it
+ * on purpose, in the change that needs it.
  */
-export const FIRST_SCREEN_BUDGET = 592_366;
+export const FIRST_SCREEN_BUDGET = 592_631;
 
 /** What the built-in hub sends for `files` (paths below `dir`) to a browser that takes br: each one's brotli copy, or
  *  the file itself when it has none. Build time only. */
