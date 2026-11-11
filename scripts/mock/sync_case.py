@@ -20,14 +20,17 @@ module never looks at a screen. The rules for reads, writes, receipts and the so
   a chat loads.
 
 GET /mock/case: where the case is, and per device the socket, the requests it made (`seen`, as the case's `requests`
-name them) and its writes in flight. POST /mock/case/load {"case": "<file>#<name>"}: another case, in the same mock.
+name them) and its writes in flight. POST /mock/case/load {"case": "<file>#<name>"}: another case, in the same mock;
+with `"now": true` its times moved so its clock (CLOCK) reads the present, for an app that runs on the real clock.
 Everything else in the mock is left as it is.
 """
 import base64
+import calendar
 import copy
 import glob
 import json
 import os
+import re
 import threading
 import time
 
@@ -35,6 +38,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CASES = os.path.join(HERE, "..", "..", "spec", "fixtures", "sync")
 STATUS = {"working": "working", "needs_you": "blocked", "unread": "done", "idle": "idle"}
 UPDATED = "2026-01-02T03:04:05Z"
+# The cases' clock: the web's consumers pin theirs here. An app on the real clock plays a case moved to the present
+# (`POST /mock/case/load {"case": …, "now": true}`): left in January, every line is months older than what the app
+# sends, and iOS takes a line without `client_msg_id` for a bubble only when it was written after it (#2952).
+CLOCK = "2026-01-02T03:05:00Z"
+STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?Z$")
 FEATURES = ["client_msg_id", "client_ops", "send_refusals", "sessions_delta", "error_codes", "client_hello", "app_ping",
             "resumable_interactions", "assistant_start_ops"]
 # How long a step waits for an app: its write to arrive before a `reply`, its read before a `release`, its new socket
@@ -53,6 +61,26 @@ def load(spec):
                 if c["name"] == name:
                     return c
     raise ValueError("no sync case %r" % spec)
+
+
+def shift_to(now):
+    """The seconds that move the cases' clock (CLOCK) to `now` (seconds since the epoch)."""
+    return int(now) - calendar.timegm(time.strptime(CLOCK, "%Y-%m-%dT%H:%M:%SZ"))
+
+
+def moved(v, shift):
+    """`v` (any of a case's JSON) with every time in it `shift` seconds later; nothing else changes."""
+    if not shift:
+        return v
+    if isinstance(v, dict):
+        return {k: moved(x, shift) for k, x in v.items()}
+    if isinstance(v, list):
+        return [moved(x, shift) for x in v]
+    m = STAMP.match(v) if isinstance(v, str) else None
+    if not m:
+        return v
+    t = calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")) + shift
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + (m.group(2) or "") + "Z"
 
 
 def token_of(h):
@@ -78,7 +106,7 @@ class CaseError(Exception):
 class Truth:
     """The hub's state for the chat, as the case changes it."""
 
-    def __init__(self, h):
+    def __init__(self, h, updated=UPDATED):
         self.history = h["history"]
         self.lines = copy.deepcopy(h["lines"])
         self.to_seq = h["to_seq"]
@@ -87,7 +115,7 @@ class Truth:
         self.queued = list(h["session"].get("queued") or [])
         self.stream = h.get("event_stream", "ev")
         self.seq = h.get("event_seq", 0)
-        self.updated = UPDATED
+        self.updated = updated
         self.rev = 100
 
     def apply(self, c):
@@ -168,11 +196,13 @@ class Device:
 
 
 class CaseHub:
-    def __init__(self, case, now=time.monotonic):
+    def __init__(self, case, now=time.monotonic, shift=0):
+        """`shift`: every time in the case that many seconds later (`shift_to`)."""
+        case = moved(case, shift)
         self.case = case
         self.chat = case["chat"]
         self.devices = {d: Device(d) for d in case["devices"]}
-        self.truth = Truth(case["start"]["hub"])
+        self.truth = Truth(case["start"]["hub"], moved(UPDATED, shift))
         self.started = not self.chat.get("new")
         self.index = 0
         self.writes = []  # {"device", "kind", "key", "op", "event", "answer"}
@@ -295,7 +325,12 @@ class CaseHub:
             if path == "/api/v1/sessions":
                 return self.read(device, "/sessions", lambda: {"sessions": self.rows()})
             if path == "/api/v1/assistant":
-                return 200, {"machine_id": self.chat["machine_id"], "conversations": self.rows()}
+                # the fields the apps decode as required (iOS: `launcher`, `cwd`); an assistant chat is the main one
+                st = {"machine_id": self.chat["machine_id"], "launcher": "claude", "cwd": "/home/user/project",
+                      "conversations": self.rows()}
+                if self.chat.get("assistant") and not self.chat.get("new"):
+                    st["main"] = self.chat["session_id"]
+                return 200, st
             if path == "/api/v1/interactions":
                 return self.read(device, "/interactions", lambda: {"interactions": copy.deepcopy(self.truth.pending)})
             if path == "/api/v1/machines":

@@ -351,6 +351,24 @@ func TestDoctorClaudeVersion(t *testing.T) {
 	}
 }
 
+// A version not read this time while the shell found claude is a warning in a state of its own, which the hub's
+// readiness reads as unknown rather than Claude Code missing; one the shell could not find has no such state.
+func TestDoctorClaudeVersionUnanswered(t *testing.T) {
+	e := newDoctorEnv(t)
+	e.opts.ClaudeProbe = func(context.Context) (string, bool) { return "", false }
+	if c := doctorCheckNamed(t, RunDoctor(context.Background(), e.opts), "claude-version"); c.Status != DoctorWarn || c.State != ClaudeVersionUnanswered {
+		t.Errorf("unanswered: %+v", c)
+	}
+	e.opts.ClaudeProbe = func(context.Context) (string, bool) { return "", true }
+	if c := doctorCheckNamed(t, RunDoctor(context.Background(), e.opts), "claude-version"); c.Status != DoctorWarn || c.State != "" {
+		t.Errorf("missing: %+v", c)
+	}
+	e.opts.ClaudeProbe = func(context.Context) (string, bool) { return "2.1.322", false }
+	if c := doctorCheckNamed(t, RunDoctor(context.Background(), e.opts), "claude-version"); c.Status != DoctorOK || c.State != "" {
+		t.Errorf("found: %+v", c)
+	}
+}
+
 func TestDoctorHerdr(t *testing.T) {
 	e := newDoctorEnv(t)
 	wantStatus(t, RunDoctor(context.Background(), e.opts), "herdr", DoctorWarn, "") // not running: only a warning

@@ -1,6 +1,7 @@
 package assistantwire
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -27,6 +28,28 @@ const AdminHeader = "X-Persona-Admin"
 // manager can say who did something (a model profile's switch, docs/assistant/model-profiles.md); set by the hub like
 // RoleHeader, never the client's.
 const DeviceNameHeader = "X-Persona-Device-Name"
+
+// HandoffApprover is the device the hub found may approve a hand-off card (proto.SecretHandoffTool): a full device
+// whose app shows the card (docs/extensions/secret-providers.md "Who may approve a hand-off"). It travels in
+// HTTPRequest, never in a header, so no client can set it, and an older hub never sends it: a manager approves a
+// hand-off only with it.
+type HandoffApprover struct {
+	DeviceID   string `json:"device_id"`
+	DeviceName string `json:"device_name,omitempty"`
+}
+
+type handoffApproverKey struct{}
+
+// WithHandoffApprover is ctx with the device the hub found may approve a hand-off card.
+func WithHandoffApprover(ctx context.Context, a HandoffApprover) context.Context {
+	return context.WithValue(ctx, handoffApproverKey{}, a)
+}
+
+// HandoffApproverOf is the device WithHandoffApprover put on ctx; false when there is none.
+func HandoffApproverOf(ctx context.Context) (HandoffApprover, bool) {
+	a, ok := ctx.Value(handoffApproverKey{}).(HandoffApprover)
+	return a, ok && a.DeviceID != ""
+}
 
 // ToolCall is assistant.tool's params.
 type ToolCall struct {

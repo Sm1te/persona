@@ -11,7 +11,8 @@ nonisolated struct AppGroup: Identifiable, Sendable {
     /// The app: the agent's mark on its desktop app; nil for Other.
     var kind: AgentKind?
     var sessions: [Session]
-    /// Its agents by project, as the desktop apps' sidebars list them: the latest project first, Other last.
+    /// Its agents by project, as the desktop apps' sidebars list them: the latest project first (the Codex App's in its
+    /// own order first), Other last.
     var projects: [AppProject] = []
 
     /// Its projects have headings: a desktop app's section, unless every agent of it is in Other (then they are listed as
@@ -64,7 +65,8 @@ nonisolated enum AppGroups {
 
     /// A desktop app section's agents by project: the repository a session runs in (`RepoPlace`: the node's, else its
     /// folder, a working tree's main checkout), named as its folder; a Codex App chat's project. An agent without one
-    /// (a home directory, a Codex App chat in no project) is in Other. Projects go by their latest agent, Other last.
+    /// (a home directory, a Codex App chat in no project) is in Other. Projects go by their latest agent, the Codex App's in its
+    /// own order first (`inAppOrder`), Other last.
     static func projects(of group: AppGroup) -> [AppProject] {
         var byKey: [String: AppProject] = [:]
         var order: [String] = []
@@ -80,12 +82,36 @@ nonisolated enum AppGroups {
                 order.append(key)
             }
             byKey[key]?.sessions.append(s)
+            if byKey[key]?.place == nil {
+                byKey[key]?.place = place(of: s)
+            }
         }
-        var out = order.compactMap { byKey[$0] }
+        var out = inAppOrder(order.compactMap { byKey[$0] })
         if !other.isEmpty {
             out.append(AppProject(id: group.id + "/project/other#", name: "", machine: nil, sessions: other))
         }
         return out
+    }
+
+    /// The projects the app numbers (`AppProject.place`) first, in its order; the others after them as they came (by
+    /// their latest agent). Equal places keep their order: one order on every render.
+    static func inAppOrder(_ projects: [AppProject]) -> [AppProject] {
+        projects.enumerated().sorted { a, b in
+            switch (a.element.place, b.element.place) {
+            case let (x?, y?) where x != y: x < y
+            case (.some, nil): true
+            case (nil, .some): false
+            default: a.offset < b.offset
+            }
+        }.map(\.element)
+    }
+
+    /// Where the Codex App's sidebar lists a chat's project: the node's `space_index`, from 1 down the App's own project
+    /// order (`docs/integrations/codex.md`). nil for none, and for any other app's agent (herdr numbers its workspaces in
+    /// the same field: not a desktop app's sidebar).
+    static func place(of s: Session) -> Int? {
+        guard s.spaceKind == "codex_app", let i = s.spaceIndex, i > 0 else { return nil }
+        return i
     }
 
     /// Where an agent's project is (a key unique on its hub and machine) and its name; nil for none.
@@ -142,6 +168,8 @@ nonisolated struct AppProject: Identifiable, Sendable {
     /// Its machine (a project is one folder on one machine); nil for Other.
     var machine: MachineRef?
     var sessions: [Session]
+    /// Where its app's sidebar lists it, from 1 (`AppGroups.place`); nil when the app does not say.
+    var place: Int? = nil
 
     var isOther: Bool { name.isEmpty }
     var title: String { isOther ? String(localized: "Other") : name }

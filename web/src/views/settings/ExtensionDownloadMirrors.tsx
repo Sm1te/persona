@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../i18n";
-import { errorText } from "../../lib/api";
+import { credentialOwner, errorText, getToken, subscribeCredentialOwner } from "../../lib/api";
 import { getExtensionMarketSettings, setExtensionMarketSettings, validMirrorURL, type ExtensionMarketSettings } from "../../lib/extension-market-settings";
 import { Button, Loading } from "../../ui/atoms";
 import { ConfigurationManager } from "./ConfigurationManager";
@@ -8,12 +8,27 @@ import { Group, Row, settingsInputClass } from "./SettingsParts";
 
 /** Independent of the hub's updater: older hubs and failed update reads must not hide download settings. */
 export function ExtensionDownloadMirrors() {
+  const owner = useSyncExternalStore(subscribeCredentialOwner, credentialOwner, credentialOwner);
+  const storageVersion = useRef(0);
+  const [storageGeneration, setStorageGeneration] = useState(0);
+  useLayoutEffect(() => {
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || (event.key !== "persona.token" && event.key !== null)
+        || (event.key !== null && event.oldValue === event.newValue)) return;
+      // Both changes may have completed in another tab before this tab reads the token again.
+      setStorageGeneration(++storageVersion.current);
+    };
+    window.addEventListener("storage", storage);
+    return () => window.removeEventListener("storage", storage);
+  }, []);
+  const isStorageGenerationCurrent = useCallback(() => storageVersion.current === storageGeneration, [storageGeneration]);
   return <ConfigurationManager pick title={t("settings-hubsettings.mirror_manager")} rowLabel={t("settings-hubsettings.mirror_manager_row")} hint={t("settings-hubsettings.mirror_manager_hint")} hideSingle>
-    {(manager) => <MirrorEditor manager={manager} />}
+    {(manager) => <MirrorEditor key={`${owner}/${manager}/${storageGeneration}`} manager={manager} owner={owner} isStorageGenerationCurrent={isStorageGenerationCurrent} />}
   </ConfigurationManager>;
 }
 
-function MirrorEditor({ manager }: { manager: string }) {
+function MirrorEditor({ manager, owner, isStorageGenerationCurrent }: { manager: string; owner: string; isStorageGenerationCurrent: () => boolean }) {
+  const [token] = useState(getToken);
   const [saved, setSaved] = useState<ExtensionMarketSettings | null>(null);
   const [draft, setDraft] = useState<ExtensionMarketSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,47 +36,60 @@ function MirrorEditor({ manager }: { manager: string }) {
   const [readError, setReadError] = useState("");
   const [writeError, setWriteError] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  // Retire UI updates on unmount; the API tracks writes so a returning editor waits before rereading.
+  // A returning editor waits for dispatched writes; their results never update a replacement editor.
   const sequence = useRef(0);
+  const active = useRef(false);
+  const savingNow = useRef(false);
+  const reads = useRef(new Set<AbortController>());
+  const current = useCallback((n: number) => active.current && sequence.current === n && isStorageGenerationCurrent() && credentialOwner() === owner && getToken() === token, [isStorageGenerationCurrent, owner, token]);
   const load = useCallback(async () => {
+    if (!current(sequence.current)) return;
     const n = ++sequence.current;
+    const controller = new AbortController();
+    reads.current.add(controller);
+    const isCurrent = () => !controller.signal.aborted && current(n);
     setLoading(true);
     setReadError("");
     try {
-      const value = await getExtensionMarketSettings(manager);
-      if (n !== sequence.current) return;
+      const value = await getExtensionMarketSettings(manager, { token, tokenOwner: owner, signal: controller.signal, isAuthContextCurrent: isCurrent });
+      if (!isCurrent()) return;
       setSaved(value);
       setDraft(value);
     } catch (e) {
-      if (n === sequence.current) setReadError(errorText(e));
+      if (isCurrent()) setReadError(errorText(e));
     } finally {
-      if (n === sequence.current) setLoading(false);
+      reads.current.delete(controller);
+      if (isCurrent()) setLoading(false);
     }
-  }, [manager]);
-  useEffect(() => {
+  }, [current, manager, owner, token]);
+  useLayoutEffect(() => {
+    active.current = true;
     void load();
-    return () => { sequence.current++; };
+    return () => { active.current = false; sequence.current++; reads.current.forEach((controller) => controller.abort()); };
   }, [load]);
 
   const save = async (value: ExtensionMarketSettings) => {
-    if (!saved || loading || saving || readError) return;
+    if (!current(sequence.current) || !saved || loading || savingNow.current || readError) return;
     const n = ++sequence.current;
+    const isCurrent = () => current(n);
+    savingNow.current = true;
     setSaving(true);
     setConfirmed(false);
     setWriteError("");
     try {
-      const result = await setExtensionMarketSettings(manager, value);
-      if (n !== sequence.current) return;
+      const result = await setExtensionMarketSettings(manager, value, { token, tokenOwner: owner, isAuthContextCurrent: isCurrent });
+      if (!isCurrent()) return;
       setSaved(result);
       setDraft(result);
       setConfirmed(true);
     } catch (e) {
-      if (n === sequence.current) setWriteError(errorText(e));
+      if (isCurrent()) setWriteError(errorText(e));
     } finally {
-      if (n === sequence.current) setSaving(false);
+      if (isCurrent()) { savingNow.current = false; setSaving(false); }
     }
   };
   const edit = (field: keyof ExtensionMarketSettings, value: string) => {
+    if (!current(sequence.current)) return;
     setDraft((d) => d && { ...d, [field]: value });
     setConfirmed(false);
     setWriteError("");

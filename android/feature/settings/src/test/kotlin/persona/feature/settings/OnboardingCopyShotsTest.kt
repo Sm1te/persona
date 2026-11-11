@@ -14,8 +14,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -93,7 +93,7 @@ class OnboardingCopyShotsTest {
             rule.waitForIdle()
             rule.onNodeWithText("加密端口").assertExists()
             capture("pairing-details-${s.name.lowercase()}-$mode")
-            rule.onAllNodesWithText("确认配对").onLast().performClick()
+            rule.onNode(hasText("确认配对") and hasClickAction()).performClick()
             rule.waitForIdle()
             rule.onNodeWithText("连不上 hub", substring = true).assertExists()
             capture("pairing-timeout-${s.name.lowercase()}-$mode")

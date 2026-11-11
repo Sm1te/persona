@@ -125,20 +125,16 @@ final class AgentRowStylesTests: XCTestCase {
         XCTAssertTrue(first.isSelected, "back to Avatar")
     }
 
-    /// Grouped By Repository the list keeps its one-line tree whatever is chosen: the page says so first (#3182); not in
-    /// the other groupings.
-    @MainActor func testTheLayoutPageSaysByRepositoryKeepsItsTree() throws {
+    /// Every grouping draws the choice (#3753), By Repository too: grouped so, the page has no note that it keeps its own
+    /// rows (#3182 had one at its top), and the choices are its first section.
+    @MainActor func testTheLayoutPageHasNoByRepositoryException() throws {
         let app = launch(["-tab", "settings", "-openAppearance", "layout", "-dev.grouping", "repo"])
-        let note = app.descendants(matching: .any)["layout-repo-note"].firstMatch
-        XCTAssertTrue(note.waitForExistence(timeout: 20), "no note grouped By Repository:\n\(app.debugDescription)")
         let first = app.buttons["layout-agents-avatar"]
-        XCTAssertTrue(first.exists, "no Avatar choice")
-        XCTAssertLessThanOrEqual(note.frame.maxY, first.frame.minY, "the note is not above the choices")
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "no Layout page grouped By Repository:\n\(app.debugDescription)")
+        XCTAssertFalse(app.descendants(matching: .any)["layout-repo-note"].exists, "a note that By Repository keeps its rows")
+        let tree = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS %@ OR label CONTAINS %@", "By Repository", "按仓库", "リポジトリ別")
+        XCTAssertEqual(app.staticTexts.matching(tree).count, 0, "the page still names By Repository")
         shot(app, "layout-page-repo")
-        app.terminate()
-        let other = launch(["-tab", "settings", "-openAppearance", "layout", "-dev.grouping", "space"])
-        XCTAssertTrue(other.buttons["layout-agents-avatar"].waitForExistence(timeout: 20), "no Layout page By Project")
-        XCTAssertFalse(other.descendants(matching: .any)["layout-repo-note"].exists, "the note shows By Project")
     }
 
     /// The Agents list By Project, as the mock hub's agents are, its look forgotten (-openAgentsFresh).

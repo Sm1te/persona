@@ -1,5 +1,23 @@
 # Lessons: web UI and interactions
 
+## Review state is not an answerable decision (#4808)
+
+An old task can remain `supervision.state: needs_user` without any acceptance-book `ask`. Render its original review
+explanation and the same dismiss/defer controls as a structured decision, but never invent options or send a review
+timestamp as `asked_at` to acceptance. Dismiss the exact review, not the task: completing it or accepting its recommendation
+changes what the owner asked to ignore. Keep persistence and receipt-scoped Undo on the manager, and Later in the browser
+session. Give all mixed actions one synchronous admission guard, fence late replies against the review and credential
+owner, and exercise both the legacy row and structured choices with a real browser. Load the extra controls lazily;
+the collapsed tray does not need their code on the first screen.
+
+## Viewport ownership must not create a second hover-width peak (#4792)
+
+The user-input rail's viewport-current identity is separate from the pointer or keyboard preview. Apply the existing
+preview-centered bell width to every mark, rather than imposing a minimum width on the current input. Preserve idle
+geometry and current-position accessibility/color. Browser acceptance must hover well away from the current input
+and check all rendered widths against the bell in both themes; a screenshot with both identities on one input hides
+this regression.
+
 ## Profile selections do not follow the catalog revision (#4528)
 
 The model-profile revision versions definitions, not the active selection or rollback. Retire earlier reads, errors,
@@ -899,6 +917,13 @@ is not done), so the owner saw one task out of four and asked what the others we
 other way and listed every slot ever dispatched, closed ones included. "Open" is a property of the task (`done_at`,
 `start_error`, an open plan), not of its agent: filter on that, sort what needs the user first, and fold the closed ones.
 
+## A deploy is not seen until the open page checks for it (#4331)
+
+A sidebar change was deployed and checked with a fresh load, yet the owner's tab, open since before, kept the old build
+and its old sidebar: the service worker answers navigations with the new shell, but a single-page app that stays open
+never navigates again. "Deployed" meant new for new loads only. The page now compares the shell's entry script with its
+own and reloads when idle (docs/web/web.md "New versions"). When verifying a web deploy, also check a tab that was open
+before it, not only a fresh load.
 ## Workspace identity outlives its Agents
 
 An Agent collection cannot serve as a workspace inventory: empty ancestors disappear, and pinning or filtering can remove the only row carrying a parent edge. Keep discovery independent of the board and count actual Agents separately from catalog containers. Bind actions to credential generation, manager, computer, host and runtime workspace ID; matching paths do not grant ownership. A combined browser fixture must stamp its sessions and discovery with the same manager, or it correctly exercises isolation instead of navigation.

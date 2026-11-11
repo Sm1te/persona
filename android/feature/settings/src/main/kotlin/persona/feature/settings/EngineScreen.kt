@@ -3,6 +3,7 @@ package persona.feature.settings
 import persona.core.designsystem.text
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -49,30 +50,42 @@ fun EngineSelectionScreen(
         try { sessions.refresh() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
         reading = false
     }
-    // Pairing: system back does not skip the step (2026-11-01, the user).
-    BackHandler(enabled = pairing) { }
-    BackHandler(enabled = !pairing && state.saving) { }
-    val ready = machine != null && model != null
-    JListPage(title = stringResource(if (pairing) R.string.settings_engine_title_pairing else R.string.settings_engine_title), onBack = if (pairing) null else onBack, largeTitle = false, bottomBar = if (!ready) null else ({
-        Row(Modifier.fillMaxWidth().padding(horizontal = pagePadding, vertical = Tokens.Space.s)) {
-            JButton(stringResource(if (pairing) R.string.settings_engine_confirm else R.string.settings_engine_save), {
-                val target = machine ?: return@JButton
-                scope.launch {
-                    if (model?.save(target.id) == true) {
-                        if (!pairing) feedback?.notice(Engines.saved(target).shown)
-                        onDone()
-                    }
+    fun leave() {
+        if (!pairing && model?.state?.value?.saving != true) onBack?.invoke()
+    }
+    // The first engine is required after pairing. On the ordinary page both Back controls wait for the save.
+    BackHandler(enabled = pairing || onBack != null, onBack = ::leave)
+    EnginePage(
+        title = stringResource(if (pairing) R.string.settings_engine_title_pairing else R.string.settings_engine_title),
+        onBack = if (pairing || onBack == null) null else ::leave,
+        pairing = pairing,
+        saving = state.saving,
+        bottomBar = if (machine == null || model == null) null else ({
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = pagePadding, vertical = Tokens.Space.s),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+            ) {
+                state.error?.let { JNotice(it.text(), status = Status.NeedsYou) }
+                val label = when {
+                    state.error != null -> R.string.settings_engine_retry
+                    pairing -> R.string.settings_engine_confirm
+                    else -> R.string.settings_engine_save
                 }
-            }, Modifier.fillMaxWidth(), loading = state.saving,
-                enabled = !state.saving && machine != null && Engines.canSelect(state.selected, machine))
-        }
-    })) {
-        if (pairing) item("heading") {
-            Column(Modifier.padding(vertical = Tokens.Space.l), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                Text(stringResource(R.string.settings_engine_heading), style = PersonaTheme.type.largeTitle, color = PersonaTheme.palette.ink)
-                Text(machine?.displayName ?: machineId, style = PersonaTheme.type.callout, color = PersonaTheme.palette.ink2,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                JButton(stringResource(label), {
+                    scope.launch {
+                        if (model.save(machine.id)) {
+                            if (!pairing) feedback?.notice(Engines.saved(machine).shown)
+                            onDone()
+                        }
+                    }
+                }, Modifier.fillMaxWidth(), loading = state.saving,
+                    enabled = !state.saving && Engines.canSelect(state.selected, machine))
             }
+        }),
+    ) {
+        if (pairing) item("machine") {
+            Text(machine?.displayName ?: machineId, modifier = Modifier.padding(vertical = Tokens.Space.m),
+                style = PersonaTheme.type.body, color = PersonaTheme.palette.ink2)
         }
         if (machine == null || model == null) {
             if (reading) item("reading") { JLoading(text = stringResource(R.string.settings_engine_reading)) }
@@ -85,7 +98,7 @@ fun EngineSelectionScreen(
                     if (pairing) JButton(stringResource(R.string.settings_engine_continue), onDone, Modifier.fillMaxWidth())
                 }
             }
-            return@JListPage
+            return@EnginePage
         }
         if (!pairing) item("title") { JSectionHeader(machine.displayName) }
         val options = Engines.options(machine)
@@ -96,14 +109,31 @@ fun EngineSelectionScreen(
             }
         }
         item("footer") { SettingsCaption(Engines.footer(machine).text(), Modifier.padding(horizontal = rowPadding, vertical = Tokens.Space.s)) }
-        state.error?.let { error ->
-            item("error") {
-                Column(Modifier.padding(top = Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    JInlineStatus(error.text(), tone = InlineTone.Failed)
-                    if (pairing) SettingsCaption(stringResource(R.string.settings_engine_must_choose))
-                }
-            }
-        }
+    }
+}
+
+@Composable
+private fun EnginePage(
+    title: String,
+    onBack: (() -> Unit)?,
+    pairing: Boolean,
+    saving: Boolean,
+    bottomBar: (@Composable () -> Unit)?,
+    content: LazyListScope.() -> Unit,
+) {
+    val disabled = onBack != null && saving
+    // The ordinary bar lays out its leading control in the same slot even when Back is disabled.
+    val usesCustomLeading = pairing || disabled
+    CompositionLocalProvider(
+        LocalHomeChrome provides if (usesCustomLeading) null else LocalHomeChrome.current,
+        LocalRootBack provides if (usesCustomLeading) null else LocalRootBack.current,
+        LocalRootLeading provides when {
+            disabled -> ({ JBackButton(enabled = false) {} })
+            pairing -> ({ if (PersonaTheme.style == AppStyle.Glass) Spacer(Modifier.width(Tokens.Space.sm)) })
+            else -> LocalRootLeading.current
+        },
+    ) {
+        JListPage(title, onBack = onBack.takeUnless { disabled }, largeTitle = false, bottomBar = bottomBar, content = content)
     }
 }
 

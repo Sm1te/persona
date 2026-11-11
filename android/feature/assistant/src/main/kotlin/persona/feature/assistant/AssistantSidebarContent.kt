@@ -23,7 +23,6 @@ import persona.core.designsystem.*
 fun AssistantSidebarContent(
     snapshot: AssistantSnapshot,
     repository: AssistantRepository,
-    pinned: Set<SessionKey>,
     active: SessionKey?,
     operationScope: CoroutineScope,
     demo: Boolean,
@@ -41,7 +40,6 @@ fun AssistantSidebarContent(
     settingsBadge: String?,
     pages: List<NavItem>,
     onPage: (String) -> Unit,
-    onTogglePin: suspend (SessionKey) -> Unit,
     onRetired: (SessionKey) -> Unit,
     switcher: AssistantSwitcherSlot? = null,
 ) {
@@ -55,32 +53,35 @@ fun AssistantSidebarContent(
     val feedback = LocalAppFeedback.current
     val words = conversationWords()
     var query by rememberSaveable(choice.hubId, choice.shown) { mutableStateOf("") }
-    var showAll by rememberSaveable(choice.hubId, choice.shown) { mutableStateOf(false) }
-    var autoOpen by rememberAutoOpen()
     var ended by remember(management) { mutableStateOf(emptySet<SessionKey>()) }
     var archived by remember(management) { mutableStateOf(emptySet<SessionKey>()) }
     var ending by remember { mutableStateOf<Pair<Session, AssistantManagement>?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var pinning by remember { mutableStateOf(false) }
+    var leaderBusy by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     fun failed(error: Exception) {
         failure = operationFeedback(error).text.resolve(resources)
         feedback?.failure(error)
     }
-    fun toggle(keys: List<SessionKey>) {
-        if (pinning || keys.isEmpty()) return
-        pinning = true
+    // A chat is made a leader (常驻) or stops being one on the hub, for every device (#4331).
+    fun setLeader(session: Session) {
+        val target = management?.takeUnless { demo } ?: return
+        if (leaderBusy) return
+        leaderBusy = true
+        val leader = session.sessionId in received.leaders
         operationScope.launch {
-            try { keys.forEach { onTogglePin(it) } }
-            catch (cancelled: CancellationException) { throw cancelled }
+            try {
+                if (leader) target.endDirection(session.key) else target.makeDirection(session.key)
+                repository.refresh()
+            } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(error) }
-            finally { pinning = false }
+            finally { leaderBusy = false }
         }
     }
-    val groups = remember(received, query, pinned, ended, archived, words) {
+    val groups = remember(received, query, ended, archived, words) {
         conversationGroups(received.copy(conversations = received.conversations.filter { it.key !in archived }.map {
             if (it.key in ended) it.copy(status = "offline", state = "offline") else it
-        }), query, pinned, words)
+        }), query, words)
     }
     Column(Modifier.fillMaxHeight()) {
         failure?.let { JNotice(it, status = Status.NeedsYou) }
@@ -101,8 +102,6 @@ fun AssistantSidebarContent(
                 onHealth = if (demo) null else ({ onAction(AssistantSidebarAction.Health) }),
                 onSettings = onSettings,
                 onInbox = onInbox, inboxCount = inboxCount,
-                onPin = { toggle(listOf(it.key)) },
-                onUnpinAll = { toggle(received.conversations.map { it.key }.distinct().filter { it in pinned && it != received.mainSession }) },
                 onCopy = { copy(it.sessionId, resources.getString(R.string.assistant_copied_session_id)) },
                 onArchive = management?.takeUnless { demo }?.let { target -> { session: Session ->
                     archived = archived + session.key
@@ -116,8 +115,7 @@ fun AssistantSidebarContent(
                         catch (error: Exception) { archived = archived - session.key; failed(error) }
                     }
                 } },
-                showAllRecent = showAll, onShowAllRecent = { showAll = true },
-                autoOpen = autoOpen, onAutoOpen = { autoOpen = it },
+                onLeader = if (management != null && !demo) ({ session: Session -> setLeader(session) }) else null,
                 onTodos = onTodos, todoCount = todoCount, showTodos = showTodos,
                 settingsCount = settingsCount, settingsDot = settingsDot, settingsBadge = settingsBadge,
                 pages = pages, onPage = onPage, switcher = switcher)

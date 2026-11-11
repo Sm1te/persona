@@ -847,7 +847,7 @@ class CheckFastWebInputsTests(unittest.TestCase):
                 finally:
                     (self.repo / sample).unlink()
                 self.assertIn("queued: web\n", out)
-                self.assertEqual(["web|run typecheck", "web|test"], npm_calls, out)
+                self.assertEqual(["web|run check:deps", "web|run typecheck", "web|test"], npm_calls, out)
                 self.assertNotIn("no fast check maps to", out)
 
     def test_web_inputs_keep_their_other_checks(self):

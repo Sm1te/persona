@@ -79,27 +79,8 @@
     <string name="assistant_search_chats">Search chats</string>
     <string name="assistant_start_main">Start the main chat</string>
     <string name="assistant_main_chat">Main chat</string>
-    <string name="assistant_pinned">Pinned</string>
-    <string name="assistant_pinned_actions">Pinned actions</string>
-    <string name="assistant_unpin_all">Unpin all</string>
-    <string name="assistant_recent">Recent</string>
-    <string name="assistant_directions">Directions</string>
-    <string name="assistant_other_chats">Other chats</string>
-    <string name="assistant_auto">Automatic</string>
+    <string name="assistant_directions">Pinned</string>
     <string name="assistant_origin_inbox">Inbox</string>
-    <string name="assistant_origin_task">Scheduled</string>
-    <string name="assistant_origin_lark_agent">Lark /agent</string>
-    <string name="assistant_origin_spawned">From a chat</string>
-    <string name="assistant_origin_extension">Extensions</string>
-    <string name="assistant_origin_other">Other</string>
-    <plurals name="assistant_auto_needs_you">
-        <item quantity="one">%d needs you</item>
-        <item quantity="other">%d need you</item>
-    </plurals>
-    <plurals name="assistant_auto_working">
-        <item quantity="one">%d running</item>
-        <item quantity="other">%d running</item>
-    </plurals>
     <string name="assistant_empty_title">No chats yet</string>
     <string name="assistant_empty_detail">Send a message to start chatting with Persona.</string>
     <string name="assistant_no_match">No matching chats</string>
@@ -108,9 +89,11 @@
     <string name="assistant_home">Back to home</string>
     <string name="assistant_todos">To-dos</string>
     <string name="assistant_open_settings">Settings</string>
+    <string name="assistant_make_leader">Pin</string>
+    <string name="assistant_end_leader">Unpin</string>
+    <string name="assistant_leader_working">%1$d working</string>
+    <string name="assistant_leader_needs_you">%1$d need you</string>
     <string name="assistant_conversation_actions">Chat actions</string>
-    <string name="assistant_pin">Pin</string>
-    <string name="assistant_unpin">Unpin</string>
     <string name="assistant_demo_title">Demo mode</string>
     <string name="assistant_demo_notice">Content is only kept for this demo.</string>
     <string name="assistant_demo_reply">This is a sample chat. Once the assistant is connected, replies show up here.</string>
@@ -134,8 +117,8 @@
     <string name="assistant_needs_you_agent">Agent</string>
     <string name="assistant_pair_first">Pair a hub first</string>
     <plurals name="assistant_show_all_recent">
-        <item quantity="one">See all %1$d</item>
-        <item quantity="other">See all %1$d</item>
+        <item quantity="one">All chats (%1$d)</item>
+        <item quantity="other">All chats (%1$d)</item>
     </plurals>
     <plurals name="assistant_needs_you_more">
         <item quantity="one">%1$d more in Inbox</item>

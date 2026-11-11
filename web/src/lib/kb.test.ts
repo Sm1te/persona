@@ -10,6 +10,7 @@ import {
   entryFromDetail,
   factsOf,
   formatAt,
+  formatSpan,
   groupEntries,
   momentFeed,
   groupResults,
@@ -272,6 +273,13 @@ describe("detail", () => {
     expect(dayTitle("nope", NOW)).toBe("nope");
     expect(formatAt("2026-10-30T14:05:00", NOW)).toBe("10月30日 周五 14:05");
     expect(formatAt("2025-01-02T09:00:00", NOW)).toBe("2025年1月2日 09:00");
+    // The minutes' span (#4713): the same dates, the end's time only on the start's day; the hub's when without them.
+    expect(formatSpan("2026-10-30T14:05:00", "2026-10-30T15:10:00", "x", NOW)).toBe("10月30日 周五 14:05–15:10");
+    expect(formatSpan("2026-10-30T23:30:00", "2026-10-31T00:20:00", "x", NOW)).toBe("10月30日 周五 23:30 – 10月31日 周六 00:20");
+    expect(formatSpan("2025-01-02T09:00:00", "2025-01-02T10:00:00", "x", NOW)).toBe("2025年1月2日 09:00–10:00");
+    expect(formatSpan(undefined, undefined, "2026-10-30 14:05–15:10", NOW)).toBe("2026-10-30 14:05–15:10");
+    expect(formatSpan("2026-10-30T14:05:00", undefined, "fallback", NOW)).toBe("fallback");
+    expect(formatSpan("nope", "2026-10-30T15:10:00", "fallback", NOW)).toBe("fallback");
   });
 
   it("reads a chat's recent messages by day", () => {

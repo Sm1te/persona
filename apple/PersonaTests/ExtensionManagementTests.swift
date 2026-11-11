@@ -137,6 +137,79 @@ struct ExtensionManagementTests {
         #expect(m.removalMessage == "合集已卸载；成功卸载 1 个成员")
     }
 
+    // A pack uninstalled with its members that stops part way (#4072): each group by the members' installed names, a
+    // member not installed by its id, the failed one not repeated as not tried; Retry sends the same choice again.
+    @Test func aPartialPackUninstallListsEachGroupByName() async throws {
+        let hub = FakeHub()
+        hub.on("GET", "/api/v1/plugins/-/catalog", json: #"{"plugins":[{"market":"market","id":"pack","name":"示例合集","version":"1.0.0","installed":"1.0.0","from_this_market":true}]}"#)
+        hub.on("GET", "/api/v1/plugins/pack/-/", json: #"{"id":"pack","name":"示例合集","kind":"extension_pack","status":"running","extension_pack":[{"id":"notes"},{"id":"ui"},{"id":"mail"}]}"#)
+        hub.on("GET", "/api/v1/plugins", json: #"{"plugins":[{"id":"pack","name":"示例合集","kind":"extension_pack","status":"running"},{"id":"notes","name":"示例笔记","kind":"ui","status":"running"},{"id":"ui","name":"示例界面","kind":"ui","status":"running"}]}"#)
+        var deletes = 0
+        hub.on("DELETE", "/api/v1/plugins/pack/-/") { request in
+            #expect(request.query["members"] == "1")
+            deletes += 1
+            guard deletes > 1 else {
+                throw APIError(status: 409, message: "合集没有卸载完", fields: ["code": "partial_uninstall"], details: .object([
+                    "ok": .bool(false), "code": .string("partial_uninstall"), "error": .string("合集没有卸载完"),
+                    "removed_members": .array([.string("notes")]),
+                    "failed_members": .array([.object(["id": .string("ui"), "error": .string("仍在运行")])]),
+                    "remaining_members": .array([.string("ui"), .string("mail")]),
+                ]))
+            }
+            return Data(#"{"ok":true,"removed_members":["ui"]}"#.utf8)
+        }
+        let m = MarketExtensionModel(market: "market", id: "pack", deps: .init(api: { hub.client }))
+        await m.load()
+        #expect(m.memberNames["notes"] == "示例笔记" && m.memberNames["mail"] == nil)
+        #expect(m.uninstallMessage == "成员：示例笔记、示例界面、mail。只卸载合集会保留这些成员；连成员一起卸载会删除它们的设置和数据。")
+        #expect(await !m.uninstall(members: true))
+        let partial = try #require(m.partialRemoval)
+        #expect(partial.removed == ["notes"] && partial.failed == [.init(id: "ui", error: "仍在运行")] && partial.remaining == ["mail"])
+        let op = try #require(m.operation)
+        #expect(op.state == .failed && op.kind == .uninstall && m.error == nil)
+        #expect(m.partialLines(for: op) == ["「示例合集」还在。已经卸载的成员不会恢复，可以再试一次。", "已卸载：示例笔记",
+                                            "未能卸载：示例界面（仍在运行）", "未处理，仍已安装：mail"])
+        #expect(await m.retry())
+        #expect(m.partialRemoval == nil && deletes == 2)
+    }
+
+    @Test func otherUninstallFailuresAreNotPartial() {
+        #expect(ExtensionPartialRemoval(error: APIError(status: 409, message: "x", fields: ["code": "has_dependents"], details: .object([:]))) == nil)
+        #expect(ExtensionPartialRemoval(error: URLError(.timedOut)) == nil)
+        // Odd entries are left out; a reason may be missing.
+        let odd = ExtensionPartialRemoval(error: APIError(status: 409, message: "x", fields: ["code": "partial_uninstall"], details: .object([
+            "removed_members": .array([.string("a"), .number(1)]), "failed_members": .array([.object(["id": .string("b")]), .string("c")]),
+        ])))
+        #expect(odd == ExtensionPartialRemoval(removed: ["a"], failed: [.init(id: "b", error: "")], remaining: []))
+        #expect(odd?.lines(pack: "示例合集", names: [:]).last == "未能卸载：b")
+    }
+
+    // A pack's members by name (#4122): the id goes under it beside the version and market; one not installed keeps its id.
+    @Test func packMemberRowsNameInstalledMembers() throws {
+        let member = ExtensionPackMember(id: "notes", market: "github:example/market", version: "1.0.0")
+        #expect(ExtensionPackMemberLine(member, name: "示例笔记") == .init(title: "示例笔记", detail: "notes · 1.0.0 · github:example/market"))
+        #expect(ExtensionPackMemberLine(member, name: nil) == .init(title: "notes", detail: "1.0.0 · github:example/market"))
+        #expect(ExtensionPackMemberLine(member, name: "notes").title == "notes")
+        #expect(ExtensionPackMemberLine(ExtensionPackMember(id: "mail"), name: nil) == .init(title: "mail", detail: nil))
+        // In a preview the members installed with it are named by their own manifests, over the installed names.
+        let preview = try decodePreview(#"{"bundle":[{"preview_id":"ui-preview","permissions_digest":"d","manifest":{"id":"ui","name":"新界面"},"permissions":[]}]}"#)
+        let names = ExtensionPackMemberLine.names(installed: ["notes": "示例笔记", "ui": "旧界面"], preview: preview)
+        #expect(names == ["notes": "示例笔记", "ui": "新界面"])
+    }
+
+    @Test func aPacksPageReadsTheInstalledNamesOnlyForAPack() async {
+        let hub = FakeHub()
+        hub.on("GET", "/api/v1/plugins/pack/-/", json: #"{"id":"pack","name":"示例合集","kind":"extension_pack","status":"running","extension_pack":[{"id":"notes"},{"id":"mail"}]}"#)
+        hub.on("GET", "/api/v1/plugins", json: #"{"plugins":[{"id":"notes","name":"示例笔记","kind":"ui","status":"running"}]}"#)
+        hub.on("GET", path, json: detail)
+        let pack = ExtensionModel(id: "pack", deps: .init(api: { hub.client }))
+        await pack.load()
+        #expect(pack.memberNames == ["notes": "示例笔记"])
+        let plain = model(hub)
+        await plain.load()
+        #expect(plain.memberNames.isEmpty && hub.sent("GET", "/api/v1/plugins").count == 1)
+    }
+
     // An uninstall can succeed with cleanup warnings (#4466): every one is kept, in order, repeats and long paths
     // included; an older hub's answer (no warnings, null, []) has none (#4819).
     @Test func removalResultsKeepEveryCleanupWarning() throws {

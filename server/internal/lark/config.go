@@ -36,6 +36,10 @@ type Config struct {
 type CLIConfig struct {
 	Bin     string `json:"bin,omitempty"`     // command name or absolute path; default lark-cli, looked up in a login shell
 	Profile string `json:"profile,omitempty"` // lark-cli --profile; "" is its default profile
+	// Extensions explicitly allows extensions that declare the "lark-cli" host
+	// integration to use its bounded, read-only RPC. It grants no shell access,
+	// no writes, and no credentials.
+	Extensions bool `json:"extensions,omitempty"`
 	// InboxPollSeconds controls the lark-cli Inbox watcher. Values below 60
 	// seconds are clamped; zero keeps the two-minute default.
 	InboxPollSeconds int `json:"inbox_poll_seconds,omitempty"`

@@ -317,6 +317,21 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @layer base { * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; } }
 /* A row that scrolls sideways without a bar (still by wheel, trackpad and touch); WebKit before 18.2 needs the pseudo. */
 @utility scrollbar-none { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }
+/* Conversation chrome: retain the native hit strip and drag behavior, with no opaque track or layout shift.
+   Only enhanced browsers fade the thumb; forced colors and unsupported browsers keep the native bar. */
+:root { --chat-scrollbar-fade: 220ms; }
+@media (forced-colors: none) {
+  [data-chat-scroll][data-chat-scrollbar="native"] {
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color var(--chat-scrollbar-fade) ease-out;
+  }
+  [data-chat-scroll][data-scrollbar-visible="true"] { scrollbar-color: var(--ink-3) transparent; }
+}
+/* The navigator's measured clearance grows only where the centered column's existing margin is insufficient. */
+[data-chat-scroll] > [data-chat-content] { padding-right: max(calc(var(--spacing) * 5), var(--chat-nav-clearance, 0px)); }
+@media (min-width: 640px) {
+  [data-chat-scroll] > [data-chat-content] { padding-right: max(calc(var(--spacing) * 8), var(--chat-nav-clearance, 0px)); }
+}
 button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
 /* Blue bubbles need stronger muted text in dark mode and a readable focus indicator in both schemes.
    Keep this local: page text and extension accent colors are unchanged. */

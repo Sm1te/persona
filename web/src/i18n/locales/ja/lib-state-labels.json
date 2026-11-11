@@ -20,5 +20,8 @@
   "count_unread_other": "未確認{count}件",
   "count_done_other": "完了{count}件",
   "mark_all_seen": "すべて確認済みにする",
-  "mark_all_seen_count": "すべて確認済みにする（{count}）"
+  "mark_all_seen_count": "すべて確認済みにする（{count}）",
+  "direction_working": "作業中",
+  "direction_needs_you": "あなた待ち",
+  "direction_stuck": "停滞中"
 }

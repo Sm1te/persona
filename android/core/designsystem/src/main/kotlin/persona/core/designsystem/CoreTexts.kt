@@ -123,6 +123,7 @@ private fun resourceOf(key: CoreText.Key): Int = when (key) {
     CoreText.Key.StateUnread -> R.string.designsystem_core_state_unread
     CoreText.Key.StateAwaitingReply -> R.string.designsystem_core_state_awaiting_reply
     CoreText.Key.StateWorking -> R.string.designsystem_core_state_working
+    CoreText.Key.StateBackgroundWaiting -> R.string.designsystem_core_state_background_waiting
     CoreText.Key.StateWaiting -> R.string.designsystem_core_state_waiting
     CoreText.Key.StateMuted -> R.string.designsystem_core_state_muted
     CoreText.Key.StateIdle -> R.string.designsystem_core_state_idle

@@ -144,6 +144,14 @@ struct AutoConversationsView: View {
             .tint(Theme.accent)
         }
         .contextMenu {
+            // A direction is the hub's, for every device (#4331): a long press makes a conversation one, or ends it.
+            let lead = model.assistantLeaders.contains(s.sessionID)
+            Button {
+                Task { await model.setDirectionLead(s.sessionID, !lead) }
+            } label: {
+                lead ? Label("Unpin [Assistant Sidebar b7c40e]", systemImage: Theme.Icon.unpin)
+                    : Label("Pin [Assistant Sidebar 6d1f2a]", systemImage: Theme.Icon.pin)
+            }
             Button { Task { await model.archiveConversation(s.key, true) } } label: {
                 Label("Archive", systemImage: Theme.Icon.archive)
             }

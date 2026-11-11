@@ -341,6 +341,7 @@ fun DecisionOption(
     val shape = RoundedCornerShape(when (style) { AppStyle.Glass -> 18.dp; AppStyle.Brief -> 16.dp; AppStyle.Board -> 8.dp })
     val recommendedLabel = stringResource(R.string.designsystem_decision_recommended)
     val separator = stringResource(R.string.designsystem_separator)
+    val haptics = rememberHaptics()
     val spoken = position?.let { (current, total) ->
         listOfNotNull(label, detail, recommendedLabel.takeIf { recommended },
             stringResource(R.string.designsystem_decision_option_position, current, total)).joinToString(separator)
@@ -352,7 +353,7 @@ fun DecisionOption(
     }
     Row(
         modifier.fillMaxWidth().heightIn(min = 52.dp).clip(shape).background(fill).border(if (selected) 2.dp else 1.dp, border, shape)
-            .clickable(enabled = enabled, role = if (multiSelect) Role.Checkbox else Role.RadioButton, onClick = onClick)
+            .clickable(enabled = enabled, role = if (multiSelect) Role.Checkbox else Role.RadioButton, onClick = haptics.tapped(onClick))
             .semantics {
                 if (multiSelect) toggleableState = ToggleableState(selected) else this.selected = selected
                 spoken?.let { contentDescription = it }
@@ -377,6 +378,10 @@ fun DecisionOption(
 /** A single action line. Alternatives move into a menu before their labels would be truncated. */
 @Composable
 fun DecisionActions(primary: JAction?, alternatives: List<JAction>, overflowLabel: String, modifier: Modifier = Modifier, busy: Boolean = false) {
+    // Pressing an answer is felt; its result plays its own (DESIGN_SYSTEM.md 4.3).
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING") val primary = primary?.let { haptics.tapped(it) }
+    @Suppress("NAME_SHADOWING") val alternatives = alternatives.map { haptics.tapped(it) }
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val type = PersonaTheme.type.labelSmall
@@ -423,6 +428,10 @@ internal fun fittingOptions(options: List<Float>, available: Float, gap: Float):
 @Composable
 fun DecisionAnswers(options: List<JAction>, other: JAction, more: List<JAction>, overflowLabel: String,
     modifier: Modifier = Modifier, busy: Boolean = false) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING") val options = options.map { haptics.tapped(it) }
+    @Suppress("NAME_SHADOWING") val other = haptics.tapped(other)
+    @Suppress("NAME_SHADOWING") val more = more.map { haptics.tapped(it) }
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val type = PersonaTheme.type.labelSmall
@@ -466,6 +475,10 @@ private val QuietButtonPadding = 8.dp
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DecisionButtons(primary: JAction, modifier: Modifier = Modifier, secondary: JAction? = null, more: List<JAction> = emptyList(), busy: Boolean = false) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING") val primary = haptics.tapped(primary)
+    @Suppress("NAME_SHADOWING") val secondary = secondary?.let { haptics.tapped(it) }
+    @Suppress("NAME_SHADOWING") val more = more.map { haptics.tapped(it) }
     val wide = if (PersonaTheme.style == AppStyle.Board) 1.5f else 1f
     Column(modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -483,6 +496,10 @@ fun DecisionButtons(primary: JAction, modifier: Modifier = Modifier, secondary: 
 @Composable
 fun DraftDecisionButtons(send: JAction, later: JAction, dismiss: JAction, modifier: Modifier = Modifier,
     busy: Boolean = false, sendModifier: Modifier = Modifier, laterModifier: Modifier = Modifier, dismissModifier: Modifier = Modifier) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING") val send = haptics.tapped(send)
+    @Suppress("NAME_SHADOWING") val later = haptics.tapped(later)
+    @Suppress("NAME_SHADOWING") val dismiss = haptics.tapped(dismiss)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val stacked = LocalDensity.current.fontScale >= 1.3f || maxWidth < 320.dp
         Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {

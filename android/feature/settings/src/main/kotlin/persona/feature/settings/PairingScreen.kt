@@ -21,6 +21,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,8 +33,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import persona.core.designsystem.*
 import persona.core.designsystem.icons.PhIcons
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import persona.core.contracts.api.*
@@ -41,6 +46,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+
+private enum class PairingPage(@StringRes val title: Int?) {
+    Welcome(null),
+    Password(R.string.settings_password_login_title),
+    Connect(R.string.settings_pairing_title),
+    Manual(R.string.settings_pairing_manual),
+    Confirm(R.string.settings_pairing_confirm),
+    Connecting(R.string.settings_pairing_connecting_title),
+    Failed(R.string.settings_pairing_failed_title),
+}
 
 @Composable
 fun PairingScreen(
@@ -116,13 +131,14 @@ fun PairingScreen(
     }
     fun accept(link: String) {
         passwordEntry = false
+        manual = false; confirm = null; progress = emptyList()
         welcome = false; readiness = false; credentialsSaved = false; lastRequest = null; tries = 0; addressError = null; typed = false
         // A token typed for another hub must never go to this one.
         accessId = ""; accessSecret = ""; accessOpen = false
         try {
             val request = PairingInput.parse(link)
             metadata = request; address = request.url; token = request.token; failure = null
-            progress = emptyList(); confirm = request; notice = null
+            confirm = request; notice = null
         } catch (error: Exception) {
             failure = pairingFailure(error)
             recordAttempt(null, error)
@@ -153,6 +169,7 @@ fun PairingScreen(
     }
     fun connect(request: PairingRequest?, passwordAddress: String? = null) {
         if (running) return
+        if (passwordAddress != null) typed = false
         lastRequest = request
         running = true
         loginJob = scope.launch {
@@ -250,6 +267,7 @@ fun PairingScreen(
         if (value.isNullOrBlank()) notice = R.string.settings_pairing_notice_clipboard_empty else accept(value)
     }
     fun edit() {
+        passwordEntry = false
         credentialsSaved = false; lastRequest = null; confirm = null; failure = null; progress = emptyList(); manual = true; tries = 0; addressError = null
         // The address may change to another hub: its token starts empty.
         accessId = ""; accessSecret = ""; accessOpen = false
@@ -264,45 +282,70 @@ fun PairingScreen(
             recordAttempt(PairingRequest(address.trim(), token), error)
         }
     }
-    // System Back goes back one page: failure or confirm to the form (or the connect choices), the form to the choices,
-    // the choices to the welcome page or out through onBack, and the first checklist into the app. It does nothing while
-    // connecting; the engine step keeps its own rule. The host leaves this page's back to it (SettingsScreen).
+    val attemptFailure = failure
+    val confirmedRequest = confirm
+    val page = when {
+        welcome -> PairingPage.Welcome
+        attemptFailure != null -> PairingPage.Failed
+        running || progress.isNotEmpty() -> PairingPage.Connecting
+        confirmedRequest != null -> PairingPage.Confirm
+        manual -> PairingPage.Manual
+        passwordEntry -> PairingPage.Password
+        else -> PairingPage.Connect
+    }
+    val later = onBack ?: onReady
+    fun returnFromAttempt() {
+        confirm = null
+        failure = null
+        progress = emptyList()
+        notice = null
+        manual = typed
+    }
     val back: (() -> Unit)? = when {
         engineStep != null -> null
-        readiness -> onBack ?: onReady
-        running -> { {} }
-        confirm != null || failure != null || progress.isNotEmpty() -> { { confirm = null; failure = null; progress = emptyList(); notice = null } }
-        manual -> { { manual = false } }
-        !welcome && !skipWelcome && initialLink == null -> { { welcome = true; notice = null } }
-        else -> onBack
+        readiness -> later
+        page == PairingPage.Connecting -> null
+        page == PairingPage.Confirm || page == PairingPage.Failed -> ::returnFromAttempt
+        page == PairingPage.Manual -> ({ manual = false })
+        page == PairingPage.Welcome -> null
+        onBack != null -> onBack
+        !skipWelcome && initialLink == null -> ({ welcome = true; notice = null })
+        else -> null
     }
-    BackHandler(back != null) { back?.invoke() }
-    val step = engineStep
-    if (step != null) {
-        EngineSelectionScreen(step, sessions, machines, pairing = true, onDone = {
+    // Connecting cannot be dismissed through Back. The engine step owns Back once credentials are saved.
+    BackHandler(engineStep == null && (page == PairingPage.Connecting || back != null)) { back?.invoke() }
+    val machineToChoose = engineStep
+    if (machineToChoose != null) {
+        EngineSelectionScreen(machineToChoose, sessions, machines, pairing = true, onDone = {
             records.enginePending(null); engineStep = null; readiness = true
         })
     } else if (readiness) {
         ReadinessScreen(sessions, diagnostics, notificationsOnly = false,
-            onDiagnostics = onDiagnostics, onDone = { records.pending(false); onReady() }, onBack = onBack ?: onReady, footer = footer,
-            readiness = mainReadiness)
-    } else JListPage(title = stringResource(R.string.settings_pairing_title), onBack = onBack, largeTitle = false) {
-        when {
-            welcome -> {
-                item { PairingHeading(stringResource(R.string.settings_pairing_welcome_title), stringResource(R.string.settings_pairing_welcome_body)) }
+            onDiagnostics = onDiagnostics, onDone = { records.pending(false); onReady() }, onLater = later, onBack = null,
+            readiness = mainReadiness, footer = footer)
+    } else PairingListPage(page, onBack = back, state = key(page) { rememberLazyListState() }) {
+        when (page) {
+            PairingPage.Welcome -> {
+                item {
+                    Column(Modifier.padding(vertical = Tokens.Space.l), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        Text(stringResource(R.string.settings_pairing_welcome_title), style = PersonaTheme.type.largeTitle,
+                            color = PersonaTheme.palette.ink, modifier = Modifier.semantics { heading() })
+                        Text(stringResource(R.string.settings_pairing_welcome_body), style = PersonaTheme.type.body, color = PersonaTheme.palette.ink2)
+                    }
+                }
                 item { JGroupItem(GroupPosition.of(0, 3)) { JRow("Agents", leadingIcon = PhIcons.Robot, subtitle = stringResource(R.string.settings_pairing_welcome_agents), subtitleLines = 3) } }
                 item { JGroupItem(GroupPosition.of(1, 3)) { JRow(stringResource(R.string.settings_pairing_welcome_inbox_title), leadingIcon = PhIcons.Tray, subtitle = stringResource(R.string.settings_pairing_welcome_inbox), subtitleLines = 3) } }
                 item { JGroupItem(GroupPosition.of(2, 3)) { JRow(stringResource(R.string.settings_pairing_welcome_assistant_title), leadingIcon = PhIcons.Sparkle, subtitle = stringResource(R.string.settings_pairing_welcome_assistant), subtitleLines = 3) } }
                 item { SettingsCaption(stringResource(R.string.settings_pairing_welcome_push), Modifier.padding(vertical = Tokens.Space.m)) }
                 item { JButton(stringResource(R.string.settings_pairing_welcome_connect), { welcome = false }, Modifier.fillMaxWidth()) }
             }
-            failure != null -> {
-                val reason = requireNotNull(failure)
+            PairingPage.Failed -> {
+                val reason = requireNotNull(attemptFailure)
                 val recovery = reason.recovery()
                 // A typed code that is wrong or expired: fix it in the form first (it keeps what was typed); scanning is
                 // the second way. Certificate and https problems, and anything from a link, still lead with scanning.
                 val retype = typed && (reason == PairingFailure.InvalidCode || reason == PairingFailure.Expired)
-                item { PairingHeading(stringResource(R.string.settings_pairing_failed_title), stringResource(R.string.settings_pairing_failed_body)) }
+                pairingInstructions(R.string.settings_pairing_failed_body)
                 item { JNotice(pairingExplanation(reason, failureAddress), status = Status.NeedsYou) }
                 if (tries >= 2) item {
                     SettingsCaption(pluralStringResource(R.plurals.settings_pairing_tried_again, tries, tries), Modifier.padding(top = Tokens.Space.s))
@@ -332,14 +375,14 @@ fun PairingScreen(
                 }
                 if (progress.isNotEmpty()) pairingProgress(progress, running, failed = true, resources)
             }
-            running || progress.isNotEmpty() -> {
-                item { PairingHeading(stringResource(R.string.settings_pairing_connecting_title), stringResource(R.string.settings_pairing_connecting_body)) }
+            PairingPage.Connecting -> {
+                pairingInstructions(R.string.settings_pairing_connecting_body)
                 pairingProgress(progress, running, failed = false, resources)
                 if (running && passwordEntry) item { JTextButton(stringResource(R.string.settings_password_login_cancel), { loginJob?.cancel() }) }
             }
-            confirm != null -> {
-                val request = requireNotNull(confirm)
-                item { PairingHeading(stringResource(R.string.settings_pairing_confirm), stringResource(R.string.settings_pairing_confirm_body)) }
+            PairingPage.Confirm -> {
+                val request = requireNotNull(confirmedRequest)
+                pairingInstructions(R.string.settings_pairing_confirm_body)
                 pairingDetails(request, resources)
                 item {
                     JTextButton(stringResource(R.string.settings_access_title), { accessOpen = !accessOpen }, Modifier.padding(top = Tokens.Space.s))
@@ -362,8 +405,8 @@ fun PairingScreen(
                     }
                 }
             }
-            manual -> {
-                item { PairingHeading(stringResource(R.string.settings_pairing_manual), stringResource(R.string.settings_pairing_manual_body)) }
+            PairingPage.Manual -> {
+                pairingInstructions(R.string.settings_pairing_manual_body)
                 item {
                     JCard {
                         Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
@@ -391,8 +434,8 @@ fun PairingScreen(
                     }
                 }
             }
-            passwordEntry -> {
-                item { PairingHeading(stringResource(R.string.settings_password_login_title), stringResource(R.string.settings_password_login_body)) }
+            PairingPage.Password -> {
+                pairingInstructions(R.string.settings_password_login_body)
                 item { JCard {
                     JTextField(address, { address = it }, label = stringResource(R.string.settings_password_login_address), modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true)
@@ -403,8 +446,8 @@ fun PairingScreen(
                     SettingsCaption(stringResource(R.string.settings_password_login_note))
                 } }
             }
-            else -> {
-                item { PairingHeading(stringResource(R.string.settings_pairing_connect_title), stringResource(R.string.settings_pairing_connect_body)) }
+            PairingPage.Connect -> {
+                pairingInstructions(R.string.settings_pairing_connect_body)
                 item {
                     PairingActions {
                         JButton(stringResource(R.string.settings_password_login_title), { passwordEntry = true }, Modifier.fillMaxWidth(), kind = JButtonKind.Secondary)
@@ -443,11 +486,40 @@ private fun PairingActions(content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = Tokens.Space.m), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m), content = content)
 }
 
+// The glass bar already insets its title by 10 dp. Its empty leading slot adds the remaining 6 dp.
+internal val pairingTitleInset: @Composable () -> Unit = {
+    if (PersonaTheme.style == AppStyle.Glass) Spacer(Modifier.width(Tokens.Space.sm))
+}
+
 @Composable
-private fun PairingHeading(title: String, description: String) {
-    Column(Modifier.padding(vertical = Tokens.Space.l), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        Text(title, style = PersonaTheme.type.largeTitle, color = PersonaTheme.palette.ink)
-        Text(description, style = PersonaTheme.type.callout, color = PersonaTheme.palette.ink2)
+private fun PairingListPage(page: PairingPage, onBack: (() -> Unit)?, state: LazyListState, content: LazyListScope.() -> Unit) {
+    val title = page.title
+    if (title != null) {
+        CompositionLocalProvider(
+            LocalRootBack provides null,
+            LocalRootLeading provides pairingTitleInset.takeIf { page == PairingPage.Connecting },
+            LocalHomeChrome provides null,
+        ) {
+            JListPage(stringResource(title), onBack = onBack, state = state, largeTitle = false, content = content)
+        }
+    } else {
+        // The welcome page has no floating controls. Reserve the status inset without masking the welcome heading.
+        JPage(title = "", topBar = { Spacer(Modifier.statusBarsPadding()) }, edges = false) { insets ->
+            val pad = pagePadding
+            LazyColumn(
+                Modifier.fillMaxSize(), state = state,
+                contentPadding = PaddingValues(start = pad, end = pad, top = insets.calculateTopPadding() + Tokens.Space.xs,
+                    bottom = insets.calculateBottomPadding() + Tokens.Space.section),
+                content = content,
+            )
+        }
+    }
+}
+
+private fun LazyListScope.pairingInstructions(@StringRes description: Int) {
+    item("instructions") {
+        Text(stringResource(description), modifier = Modifier.padding(vertical = Tokens.Space.l),
+            style = PersonaTheme.type.body, color = PersonaTheme.palette.ink2)
     }
 }
 

@@ -25,8 +25,7 @@
   "filter_empty": "「{filter}」のエージェントはありません",
   "show_all": "すべて表示",
   "pinned_section": "ピン留め",
-  "directions": "方向性",
-  "other_chats": "その他のチャット",
+  "directions": "常駐",
   "launching": "起動中",
   "launch_untitled": "新しいエージェント",
   "launch_failed": "起動に失敗",
@@ -130,10 +129,6 @@
   "folded_states": "折りたたんだエージェント：{list}",
   "unread_messages_count": "未読メッセージ{count}件",
   "inbox_badge_title": "受信トレイ：未読の項目{count}件。待機中のエージェントは「概要」へ",
-  "auto_chats": "自動のチャット",
-  "auto_chats_label": "自動のチャット {count} 件",
-  "auto_working": "{count} 件実行中",
-  "auto_needs_you": "{count} 件が対応待ち",
   "list_menu": "エージェント一覧のオプション",
   "list_menu_sorted": "エージェント一覧のオプション：{sort}",
   "not_connected_yet": "未接続",
@@ -149,5 +144,7 @@
   "switched_to": "{name}に切り替えました",
   "switcher_label": "{name}、アシスタントを切り替え",
   "switcher_label_waiting": "{name}、アシスタントを切り替え。ほかのアシスタントに対応待ちがあります",
-  "switcher_count": "対応待ち {count} 件"
+  "switcher_count": "対応待ち {count} 件",
+  "leader_working": "作業中 {count}",
+  "leader_needs_you": "対応待ち {count}"
 }

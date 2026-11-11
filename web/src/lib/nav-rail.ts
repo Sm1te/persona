@@ -172,7 +172,7 @@ export function navRailMark(index: number, count: number, current: number | null
   const width = m.tickWidth + (peak - m.tickWidth) * bell;
   return {
     state: isCurrent ? (isPreview ? "current-hover" : "current") : isPreview ? "hover" : "idle",
-    width: isCurrent ? Math.max(width, m.currentWidth) : width,
+    width,
     height: isCurrent ? (isPreview ? m.currentHoverHeight : m.currentHeight) : isPreview ? m.hoverHeight : m.tickHeight,
     opacity: isCurrent || isPreview ? 1 : m.tailOpacity + m.shoulderOpacity * bell,
   };

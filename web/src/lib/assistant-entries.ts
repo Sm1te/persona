@@ -52,7 +52,7 @@ export interface AssistantEntriesInput {
   feed: FeedItem[];
   /** The hub's task card slots for the conversation (`task_cards`). */
   cards?: TaskCardMetadata[];
-  /** Message cards the user put off locally (`later`), by card id. */
+  /** Message cards and task-decision rounds the user put off locally (`later`). */
   deferred?: Record<string, unknown>;
   /** Looks up a task's agents; defaults to `sessions`. */
   lookup?: SessionLookup;
@@ -83,6 +83,15 @@ export function taskAwaitsDecision(todo: Todo): boolean {
 /** The message card still waits for Send: not sent, filed, dismissed, or put off. */
 export function messageWaits(it: FeedItem, deferred: Record<string, unknown> = {}): boolean {
   return it.kind === "message" && !cardSent(it) && !cardFiled(it) && !cardDismissed(it) && !deferred[it.id];
+}
+
+/** The review round, not the task id alone: a later decision must remain visible. */
+export function decisionRound(todo: Todo): string {
+  return todo.supervision?.reviews?.at(-1)?.at || todo.decision_review?.review_at || todo.ask?.asked_at || "";
+}
+
+export function decisionLaterKey(todo: Todo): string {
+  return `decision:${todo.manager || ""}:${todo.id}:${decisionRound(todo)}`;
 }
 
 export function assistantEntries(input: AssistantEntriesInput): AssistantEntries {
@@ -116,7 +125,14 @@ export function assistantEntries(input: AssistantEntriesInput): AssistantEntries
     // a failed start carries done_at (the hub ends it), yet it is the user's to retry while its bucket says open
     const waits = status === "failed" ? bucket === "open" : !todo.done_at && WAITS_ON_YOU.has(status);
     if (asks.length) asking.push({ kind: "task", key, todo, status, asks });
-    else if (waits || taskAwaitsDecision(todo)) deciding.push({ item: { kind: "task", key, todo, status, asks }, rank: todoRank(todo, status), at: card.at });
+    else if (waits || taskAwaitsDecision(todo)) {
+      // Only the review decision is hidden; a live Agent question above still has its home.
+      if (!waits && taskAwaitsDecision(todo) && (todo.decision_review?.dismissal_id && todo.decision_review.review_at === decisionRound(todo) || input.deferred?.[decisionLaterKey(todo)])) {
+        for (const agent of active) folded.add(sessionKey(agent.machine_id, agent.session_id));
+        continue;
+      }
+      deciding.push({ item: { kind: "task", key, todo, status, asks }, rank: todoRank(todo, status), at: card.at });
+    }
     // a parked task waits on purpose (#3804): with the tasks in progress however long it has been still, never folded away
     else if (bucket === "open" || reviewState(todo) === "parked") open.push({ item: { kind: "task", key, card, todo, status, activity: taskBackgroundWork(todo, lookup) }, rank: todoRank(todo, status), at: card.at });
     else if (bucket === "shelved") shelved.push({ item: { kind: "task", key, card, todo, status }, at: card.at });

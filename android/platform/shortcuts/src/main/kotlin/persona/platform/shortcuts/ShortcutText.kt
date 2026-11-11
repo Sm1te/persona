@@ -16,6 +16,8 @@ import persona.core.domain.answer.AnswerContext
 import persona.core.domain.answer.AnswerEntry
 import persona.core.domain.fleet.FleetSummary
 import persona.core.domain.fleet.FleetText
+import persona.core.domain.sort.AgentSession
+import persona.core.domain.sort.foldedSubtasks
 import persona.core.hub.HubError
 import persona.core.hub.HubFailure
 import java.time.Instant
@@ -122,14 +124,20 @@ object ShortcutText {
     }
 }
 
-/** The launcher's recent agents after "Ask Persona" / "Approve pending": the most recently active live ones, Persona itself left out. */
+/**
+ * The launcher's recent agents after "Ask Persona" / "Approve pending": the most recently active live ones, Persona itself
+ * left out, and no subtask the Agents list hangs under a live session above it, where it is reached (#4769, `foldedSubtasks`).
+ */
 object RecentAgents {
     const val COUNT = 2
 
     // Each session's time is parsed once: `updated` parses its text on every read, and reading it inside the
     // comparator parsed every session's date on each comparison of each push.
-    fun pick(sessions: Collection<Session>): List<Session> = sessions.filter { !it.assistant && it.isLive }
-        .map { it to (it.updated ?: Instant.EPOCH) }
-        .sortedWith(compareByDescending<Pair<Session, Instant>> { it.second }.thenBy { it.first.key.path })
-        .take(COUNT).map { it.first }
+    fun pick(sessions: Collection<Session>): List<Session> {
+        val folded = foldedSubtasks(sessions.map(::AgentSession)) { !it.session.assistant && it.isLive }
+        return sessions.filter { !it.assistant && it.isLive && it.key.path !in folded }
+            .map { it to (it.updated ?: Instant.EPOCH) }
+            .sortedWith(compareByDescending<Pair<Session, Instant>> { it.second }.thenBy { it.first.key.path })
+            .take(COUNT).map { it.first }
+    }
 }

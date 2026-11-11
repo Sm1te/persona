@@ -19,5 +19,7 @@
   "watched_doc_unreadable": "監視中のドキュメント「{title}」を現在読み取れません。10 分ごとに再試行します。不要なら設定 › コネクタで削除してください",
   "doc_comment_label": "ドキュメントのコメント",
   "doc_comment_rule": "ルール：ドキュメントのコメントでメンションされた、または参加したスレッドへの返信です。",
-  "larkcli_name": "Lark · 自分のメッセージ"
+  "larkcli_name": "Lark · 自分のメッセージ",
+  "github_rate_low": "今期の GitHub リクエスト枠が残り少なくなっています。約 {minutes} 分間は通知のみ取得します",
+  "github_paused": "GitHub から一時停止を要求されたため、約 {minutes} 分間は取得を行いません"
 }

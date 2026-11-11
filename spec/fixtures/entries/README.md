@@ -25,7 +25,9 @@ not.
   waiting for a decision (the To-dos page's rank, newest first), then message cards. `running`: tasks (the To-dos page's
   rank, newest first), then Agents. `shelved`: folded, not counted.
 - Not covered here: cards of the conversation's own session (they are always Needs you rows and are added by the
-  screen), message cards the user put off (`later`), and Android's inbox drafts.
+  screen), message cards the user put off (`later`), Android's inbox drafts, and subtasks: Android leaves an Agent
+  another one started out of the Agent rows while the Agent above it is shown (#4769, `TaskDockTest`); iOS and the web
+  do not yet.
 - Background activity cases (#3588) additionally carry `expected.activity` keyed by running row: `tasks`, `subagents`,
   `workflows`, and optional `phase` / `progress`; null means no background work. They cover command/Monitor counts,
   workflow summary phase and progress, subagents, mixed counts, a real external wait, user-question precedence,

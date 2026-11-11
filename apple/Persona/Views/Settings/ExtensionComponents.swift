@@ -4,11 +4,12 @@ import SwiftUI
 // The components of an extension's View (docs/extensions/extensions.md「Declarative UI」「UI 版本 3」), drawn by `ExtensionItemRow`.
 
 /// A row's look: what leads it (an icon, an avatar or a thumbnail), its title and subtitle, its value and badge, and a
-/// chevron when it can be used (a spinner while it runs).
-struct ExtensionComponentRowLabel: View {
+/// chevron when it can be used (a spinner while it runs); `trailing` at its very end (a control, UI version 6).
+struct ExtensionComponentRowLabel<Trailing: View>: View {
     var row: ExtensionRowComponent
     var model: (any ExtensionViewControlling)?
     var chevron: Bool
+    @ViewBuilder var trailing: Trailing
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -36,6 +37,7 @@ struct ExtensionComponentRowLabel: View {
                     ThemedIcon(Theme.Icon.disclosure).font(Theme.Font.labelStrong).foregroundStyle(.tertiary)
                 }
             }
+            trailing
         }
         .contentShape(.rect)
     }
@@ -71,6 +73,12 @@ struct ExtensionComponentRowLabel: View {
     static func image(_ s: String) -> URL? {
         guard let u = URL(string: s), u.scheme?.lowercased() == "https" else { return nil }
         return u
+    }
+}
+
+extension ExtensionComponentRowLabel where Trailing == EmptyView {
+    init(row: ExtensionRowComponent, model: (any ExtensionViewControlling)?, chevron: Bool) {
+        self.init(row: row, model: model, chevron: chevron) { EmptyView() }
     }
 }
 

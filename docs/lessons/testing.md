@@ -904,3 +904,18 @@ To check that a failure is this, move `dev.json` aside in the app's data contain
 ## Warm allocation measurements need one processor (2026-11-10, #3390)
 
 - Disabling GC preserves `sync.Pool` contents but does not keep a goroutine on the processor whose private pool was warmed. A switch during a byte-allocation measurement can charge a cold JSON encoder's buffer growth to the operation. Measure an explicitly warmed steady state with `GOMAXPROCS(1)` during the window and restore it afterward, as `testing.AllocsPerRun` does. Check warm-up errors and retain the original byte limit; a historical extra-copy implementation measured by the same helper must still fail that limit. This isolates the measurement from processor migration, not from unrelated allocating goroutines: do not run these process-wide measurements in parallel.
+
+## Measuring latency on the shared Mac (2026-11-10, #3067)
+
+- The Mac other lanes build on runs at a load average of 100–260 on 20 cores. The same path's small-message round
+  trip moved between 6 and 47 ms (p50) within minutes, and a hub redeploy by another lane can land mid-run (check the
+  hub processes' `etime`). Compare by interleaving the variants, several rounds, medians, with the load average logged.
+- A result from a loaded machine can reverse once it is quiet: at a load of ~400, asking for VNC updates early looked
+  239 ms faster for typing (3 of 6 pairs); at 25–80 it was slower in all 5 pairs (median +81 ms). Decide on runs made at
+  a low load, interleaved (ABBA), and say the load next to the numbers.
+- Driving the real desktop (`server/cmd/vncbench run`): other lanes' windows and dialogs open on top of yours at any
+  time. Send a click, a wheel notch or a drag only where your own page is seen on the screen (vncbench's target
+  checker), type only while your page says it has the keyboard, and bring your browser forward with `open -a`, never
+  by clicking. A window's rounded corner clips a marker drawn in it: keep markers inset.
+- An agent's shell is not the login session: the login keychain is locked there and `security … -w` exits 36 (no user
+  interaction allowed). A secret the user stored in the keychain can't be read; use a 0600 file outside the repository.

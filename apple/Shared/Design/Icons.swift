@@ -265,6 +265,8 @@ extension Theme {
         static let unmute = "bell"
         /// An Inbox rule: where a chat's, sender's or repository's items go and what the AI twin does with them.
         static let inboxRule = "signpost.right"
+        /// Source subscriptions (#2041): what a connector's read-only tools pull into the Inbox or the knowledge base.
+        static let subscriptions = "arrow.2.circlepath"
         static let collapseAll = "rectangle.compress.vertical"
         static let expandAll = "rectangle.expand.vertical"
         static let newConversation = "plus.bubble"
@@ -431,6 +433,9 @@ extension Theme {
         /// A hub behind Cloudflare Access and the service token that lets the app through (Settings › hub › Cloudflare
         /// Access, docs/operations/network.md "Behind Cloudflare Access").
         static let cloudflareAccess = "person.badge.shield.checkmark"
+        /// A paired hub's other addresses, tried after its paired one (Settings › hub › Addresses, docs/operations/network.md
+        /// "Client-added candidates").
+        static let hubAddresses = "signpost.right.and.left"
         /// This device's own SSH key (its public half, to copy onto the server).
         static let sshKey = "key.horizontal"
         /// The SSH server's key fingerprint, confirmed and pinned.
@@ -469,6 +474,12 @@ extension Theme {
         static let servedPage = "globe"
         /// The web: a page an agent fetches, a browser it drives (the same globe).
         static let web = servedPage
+        /// A dev server's preview (#150): a picture of the page for the message (the link card's bar).
+        static let pageScreenshot = "camera.viewfinder"
+        /// Picking an element of the page to comment on (the link card's bar), and the element comment's card.
+        static let pickElement = pointer
+        /// Runs a launch.json entry's command (the preview's Start…).
+        static let startServer = run
         /// Something opened in a window of its own (Mac).
         static let newWindow = "macwindow.badge.plus"
         /// The Mac code viewer's find bar: the previous / next match.
@@ -524,6 +535,8 @@ extension Theme {
         static let handToAI = "paperplane"
         /// Mentions of the user (@Me).
         static let mention = "at"
+        /// An Agent's Quick Commands (Continue, Report Progress, /compact…): the submenu of the composer's + (#3225).
+        static let quickCommands = "slash.circle"
         /// The day's Today card at the top of the assistant's conversation (docs/assistant/unified-entry.md).
         static let today = "sun.max.fill"
         /// Something done on the phone from the conversation: an event added to its calendar, a reminder.

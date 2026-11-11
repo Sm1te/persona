@@ -31,3 +31,9 @@ fun rememberHaptics(): (Haptic) -> Unit {
     val feedback = LocalHapticFeedback.current
     return remember(feedback) { { haptic: Haptic -> feedback.play(haptic) } }
 }
+
+/** [action] after a light [Haptic.Tap], as iOS's buttons that call `Haptics.tap()` before their action (DESIGN_SYSTEM.md 4.3). */
+fun ((Haptic) -> Unit).tapped(action: () -> Unit): () -> Unit = { this(Haptic.Tap); action() }
+
+/** The same [JAction], felt when pressed ([tapped]). */
+fun ((Haptic) -> Unit).tapped(action: JAction): JAction = action.copy(onClick = tapped(action.onClick))

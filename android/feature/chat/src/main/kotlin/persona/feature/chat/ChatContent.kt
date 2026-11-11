@@ -284,8 +284,18 @@ internal fun ChatLineContent(
     closeoutReply: String? = null,
     /** The main conversation folds its background rounds (#4314): a scheduled task's or follow-up's prompt is never shown. */
     hideTaskPrompts: Boolean = false,
+    /** This line is the turn's error and the hub named its fix ([TurnErrorFix]): an answer, a notice or an API error draws the card. */
+    turnFix: TurnErrorFix? = null,
 ) {
     val res = LocalResources.current
+    if (turnFix != null) {
+        val raw = when {
+            line is ChatLine.ApiError -> line.info.raw
+            line is ChatLine.Row && (line.row.type == "reply" || line.row.type == "notice") -> line.row.item?.item?.text
+            else -> null
+        }
+        if (raw != null || line is ChatLine.ApiError) return TurnErrorFixCard(turnFix, raw)
+    }
     when (line) {
         is ChatLine.Row -> when (line.row.type) {
             "user" -> line.row.item?.item?.let { item ->

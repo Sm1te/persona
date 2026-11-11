@@ -259,6 +259,10 @@ func (e *Engine) Get(kind, id string, recentChars int) (*Detail, error) {
 		_ = json.Unmarshal(recording["segments.json"], &segs)
 		d.Segments = nonNilSegments(segs)
 		if raw, err := os.ReadFile(e.Store.path(kind, id, "minutes.json")); err == nil && json.Valid(raw) {
+			var r Recording
+			if json.Unmarshal(recording["meta.json"], &r) == nil {
+				raw = minutesWithSpan(raw, &r, e.Store.Zone())
+			}
 			d.Minutes = raw
 		}
 		if recentChars > 0 {

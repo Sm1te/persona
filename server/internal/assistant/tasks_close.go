@@ -9,17 +9,17 @@ import (
 	"github.com/nwverse/persona/server/internal/rpc"
 )
 
-// Closing the agents of finished tasks (docs/assistant/todos.md "Close Agents for completed tasks"). Once a task opened from an assistant
-// conversation is done — by the user or by the assistant's judge (done.go) — its agents that have stayed still for a
-// while are retired: the node closes their pane and the agent process with it (node retire.go). The todo keeps the
-// agents (machine, session id, directory) and the node keeps how each was started (launcher, model, modes), so reading
-// one goes on from its transcript, and a message to it — agent_send, a message on the task's card, the chat — resumes
-// it in a new tab with the same launcher and directory before it goes in (claude --resume, codex resume, …).
+// Stopping the agents of finished tasks (docs/assistant/todos.md "Stop Agents of completed tasks"). Once a task opened from an
+// assistant conversation is done — by the user or by the assistant's judge (done.go) — its agents that have stayed
+// still for a while are stopped: the node quits the agent process and keeps its terminal, the shell it ran in (node
+// retire.go, session.stop; #4754: Persona never closes an agent's terminal on its own). The todo keeps the agents
+// (machine, session id, directory) and the node keeps how each was started (launcher, model, modes), so reading one
+// goes on from its transcript and its terminal stays open on its computer.
 //
-// Never closed: an agent that works, waits for the user (a question, a plan, a permission, any dialog) or has
+// Never stopped: an agent that works, waits for the user (a question, a plan, a permission, any dialog) or has
 // background shells, subagents, a /loop or a server running; one linked to a task that is still open; an assistant
-// conversation; a session another tool owns; one the node cannot bring back (it refuses: session.retire). Agents the
-// user started by hand and never linked to a task are no task's, so nothing here touches them.
+// conversation; a session another tool owns (the node refuses: session.stop with retire). Agents the user started by
+// hand and never linked to a task are no task's, so nothing here touches them.
 
 var (
 	// taskCloseIdle is how long a done task's agent must have been still (and the task done) before it is closed.
@@ -173,23 +173,24 @@ func (s *Service) closeDoneTaskAgents(ctx context.Context, refused taskCloseRefu
 	}
 }
 
-// retireAgent asks c's node to close its agent (session.retire) and remembers a refusal; who names the reason in the log.
+// retireAgent asks c's node to stop its agent and keep its terminal (session.stop with retire) and remembers a
+// refusal; who names the reason in the log.
 func (s *Service) retireAgent(ctx context.Context, refused taskCloseRefused, who, machine string, c proto.Session, now time.Time) {
 	key := [2]string{machine, c.SessionID}
 	var res struct {
-		Closed bool `json:"closed"`
+		Stopped bool `json:"stopped"`
 	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	err := s.call(cctx, machine, deviceSessionRetire, map[string]any{"session_id": c.SessionID}, &res)
+	err := s.call(cctx, machine, deviceSessionStop, map[string]any{"session_id": c.SessionID, "retire": true}, &res)
 	cancel()
 	var re *rpc.Error
 	switch {
 	case err == nil:
 		delete(refused, key)
-		if res.Closed {
-			s.logf("%s: closed agent %s/%s (resumes on the next message)", who, machine, c.SessionID)
+		if res.Stopped {
+			s.logf("%s: stopped agent %s/%s (its terminal stays)", who, machine, c.SessionID)
 		}
-	case errors.As(err, &re): // the node refused (or is too old to know session.retire): not again for a while
+	case errors.As(err, &re): // the node refused (or is too old to know session.stop: nothing closed): not again for a while
 		if prev, ok := refused[key]; !ok || prev.why != err.Error() {
 			s.logf("%s: agent %s/%s left open: %v", who, machine, c.SessionID, err)
 		}

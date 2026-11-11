@@ -29,6 +29,9 @@ import persona.core.contracts.api.ConnectionState
 import persona.core.contracts.api.HubConnection
 import persona.core.contracts.api.TasksApi
 import persona.core.contracts.forSpace
+import persona.core.domain.sort.AgentQuickFilter
+import persona.core.domain.sort.AgentSession
+import persona.core.domain.sort.buildAgentList
 
 /** The dock's agents (#1113), a project on a to-do (#1616) and "Edit" (iOS TasksStore / TodoStore). */
 class TaskDockTest {
@@ -50,6 +53,69 @@ class TaskDockTest {
         assertTrue(dockAgents("main", null, sessions, listOf(task)).isEmpty())
         assertFalse(TaskState.Working.isRemovable)
         assertTrue(TaskState.Failed.isRemovable)
+    }
+
+    /** A runtime's agent (a Paseo agent, #4494), the agent that created it named by its session id. */
+    private fun runtime(id: String, state: String, parent: String? = null, since: String = "2026-11-04T10:00:00Z") =
+        session(id, state, since).copy(sourceKind = "runtime", agent = "claude", isSubagent = parent != null, parentSessionId = parent)
+
+    /** A Codex thread, and with [parent] a subagent of the thread whose id that is. */
+    private fun thread(id: String, state: String, parent: String? = null, since: String = "2026-11-04T10:00:00Z") =
+        session(id, state, since).copy(sourceKind = "codex_app_server", agent = "codex", sourceThreadId = "thread-$id",
+            parentThreadId = parent?.let { "thread-$it" }, isSubagent = parent != null)
+
+    /** The dock's agents and the Agents list's counts, for the same sessions (#4769). */
+    private fun dock(sessions: List<Session>, todos: List<Todo> = emptyList()) = dockAgents("main", "main", sessions, todos).map { it.sessionId }
+
+    @Test fun aSubtaskIsNoPillWhileTheDockShowsTheAgentAboveIt() {
+        val sessions = listOf(
+            runtime("lead", "working", since = "2026-11-04T09:00:00Z"), runtime("review", "working", "lead"), runtime("check", "working", "review"),
+            thread("codex", "working", since = "2026-11-04T08:00:00Z"), thread("probe", "working", "codex"),
+            runtime("deploy", "needs_you", "lead", since = "2026-11-04T07:00:00Z"),
+        )
+        // The orchestrator, the Codex thread and the subtask that waits for the user, in the dock's own order.
+        assertEquals(listOf("deploy", "lead", "codex"), dock(sessions))
+        // The Agents list counts the same sessions: the two that work and the one that needs you.
+        val list = buildAgentList(sessions.map(::AgentSession))
+        assertEquals(2, list.counts[AgentQuickFilter.Working])
+        assertEquals(1, list.counts[AgentQuickFilter.NeedsYou])
+        // The main conversation's entries: one row each, the subtasks in neither.
+        val entries = assistantEntries("main", "main", emptyList(), sessions, emptyList(), emptyList(), emptyList(), 0L)
+        assertEquals(listOf("agent:mac/lead", "agent:mac/codex"), entries.running.map { it.key })
+        assertEquals(listOf("agent:mac/deploy"), entries.needsYou.map { it.key })
+        // Without subtasks nothing changes.
+        val plain = sessions.map { it.copy(isSubagent = false, parentSessionId = null, parentThreadId = null) }
+        assertEquals(listOf("deploy", "check", "probe", "review", "lead", "codex"), dock(plain))
+    }
+
+    @Test fun aWorkingSubtaskWhoseCreatorTheDockDoesNotShowIsAPillOfItsOwn() {
+        // Its creator finished, or was let go: the dock shows it nowhere, so the agent it created is a pill of its own.
+        for (creator in listOf("idle", "unread", "offline")) {
+            assertEquals(creator, listOf("review"), dock(listOf(runtime("lead", creator), runtime("review", "working", "lead"))))
+            assertEquals(creator, listOf("probe"), dock(listOf(thread("codex", creator), thread("probe", "working", "codex"))))
+        }
+        // A creator nobody lists, and one on another computer.
+        assertEquals(listOf("review"), dock(listOf(runtime("review", "working", "gone"))))
+        assertEquals(listOf("lead", "review"), dock(listOf(runtime("lead", "working"),
+            runtime("review", "working", "lead", since = "2026-11-04T09:00:00Z").copy(machineId = "other"))))
+        // Any agent above it in the dock will do; with none, it leaves the line with the agents it created.
+        val middle = runtime("middle", "idle", "lead")
+        val leaf = runtime("leaf", "working", "middle")
+        val helper = runtime("helper", "working", "leaf")
+        assertEquals(listOf("lead"), dock(listOf(runtime("lead", "working"), middle, leaf, helper)))
+        assertEquals(listOf("leaf"), dock(listOf(runtime("lead", "offline"), middle, leaf, helper)))
+    }
+
+    @Test fun aTasksAgentStandsForTheAgentsItCreatedUntilTheTaskIsDone() {
+        val task = Todo(id = "task", origin = "main", agents = listOf(TodoAgent("mac", "tasked")))
+        val sessions = listOf(runtime("tasked", "working"), runtime("helper", "working", "tasked"), runtime("asks", "needs_you", "tasked"))
+        assertEquals(listOf("asks"), dock(sessions, listOf(task)))
+        val entries = assistantEntries("main", "main", listOf(task), sessions, emptyList(), emptyList(), emptyList(), 0L)
+        assertEquals(listOf("task:task"), entries.running.map { it.key })
+        assertEquals(listOf("agent:mac/asks"), entries.needsYou.map { it.key })
+        // Done, with its agent stopped: the dock shows neither, and the agent still working is a pill again.
+        val done = task.copy(doneAt = "2026-11-04T11:00:00Z")
+        assertEquals(listOf("asks", "helper"), dock(sessions.map { if (it.sessionId == "tasked") it.copy(state = "idle") else it }, listOf(done)))
     }
 
     private class Api : TasksApi {

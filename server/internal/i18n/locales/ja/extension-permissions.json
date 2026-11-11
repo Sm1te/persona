@@ -44,6 +44,8 @@
   "surfaces_external_title": "アプリ内外に独自の UI を表示",
   "secrets_title": "入力したシークレットを使用",
   "tools_title": "コマンドラインツールをインストール",
+  "host_integrations_title": "設定済みのホスト CLI 統合を使用",
+  "host_integrations_detail": "{tools}。マネージャー経由の制限された読み取り専用呼び出しのみで、シェル実行、メッセージ送信、認証情報のエクスポートはできません。",
   "node_secrets_title": "これらのコンピューターにシークレットを送信",
   "tools_more_title": "追加のコマンドラインツールをインストール",
   "network_more_title": "追加のホストにアクセス",

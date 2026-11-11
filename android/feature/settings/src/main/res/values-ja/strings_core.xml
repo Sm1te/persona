@@ -370,6 +370,7 @@
     <string name="settings_ready_cellular_test">モバイルネットワークのテスト</string>
     <string name="settings_ready_skipped_item">%1$s：スキップ済み</string>
     <string name="settings_ready_skip_note">今はスキップできます。未設定の項目があると、画面ロック後の通知やバックグラウンドの接続に影響することがあります。あとでここに戻って設定できます。</string>
+    <string name="settings_ready_set_up_later">あとで設定</string>
     <string name="settings_ready_skip_rest">残りをスキップ</string>
     <string name="settings_cancel">キャンセル</string>
     <string name="settings_done">完了</string>

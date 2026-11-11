@@ -6,9 +6,12 @@ enum TodosViewMode: String, CaseIterable {
 }
 
 /// The top of the to-dos page: List | Calendar, and in the calendar Day | Week | Month. Each device keeps its choice.
-struct TodosModeBar: View {
+struct TodosModeBar<ListControls: View>: View {
     @Binding var view: TodosViewMode
     @Binding var mode: TodoCalendarMode
+    /// The list view's own controls at the trailing end, where the calendar has its day / week / month (the phone's
+    /// filter and sort, #3740).
+    @ViewBuilder var listControls: ListControls
     @StoredValue("todos.calendar.showDone") private var showDone = true
 
     var body: some View {
@@ -32,10 +35,18 @@ struct TodosModeBar: View {
                 .themedButton()
                 .accessibilityLabel(Text("Calendar Options"))
                 .accessibilityIdentifier("todo.calendar.options")
+            } else {
+                listControls
             }
         }
         .padding(.horizontal, Theme.Space.page)
         .padding(.vertical, Theme.Space.xs)
+    }
+}
+
+extension TodosModeBar where ListControls == EmptyView {
+    init(view: Binding<TodosViewMode>, mode: Binding<TodoCalendarMode>) {
+        self.init(view: view, mode: mode) { EmptyView() }
     }
 }
 

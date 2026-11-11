@@ -117,6 +117,13 @@ extension View {
         scaledFrame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget, alignment: alignment)
             .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget, alignment: alignment)
     }
+
+    /// At least as tall as a finger needs (`Theme.Size.tapTarget`), as wide as it is: a row or a heading that is a button
+    /// and draws less than that (#3753). Grows with the text like `tapTargetFrame`, never below the token.
+    func tapTargetHeight(alignment: Alignment = .center) -> some View {
+        scaledFrame(minHeight: Theme.Size.tapTarget, alignment: alignment)
+            .frame(minHeight: Theme.Size.tapTarget, alignment: alignment)
+    }
 }
 
 extension View {

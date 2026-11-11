@@ -63,19 +63,54 @@ public enum AgentSyncPacing {
 
     /// A chat on screen follows its session over its own subscription. When that stream stops (a node whose transcript
     /// watch ended, a lost push), nothing else brings the new lines until the chat is opened again. The session list
-    /// keeps coming and says the transcript grew: its `rev` moved after the chat's last items came, or its
-    /// `updated_at` is newer than the chat's newest line. Then, once no items came for `staleQuiet`, the chat asks for
-    /// what came after it, at most once every `stalePullEvery`, and not twice for the same `updated_at` (a write that
-    /// added no line). The web's rule and numbers (`web/src/lib/stale-page.ts`).
+    /// keeps coming and says the transcript grew: its `rev` moved since the chat's newest read was sent (`RevReads`), or
+    /// its `updated_at` is newer than the chat's newest line. Then, once no items came and the rev did not move for
+    /// `staleQuiet`, the chat asks for what came after it, at most once every `stalePullEvery`, and not twice for the
+    /// same `updated_at` (a write that added no line). The web's rule and numbers (`web/src/lib/stale-page.ts`).
     ///
     /// The rev is what catches the last line of a burst whose push was lost (#1179): its `updated_at` is within
-    /// `staleSlack` of the line before, which the chat holds. The node reports revs on its next tick, mostly after the
-    /// items: a rev that moved for lines that did come costs one empty pull once the chat is quiet (its arrival ends
-    /// the question).
+    /// `staleSlack` of the line before, which the chat holds. A push never settles a moved rev (#3191): the list comes
+    /// from the node's poll and the push from its transcript watch, so a list can come before the push for an earlier
+    /// line, with the lost line behind it; and a read that comes back after a move may have been answered before the
+    /// move's line was written. The node reports revs on its next tick, mostly after the items: a rev that moved for
+    /// lines that did come costs one empty pull once the chat is quiet.
     public static let staleQuiet: TimeInterval = 4
     public static let stalePullEvery: TimeInterval = 10
     /// `updated_at` is the transcript's last write and a line's `ts` its own clock: closer than this is the same write.
     public static let staleSlack: TimeInterval = 1
+
+    /// A session's `rev` moves as this device hears them (the list, the `revs` event; the first rev heard is no move),
+    /// and how many of them the chat's reads cover: a read covers the moves heard when it was sent, a push none.
+    public struct RevReads: Equatable, Sendable {
+        public private(set) var moves = 0
+        /// `moves` when the newest read that came back was sent.
+        public private(set) var read = 0
+        /// When the rev last moved (nil: never here).
+        public private(set) var movedAt: Date?
+
+        public init() {}
+
+        public mutating func moved(at date: Date) {
+            moves += 1
+            movedAt = date
+        }
+
+        /// The chat subscribes (or subscribes again after a reconnect): its backlog holds everything written by now.
+        public mutating func subscribed() {
+            read = max(read, moves)
+        }
+
+        /// A catch-up read is being sent: what to hand `answered` once it came back.
+        public var sending: Int { moves }
+
+        /// A read sent at `sent` came back: it holds the lines the moves heard by then were for.
+        public mutating func answered(_ sent: Int) {
+            read = max(read, sent)
+        }
+
+        /// The rev moved since the newest read that came back was sent.
+        public var unread: Bool { moves > read }
+    }
 
     /// When a chat on screen asks for what its subscription may have lost: nil when it is not behind (or already asked
     /// about this `updatedAt`, or nothing came for it yet: its backlog is still on its way), else the moment its quiet
@@ -83,21 +118,21 @@ public enum AgentSyncPacing {
     /// - Parameters:
     ///   - updatedAt: the session's `updated_at` as the list has it now.
     ///   - newestLine: the time of the chat's newest line that has one (nil: none has).
-    ///   - revMoved: when this device last heard the session's `rev` change (nil: never, or the list has none).
+    ///   - rev: the session's rev moves and what the chat's reads cover (nil: none heard).
     ///   - lastArrival: when items last came for the chat (a push, a page, a pull, streamed words); nil: none yet.
     ///   - lastPull: when the chat last asked this way.
     ///   - pulledFor: the `updatedAt` it last asked about.
-    public static func catchUpAt(updatedAt: Date?, newestLine: Date?, revMoved: Date? = nil, lastArrival: Date?,
+    public static func catchUpAt(updatedAt: Date?, newestLine: Date?, rev: RevReads? = nil, lastArrival: Date?,
                                  lastPull: Date?, pulledFor: Date?) -> Date? {
         guard let lastArrival else { return nil }
-        let revBehind = revMoved.map { $0 > lastArrival } ?? false
+        let revBehind = rev?.unread ?? false
         var timeBehind = false
         if let updatedAt, updatedAt != pulledFor {
             timeBehind = newestLine.map { updatedAt > $0.addingTimeInterval(staleSlack) } ?? true
         }
         guard revBehind || timeBehind else { return nil }
         // Quiet since the rev moved too: its lines may still be on their way.
-        let quiet = max(lastArrival, revMoved ?? lastArrival).addingTimeInterval(staleQuiet)
+        let quiet = max(lastArrival, rev?.movedAt ?? lastArrival).addingTimeInterval(staleQuiet)
         let paced = lastPull?.addingTimeInterval(stalePullEvery) ?? .distantPast
         return max(quiet, paced)
     }

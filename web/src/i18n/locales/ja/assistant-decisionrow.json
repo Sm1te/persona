@@ -19,5 +19,8 @@
   "chosen": "回答済み：{option}",
   "responded": "Persona に戻しました",
   "failed": "回答を送信できませんでした。{error}",
+  "dismissed": "この判断を非表示にしました。タスクは残り、どの選択肢も実行されません。",
+  "undo_failed": "この判断を戻せませんでした。{error}",
+  "missing_options": "この以前のレビューには回答できる選択肢がありません。タスクを開いて判断内容を確認できます。",
   "confirm": "確認：{option}"
 }

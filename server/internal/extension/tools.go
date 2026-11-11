@@ -27,6 +27,29 @@ var (
 	sha256Hex       = lazyre.New(`^[0-9a-f]{64}$`)
 )
 
+// HostIntegrationSpec names a manager-configured CLI integration. It is not an
+// executable path or a command line: the manager resolves the ID and owns every
+// argument, timeout and output limit of its typed, read-only RPC.
+type HostIntegrationSpec struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+func (h HostIntegrationSpec) Validate() error {
+	if h.ID != "lark-cli" {
+		return fmt.Errorf("host_integrations.id %q: unsupported integration", h.ID)
+	}
+	if _, err := ParseVersionRange(h.Version); err != nil {
+		return fmt.Errorf("host_integrations.version: %v", err)
+	}
+	return nil
+}
+
+func (h HostIntegrationSpec) Allows(version string) bool {
+	r, err := ParseVersionRange(h.Version)
+	return err == nil && r.Allows(version)
+}
+
 // ToolSpec is one command-line program of manifest.tools.
 type ToolSpec struct {
 	// Name is the command put on PATH.
@@ -219,6 +242,19 @@ func (m *Manifest) validateTools() []error {
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	if len(m.Tools) > 0 && m.Runtime == nil {
 		bad("tools without a runtime: nothing would run them")
+	}
+	if len(m.HostIntegrations) > 0 {
+		if m.Runtime == nil || !m.Runtime.SpeaksRPC() {
+			bad("host_integrations without an RPC runtime: nothing would call them")
+		}
+		if len(m.HostIntegrations) > 1 {
+			bad("host_integrations: at most one")
+		}
+		for _, h := range m.HostIntegrations {
+			if err := h.Validate(); err != nil {
+				errs = append(errs, err)
+			}
+		}
 	}
 	if m.Permissions.AgentRuntimes && m.Runtime == nil {
 		bad("permissions.agent_runtimes without a runtime: no program on the hub would connect to its node")

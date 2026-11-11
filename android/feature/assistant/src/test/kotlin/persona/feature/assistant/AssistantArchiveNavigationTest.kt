@@ -116,7 +116,7 @@ class AssistantArchiveNavigationTest {
     }
 
     private inner class Hub : AssistantRepository, MessageSender, AssistantManagement {
-        override val assistant = MutableStateFlow(AssistantSnapshot(main.key, listOf(main, first, second)))
+        override val assistant = MutableStateFlow(AssistantSnapshot(main.key, listOf(main, first, second), leaders = listOf(first.sessionId, second.sessionId)))
         override val outbox = MutableStateFlow(emptyList<OutboxMessage>())
         val archived = mutableListOf<SessionKey>()
         var fail = false

@@ -15,6 +15,11 @@ the platforms stay in step.
 
 BeautifulUI keeps its own `BUISidebarRow` (32 pt), which is part of that style's spec.
 
+The Agents list, the sidebar column beside a chat on iPad and an open iPhone Duo, keeps the same 44 pt floor for every
+row, heading and fold control a finger taps, in every grouping and display (#3753): `Theme.Size.tapTarget` is its least
+row height, and a row that is one button is that button from edge to edge (`docs/apple/ios.md`, "Information
+architecture"). Its rows are not sidebar rows in the sense of this file: they keep the list's own fonts and insets.
+
 ## Tokens, not the text's height
 
 A row's height is a minimum plus padding above and below its text, never the height the text happens to have. Text in

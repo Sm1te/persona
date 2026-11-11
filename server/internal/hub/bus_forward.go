@@ -84,6 +84,7 @@ func (h *Hub) relayHTTP(w http.ResponseWriter, r *http.Request, id string, send,
 	if p.Role == roleExtension && p.Extension != "" {
 		req.Header[assistantwire.ExtensionHeader] = []string{p.Extension}
 	}
+	req.HandoffApprover = handoffApproverOf(r.Context()) // only the resolve route's gate sets it (secret_handoff.go)
 	ctx := r.Context()
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc

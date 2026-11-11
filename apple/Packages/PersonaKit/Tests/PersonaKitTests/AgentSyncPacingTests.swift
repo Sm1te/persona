@@ -40,9 +40,18 @@ struct ChatCatchUpPacingTests {
     /// The session's `updated_at`: the transcript grew since.
     var written: Date { line.addingTimeInterval(30) }
 
-    func at(_ updated: Date?, newest: Date?, revMoved: Date? = nil, arrival: Date?, pull: Date? = nil, pulledFor: Date? = nil) -> Date? {
-        AgentSyncPacing.catchUpAt(updatedAt: updated, newestLine: newest, revMoved: revMoved, lastArrival: arrival,
+    func at(_ updated: Date?, newest: Date?, rev: AgentSyncPacing.RevReads? = nil, arrival: Date?, pull: Date? = nil,
+            pulledFor: Date? = nil) -> Date? {
+        AgentSyncPacing.catchUpAt(updatedAt: updated, newestLine: newest, rev: rev, lastArrival: arrival,
                                   lastPull: pull, pulledFor: pulledFor)
+    }
+
+    /// The rev of a chat that subscribed, then heard it move at `heard`.
+    func moved(_ heard: Date) -> AgentSyncPacing.RevReads {
+        var r = AgentSyncPacing.RevReads()
+        r.subscribed()
+        r.moved(at: heard)
+        return r
     }
 
     @Test func aChatBehindItsSessionAsksOnceTheStreamIsQuiet() {
@@ -75,26 +84,96 @@ struct ChatCatchUpPacingTests {
     }
 
     /// The last line of a burst, written 0.3 s after the one before, whose push was lost (#1179): its `updated_at` is
-    /// within the slack of the newest line here, but the rev moved after the last items came.
+    /// within the slack of the newest line here, but the rev moved since the chat last read.
     @Test func aLostLastLineOfABurstIsAskedForByItsRev() {
         let next = line.addingTimeInterval(0.3)
         #expect(at(next, newest: line, arrival: line) == nil) // the time alone cannot tell
         let heard = line.addingTimeInterval(1.5) // the node's next tick
-        #expect(at(next, newest: line, revMoved: heard, arrival: line) == heard.addingTimeInterval(AgentSyncPacing.staleQuiet))
+        #expect(at(next, newest: line, rev: moved(heard), arrival: line) == heard.addingTimeInterval(AgentSyncPacing.staleQuiet))
         // without any `updated_at` too
-        #expect(at(nil, newest: line, revMoved: heard, arrival: line) == heard.addingTimeInterval(AgentSyncPacing.staleQuiet))
+        #expect(at(nil, newest: line, rev: moved(heard), arrival: line) == heard.addingTimeInterval(AgentSyncPacing.staleQuiet))
         // paced like the rest
         let asked = line.addingTimeInterval(1)
-        #expect(at(next, newest: line, revMoved: heard, arrival: line, pull: asked) == asked.addingTimeInterval(AgentSyncPacing.stalePullEvery))
+        #expect(at(next, newest: line, rev: moved(heard), arrival: line, pull: asked) == asked.addingTimeInterval(AgentSyncPacing.stalePullEvery))
     }
 
-    @Test func aRevThatMovedBeforeTheLastItemsAsksNothing() {
-        // its lines came after it (a pull that found nothing counts: items came for the chat)
-        #expect(at(line, newest: line, revMoved: line.addingTimeInterval(-1), arrival: line) == nil)
-        #expect(at(line, newest: line, revMoved: line, arrival: line) == nil)
+    /// The list with the rev for a whole burst came before the push for its earlier line, and the last line's push was
+    /// lost (#3191): that push is the newest arrival, after the move, and settles nothing.
+    @Test func aListBeforeTheEarlierLinesPushStillAsks() {
+        let next = line.addingTimeInterval(0.3)
+        let heard = line.addingTimeInterval(1)
+        let pushed = heard.addingTimeInterval(0.1)
+        #expect(at(next, newest: line, rev: moved(heard), arrival: pushed) == pushed.addingTimeInterval(AgentSyncPacing.staleQuiet))
+    }
+
+    /// The rev moved while a catch-up read was on its way, which came back after (#3191): that read was sent before the
+    /// move, so the chat asks again once its pacing allows.
+    @Test func aRevThatMovesDuringACatchUpAsksAgain() {
+        let sentAt = line.addingTimeInterval(10)
+        var r = moved(line.addingTimeInterval(5))
+        let sent = r.sending
+        r.moved(at: sentAt.addingTimeInterval(1))
+        r.answered(sent)
+        let back = sentAt.addingTimeInterval(2)
+        #expect(at(line.addingTimeInterval(0.3), newest: line, rev: r, arrival: back, pull: sentAt)
+                == sentAt.addingTimeInterval(AgentSyncPacing.stalePullEvery))
+    }
+
+    @Test func aRevThatMovedBeforeTheNewestReadAsksNothing() {
+        var r = moved(line.addingTimeInterval(-1))
+        r.answered(r.sending) // a read sent after it came back
+        #expect(at(line, newest: line, rev: r, arrival: line) == nil)
+        var again = moved(line.addingTimeInterval(-1))
+        again.subscribed() // or a subscription sent after it
+        #expect(at(line, newest: line, rev: again, arrival: line) == nil)
         // the time rule still asks on its own
-        #expect(at(written, newest: line, revMoved: line.addingTimeInterval(-1), arrival: line)
-                == line.addingTimeInterval(AgentSyncPacing.staleQuiet))
+        #expect(at(written, newest: line, rev: r, arrival: line) == line.addingTimeInterval(AgentSyncPacing.staleQuiet))
+    }
+}
+
+/// The moves of a session's rev and the reads that cover them (`AgentSyncPacing.RevReads`, #3191).
+struct RevReadsTests {
+    let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+
+    @Test func aMoveIsUnreadUntilAReadSentAfterItComesBack() {
+        var r = AgentSyncPacing.RevReads()
+        #expect(!r.unread)
+        #expect(r.movedAt == nil)
+        r.moved(at: t0)
+        #expect(r.unread)
+        #expect(r.movedAt == t0)
+        let sent = r.sending
+        #expect(r.unread) // on its way
+        r.answered(sent)
+        #expect(!r.unread)
+    }
+
+    @Test func aReadSentBeforeAMoveLeavesItUnread() {
+        var r = AgentSyncPacing.RevReads()
+        let sent = r.sending
+        r.moved(at: t0)
+        r.answered(sent)
+        #expect(r.unread)
+    }
+
+    @Test func anOlderReadComingBackLastSettlesNoLess() {
+        var r = AgentSyncPacing.RevReads()
+        let early = r.sending
+        r.moved(at: t0)
+        let late = r.sending
+        r.answered(late)
+        r.answered(early)
+        #expect(!r.unread)
+    }
+
+    @Test func aSubscriptionCoversWhatMovedBeforeIt() {
+        var r = AgentSyncPacing.RevReads()
+        r.moved(at: t0)
+        r.moved(at: t0.addingTimeInterval(1))
+        r.subscribed()
+        #expect(!r.unread)
+        r.moved(at: t0.addingTimeInterval(2))
+        #expect(r.unread)
     }
 }
 

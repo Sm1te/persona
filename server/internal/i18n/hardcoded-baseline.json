@@ -62,7 +62,7 @@
   "internal/connector/gate.go": 2,
   "internal/connector/github/actions.go": 8,
   "internal/connector/github/archive.go": 9,
-  "internal/connector/github/github.go": 19,
+  "internal/connector/github/github.go": 18,
   "internal/connector/github/inbox.go": 28,
   "internal/connector/github/login.go": 8,
   "internal/connector/github/rules.go": 17,

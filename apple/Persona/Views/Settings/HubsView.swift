@@ -89,7 +89,9 @@ struct HubsView: View {
         let members = model.registry.members(g)
         let on = model.socket(g)?.currentConfig
         ForEach(members) { h in
-            hubRow(h, inUse: h.config == on && model.isLive(g), signingOut: model.hubSignOut == .hub(h.id))
+            // At any of its addresses; the row shows the one in use.
+            let at = model.isLive(g) ? h.configs.first { $0.url == on?.url }?.url : nil
+            hubRow(h, at: at, signingOut: model.hubSignOut == .hub(h.id))
                 .contextMenu {
                     if members.count > 1 {
                         Button(role: .destructive) { removingHub = h } label: { Label("Disconnect This Hub", systemImage: Theme.Icon.end) }
@@ -101,6 +103,16 @@ struct HubsView: View {
         ForEach(meshOnly(g), id: \.hubID) { m in
             meshRow(m, inUse: model.isLive(g) && on.map { cfg in m.endpoints?.contains { $0.hasPrefix(cfg.url.absoluteString) } == true } == true)
         }
+        // Each paired hub's addresses (#4670, docs/operations/network.md "Client-added candidates"), keyed apart like the
+        // SSH ones.
+        ForEach(members, id: \.addressesRowID) { h in
+            NavigationLink(value: SettingsPage.hubAddresses(h.id)) {
+                SettingsRow(title: members.count > 1 ? String(localized: "Addresses · \(h.displayName)") : String(localized: "Addresses"),
+                            symbol: Theme.Icon.hubAddresses, tint: Theme.Hue.blue, value: "\(h.configs.count)", look: .oneLine)
+            }
+            .accessibilityIdentifier("hubs.addresses.\(h.id)")
+        }
+        .bareListRow()
         // Each paired hub's Cloudflare Access service token (docs/operations/network.md "Behind Cloudflare Access"), keyed
         // apart from its other rows like the SSH ones.
         ForEach(members, id: \.accessRowID) { h in
@@ -263,7 +275,8 @@ struct HubsView: View {
         return out
     }
 
-    private func hubRow(_ h: PairedHub, inUse: Bool, signingOut: Bool) -> some View {
+    /// `at`: the hub's address the group's socket is on, nil when it is not on this hub.
+    private func hubRow(_ h: PairedHub, at: URL?, signingOut: Bool) -> some View {
         HStack(spacing: Theme.Space.m) {
             ThemedIcon(Theme.Icon.server)
                 .scaledFrame(width: Theme.Size.icon)
@@ -271,12 +284,12 @@ struct HubsView: View {
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 HStack(spacing: Theme.Space.sm) {
                     Text(h.displayName).lineLimit(1)
-                    if inUse { Chip(text: String(localized: "In Use [Hubs View 564c83]"), look: .outline) }
+                    if at != nil { Chip(text: String(localized: "In Use [Hubs View 564c83]"), look: .outline) }
                     if SSHTunnels.shared.routed.contains(h.id) { Chip(text: "SSH", look: .neutral) }
                     if LocalProxies.shared.routed.contains(h.id) { Chip(text: String(localized: "Proxy"), look: .neutral) }
                     if InAppTunnels.shared.routed.contains(h.id) { Chip(text: String(localized: "Tunnel [Hubs View 55d2d3]"), look: .neutral) }
                 }
-                Text(h.config.url.absoluteString).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
+                Text((at ?? h.config.url).absoluteString).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
             if signingOut { RowProgress() } // Disconnect This Hub
@@ -313,4 +326,6 @@ private extension PairedHub {
     var localProxyRowID: String { "proxy." + id }
     /// The Cloudflare Access row's identity.
     var accessRowID: String { "access." + id }
+    /// The Addresses row's identity.
+    var addressesRowID: String { "addresses." + id }
 }

@@ -37,6 +37,10 @@ const (
 func (s *Service) kbConnectors(ctx context.Context, e *kb.Engine) {
 	s.kb.sourceWrites.Lock()
 	defer s.kb.sourceWrites.Unlock()
+	if err := s.restoreArchiveReservations(e); err != nil {
+		s.logf("kb: archive reservation recovery: %v", err)
+		return
+	}
 	failedCleanup := s.retryArchiveReservations(ctx)
 	if !s.kbWritable(ctx) {
 		return
@@ -75,9 +79,10 @@ func (s *Service) kbConnectors(ctx context.Context, e *kb.Engine) {
 		if !due {
 			continue
 		}
-		var a connector.Archive = busArchive{s: s, id: src.ID, fenceVersion: src.FenceVersion}
+		base := busArchive{s: s, id: src.ID, fenceVersion: src.FenceVersion, dir: e.Store.Dir}
+		var a connector.Archive = base
 		if src.Media {
-			a = busArchiveMedia{busArchive{s: s, id: src.ID, fenceVersion: src.FenceVersion}}
+			a = busArchiveMedia{base}
 		}
 		if _, err := archiveConnector(ctx, e, src.ID, a, src.Sources...); err != nil {
 			s.logf("kb: %s: %v", src.ID, err)
@@ -134,6 +139,7 @@ type busArchive struct {
 	s            *Service
 	id           string
 	fenceVersion int
+	dir          string
 }
 
 func (b busArchive) Changes(ctx context.Context, cursor string, limit int) ([]connector.ChatBatch, string, bool, error) {
@@ -163,10 +169,12 @@ func (b busArchive) page(ctx context.Context, cursor string, limit int) (assista
 	return out, nil
 }
 
-// commit reserves one page at its source manager. Ending a reservation uses a
-// separate deadline even when the archive round was cancelled. A failed end
-// remains reserved there, so disable cannot falsely report success.
-func (b busArchive) commit(ctx context.Context, generation string, write, settle func() error) (retErr error) {
+// commit reserves one page at its source manager. Its durable journal is
+// installed before Begin, advanced after admission, and marked complete after
+// cursor publication. Ending a reservation uses a separate deadline even when
+// the archive round was cancelled. A failed end remains reserved there, so
+// disable cannot falsely report success.
+func (b busArchive) commit(ctx context.Context, generation string, work archiveRecoveryWork, write, settle func() error) (retErr error) {
 	if b.fenceVersion == 0 {
 		return write()
 	}
@@ -174,6 +182,10 @@ func (b busArchive) commit(ctx context.Context, generation string, write, settle
 		return err
 	}
 	req := assistantwire.ArchiveFence{ID: b.id, Generation: generation, Token: randomHex(16)}
+	journal := newArchiveRecoveryRecord(req, archiveRecoveryBegin, work)
+	if err := writeArchiveRecovery(b.dir, journal); err != nil {
+		return err
+	}
 	var answer assistantwire.ArchiveFenceResult
 	err := b.s.appCall(ctx, AppConnectors, assistantwire.ConnectorsArchiveBegin, req, &answer)
 	if err != nil || !answer.Acquired {
@@ -184,14 +196,22 @@ func (b busArchive) commit(ctx context.Context, generation string, write, settle
 	}
 	finished := false
 	defer func() {
-		var recovery func() error
-		if !finished || retErr != nil {
-			recovery = settle
+		recovery := settle
+		if finished && retErr == nil {
+			recovery = nil
 		}
 		retErr = errors.Join(retErr, b.finishReservation(assistantwire.ConnectorsArchiveEnd, req, recovery))
 	}()
+	journal.Stage = archiveRecoverySettle
+	if err := writeArchiveRecovery(b.dir, journal); err != nil {
+		return err
+	}
 	retErr = write()
 	finished = true
+	if retErr == nil {
+		journal.Stage = archiveRecoveryEnd
+		retErr = writeArchiveRecovery(b.dir, journal)
+	}
 	return retErr
 }
 
@@ -199,10 +219,11 @@ type archiveReservation struct {
 	method string
 	req    assistantwire.ArchiveFence
 	settle func() error
+	dir    string
 }
 
 func (b busArchive) finishReservation(method string, req assistantwire.ArchiveFence, settle func() error) error {
-	pending := archiveReservation{method: method, req: req, settle: settle}
+	pending := archiveReservation{method: method, req: req, settle: settle, dir: b.dir}
 	b.s.kb.archiveCleanupMu.Lock()
 	if b.s.kb.archiveCleanup == nil {
 		b.s.kb.archiveCleanup = make(map[string]archiveReservation)
@@ -232,6 +253,9 @@ func (s *Service) sendArchiveReservation(parent context.Context, pending archive
 	}
 	if !answer.Acquired {
 		return errors.New("archive source did not acknowledge the reservation")
+	}
+	if err := removeArchiveRecovery(pending.dir, pending.req.Token); err != nil {
+		return err
 	}
 	s.kb.archiveCleanupMu.Lock()
 	delete(s.kb.archiveCleanup, pending.req.Token)
@@ -372,7 +396,7 @@ func archiveConnector(ctx context.Context, e *kb.Engine, id string, a connector.
 	var generation string
 	guard, guarded := a.(interface {
 		page(context.Context, string, int) (assistantwire.ChangesResult, error)
-		commit(context.Context, string, func() error, func() error) error
+		commit(context.Context, string, archiveRecoveryWork, func() error, func() error) error
 	})
 	for page := 0; page < kbConnectorPages; page++ {
 		var result assistantwire.ChangesResult
@@ -421,25 +445,29 @@ func archiveConnector(ctx context.Context, e *kb.Engine, id string, a connector.
 			}
 			return nil
 		}
-		// A failed ingest may have installed a journal that a later store open
-		// completes. Keep the reservation until every affected chat is settled.
-		settle := func() error {
-			for _, b := range result.Batches {
-				source := id
-				if b.Source != "" && b.Source != id {
-					if !slices.Contains(sources, b.Source) {
-						continue
-					}
-					source = b.Source
+		work := archiveRecoveryWork{}
+		for _, batch := range result.Batches {
+			source := id
+			if batch.Source != "" && batch.Source != id {
+				if !slices.Contains(sources, batch.Source) {
+					continue
 				}
-				if err := e.Store.SettleIngest(source, b.Chat.ID); err != nil {
+				source = batch.Source
+			}
+			work.add(source, batch.Chat.ID)
+		}
+		// A failed ingest may have installed a journal that a later store open
+		// completes. Keep the reservation until every recorded chat is settled.
+		settle := func() error {
+			for _, pair := range work.chats {
+				if err := e.Store.SettleIngest(pair.Source, pair.Chat); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 		if guarded {
-			err = guard.commit(ctx, generation, write, settle)
+			err = guard.commit(ctx, generation, work, write, settle)
 		} else {
 			err = write()
 		}

@@ -1,7 +1,4 @@
 {
-  "pin": "Pin",
-  "unpin": "Unpin",
-  "unpin_all": "Unpin all",
   "rename": "Rename…",
   "title_placeholder": "Chat title",
   "renamed": "Renamed",
@@ -16,5 +13,10 @@
   "end_confirm": "Confirm end",
   "ended": "Chat ended; its history is kept",
   "end_failed": "Couldn't end the chat: {error}",
-  "actions": "Chat actions"
+  "actions": "Chat actions",
+  "make_leader": "Pin",
+  "end_leader": "Unpin",
+  "leader_made": "Pinned “{title}”",
+  "leader_ended": "Unpinned “{title}”: its tasks keep their lead",
+  "leader_failed": "Couldn't change it: {error}"
 }

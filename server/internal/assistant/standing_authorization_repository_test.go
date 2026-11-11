@@ -61,7 +61,7 @@ func standingFixtureIdentity(t *testing.T, cwd string) proto.RepositoryIdentity 
 	}
 	common := read("rev-parse", "--git-common-dir")
 	if !filepath.IsAbs(common) {
-		common = filepath.Join(cwd, common)
+		common = filepath.Join(physical, common)
 	}
 	return proto.RepositoryIdentity{Version: 1, PathResolved: true, IsRepo: true, Cwd: physical, Root: root, CommonDir: filepath.Clean(common), Origin: read("config", "--get", "remote.origin.url")}
 }

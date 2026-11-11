@@ -1,4 +1,6 @@
 {
+  "decision_review_changed": "This decision has changed or was already handled. Refresh before trying again.",
+  "decision_review_fields": "This request is missing a valid review time or Undo receipt.",
   "draft_changed": "This draft has changed or is no longer pending. Refresh before trying again.",
   "draft_dismissed": "You chose not to handle this draft. Undo that decision before sending it.",
   "draft_decision_question": "Reply drafted from the task’s progress",

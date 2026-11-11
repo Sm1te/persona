@@ -64,7 +64,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 
 **C18. Smaller differences.**
 
-- The "Model not connected · Fix it" card from `turn_error_code`, which Android doesn't decode.
+- The "Model not connected · Fix it" card from `turn_error_code`, which Android doesn't decode. Done (11-12): `TurnErrorFix.kt` (`not_logged_in`, `auth_failed`, `model_route`, iOS's words) draws the card in the place of the latest error line of Persona's conversation, the agent's own words folded under it; Fix It opens the main chat's model or the launcher's provider (`TurnErrorFixTest`).
 - The "next one needs you" strip after answering, which Android turns off in assistant conversations.
 - New Chat disabled while on the new conversation's page.
 - The In Progress tray's "Shelved N" line and the pill while the model operates a Mac.
@@ -116,15 +116,18 @@ An Agent's session and a conversation with the assistant read the same on Androi
 ### Notes per item
 
 - **C1.** Port `ToolNaming.swift`'s table and humanizer to core/domain, and add a shared fixture of tool names and their words (en, zh-Hans, ja) that both platforms read (phase 4 R2). The `MOCK_TOOL_NAMES=1` scene in `docs/operations/testing.md` covers each case.
+  Done (11-11): the naming half of `ToolNaming.swift` is in `android/core/domain/src/main/kotlin/persona/core/domain/ToolNaming.kt` (spelled words, `humanize`, `serverName`, `mcpLabel`), with iOS's cases in `ToolNamingTest`; a tool no table knows reads in words in the chat's rows and in permission summaries, and another server's tool is never matched to a built-in one by its bare name. Still to do: picking a subject from an unknown tool's input (`ToolNaming.subject`), the arguments as `key: value` lines, and the shared fixture.
 - **C2.** A subagent card composable in feature/chat fed by the tool's subagent deliveries (`docs/protocol/protocol.md`, "Subagent deliveries as tool results"); viewing in place swaps the chat list's source and keeps a footer back to the main agent.
 - **C3.** A text button in the composer row that names the model and effort, opening a `JMenu` with the model list, Other Model…, effort, ultracode and the mode. The model list and the typed model follow `SessionModes.swift`.
 - **C4.** The header folds on scroll and on a 3 s idle timer (off when animations are off); the title opens `ChatSessionInfoSheet`. The second line takes the state word and "machine · space › tab" from the session, never `cwd`.
+  Second line done (11-11): the state ("Working 22 min" from the session's `state_since`), then the source, the computer and "space › tab"; quiet states show their dot only; the computer goes first when the line is too narrow (`chatPlace`, `ChatHeaderLineTest`, `ChatHeaderLineShotsTest`). The folding header and the title opening Session Info are still to do.
 - **C5.** Redraw the work summary in `Chat.kt` for Glass only: caption text, spinner, chevron and a rail; the words come from one function with tests.
 - **C10 and phase 2 Q4.** Show the assistant conversation's cards in the same stack above the composer that phase 2 T6 builds for the Agent chat; the tray keeps its Review for older items.
 - **C11.** Back from a conversation opens the main conversation; the home page and its `newChat` twin in `AssistantScreen.kt` become one New Chat page.
 - **C12.** Rename through `POST /api/v1/sessions/{mid}/{sid}/rename` with `title`, which records a user-given title for assistant conversations (`docs/protocol/protocol.md`); a swipe on the history row; an Archived page reusing `android/feature/agents/src/main/kotlin/persona/feature/agents/AgentArchivesScreen.kt`'s list.
 - **C13.** `AssistantTaskCards.kt` stops filtering the record kinds iOS draws; each kind gets a renderer next to the interruption record's.
 - **C14.** A connection pill in the shared chrome, fed by the connection state the red tint already reads.
+  Done (11-12): `JLinkPill` under the home bar on the home pages (Assistant and Agents), whose shared bar replaced their titles in every style; an Agent's chat keeps saying it in its title (`HomeLinkPillTest`).
 - **C18.** Decode `turn_error_code` in `android/core/contracts/src/main/kotlin/persona/core/contracts/Models.kt` and draw the card; `spec/fixtures/wire` has no case for it yet, so add one.
 
 ### Order of work

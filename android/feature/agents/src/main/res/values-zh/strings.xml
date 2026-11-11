@@ -56,11 +56,6 @@
     <string name="agents_count_pair">%1$s，%2$s</string>
     <string name="agents_flag_space_pinned">空间已置顶</string>
     <string name="agents_flag_space_muted">空间已屏蔽</string>
-    <string name="agents_kind_todo">待办</string>
-    <string name="agents_kind_project">项目</string>
-    <plurals name="agents_count_todos">
-        <item quantity="other">%1$d 个待办</item>
-    </plurals>
     <string name="agents_kind_space">空间</string>
     <string name="agents_view_todo">查看待办</string>
     <string name="agents_history_unknown_folder">未知目录</string>
@@ -69,6 +64,7 @@
     <string name="agents_range_all">全部</string>
     <string name="agents_range_history">历史</string>
     <string name="agents_grouping_current">分组：%1$s</string>
+    <string name="agents_group_by">分组方式</string>
     <string name="agents_only_machine">只看 %1$s</string>
     <string name="agents_only_machine_hint">显示全部机器</string>
     <string name="agents_grouping_repo">按仓库</string>

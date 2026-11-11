@@ -7,6 +7,7 @@ import { usageLimitAgent } from "./usage-limit";
 import type { Machine, Session } from "./types";
 import { stateName } from "./state-labels";
 import { sameValue } from "./stable-lines";
+import type { DirectionCounts, DirectionTaskState } from "./direction-tree";
 
 /** The one-word state every node of the tree shows (#2526): "Needs you" before "Working" before "Waiting in the
  *  background" (#6045) before "Done". */
@@ -36,6 +37,8 @@ export interface TreeTodo {
   name: string;
   status?: TodoStatus;
   state: TreeState;
+  /** A task of the direction tree (#4352): its state as the hub decided it, shown in place of `state`'s word. */
+  taskState?: DirectionTaskState;
   agents: TreeAgent[];
   sessions: Session[];
   folded: boolean;
@@ -48,6 +51,8 @@ export interface TreeProject {
   todos: TreeTodo[];
   sessions: Session[];
   folded: boolean;
+  /** A pinned direction of the direction tree (#4352) in place of a project: its counts on the title line. */
+  direction?: { counts: DirectionCounts; secretary: boolean };
 }
 
 export interface LooseGroup {
@@ -87,6 +92,11 @@ export function todoTreeState(status: TodoStatus, agents: readonly Session[] = [
     return states.includes("bg_waiting") && !states.includes("working") ? "bg_waiting" : "working";
   }
   return "done";
+}
+
+/** The most urgent of some states ("Done" for none). */
+export function worstTreeState(states: TreeState[]): TreeState {
+  return worst(states);
 }
 
 function worst(states: TreeState[]): TreeState {

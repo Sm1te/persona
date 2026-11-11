@@ -4,7 +4,7 @@
   "cases": [
     {
       "name": "rank_all_states_and_mutes",
-      "description": "需要你即使屏蔽仍在最前，屏蔽的已看会话仍归已看。",
+      "description": "需要你即使屏蔽仍在最前，屏蔽的已看会话仍归已看；已看默认折叠。",
       "source": [
         "ios/Persona/Views/Chats/ChatsView.swift: base, body, counts(_:), rank(_:), ordered(_:), stateSections(_:), machineSections(_:), spaceSection(_:)",
         "ios/Shared/Models.swift: Session.sortDate",
@@ -209,7 +209,7 @@
               "machine-a/g"
             ],
             "visible_rows": [],
-            "folded": false
+            "folded": true
           }
         ],
         "unread_shown": [
@@ -639,7 +639,7 @@
     },
     {
       "name": "mute_allow_and_explicit_override",
-      "description": "空间屏蔽可被单会话允许覆盖，但显式屏蔽仍优先。",
+      "description": "空间屏蔽可被单会话允许覆盖，但显式屏蔽仍优先；已看默认折叠。",
       "source": [
         "ios/Persona/Views/Chats/ChatsView.swift: base, body, counts(_:), rank(_:), ordered(_:), stateSections(_:), machineSections(_:), spaceSection(_:)",
         "ios/Shared/Models.swift: Session.sortDate",
@@ -789,7 +789,7 @@
               "machine-a/d"
             ],
             "visible_rows": [],
-            "folded": false
+            "folded": true
           }
         ],
         "unread_shown": [

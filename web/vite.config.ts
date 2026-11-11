@@ -236,7 +236,8 @@ export default defineConfig({
   optimizeDeps: { include: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-clipboard", "@xterm/addon-web-links", "@xterm/addon-search", "@xterm/addon-webgl"] },
   // Tests run in zh-Hans, the source language, so their expectations read like the interface (src/i18n/test-setup.ts).
   // Node 25+ has its own localStorage, undefined without --localstorage-file, and it hides jsdom's: turn it off.
-  test: { setupFiles: ["src/i18n/test-setup.ts"], execArgv: ["--no-experimental-webstorage"] },
+  // A node_modules that isn't what package-lock.json pins stops the run before any test (scripts/installed-deps.mjs, #4776).
+  test: { globalSetup: ["scripts/installed-deps.mjs"], setupFiles: ["src/i18n/test-setup.ts"], execArgv: ["--no-experimental-webstorage"] },
   build: {
     target: "es2022",
     sourcemap: false,

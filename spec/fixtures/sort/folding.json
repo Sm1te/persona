@@ -284,7 +284,7 @@
     },
     {
       "name": "folded_state_and_expanded_idle",
-      "description": "状态标题折叠与空闲行展开分别控制可见行。",
+      "description": "状态标题折叠分别控制可见行：需要你被折叠；已看默认折叠，这里已经打开（`!state/idle`），旧的 `state-idle` 展开不再起作用。",
       "source": [
         "ios/Persona/Views/Chats/ChatsView.swift: base, body, counts(_:), rank(_:), ordered(_:), stateSections(_:), machineSections(_:), spaceSection(_:)",
         "ios/Shared/Models.swift: Session.sortDate",
@@ -362,7 +362,8 @@
           "machine_filter": "",
           "kept": [],
           "folded": [
-            "state/needs"
+            "state/needs",
+            "!state/idle"
           ],
           "expanded_idle": [
             "state-idle"

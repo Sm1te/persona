@@ -43,6 +43,8 @@ func TestWatchPumpReadsAllWatchesInOneGoroutine(t *testing.T) {
 		}
 		ids, paths = append(ids, id), append(paths, path)
 	}
+	// watch starts the pump with `go`: it may not have run yet. Once it has, it is the only one.
+	waitFor(t, "the watch pump", func() bool { return pumps(n) > 0 })
 	if got := pumps(n); got != 1 {
 		t.Fatalf("%d watch pumps for 4 watches, want 1", got)
 	}

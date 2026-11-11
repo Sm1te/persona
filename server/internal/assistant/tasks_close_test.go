@@ -69,7 +69,8 @@ func TestRetirable(t *testing.T) {
 	}
 }
 
-// A task found done: its agent, still for long enough, is retired on its machine; the todo keeps it.
+// A task found done: its agent, still for long enough, is stopped on its machine and keeps its terminal; the todo
+// keeps it.
 func TestDoneTaskAgentIsClosed(t *testing.T) {
 	ctx := context.Background()
 	s, f := newTaskService(t)
@@ -95,6 +96,12 @@ func TestDoneTaskAgentIsClosed(t *testing.T) {
 	if got := f.retires(); len(got) != 1 || got[0] != "s1" {
 		t.Fatalf("retired %v", got)
 	}
+	f.mu.Lock()
+	args := f.retireArgs[0]
+	f.mu.Unlock()
+	if args["method"] != deviceSessionStop || args["retire"] != true { // its terminal stays (#4754)
+		t.Fatalf("asked %v", args)
+	}
 	if a := todoNow(s, todo.ID).Agents; len(a) != 1 || a[0].SessionID != "s1" || a[0].ReleasedAt != nil {
 		t.Fatalf("the todo lost its agent: %+v", a)
 	}
@@ -109,8 +116,8 @@ func TestDoneTaskAgentIsClosed(t *testing.T) {
 	}
 }
 
-// A node that will not close an agent (it cannot resume it, or is too old to know how) is not asked again every
-// pass, only once the agent changed or a while later (the node may have been updated since).
+// A node that will not stop an agent (another tool owns it, or the node is too old to know session.stop) is not asked
+// again every pass, only once the agent changed or a while later (the node may have been updated since).
 func TestRefusedRetireIsNotRepeated(t *testing.T) {
 	ctx := context.Background()
 	s, f := newTaskService(t)
@@ -119,7 +126,7 @@ func TestRefusedRetireIsNotRepeated(t *testing.T) {
 	taskCloseIdle = 0
 	t.Cleanup(func() { taskCloseIdle = old })
 	f.mu.Lock()
-	f.retireErr = &rpc.Error{Code: "not_retirable", Message: "this engine cannot open it again"}
+	f.retireErr = &rpc.Error{Code: "not_retirable", Message: "this session belongs to another tool"}
 	f.mu.Unlock()
 	asked := 0
 	count := func() int {
@@ -127,7 +134,7 @@ func TestRefusedRetireIsNotRepeated(t *testing.T) {
 		defer f.mu.Unlock()
 		n := 0
 		for _, c := range f.calls {
-			if c.Method == deviceSessionRetire {
+			if c.Method == deviceSessionStop {
 				n++
 			}
 		}

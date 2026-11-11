@@ -53,6 +53,21 @@ internal fun AgentRowMetadata.withDelivery(messages: List<OutboxMessage>, unknow
     verifying = verifying || messages.any { it.state == DeliveryState.Verifying },
 )
 
+/**
+ * The Agents page's Needs You (#4338 A1, iOS `AgentsNeedsYou`, spec/fixtures/needs-you): one row per session that waits for
+ * the user, its cards under it, oldest first; a session waiting only in its terminal is a row of its own. Muted sessions
+ * show (only the tab's badge leaves them out), the computer filter applies, closed sessions don't, and the section shows
+ * under All and Needs You only, never while searching, as on iOS. Its header counts these rows, as the badge does.
+ */
+internal fun agentNeedsYouRows(
+    pending: List<Interaction>, sessions: List<Session>, settings: AgentListSettings, closed: (SessionKey) -> Boolean,
+): List<NeedsYouRow> {
+    if (settings.query.isNotEmpty() || (settings.quick != AgentQuickFilter.All && settings.quick != AgentQuickFilter.NeedsYou)) return emptyList()
+    val shown = { machine: String -> settings.machineFilter.isEmpty() || machine == settings.machineFilter }
+    val cards = needsYouCards(pending.filter { shown(it.machineId) && !closed(it.sessionKey) }, sessions.associateBy { it.key })
+    return needsYouRows(cards, needsYouWaiting(sessions.filter { shown(it.machineId) && !closed(it.key) }))
+}
+
 internal fun visibleAgentRequests(
     pending: List<Interaction>, sessions: List<Session>, mutes: AgentPreferences, settings: AgentListSettings,
 ): List<Interaction> {

@@ -42,7 +42,6 @@
     <string name="settings_pairing_next">次へ</string>
     <string name="settings_pairing_paste">リンクを貼り付け</string>
     <string name="settings_pairing_back_to_scan">スキャンに戻る</string>
-    <string name="settings_pairing_connect_title">ハブに接続</string>
     <string name="settings_pairing_connect_body">ハブをインストールすると画面に QR コードが表示されます。接続済みのデバイスで「設定 › デバイス › 新しいデバイスを接続」を開き、そこに出るコードを読み取ることもできます。</string>
     <string name="settings_pairing_scan">スキャンしてペアリング</string>
     <string name="settings_pairing_connect_push">Googleサービスがなくても通知を受け取れます。通知はスマートフォンとハブの常時接続で届きます。</string>
@@ -203,7 +202,6 @@
     <string name="settings_engine_title">エンジン</string>
     <string name="settings_engine_confirm">確認して続ける</string>
     <string name="settings_engine_save">保存</string>
-    <string name="settings_engine_heading">このコンピューターで使うエンジン</string>
     <string name="settings_engine_reading">このマシンを読み込み中</string>
     <string name="settings_engine_demo">体験モードではエンジンを変更できません。</string>
     <string name="settings_engine_later">ペアリングは完了しました。エンジンはあとでAgentsのマシン監視から選べます。</string>
@@ -211,7 +209,6 @@
     <string name="settings_engine_missing_title">このマシンを読み込めません</string>
     <string name="settings_engine_retry">再試行</string>
     <string name="settings_engine_continue">ひとまず続ける</string>
-    <string name="settings_engine_must_choose">続けるにはエンジンを1つ選んでください。ネットワークを確認してから、もう一度確認をタップしてください。</string>
     <string name="settings_engine_save_failed">保存に失敗しました：%1$s</string>
 
     <!-- Candidate addresses (Connection diagnostics) -->

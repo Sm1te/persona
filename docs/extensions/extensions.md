@@ -197,6 +197,7 @@ Lives at the root of the extension package. Example (a connector for a fictional
 | `permissions` | No | See "Permissions" |
 | `tools` | No | Command-line programs it needs (#4507); the hub installs them in the extension's own directory and puts them on its `PATH`, see "Command-line programs (tools)"; requires `runtime` |
 | `auth` | No | `{title, description?, page?}`: the extension needs a sign-in (#4507); the program implements `auth.*`, see "Sign-in (auth)"; requires a `runtime` that speaks the protocol |
+| `host_integrations` | No | `[{id, version}]`: a configured host CLI integration, by its closed ID and a semantic-version range. At most one; requires an RPC runtime. The program calls `cli.call`, see "Host CLI integrations". This grants no shell, arbitrary command, write or credential access |
 
 Manifests are at most 256 KB and are read strictly: an unknown field at any level means it can't be installed (a misspelled `permission` is not silently ignored).
 
@@ -851,6 +852,29 @@ Exactly one of `archive` and `npm`; if this hub's platform has no `archive` entr
 - **No sudo, nothing global**: it writes only the hub's state directory; anything else the program needs (credentials, caches) goes in the extension's data directory, e.g. by pointing its config directory there with an env var.
 - `tools` in the list and details are the programs this version uses: `[{name, title?, version, reused}]`.
 
+### Host CLI integrations
+
+`tools` installs a program for an extension. `host_integrations` instead names a command-line integration that the owner has already configured on the manager. It is not an alternative way to write an executable or a shell command: the closed integration ID is resolved by the manager, and the extension gets no binary path, profile, configuration or credential.
+
+```json
+"host_integrations": [{"id": "lark-cli", "version": ">=1.0.72 <2.0.0"}]
+```
+
+The supported integration is `lark-cli`, configured by the manager's `lark.cli` section. The owner must additionally set `lark.cli.extensions: true`; without it every request is refused. A configured binary and the manager's effective profile stay in the manager. Installing or upgrading an extension with a newly declared integration requires consent. The integration is optional: a connector can continue serving its own transport when the CLI is unavailable, but must not pretend its auxiliary reads succeeded.
+
+An RPC-speaking program calls the hub with `cli.call`. It must name exactly one declared integration in its manifest; a missing declaration, disabled integration or incompatible installed version fails closed. Input is an object with one `operation` and the bounded fields below. The answer is `{integration, result}`.
+
+| Operation | Input | Result |
+| --- | --- | --- |
+| `auth_status` | None | `{logged_in, expired, user_name?}`; no app binding, tokens or profile configuration |
+| `chats` | `limit?` (0–50; 0 uses the adapter default) | The adapter's bounded chat list |
+| `messages` | `chat_id` or `thread`, `before?`, `limit?` (0–50) | A page of messages |
+| `search` | `query`, `kind`: `messages` / `chats` / `docs` / `people`, `limit?` | `{data}`: the adapter's read-only normalized result; at most 1 MiB |
+
+`query`, chat and thread identifiers and cursors have input bounds. Unknown operations, unsupported search kinds and extra input beyond these contracts are refused. Every invocation has the adapter's bounded timeout. Errors carry only a generic code and category (`permission_denied`, `unsupported`, `rate_limited`, `timeout`, `unavailable` or `invalid_params`): raw command lines, stderr, paths and configuration never enter logs or replies.
+
+This RPC is **read-only**. Message sends and other writes remain connector actions or gated assistant commands, with their existing confirmations. Go SDK programs can call `hub.Call(ctx, "cli.call", params, &result)`.
+
 ### Sign-in (auth)
 
 When an extension needs the user to sign in to some service (scan a QR code, device code, enter a token), the manifest has `auth` and the program implements three methods; the hub turns this into the extension's sign-in state, and every client signs in with the same UI (#4507).
@@ -956,7 +980,7 @@ CLI: `personad extension contributions <id>` (list), `personad extension contrib
   A pack's details carry `pack_members_follow: true` (an older hub without it switches only the pack itself), `pack_off: [id]` (the recorded members, omitted when none) and `pack_on: [{id, name}]` (the installed members that are on, the ones switching it off takes along; omitted when none). The web app names those members and asks before switching a pack off (and switches at once when there are none), and on an older hub says that each member is switched on its own page.
   Trade-off: re-enabling only what the pack switched off, instead of every member, means a member the user deliberately turned off stays off; the cost is a small piece of state on the pack. Turning a pack off pauses the members' automatic upgrades as well as the pack's, since each paused one is off.
 - Uninstall: `DELETE …/-/?members=1` (admin UI `{"members": true}`) also uninstalls the installed members and returns `removed_members`; without it only the pack is uninstalled and the members stay. When members are depended on by extensions outside the pack, it first returns 409 listing the full dependency chain, and after confirming `cascade` only the outside dependents are disabled; any read-only dependent blocks the operation before anything is written.
-- Uninstalling a pack uninstalls the members first, and the pack only once all succeed. If deleting a member or the pack itself fails, it returns 409 `{ok:false, code:"partial_uninstall", removed_members:[id], failed_members:[{id,error}], remaining_members:[id], error}`: the pack is kept, and a retry handles only members still installed; packages / data already uninstalled are not pretended to be rolled back. The web settings (#4072) and Android (#1154) list the three groups by the members' installed names (an id for one not installed) and say the pack is still installed and nothing was put back; Uninstall again sends the same options. The admin UI and iOS show the hub's `error` (uninstalled / not uninstalled / retryable). A marketplace pack can't let a regular device bypass the uninstall permission for local packages: if any member was installed from outside a marketplace, the whole operation is refused first, to be handled on the hub machine or in the admin UI.
+- Uninstalling a pack uninstalls the members first, and the pack only once all succeed. If deleting a member or the pack itself fails, it returns 409 `{ok:false, code:"partial_uninstall", removed_members:[id], failed_members:[{id,error}], remaining_members:[id], error}`: the pack is kept, and a retry handles only members still installed; packages / data already uninstalled are not pretended to be rolled back. The web settings and iOS (#4072) and Android (#1154) list the three groups by the members' installed names (an id for one not installed) and say the pack is still installed and nothing was put back; Uninstall again (iOS: Retry on the failed uninstall's card) sends the same options. `remaining_members` is every member still installed, so it includes the failed ones; iOS lists those once, under not uninstalled. The admin UI shows the hub's `error` (uninstalled / not uninstalled / retryable). A pack's page and its install preview name the members the same way on every client, with the id beside the version and market (#4122). A marketplace pack can't let a regular device bypass the uninstall permission for local packages: if any member was installed from outside a marketplace, the whole operation is refused first, to be handled on the hub machine or in the admin UI.
 - CLI: `personad extension install …` prints the dependencies needed, the ones installed together and the ones not found, and installs them together after confirmation; `disable <id> --cascade` (for a pack, its members too), `uninstall <id> [--cascade] [--members]`.
 
 **Compatibility**: these three fields are new. Older hubs (before #1854) read the manifest strictly: an extension that has them fails to install, and its marketplace entry is dropped with a warning. Extensions that use them put a hub build number that includes #1854 in `engines.persona`.
@@ -1149,7 +1173,7 @@ Mirror settings belong to **one extension manager**, not a globally distributed 
 | `GET /api/v1/extensions/-/market-settings` | `{"registry_mirror":"","catalog_mirror":""}` |
 | `PUT /api/v1/extensions/-/market-settings` | Both fields; empty strings clear them |
 
-`registry_mirror` is an HTTPS registry base, optionally with a path prefix; requests use `<base>/v2/<repository>/…`. `catalog_mirror` is a complete official catalog JSON URL, ignored for nonofficial markets. Neither setting changes specs, package references, digests or install origins. URLs cannot contain credentials, queries, fragments or noncanonical paths. Loopback HTTP is reserved for isolated registry tests. Settings use the manager's existing Postgres setting store, with retryable reads and saves. Opening settings does not initialize markets or fetch catalogs. Clients select the manager through the existing manager query routing.
+`registry_mirror` is an HTTPS registry base, optionally with a path prefix; requests use `<base>/v2/<repository>/…`. `catalog_mirror` is a complete official catalog JSON URL, ignored for nonofficial markets. Neither setting changes specs, package references, digests or install origins. URLs cannot contain credentials, queries, fragments or noncanonical paths. Loopback HTTP is reserved for isolated registry tests. Settings use the manager's existing Postgres setting store, with retryable reads and saves. Opening settings does not initialize markets or fetch catalogs. Web pins the selected manager in both the header and the query, which also supports older query-routed hubs. A detected manager or credential-generation change retires the old editor and reloads both fields. The shared pairing epoch lets a current client detect same-token reauthentication and a cross-tab credential round trip at request boundaries before storage events arrive. Older writers, or writers unable to store the shared epoch, cannot announce those transitions in advance; an older writer's same-token sign-in cannot be detected by the token alone. An already dispatched write may still finish; a returning editor waits for it before reading that manager.
 
 Mirrors have an independent eight-second budget and receive **no market token**, even when their origin matches the market. Their bearers are independent and origin-bound. Missing files, timeouts, partial archives and any catalog/manifest/blob/package verification failure fall back upstream with a new staging file, hash and download context. A catalog mirror cannot downgrade the official catalog to unsigned. The configured GitHub network proxy covers GHCR, token and GitHub CDN traffic separately from mirror settings.
 
@@ -2236,6 +2260,9 @@ A hub picture that fails to load may have outlived its token, so the page is dra
 A row's extra actions open from a right click, a half-second press on a touch screen and the … button at its end (no swipe on the web).
 The component showcase's version 6 pages are `web/src/showcase/v6` (with their pictures in `web/src/showcase/images`) until the showcase extension's own snapshots have them.
 
+**iOS** (#827) draws it in parts and sends 6 only when all of it is drawn, after the rest of UI version 5; meanwhile the hub downgrades it as for any older app. Drawn so far: row controls
+(see "App: Settings › Extensions" below). One difference from the web and Android: a switch that asks first has already moved when the alert shows (a system switch cannot be held where it was), and Cancel puts it back.
+
 ## System-level placements (#1858)
 
 Extension content **outside the app**: Home Screen widgets, Lock Screen and Apple Watch complications (the `ui` slot `widget`), actions in Shortcuts and Siri (extension point `shortcuts`),
@@ -2675,6 +2702,15 @@ Views, components, actions, responses, placements and context all use schema-gen
   `GET /mock/invalidate` syncs one note and sends `ui.invalidate`; UI test `ExtensionV3Tests` (list, filters, more, search to empty state, push note page, edit/save/pop, invalidate),
   unit tests `ExtensionUIv3Tests`, `PersonaCardTests`. `MOCK_EXTENSION_CARDS=1` with `ExtensionAssistantCardTests` checks in a real assistant chat that
   `persona-view` and old `persona-card` share the renderer, actions are not tappable, links remain, and saves light/dark screenshots. Four-client showcase comparison depends on #1852, not replaceable by notes screenshots.
+- UI version 6 (#827, "UI version 6"), drawn in parts; pages keep sending 4 and cards 3 until all of it is drawn, so the hub still downgrades it for iOS meanwhile.
+  Row controls (`ExtensionControls.swift`, `ExtensionControlRow`): a switch or a stepper at the row's end, a slider on a line under it, all system controls labeled by the row's title and read out with
+  their value as written (`display` for the value the extension drew, else the number in the user's locale and the unit); a row with its own action does it from its words, the control beside them.
+  A switch sends at once, a slider when the finger lifts (moved without a drag, by VoiceOver or a keyboard, 0.6 s after the last move), a stepper 0.6 s after the last tap. `action.confirm` asks
+  with an alert (the confirm words, **Turn On** / **Turn Off** or **Confirm**, and **Cancel**); the system switch has already moved, so Cancel puts it back. `ExtensionViewModel.change` sends:
+  one request a control at a time and only the latest change made meanwhile, the answer's `view` or `items` drawn (an answer with neither draws the page again), a failure puts back the extension's
+  value with the error as a toast, a redraw meanwhile keeps the user's value, a spinner after a second. A disabled control, or one on a card without a model, is dimmed. Mock: `showcase › controls`
+  (`-openExtension showcase -openExtensionPage controls`) keeps what its controls are changed to, answers with the row (`items`), fails `fails` with 502, and asks first for two switches
+  (`GET /mock/controls/reset` forgets); unit tests `ExtensionControlsTests`, UI test `ExtensionControlsUITests`.
 - Inbox-item body (#1682, `inbox_item`, see "Inbox items" above): when the hub has `extension_ui_slots` (also query immediately after app startup before hello arrives: an item opened at launch must not be permanently assigned the original body because of that;
   hubs not knowing this slot simply return an empty list), query each hub once via `GET /api/v1/extensions/-/ui?placement=inbox_item` (again on pairing / hub switch or opening Inbox),
   recording connectors with extension rendering (`InboxItemSlots`, `connector` matched to item `source`). Opening such items calls `POST …/-/ui/{ui}` with the item id in `context.item`,
@@ -2697,6 +2733,8 @@ Views, components, actions, responses, placements and context all use schema-gen
   - **Auto-Update** switch (`PUT …/{id}/-/auto-upgrade`) keeps the saved preference visible. With `auto_upgrade_paused: "disabled"`, the footer says auto-update is paused until the extension is on again;
     Apple still allows editing that saved preference, while web and Android grey it out (mock hub `MOCK_PLUGIN_UPGRADE=disabled`).
   - With `auto_upgrade_paused: "market_removed"` (#1895), **Auto-Update** and **Check for updates** are greyed out and the page says that adding the marketplace again with the same address restores the saved setting and update checks.
+  - While the master switch is off (`GET /api/v1/extensions/-/upgrades` says `auto: false`), **Auto-Update** keeps showing the extension's saved value but is greyed out, and its footer says the setting applies again once the master switch is back on (#1828).
+    An unknown master switch (still loading, or an older hub without the route) leaves it editable. Web does this; Apple is #4747, Android #4748.
     A marketplace's delete confirmation first counts the default manager's installed extensions with that `ExtensionView.market`; 0, 1 and several have their own wording, while a read failure or an old hub that omits `market` gets the generic stopped-upgrading note rather than a false 0.
     Covered by `ExtensionSettingsLifecycleTests`, `ExtensionMarketModelTests`, `ExtensionMarketTests.testRemovedMarketKeepsPreferenceButPausesUpdates` and `testRemoveMarketConfirmationCountsAffectedExtensions`.
   - With a new version, "New version 1.1.0" plus small status text: auto-update when idle / auto-update off / needs one more permission: … (orange) / last version failed to start, no further auto-update (orange) / you rolled back from this version, no auto-update to it (orange, `skipped_by: "user"`) / failed to install / incompatible.
@@ -2718,6 +2756,7 @@ Views, components, actions, responses, placements and context all use schema-gen
   #1330 adds declarative UI (`settings/ExtensionView.tsx`, `lib/extension-ui.ts`: **Pages** in extension details, launcher-detail sections) and the extension marketplace (`settings/ExtensionMarket.tsx`, `lib/extension-market.ts`: catalog, details, marketplace management).
   #1699 adds auto-upgrade ("Auto-upgrade"): an **Upgrades** group in marketplace-extension details (switch, new-version row and **Review**, last result, `UpgradeGroup`), master switch at the top of marketplace management, same wording as the app (`upgradeDetail` etc. in `lib/extensions.ts`).
   #1895: with `auto_upgrade_paused: "market_removed"` the switch and **Check for updates** are greyed out and the group says that adding the marketplace again with the same address brings upgrades back; a marketplace's delete confirmation says how many installed extensions stop upgrading (`upgradingFrom` in `lib/extension-market.ts`, from `ExtensionView.market`; without it, only that they stop).
+  #1828: while the master switch is off, the switch is greyed out too, keeping the extension's saved value (`globalAuto` in `ExtensionSettingsPage.tsx`).
   #1681 adds `inbox_item` (`inbox/InboxExtensionBody.tsx`: Inbox detail body; list from `lib/extension-slots.ts` cache), see "UI slots" under "Settings" in `docs/web/web.md`.
 - Android (#1206) has the same features, entered through **Extensions** on the Settings home; code and screenshots in [android.md](../android/android.md) ("Extensions (Settings › Extensions)"). Extension-rendered UI (extension pages, launcher sections) and the marketplace (#1329) are covered by "Extension-rendered UI and the extension marketplace" in that section. Auto-upgrade, per-machine switches and detail-page uninstall (**Keep data** checked by default) are in "Auto-upgrade, per-machine switches and uninstall" (#3049).
 

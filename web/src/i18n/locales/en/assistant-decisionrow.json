@@ -19,5 +19,8 @@
   "chosen": "Answered: {option}",
   "responded": "Sent back to Persona",
   "failed": "Couldn't send your answer. {error}",
+  "dismissed": "This decision was dismissed. The task stays open; no option was taken.",
+  "undo_failed": "Couldn't restore this decision. {error}",
+  "missing_options": "This older review has no answerable options. Open the task to clarify the decision.",
   "confirm": "Confirm: {option}"
 }

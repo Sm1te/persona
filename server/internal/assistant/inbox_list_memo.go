@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,16 @@ type inboxListed struct {
 	it  *InboxItem
 	raw []byte
 	tok uint64
+}
+
+// inboxListOrder is the list's order: newest first, and by id among items of the same moment (mail and Feishu items
+// are often filed together). The items come from a map: without the id, the same list came out in another order on
+// every request, so the merged answer's validator never matched (#4739).
+func inboxListOrder(at1 time.Time, id1 string, at2 time.Time, id2 string) int {
+	if c := at2.Compare(at1); c != 0 {
+		return c
+	}
+	return strings.Compare(id1, id2)
 }
 
 // forgetListed drops the kept bytes of the items changed, under b.mu.
@@ -107,7 +118,7 @@ func (s *Service) inboxListRaw(all bool) ([][]byte, time.Time, bool) {
 		}
 	}
 	b.mu.Unlock()
-	slices.SortFunc(rows, func(x, y inboxListRow) int { return y.at.Compare(x.at) })
+	slices.SortFunc(rows, func(x, y inboxListRow) int { return inboxListOrder(x.at, x.it.ID, y.at, y.it.ID) })
 	out := make([][]byte, len(rows))
 	for i := range rows {
 		if rows[i].c != nil {

@@ -71,9 +71,13 @@ export function NavRail({ ticks, total, scroller, onJump, reset }: {
     if (dirty.current) {
       dirty.current = false;
       setHeight(Math.max(0, scroller.clientHeight - M.padding * 2));
-      setRight(Math.max(0, scroller.offsetWidth - scroller.clientWidth));
+      setRight(Math.max(0, scroller.offsetWidth - scroller.clientWidth) + M.edgeGap);
+      const content = lineParent(scroller);
+      // Wide chats already have a margin. Add only the missing clearance, keeping that column centered.
+      const margin = Math.max(0, (scroller.clientWidth - content.clientWidth) / 2);
+      scroller.style.setProperty("--chat-nav-clearance", `${Math.max(0, M.width + M.edgeGap + M.endInset - margin)}px`);
       const rows = new Map<string, HTMLElement>();
-      for (const el of lineParent(scroller).children) {
+      for (const el of content.children) {
         const child = el.firstElementChild;
         if (el instanceof HTMLElement && el.dataset.line !== undefined && child instanceof HTMLElement) rows.set(el.dataset.line, child);
       }
@@ -110,6 +114,7 @@ export function NavRail({ ticks, total, scroller, onJump, reset }: {
     if (content) mutations.observe(content, { childList: true, subtree: true });
     return () => {
       scroller.removeEventListener("scroll", scroll);
+      scroller.style.removeProperty("--chat-nav-clearance");
       resize.disconnect();
       mutations.disconnect();
       if (frame.current) cancelAnimationFrame(frame.current);

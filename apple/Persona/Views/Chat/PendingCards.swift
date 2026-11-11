@@ -80,6 +80,7 @@ struct PendingCards: View {
                 VStack(spacing: Theme.Space.m) {
                     ForEach(over ? Self.urgentFirst(cards) : cards) { card in
                         InteractionPanel(interaction: card.interaction).disabled(!card.enabled)
+                            .chatMark("chat.card." + card.interaction.id)
                     }
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }

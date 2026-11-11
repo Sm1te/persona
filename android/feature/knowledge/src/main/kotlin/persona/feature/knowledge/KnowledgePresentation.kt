@@ -3,6 +3,8 @@ package persona.feature.knowledge
 import persona.core.contracts.Session
 import persona.core.contracts.contextBody
 import persona.core.contracts.api.*
+import persona.core.domain.sort.AgentSession
+import persona.core.domain.sort.foldedSubtasks
 import kotlinx.serialization.json.*
 import androidx.annotation.StringRes
 import java.time.Instant
@@ -229,8 +231,16 @@ internal fun pathTail(path: String, keep: Int = 3): String {
 /** The tag editor's text as tags: split on any whitespace, empty ones dropped. */
 internal fun parseTags(text: String): List<String> = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
 
-/** Only live sessions that are not Persona itself can work on a project. */
-internal fun projectAgents(agents: List<Session>?): List<Session> = agents.orEmpty().filter { !it.assistant && it.isLive }
+/**
+ * Only live sessions that are not Persona itself can work on a project. A subtask the Agents list folds under its parent
+ * is no row of its own while that parent is listed here too, as in the main chat's dock (#4769, `foldedSubtasks`).
+ */
+internal fun projectAgents(agents: List<Session>?): List<Session> {
+    val live = agents.orEmpty().filter { !it.assistant && it.isLive }
+    val listed = live.mapTo(HashSet()) { it.key.path }
+    val folded = foldedSubtasks(agents.orEmpty().map(::AgentSession)) { it.id in listed }
+    return live.filterNot { it.key.path in folded }
+}
 
 internal fun KnowledgeDetail.entry(): KnowledgeEntry {
     val recording = kind == KnowledgeKind.Recordings.wire

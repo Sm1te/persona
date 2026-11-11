@@ -93,10 +93,14 @@ internal fun mergedSessions(stacks: GroupStacks): SessionsRepository = object : 
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 internal fun mergedInteractions(stacks: GroupStacks): InteractionCenter = object : InteractionCenter {
     override val pending = stacks.merged(emptyList<Interaction>(), { s ->
         s.mapped(s.repositories.interactions.pending) { list -> list.map(::interaction) }
     }) { it.flatten() }
+    override val arrivals = stacks.stacks.flatMapLatest { list ->
+        list.map { s -> s.mapped(s.repositories.interactions.arrivals) { interaction(it) } }.merge()
+    }
     override suspend fun refresh() = stacks.forEach { it.repositories.interactions.refresh() }
     // Only the request's own group: another group answering says nothing about this one (#5697).
     override suspend fun refresh(id: String) = stacks.use(GroupKeys.namespaceOf(id)) { it.repositories.interactions.refresh() }

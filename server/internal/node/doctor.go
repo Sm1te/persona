@@ -73,8 +73,11 @@ type DoctorOptions struct {
 	NodeSock, RuntimeSock, HerdrSock string
 	// ClaudeConfigDir is where the user's own Claude Code settings are (read, never written).
 	ClaudeConfigDir string
-	// ClaudeVersion asks claude's version ("" when unknown).
+	// ClaudeVersion asks claude's version ("" when unknown); ClaudeProbe, when set, is asked instead and also says
+	// whether the shell found no claude at all (claudeProbe), so a version that could not be read this time is not
+	// reported as Claude Code missing.
 	ClaudeVersion func(context.Context) string
+	ClaudeProbe   func(context.Context) (version string, missing bool)
 	// LaunchAgent is the resident node's launchd agent on a Mac (NodeLaunchAgentPath; pickNodeLaunchdLabel says which
 	// when a Mac keeps its previously installed label); "" elsewhere, and the launchd-process-type check is
 	// left out.
@@ -111,7 +114,7 @@ func DefaultDoctorOptions() (DoctorOptions, error) {
 	opts := DoctorOptions{
 		Dir: identity.DataDir(home), Bin: bin,
 		NodeSock: nodeclient.SocketPath(), RuntimeSock: RuntimeSocketPath(), HerdrSock: herdr.SocketPath(),
-		ClaudeConfigDir: claudeDirOf(home), ClaudeVersion: claudeVersion,
+		ClaudeConfigDir: claudeDirOf(home), ClaudeVersion: claudeVersion, ClaudeProbe: claudeProbe,
 	}
 	opts.withLaunchd(home)
 	// Under the node's agent (a claude the node started runs the doctor) a reload would stop the doctor too: under
@@ -383,7 +386,7 @@ func doctorChecks(ctx context.Context, opts DoctorOptions) DoctorReport {
 		add(c)
 	}
 	add(checkCommandPaths(opts.Dir))
-	add(checkClaudeVersion(ctx, opts.ClaudeVersion))
+	add(checkClaudeVersion(ctx, opts.claudeProbe()))
 	add(checkHerdr(ctx, opts.HerdrSock))
 	add(checkGlobalPermissionHooks(opts.ClaudeConfigDir))
 	add(checkAgentSandbox(opts.Dir))
@@ -640,13 +643,35 @@ func runnable(path string) error {
 	return nil
 }
 
-func checkClaudeVersion(ctx context.Context, ask func(context.Context) string) DoctorCheck {
+// ClaudeVersionUnanswered is the claude-version check's state when no version was read but the shell did find claude
+// (it ran out of time, or printed none): the assistant's readiness then says unknown, not claude_missing. The hub
+// matches the literal (assistant/readiness.go); "" is every other outcome, as with nodes from before it.
+const ClaudeVersionUnanswered = "unanswered"
+
+// claudeProbe is ClaudeProbe, or ClaudeVersion read as it always was: no version is no claude.
+func (o DoctorOptions) claudeProbe() func(context.Context) (string, bool) {
+	if o.ClaudeProbe != nil {
+		return o.ClaudeProbe
+	}
+	if o.ClaudeVersion == nil {
+		return nil
+	}
+	return func(ctx context.Context) (string, bool) {
+		v := o.ClaudeVersion(ctx)
+		return v, v == ""
+	}
+}
+
+func checkClaudeVersion(ctx context.Context, ask func(context.Context) (string, bool)) DoctorCheck {
 	c := DoctorCheck{Name: "claude-version"}
-	v := ""
+	v, missing := "", true
 	if ask != nil {
-		v = ask(ctx)
+		v, missing = ask(ctx)
 	}
 	switch {
+	case v == "" && !missing:
+		c.Status, c.State, c.Detail = DoctorWarn, ClaudeVersionUnanswered, "这次没读到 claude 的版本（超时或出错），claude 本身找得到"
+		c.Hint = "机器很忙或登录 shell 启动慢时会这样，稍后再查；一直这样就在终端运行 zsh -ic 'claude --version' 看看"
 	case v == "":
 		c.Status, c.Detail = DoctorWarn, "读不到 claude 的版本"
 		c.Hint = "没装 Claude Code，或登录 shell 里找不到它；读不到时 Persona 按不支持 --plugin-dir 处理，hooks 走 --settings"

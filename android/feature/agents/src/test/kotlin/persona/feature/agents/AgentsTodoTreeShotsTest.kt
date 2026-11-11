@@ -41,7 +41,7 @@ import java.io.File
 import java.time.Instant
 
 /**
- * "By to-do" as project › to-do › Agent (#3156, web #2698), in every style and appearance. Written as PNGs to `build/todo-tree-shots/`
+ * "By to-do" as iOS lays it out (#4338 A5): a section per to-do, then "No to-do", in every style and appearance. Written as PNGs to `build/todo-tree-shots/`
  * (or `-Dpersona.shots=<dir>`).
  */
 @RunWith(AndroidJUnit4::class)
@@ -126,7 +126,7 @@ class AgentsTodoTreeShotsTest {
         return AgentsPreferences(store, hub)
     }
 
-    @Test fun projectTodoAgentTree() {
+    @Test fun aSectionPerTodo() {
         val prefs = preferences()
         kotlinx.coroutines.runBlocking { prefs.grouping(persona.core.domain.sort.AgentGrouping.Todo) }
         val store = persona.core.domain.tasks.TasksStore(Api(todos), Connection(),
@@ -146,7 +146,7 @@ class AgentsTodoTreeShotsTest {
         for (s in AppStyle.entries) for (d in listOf(false, true)) {
             rule.runOnIdle { style = s; dark = d }
             rule.waitForIdle()
-            listOf("app", "api", "上线登录修复", "接口加重试", "1 个待办", "没有待办").forEach {
+            listOf("上线登录修复", "接口加重试", "没有待办").forEach {
                 assertTrue("shows $it", rule.onAllNodesWithText(it).fetchSemanticsNodes().isNotEmpty())
             }
             val list = rule.onNodeWithTag("shot").captureToImage().asAndroidBitmap()

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -42,6 +43,8 @@ type EarlierMeeting struct {
 	ID   string
 	Name string // the minutes' title (their when without one)
 	When string // the minutes' when: a display string in the user's zone
+	// Start and End are the minutes' span (#4713), for an answer's sources.
+	Start, End time.Time
 	// Minutes holds only the title, when, attendees, points (text, who), decisions and open questions (text), and
 	// action items (who, what, by, due_date, todo_id).
 	Minutes  Minutes
@@ -144,6 +147,7 @@ func (e *Engine) earlierMeetings(r *Recording, question string) []EarlierMeeting
 		r     *Recording
 	}
 	var all []ranked
+	zone := e.Store.Zone()
 	for _, o := range e.Store.Recordings() {
 		if o.ID == r.ID || !o.IsMeeting() || !o.MarkedNotPrivate() {
 			continue
@@ -152,8 +156,10 @@ func (e *Engine) earlierMeetings(r *Recording, question string) []EarlierMeeting
 		if err != nil {
 			continue
 		}
+		mins.spanOf(o, zone)
 		// Named by its minutes only: the recording's name may be the summary's title, made from the transcript.
-		em := EarlierMeeting{ID: o.ID, Name: cmp.Or(mins.Title, mins.When), When: mins.When, Minutes: materialMinutes(mins),
+		em := EarlierMeeting{ID: o.ID, Name: cmp.Or(mins.Title, mins.When), When: mins.When, Start: mins.Start, End: mins.End,
+			Minutes:  materialMinutes(mins),
 			Projects: e.materialProjects(o.Projects)}
 		all = append(all, ranked{m: em, score: here.score(&em), r: o})
 	}

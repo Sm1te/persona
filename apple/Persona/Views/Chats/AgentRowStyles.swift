@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// How an Agents row with the agent's latest words is drawn (#2530; Settings › Appearance › Layout, the Agents ⋯ menu's
-/// Display): By Project, By Status, By Machine, By To-do, Recently Used and Pinned. By Repository draws its own lines
-/// (`WorkspaceAgentRow`), the BeautifulUI style its own capsules, Compact List one line each.
+/// Display): in every grouping, By Repository included (#3753), and Pinned. The BeautifulUI style draws its own capsules,
+/// Compact List one line each; the Mac's and Apple Vision Pro's By Repository cards their own rows (`WorkspaceAgentRow`).
 enum AgentRowStyle: String, CaseIterable, Identifiable {
     /// A: the agent's avatar, its state on the avatar's corner; the title and the time on a line, two lines of its latest
     /// words with Needs You at their end, where it runs. In a regular-width sidebar the words take one line.

@@ -10,7 +10,7 @@ and the [architecture](server/architecture.md). The [protocol](protocol/protocol
 
 | Directory | Scope | Entry points |
 | --- | --- | --- |
-| [design/](design/) | Product design principles, cross-platform design system and Apple HIG audit | [Principles](design/PRINCIPLES.md), [design system](design/DESIGN_SYSTEM.md), [HIG audit](design/HIG_AUDIT.md), [proposal: owner at a glance](design/proposals/owner-at-a-glance.md), [proposal: continuous improvement loop](design/proposals/continuous-improvement-loop.md), [proposal: meeting recording page](design/proposals/meeting-recording.md) |
+| [design/](design/) | Product design principles, cross-platform design system and Apple HIG audit | [Principles](design/PRINCIPLES.md), [design system](design/DESIGN_SYSTEM.md), [HIG audit](design/HIG_AUDIT.md), [proposal: owner at a glance](design/proposals/owner-at-a-glance.md), [proposal: continuous improvement loop](design/proposals/continuous-improvement-loop.md), [proposal: meeting recording page](design/proposals/meeting-recording.md), [proposal: main chat availability](design/proposals/main-chat-availability.md) |
 | [server/](server/) | Hub architecture, managers' infrastructure, mesh, computers and usage | [Server](server/server.md), [mesh](server/mesh.md), [machines](server/machines.md) |
 | [apple/](apple/) | iPhone, Apple Watch, Mac and Vision Pro; native design and phone data | [iOS and watch](apple/ios.md), [performance](apple/performance.md), [icons](apple/icons.md), [sidebars](apple/sidebar.md), [Mac](apple/mac.md) (frozen), [design](apple/mac-design.md), [Vision Pro](apple/vision.md) |
 | [android/](android/) | Android modules and design system | [Android](android/android.md), [design](android/android-design.md) |

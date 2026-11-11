@@ -103,6 +103,7 @@
     <string name="designsystem_core_state_unread">Unread</string>
     <string name="designsystem_core_state_awaiting_reply">Awaiting reply</string>
     <string name="designsystem_core_state_working">Working</string>
+    <string name="designsystem_core_state_background_waiting">Waiting in the background</string>
     <string name="designsystem_core_state_waiting">Waiting</string>
     <string name="designsystem_core_state_muted">Muted</string>
     <string name="designsystem_core_state_idle">Seen</string>

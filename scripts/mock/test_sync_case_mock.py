@@ -169,6 +169,26 @@ def transcript_view(truth):
     return out
 
 
+class MovedCaseTests(unittest.TestCase):
+    """A case played for an app on the real clock: every time in it moves by the same amount, nothing else."""
+
+    def test_times_move_and_nothing_else(self):
+        case = sync_case.load("sends.json#send_tied_by_words_without_echo")
+        shift = sync_case.shift_to(1767323100 + 3600)  # an hour after the cases' clock, 2026-01-02T03:05:00Z
+        self.assertEqual(shift, 3600)
+        got = sync_case.moved(case, shift)
+        self.assertEqual(got["start"]["hub"]["lines"][0]["ts"], "2026-01-02T04:04:05Z")
+        self.assertEqual(sync_case.moved("2026-01-02T03:04:05.250Z", shift), "2026-01-02T04:04:05.250Z")
+        self.assertEqual(got["steps"][0], case["steps"][0])  # no times in a send
+        self.assertEqual(got["description"], case["description"])
+        self.assertIs(sync_case.moved(case, 0), case)
+
+    def test_the_hub_state_moves_too(self):
+        hub = sync_case.CaseHub(sync_case.load("sends.json#send_tied_by_words_without_echo"), shift=86400)
+        self.assertEqual(hub.truth.lines[0]["ts"], "2026-01-03T03:04:05Z")
+        self.assertEqual(hub.rows()[0]["updated_at"], "2026-01-03T03:04:05Z")
+
+
 class SyncCaseMockTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -47,6 +47,7 @@ final class MeetingAttendanceUITests: XCTestCase {
         XCTAssertTrue(role.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(waitFor { roleText(role).contains("旁听") }, "the hub's default: \(app.debugDescription)")
         let attendee = app.buttons["meeting-attendee"]
+        scrollTo(attendee, in: app)
         XCTAssertTrue(attendee.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(waitFor { attendee.label.contains("主对话") }, "the main chat attends until another is picked: \(attendee.label)")
 

@@ -98,14 +98,9 @@ struct AgentsListMenu: View {
                 }
             }
             #if os(iOS)
+            // Every grouping draws its agents this way, By Repository too (#3753).
             Picker("Display", selection: display.binding) {
-                Section {
-                    ForEach(AgentListDisplay.allCases) { d in Label(d.title, systemImage: d.symbol).tag(d) }
-                } header: {
-                    // By Repository draws its tree, one line per agent, whatever is picked here (#3182): said as the
-                    // section's title, not an item that does nothing (docs/lessons/ios.md).
-                    if shownGrouping == .repo { Text("By Repository keeps one line per agent") }
-                }
+                ForEach(AgentListDisplay.allCases) { d in Label(d.title, systemImage: d.symbol).tag(d) }
             }
             #else
             // The Mac and Apple Vision Pro keep their rows (#2530): cards or Compact List.

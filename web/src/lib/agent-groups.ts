@@ -5,7 +5,7 @@ import type { AgentState, Machine, Session } from "./types";
 import { byTime } from "./times";
 import { stateName } from "./state-labels";
 
-export type AgentGrouping = "repo" | "space" | "state" | "machine" | "todo";
+export type AgentGrouping = "repo" | "space" | "state" | "machine" | "todo" | "direction";
 // "By to-do" leads and is the default for a browser that never picked one (#2812); a grouping picked before stays. The
 // sidebar shows them in this order as segments, and the switch-grouping shortcut goes round them in it. "By machine" is
 // herdr's own layout (machine → workspace → tab, lib/herdr-tree.ts). `short` is the segment's label, `label` the full name.
@@ -15,6 +15,8 @@ export const AGENT_GROUPINGS: { key: AgentGrouping; label: string; short: string
   { key: "repo", label: t("lib-agent-groups.by_repo"), short: t("lib-agent-groups.seg_repo") },
   { key: "space", label: t("lib-agent-groups.by_project"), short: t("lib-agent-groups.seg_project") },
   { key: "state", label: t("lib-agent-groups.by_state"), short: t("lib-agent-groups.seg_state") },
+  // pinned direction › task › agent from the hub's direction tree (#4352); offered only while there is a leader
+  { key: "direction", label: t("lib-agent-groups.by_direction"), short: t("lib-agent-groups.seg_direction") },
 ];
 
 // the grouping this browser chose last (persona.agentGrouping, #1836); by todo until it chooses (#2812, was by machine, #1990)

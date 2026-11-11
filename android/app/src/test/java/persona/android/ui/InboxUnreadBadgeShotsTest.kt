@@ -63,11 +63,11 @@ class InboxUnreadBadgeShotsTest {
                     CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                         PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
                             Box(Modifier.testTag("shot").width(400.dp).height(1200.dp).background(PersonaTheme.palette.background)) {
-                                AssistantSidebarContent(snapshot, repository, emptySet(), null, operations, demo = false,
+                                AssistantSidebarContent(snapshot, repository, null, operations, demo = false,
                                     onOpen = {}, onAction = {}, onSettings = {}, onInbox = {}, onKnowledge = {},
                                     onTodos = null, todoCount = 0, showTodos = false, inboxCount = inboxUnreadCount(records),
                                     settingsCount = 0, settingsDot = false, settingsBadge = null, pages = emptyList(),
-                                    onPage = {}, onTogglePin = {}, onRetired = {})
+                                    onPage = {}, onRetired = {})
                             }
                         }
                     }

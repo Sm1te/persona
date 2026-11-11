@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 )
 
 // noticesTo are the texts sent into assistant conversation id.
@@ -277,8 +278,8 @@ func TestWorkerCannotHandOutTasks(t *testing.T) {
 	}
 }
 
-// Cancelling a task closes its agent, ends the card it waits on and archives it (reversible); another task's agent
-// with a card waiting is left as it is.
+// Cancelling a task stops its agent (session.stop: its terminal stays, #4754), ends the card it waits on and archives
+// it (reversible); another task's agent with a card waiting is left as it is.
 func TestCancelStopsAndArchivesAgents(t *testing.T) {
 	ft, row := closeTestService(t, func(s *proto.Session) {
 		s.Status, s.State, s.PendingInteractions = proto.StatusBlocked, proto.StateNeedsYou, 1
@@ -289,15 +290,23 @@ func TestCancelStopsAndArchivesAgents(t *testing.T) {
 	ft.f.setSessions("mac", row, other)
 	var closed []string
 	ft.f.answerNode("session.close", func(_ string, raw json.RawMessage) (any, error) {
+		t.Errorf("closed the agent's terminal: %s", raw)
+		return map[string]any{"ok": true}, nil
+	})
+	ft.f.answerNode(deviceSessionStop, func(_ string, raw json.RawMessage) (any, error) {
 		var a struct {
 			SessionID string `json:"session_id"`
+			Retire    bool   `json:"retire"`
 		}
 		_ = json.Unmarshal(raw, &a)
+		if a.Retire {
+			t.Errorf("a cancelled task's agent is stopped whatever it does: %s", raw)
+		}
 		closed = append(closed, a.SessionID)
 		gone := row // its node lists it closed a moment later
 		gone.Status, gone.State, gone.PendingInteractions, gone.PaneID = proto.StatusOffline, proto.StateOffline, 0, ""
 		ft.d.setSessions("mac", []proto.Session{gone, other})
-		return map[string]any{"ok": true}, nil
+		return map[string]any{"stopped": true}, nil
 	})
 	s := ft.s
 	ctx := context.Background()
@@ -402,10 +411,12 @@ func TestCancelLeavesAnotherTasksAgent(t *testing.T) {
 	ft, row := closeTestService(t, nil)
 	ft.f.setSessions("mac", row)
 	var closed []string
-	ft.f.answerNode("session.close", func(_ string, raw json.RawMessage) (any, error) {
-		closed = append(closed, string(raw))
-		return map[string]any{"ok": true}, nil
-	})
+	for _, m := range []string{"session.close", deviceSessionStop} {
+		ft.f.answerNode(m, func(_ string, raw json.RawMessage) (any, error) {
+			closed = append(closed, string(raw))
+			return map[string]any{"ok": true}, nil
+		})
+	}
 	s, ctx := ft.s, context.Background()
 	todo, err := s.createTodo(ctx, "新任务", "做", "conv1", "")
 	if err != nil {
@@ -420,5 +431,49 @@ func TestCancelLeavesAnotherTasksAgent(t *testing.T) {
 	ft.f.mu.Unlock()
 	if n != 0 || archivedIDs(t, s)[row.SessionID] {
 		t.Fatalf("another task's agent was closed (%d) or archived", n)
+	}
+}
+
+// A cancelled task's agent with no terminal (another tool's, an engine that runs agents itself: the node answers
+// session.stop with no_terminal) is closed as before; one the node cannot stop for another reason is left running,
+// never closed.
+func TestCancelClosesOnlyAnAgentWithoutTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		code  string
+		close bool
+	}{{"no_terminal", true}, {"not_stopped", false}} {
+		ft, row := closeTestService(t, nil)
+		ft.f.setSessions("mac", row)
+		var calls []string
+		ft.f.answerNode(deviceSessionStop, func(_ string, _ json.RawMessage) (any, error) {
+			calls = append(calls, deviceSessionStop)
+			return nil, &rpc.Error{Code: tc.code, Message: "no"}
+		})
+		ft.f.answerNode("session.close", func(_ string, _ json.RawMessage) (any, error) {
+			calls = append(calls, "session.close")
+			gone := row
+			gone.Status, gone.State, gone.PaneID = proto.StatusOffline, proto.StateOffline, ""
+			ft.d.setSessions("mac", []proto.Session{gone})
+			return map[string]any{"ok": true}, nil
+		})
+		s, ctx := ft.s, context.Background()
+		todo, err := s.createTodo(ctx, "做", "做", "conv1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.linkTodoAgent(ctx, todo.ID, "mac", row.SessionID, "x", "/code", "claude"); err != nil {
+			t.Fatal(err)
+		}
+		s.stopCancelledAgent(ctx, todo.ID, "mac", row.SessionID)
+		ft.f.mu.Lock()
+		got := append([]string(nil), calls...)
+		ft.f.mu.Unlock()
+		want := []string{deviceSessionStop}
+		if tc.close {
+			want = append(want, "session.close")
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s: calls %v, want %v", tc.code, got, want)
+		}
 	}
 }

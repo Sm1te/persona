@@ -224,6 +224,8 @@ Finding (11-11): step 1 as written moved pixels. With `minimumInteractiveCompone
 3. One copy helper in the design system, moved out of `ReplyBlocks.kt` (`rememberCopy()`), used by every copy action.
 4. An explicit `Haptic.Tap` where a press should be felt; view models send haptics through a flow, as the Agents view model already does.
 
+Done (11-11): steps 1 to 3 (#4647, #4668); step 4 for the presses in the shared components (Send, Stop, every answer, the page switcher, the persona button; `PressHapticsTest`). An arriving request plays attention (`InteractionCenter.arrivals`, `ArrivingRequestsTest`). Left: archive, with its notice and Undo.
+
 Risks: a double buzz where a notice and its call site both play one; context click is faint on some phones; Android 13 and later show their own confirmation when something is copied, so the "Copied" toast shows only on older versions (verify on a device).
 
 ### T11. One feedback layer

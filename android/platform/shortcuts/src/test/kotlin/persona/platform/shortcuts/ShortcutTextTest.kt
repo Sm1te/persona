@@ -92,6 +92,18 @@ class ShortcutTextTest {
         assertEquals("x".repeat(24), ShortcutPublisher.shortLabel(session("long", 1).copy(title = "x".repeat(40))))
     }
 
+    @Test fun anAgentAnotherCreatedIsNoRecentAgentWhileItsCreatorIsLive() {
+        fun session(id: String, minutes: Long, parent: String? = null, status: String = "working") = Session(machineId = "mac",
+            sessionId = id, title = "任务 $id", status = status, sourceKind = "runtime", agent = "claude", isSubagent = parent != null,
+            parentSessionId = parent, updatedAt = t.plusSeconds(minutes * 60).toString())
+        // The reviewers it created are newer, but they are reached under the orchestrator in Agents (#4769).
+        assertEquals(listOf("lead", "other"), RecentAgents.pick(listOf(session("lead", 3), session("review", 9, "lead"),
+            session("check", 8, "lead"), session("other", 1))).map { it.sessionId })
+        // Its creator let go: the one still working is a row of its own there, and a recent agent here.
+        assertEquals(listOf("review", "other"), RecentAgents.pick(listOf(session("lead", 3, status = "offline"),
+            session("review", 9, "lead"), session("other", 1))).map { it.sessionId })
+    }
+
     @Test fun newTodoShortcutOpensTheTodoListWithItsSheet() {
         ShortcutPublisher.publishFixed(context)
         val shortcut = androidx.core.content.pm.ShortcutManagerCompat.getDynamicShortcuts(context).first { it.id == "new-todo" }

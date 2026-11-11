@@ -118,7 +118,7 @@
   "up_to_date": "未发现新版本",
   "check_updates": "检查更新",
   "check_updates_hint": "检查扩展市场是否有新版本；确认前不会安装。",
-  "global_upgrade_off": "这个助手已关闭自动升级；此扩展的设置会保留。",
+  "global_upgrade_off": "这个助手已关闭自动升级扩展，此扩展的自动升级暂停。你的设置会保留，重新打开后恢复。",
   "not_provided": "未提供",
   "reported_version": "程序自报版本（未批准）",
   "extension_id": "扩展 ID",

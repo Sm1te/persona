@@ -25,8 +25,7 @@
   "filter_empty": "No agents in \"{filter}\"",
   "show_all": "Show all",
   "pinned_section": "Pinned",
-  "directions": "Directions",
-  "other_chats": "Other chats",
+  "directions": "Pinned",
   "launching": "Starting",
   "launch_untitled": "New agent",
   "launch_failed": "Couldn't start",
@@ -134,10 +133,6 @@
   "unread_messages_count_other": "{count} unread messages",
   "inbox_badge_title_one": "Inbox: {count} unread item; agents waiting on you are under Overview",
   "inbox_badge_title_other": "Inbox: {count} unread items; agents waiting on you are under Overview",
-  "auto_chats": "Automatic",
-  "auto_chats_label": "{count} automatic chats",
-  "auto_working": "{count} running",
-  "auto_needs_you": "{count} need you",
   "list_menu": "Agent list options",
   "list_menu_sorted": "Agent list options: {sort}",
   "not_connected_yet": "Not connected yet",
@@ -155,5 +150,7 @@
   "switcher_label": "{name}, switch assistant",
   "switcher_label_waiting": "{name}, switch assistant. Another assistant has something waiting for you",
   "switcher_count_one": "{count} thing waiting for you",
-  "switcher_count_other": "{count} things waiting for you"
+  "switcher_count_other": "{count} things waiting for you",
+  "leader_working": "{count} working",
+  "leader_needs_you": "{count} need you"
 }

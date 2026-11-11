@@ -4,6 +4,7 @@ import { t } from "../i18n";
 import { useEffect, useRef } from "react";
 import { toast } from "../ui/atoms";
 import { AGENT_GROUPINGS } from "./agent-groups";
+import { directionTreeGroups } from "./direction-tree";
 import { adjacentTab, machineAt, panelToggle, terminalChat, type PaneRef } from "./shortcut-nav";
 import { toggleHelp } from "./shortcut-help";
 import { toggleMaximized, toggleSidebarColumn } from "./layout";
@@ -105,7 +106,7 @@ export function useShortcuts(ctx: ShortcutContext) {
       registerShortcut("prev-tab", () => step(-1)),
       registerShortcut("next-tab", () => step(1)),
       registerShortcut("sidebar-grouping", () => {
-        const offered = AGENT_GROUPINGS.map((g) => g.key).filter((k) => getState().todosSupported !== false || k !== "todo");
+        const offered = AGENT_GROUPINGS.map((g) => g.key).filter((k) => (getState().todosSupported !== false || k !== "todo") && (k !== "direction" || directionTreeGroups()));
         toast(t("lib-use-shortcuts.grouping_toast", { grouping: groupingLabel(cycleGrouping(offered)) }));
       }),
       registerShortcut("prev-row", () => stepSidebarRow(-1)),

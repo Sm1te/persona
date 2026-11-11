@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initI18n } from "../../i18n";
 import { setToken } from "../../lib/api";
-import { type KBDetailResponse, type RecordingAsk, type RecordingLive } from "../../lib/kb";
+import { formatSpan, type KBDetailResponse, type RecordingAsk, type RecordingLive } from "../../lib/kb";
 import { setRosterDefault } from "../../lib/manager-choice";
 import { getState } from "../../lib/store";
 import type { AssistantInfo, Session } from "../../lib/types";
@@ -163,6 +163,18 @@ describe("an attended meeting in Knowledge detail", () => {
     await reply(pending(livePath)[0], liveFixture(over));
     expect(section()!.querySelector("[role=status]")!.textContent).toBe(text);
     expect(statusIcon()).toBe(iconDrawing("mic"));
+  });
+
+  it("dates an earlier meeting it drew on in the app's own format when the hub sends start / end (#4713)", async () => {
+    await load();
+    const start = new Date(2026, 10, 3, 14).toISOString();
+    const end = new Date(2026, 10, 3, 15, 10).toISOString();
+    await reply(pending(livePath)[0], liveFixture({ asks: [ask({ sources: [{ kind: "recordings", id: "cccccccc-cccc-cccc-cccc-cccccccccccc", name: "Design review",
+      when: "2026-11-03 14:00–15:10", start, end }] })] }));
+    const link = section()!.querySelector("li[data-ask] a")!;
+    expect(link.textContent).toContain(formatSpan(start, end));
+    expect(link.textContent).toMatch(/14:00–15:10$/);
+    expect(link.textContent).not.toContain("2026-11-03 14:00–15:10");
   });
 
   it("marks a problem with a warning only while recording", async () => {

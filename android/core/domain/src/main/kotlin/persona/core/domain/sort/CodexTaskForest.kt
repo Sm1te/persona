@@ -73,3 +73,16 @@ fun codexTaskForest(
         .mapValues { (_, members) -> members.sortedWith(compareByDescending<AgentSession> { it.updatedAt }.thenBy { it.id }) }
     return CodexTaskForest(rows.filterNot { it.id in parents }, children)
 }
+
+/**
+ * The ids of the rows a flat list of sessions leaves out as subtasks (#4769), the list drawing the rows [draws] says
+ * (the main chat's dock, the capsule's activity, a knowledge project's agents): each [isNestedSubtask] it draws that
+ * hangs under a row it draws above it, as [codexTaskForest] hangs one under its parent while the list of running
+ * sessions draws a row above it. One that needs the user is never among them, nor one with no row drawn above it (a
+ * working agent whose creator finished or was let go): those stay entries of their own. The parents are looked up among
+ * all of [rows], drawn or not, so a creator that no longer runs still leads to the one above it.
+ */
+fun foldedSubtasks(rows: List<AgentSession>, draws: (AgentSession) -> Boolean): Set<String> {
+    if (rows.none { it.isNestedSubtask && draws(it) }) return emptySet()
+    return codexTaskForest(rows, runs = draws).children.values.flatten().filter(draws).mapTo(HashSet()) { it.id }
+}

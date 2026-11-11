@@ -267,7 +267,7 @@ struct ExtensionSettingsPageWork: ViewModifier {
             // Closed without Update: the operation waiting on this preview is canceled.
             .sheet(isPresented: Binding(get: { lifecycle.preview != nil }, set: { if !$0 { lifecycle.dismissPreview() } })) {
                 if let preview = lifecycle.preview {
-                    ExtensionInstallSheet(preview: preview, name: page.detail?.plugin.name ?? page.id) {
+                    ExtensionInstallSheet(preview: preview, name: page.detail?.plugin.name ?? page.id, installedNames: page.memberNames) {
                         guard let consent = lifecycle.takeConsent() else {
                             let succeeded = await lifecycle.confirmUpgrade()
                             if succeeded { await page.load() }

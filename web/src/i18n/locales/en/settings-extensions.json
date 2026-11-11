@@ -118,7 +118,7 @@
   "up_to_date": "No new version found",
   "check_updates": "Check for updates",
   "check_updates_hint": "Check the extension market for a new version. Nothing is installed without confirmation.",
-  "global_upgrade_off": "Automatic upgrades are off for this assistant. This extension's preference is kept.",
+  "global_upgrade_off": "Auto-upgrade is paused because automatic extension updates are off for this assistant. Your setting is kept and applies again once they're turned back on.",
   "not_provided": "Not provided",
   "reported_version": "Reported version (not approved)",
   "extension_id": "Extension ID",

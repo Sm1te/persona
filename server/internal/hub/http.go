@@ -52,7 +52,6 @@ func (h *Hub) routes() http.Handler {
 	h.gitRoutes(api)
 	h.agentSettingsRoutes(api)
 	h.sessionRoutes(api)
-	h.workSessionStartRoutes(api)
 	h.paneRoutes(api)
 	h.nodeDoctorRoutes(api)
 	h.nodeUpdateRelayRoutes(api)

@@ -101,7 +101,13 @@ internal fun ShellChat(route: ChatRoute, session: ShellSession, navigator: Navig
                 onConnectionDetails = { navigator.navigate(SettingsPageRoute(SettingsPage.Diagnostics)) },
                 files = session.files, ports = wiring?.ports, onOpenPath = if (filesAvailable) ({ path, line -> open(FilesPane.Files, path, line) }) else null,
                 onHandToPersona = if (assistant) null else handToPersona,
-                onOpenTodo = { todoId -> navigator.navigate(persona.core.navigation.TodoDetailRoute(todoId)) }),
+                onOpenTodo = { todoId -> navigator.navigate(persona.core.navigation.TodoDetailRoute(todoId)) },
+                // A model error the hub named on Persona's turn: Fix It opens what the home's readiness card would (MainReadiness.kt).
+                onFixModel = { action, launcher, manager ->
+                    navigator.navigate(if (action == persona.core.designsystem.ReadinessActionId.EditProvider)
+                        launcher?.takeIf(String::isNotBlank)?.let { persona.core.navigation.ModelProviderRoute(it) } ?: SettingsPageRoute(SettingsPage.Providers)
+                    else persona.core.navigation.ModelPurposeRoute("assistant", manager))
+                }),
             renderStyle = if (assistant) ChatRenderStyle.Assistant else ChatRenderStyle.Agent,
             composerState = composer, composerService = wiring?.composer,
             onDraftChanged = editor?.let { it::changed },

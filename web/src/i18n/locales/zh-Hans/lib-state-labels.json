@@ -20,5 +20,8 @@
   "count_unread_other": "{count} 个完成未看",
   "count_done_other": "{count} 个已完成",
   "mark_all_seen": "全部标为已看",
-  "mark_all_seen_count": "全部标为已看（{count}）"
+  "mark_all_seen_count": "全部标为已看（{count}）",
+  "direction_working": "在做",
+  "direction_needs_you": "等你",
+  "direction_stuck": "卡住"
 }

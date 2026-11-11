@@ -1014,7 +1014,8 @@ export function Dialog({
 // ── toasts ──────────────────────────────────────────────
 
 /** A button on a toast ("Undo"): it runs, and the toast goes. */
-export type ToastAction = { label: string; run: () => void };
+/** `sticky`: stays until it is closed or its button is used (a new version waiting, lib/new-version.ts). */
+export type ToastAction = { label: string; run: () => void; sticky?: boolean };
 /** `leaving`: timed out or closed, playing its exit before it is gone (the stack removes it when that ends). */
 type Toast = { id: number; text: string; tone: "info" | "error" | "ok"; action?: ToastAction; leaving?: boolean };
 let toasts: Toast[] = [];
@@ -1074,7 +1075,7 @@ export function toast(text: string, tone: Toast["tone"] = "info", action?: Toast
   toasts = [...toasts, { id, text: shown.text, tone: shown.tone, action }];
   // One with a button stays long enough to reach it.
   const ms = action ? 6000 : shown.tone === "error" ? 5200 : 2800;
-  toastTimers.set(id, { left: ms, since: Date.now(), handle: toastsPaused ? undefined : setTimeout(() => dropToast(id), ms) });
+  if (!action?.sticky) toastTimers.set(id, { left: ms, since: Date.now(), handle: toastsPaused ? undefined : setTimeout(() => dropToast(id), ms) });
   toastsChanged();
 }
 

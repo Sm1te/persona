@@ -687,6 +687,8 @@ struct HubConnectorView: View {
     @State private var failure: String?
     /// The manager's name on another manager's copy, for the page to say whose it is.
     @State private var managerName: String?
+    /// Its source subscriptions (#2041): the entry row's counts, nil while it is hidden.
+    @State private var subscriptions: SubscriptionCounts?
 
     var body: some View {
         SettingsForm {
@@ -729,6 +731,9 @@ struct HubConnectorView: View {
                     Text("Sign-in is set up in the assistant's configuration (manager.json, see docs/operations/config.md); this page only shows the status.")
                 }
             }
+            if connector != nil {
+                SubscriptionsEntrySection(counts: subscriptions, state: SubscriptionsUI.state(connector: id))
+            }
             // Telegram switched off lists nothing until it runs: its switch is here all the same.
             if id == "github", let connector, connector.signsInHere {
                 GitHubConnectorSections(connector: connector, manager: manager, reload: { await load() })
@@ -760,6 +765,7 @@ struct HubConnectorView: View {
         .navigationBarTitleDisplayMode(.inline)
         // Again once paired (opened at launch, before the hub's address is known) or paired to another hub.
         .task(id: model.config) { await load() }
+        .subscriptionCounts($subscriptions, enabled: manager == nil) { [id] in $0.connector == id }
         // Switched on, its program takes a moment to start and say it signs in: asked again until it has (15 s at most).
         .task(id: starting) {
             for _ in 0..<15 where starting {

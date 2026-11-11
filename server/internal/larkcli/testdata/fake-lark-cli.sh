@@ -222,6 +222,12 @@ JSON
     cat "$base/replies_empty.json"
     exit 0
     ;;
+  contact)
+    if [ "${2:-}" = "+search-user" ]; then
+      printf '%s\n' '{"ok":true,"data":{"users":[]}}'
+      exit 0
+    fi
+    ;;
   *)
     if [ "$scenario" = "timeout" ]; then sleep 5; fi
     printf '%s\n' 'message-body-example' >&2

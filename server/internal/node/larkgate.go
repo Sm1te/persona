@@ -214,8 +214,19 @@ func gateWriteDepth(gates []proto.CommandGate, command string, depth int) (proto
 				for len(words) > 0 && isAssignment(words[0]) {
 					words = words[1:]
 				}
-				if len(words) == 3 && (words[0] == "sh" || words[0] == "bash") && (words[1] == "-c" || words[1] == "-lc") {
-					if g, write := gateWriteDepth(gates, words[2], depth+1); write {
+				words, parsed := unwrapCommand(words)
+				if !parsed {
+					continue
+				}
+				script := ""
+				if i := shellScriptIndex(words); i >= 0 {
+					script = words[i]
+				}
+				if len(words) > 0 && words[0] == "eval" {
+					script = strings.Join(words[1:], " ")
+				}
+				if script != "" {
+					if g, write := gateWriteDepth(gates, script, depth+1); write {
 						return g, true
 					}
 				}

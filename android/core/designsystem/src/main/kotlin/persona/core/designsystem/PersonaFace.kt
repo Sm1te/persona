@@ -346,9 +346,10 @@ private val RING_MIN = 1.5.dp
 @Composable
 fun JPersonaButton(state: PersonaState, contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val stateText = stringResource(R.string.designsystem_persona_button_state, state.label)
+    val haptics = rememberHaptics()
     Box(
         modifier.size(48.dp).clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button, onClick = haptics.tapped(onClick))
             .semantics { this.contentDescription = contentDescription; stateDescription = stateText },
         contentAlignment = Alignment.Center,
     ) { PersonaFace(state, size = if (LocalHomeChrome.current != null && PersonaTheme.style == AppStyle.Glass) HomeTokens.homeFaceSize else 40.dp) }

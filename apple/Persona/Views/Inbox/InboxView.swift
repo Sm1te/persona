@@ -64,6 +64,7 @@ struct InboxPage: View {
     @State private var answering: Interaction? // a card on no session, open by itself (#4059)
     @State private var showingMutes = false     // Muted
     @State private var showingRules = false     // Rules
+    @State private var showingSubscriptions = false  // source subscriptions (#2041)
     @State private var ruling: InboxPolicyTarget? // a row's Rule for This Chat / Sender / Repository…
     @State private var confirming = false // Clear All over many items asks first
     /// Selecting (#2059): the picked items' keys (`InboxItem.key`); nil when not selecting. Marking stays in Persona (done, with Undo).
@@ -130,6 +131,13 @@ struct InboxPage: View {
                                 .disabled(accounts.isEmpty)
                             Button { showingMutes = true } label: { Label("Muted [Inbox Mutes View e5e468]", systemImage: Theme.Icon.mute) }
                             Button { showingRules = true } label: { Label("Rules [Inbox Policy]", systemImage: Theme.Icon.inboxRule) }
+                            // Every source subscription, with the Inbox's other settings, once the hub shows them (#2041).
+                            if model.hubFeatures.contains(SubscriptionsUI.feature) {
+                                Button { showingSubscriptions = true } label: {
+                                    Label("Subscriptions [Source Subscriptions]", systemImage: Theme.Icon.subscriptions)
+                                }
+                                .accessibilityIdentifier("inbox.subscriptions")
+                            }
                         } label: { ThemedIcon(Theme.Icon.moreMenu) }
                         .accessibilityLabel("More")
                         .accessibilityIdentifier("inbox.more")
@@ -143,6 +151,7 @@ struct InboxPage: View {
                 .sheet(item: $answering) { SessionlessCardSheet(interaction: $0) }
                 .sheet(isPresented: $showingMutes) { InboxMutesView() }
                 .sheet(isPresented: $showingRules) { InboxRulesView() }
+                .sheet(isPresented: $showingSubscriptions) { SubscriptionsSheet() }
                 .sheet(item: $ruling) { InboxPolicySheet(target: $0) }
                 .confirmationDialog(InboxBulk.confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
                     Button(InboxBulk.confirmButton(count: cleanScope.count)) { clean(confirmed: true) }
@@ -599,7 +608,16 @@ struct InboxPage: View {
                     let count = more ? "\(doneCount)+" : "\(doneCount)"
                     let filtered = !source.isEmpty || !kind.isEmpty || !query.isEmpty
                     if dg.count > 1 {
-                        Section { EmptyView() } header: { doneHeader(count: count, groups: dg, manager: manager, proxy: proxy) }
+                        // Its title as a row, not as the header of a section with nothing in it: as that header (with its
+                        // Jump To menu, #2979) its text came out washed like a stuck title's wherever it was, and on an
+                        // iPhone the scroll edge reached from the top down to it, over every row between (#4218).
+                        Section {
+                            doneHeader(count: count, groups: dg, manager: manager, proxy: proxy)
+                                .listRowInsets(.vertical, Theme.Space.s)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                         if folds.isOpen("done", manager: manager) {
                             ForEach(dg) { g in
                                 Section {

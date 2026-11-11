@@ -19,5 +19,7 @@
   "watched_doc_unreadable": "已关注的文档“{title}”暂时读取不到，每 10 分钟会重试一次；不再需要可在设置 › 连接器中移除",
   "doc_comment_label": "文档评论",
   "doc_comment_rule": "规则：文档评论提到了你，或回复了你参与过的评论。",
-  "larkcli_name": "飞书 · 我的消息"
+  "larkcli_name": "飞书 · 我的消息",
+  "github_rate_low": "这个小时的 GitHub 请求额度快用完了，约 {minutes} 分钟内只看通知",
+  "github_paused": "GitHub 要求暂停请求，约 {minutes} 分钟内不读取任何内容"
 }

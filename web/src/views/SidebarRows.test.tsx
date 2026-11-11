@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { AgentSession } from "../lib/agents";
 import type { Session } from "../lib/types";
 import { setAgentDetails, setContextAsUsed } from "../lib/context-usage";
-import { AgentRow, PersonaRow, PinnedHeading, SessionRow } from "./Sidebar";
+import { AgentRow, PersonaRow, SessionRow } from "./Sidebar";
 import { conversationMenuItems } from "./ConversationMenu";
 
 // the sidebar's modules read the colour scheme and this browser's settings when they load
@@ -164,14 +164,6 @@ describe("Persona's main row", () => {
     expect(renderToStaticMarkup(<PersonaRow {...props} main={undefined} active={false} />)).not.toContain("对话的操作");
   });
   it("whose menu has only 拷贝会话 ID and 结束…", () => {
-    expect(conversationMenuItems(main, { main: true, pinned: false }).map((i) => i.key)).toEqual(["copy", "end"]);
-  });
-});
-
-describe("the 置顶 heading over the pinned conversations", () => {
-  it("is drawn with a ⋯ a touch screen can reach for 全部取消置顶", () => {
-    const html = renderToStaticMarkup(<PinnedHeading onMenu={() => {}} />);
-    expect(html).toContain("置顶");
-    expect(html).toMatch(/<button [^>]*aria-label="全部取消置顶"[^>]*aria-haspopup="menu"/);
+    expect(conversationMenuItems(main, { main: true }).map((i) => i.key)).toEqual(["copy", "end"]);
   });
 });

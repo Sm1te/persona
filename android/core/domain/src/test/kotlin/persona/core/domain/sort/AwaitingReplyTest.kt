@@ -70,7 +70,7 @@ class AwaitingReplyTest {
         val list = buildAgentList(rows, machines, mutes = muted, settings = AgentListSettings(grouping = AgentGrouping.MachineSpace))
         assertEquals("quiet", list.groups.single().parent)
         assertTrue(list.groups.single().folded)
-        assertEquals(6, agentRank(rows.single(), muted))
+        assertEquals(7, agentRank(rows.single(), muted))
         assertEquals(listOf("state/idle"),
             buildAgentList(rows, machines, mutes = muted, settings = AgentListSettings(grouping = AgentGrouping.State)).groups.map { it.id })
     }

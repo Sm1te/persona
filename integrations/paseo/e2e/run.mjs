@@ -2,8 +2,9 @@
 // a Claude Code provider whose model is the scripted one in model.mjs), a real `personad node --stdio` started by the
 // runtime SDK's harness (it plays the hub), and the bridge the node itself writes out and runs once the engine is set
 // to Paseo. It starts a session from the "phone", watches it, sends to it, answers a permission, a question and a
-// plan, switches the mode, interrupts, renames, has a card answered in Paseo's own app, closes, takes a closed
-// session over, and lives through Paseo restarting.
+// plan, switches the mode, interrupts, renames, has a card answered in Paseo's own app, lives through Paseo
+// restarting, closes the session (archived in Paseo, it stays listed under its id) and sends to it again, archives it
+// once more across a restart of the bridge and continues it, and checks agents started or archived in Paseo itself.
 //
 //   PERSONAD=<personad binary, built after go generate> CLAUDE_BIN=<a Claude Code binary> [PASEO_BIN=paseo] \
 //     node integrations/paseo/e2e/run.mjs
@@ -223,21 +224,47 @@ const paseoBack = new Promise((r) => paseo.once('connected', r))
 paseo.start()
 await paseoBack
 
-// ---- close, then take the closed session over ----
+// ---- close: the session stays under its id, not running, and goes on under it (#4771) ----
 
 const transcript = (await tryCall('session.info', { session_id: sid }))?.transcript_path
 const claudeSid = transcript?.match(/([0-9a-f-]{36})\.jsonl$/)?.[1]
+// Every list the node sends from here on: the conversation is never a row under its transcript's id, a second id.
+const closedAt = node.events.length
+const underTranscript = (from = closedAt) => node.events.slice(from)
+  .some((e) => e.event === 'sessions.changed' && e.params.sessions?.some((s) => s.session_id === claudeSid))
+const agentNow = async () => (await paseo.request('fetch_agent_request', { agentId })).agent
 await tryCall('session.close', { session_id: sid })
-await until('gone from the list', () => !listed(), 30_000).catch(() => {})
-check('closed from the phone: archived in Paseo', !listed() && (await paseo.request('fetch_agent_request', { agentId })).agent?.archivedAt)
-await until('its transcript listed as 未运行', () => node.sessions().some((s) => s.session_id === claudeSid && s.status === 'offline'), 60_000).catch(() => {})
-check('its transcript is a session not running (未运行)', node.sessions().some((s) => s.session_id === claudeSid && s.status === 'offline'), claudeSid)
-await tryCall('session.send', { session_id: claudeSid, text: 'Back again E2E_HELLO', client_msg_id: 'cm-e2e-8' }, 60_000)
-await until('taken over', () => node.sessions().some((s) => s.session_id === claudeSid && s.source_kind === 'runtime'), 60_000).catch(() => {})
-await until('answered', async () => (await texts(claudeSid)).some((i) => i.client_msg_id === 'cm-e2e-8'), 60_000).catch(() => {})
-check('a message to it: Paseo takes it over under the same id and it goes on', (await texts(claudeSid)).some((i) => i.client_msg_id === 'cm-e2e-8'))
-const back = (await paseo.request('fetch_agent_request', { agentId })).agent
-check('the same Paseo agent, back from the archive', back && !back.archivedAt && back.labels?.['persona.session'] === claudeSid, JSON.stringify(back?.labels))
+await until('not running', () => listed()?.status === 'offline', 30_000).catch(() => {})
+check('closed from the phone: archived in Paseo, and still listed under the same id, not running',
+  claudeSid && (await agentNow())?.archivedAt && listed()?.status === 'offline' && listed()?.title === 'E2E 改名', JSON.stringify(listed()))
+check('its conversation still reads under that id', await hasText('Hello from the mock model, step by step.') &&
+  (await texts()).some((i) => i.client_msg_id === 'cm-e2e-7'))
+await tryCall('session.send', { session_id: sid, text: 'Back again E2E_HELLO', client_msg_id: 'cm-e2e-8' }, 60_000)
+await until('answered', async () => (await texts()).some((i) => i.client_msg_id === 'cm-e2e-8'), 60_000).catch(() => {})
+check('a message to it: Paseo takes it back from the archive, and it goes on under the same id',
+  (await texts()).some((i) => i.client_msg_id === 'cm-e2e-8') && listed()?.status !== 'offline', listed()?.status)
+const back = await agentNow()
+check('the same Paseo agent, back from the archive, its label unchanged', back && !back.archivedAt && back.labels?.['persona.session'] === sid,
+  JSON.stringify(back?.labels))
+
+// Archived again, and the bridge started afresh (the engine switched away and back): listed under its id once the
+// bridge has read Paseo's archive, and continued (session.start with resume) under that id.
+await until('done again', () => ['done', 'idle'].includes(listed()?.status), 60_000).catch(() => {})
+await tryCall('session.close', { session_id: sid })
+await until('not running again', () => listed()?.status === 'offline', 30_000).catch(() => {})
+await node.call('engine.use', { engine: 'herdr' })
+await until('the bridge gone', () => !listed(), 30_000).catch(() => {})
+const restartedAt = node.events.length
+await node.call('engine.use', { engine: 'paseo' })
+await until('listed again', () => listed()?.status === 'offline', 60_000).catch(() => {})
+check('the bridge restarted: the archived session is listed under its id again', listed()?.status === 'offline' && !underTranscript(restartedAt),
+  JSON.stringify(listed()))
+const resumed = await tryCall('session.start', { cwd: work, resume_session_id: sid }, 60_000)
+await until('back from the archive', async () => !(await agentNow())?.archivedAt, 30_000).catch(() => {})
+check('resumed (session.start): the same agent, under the same id', resumed?.session?.session_id === sid &&
+  !(await agentNow())?.archivedAt && (await agentNow())?.labels?.['persona.session'] === sid, JSON.stringify(resumed?.session?.session_id))
+check('one row for the conversation throughout: never one under its transcript id', claudeSid && !underTranscript() &&
+  node.sessions().filter((s) => s.cwd === work).length === 1, node.sessions().filter((s) => s.cwd === work).map((s) => s.session_id).join(','))
 
 // ---- agents started in Paseo itself, never driven from the phone ----
 

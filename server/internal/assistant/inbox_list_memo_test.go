@@ -282,3 +282,51 @@ func TestInboxListUnchangedAllocations(t *testing.T) {
 		t.Fatalf("one GET of 400 unchanged items allocated %d bytes, want at most 45130", per)
 	}
 }
+
+// Items of the same moment list by id, so the same items always give the same bytes: the merged answer's validator
+// depends on it (#4739). The map they come from has no order of its own.
+func TestInboxListOrderIsStable(t *testing.T) {
+	now := time.Now()
+	var items []*InboxItem
+	for i := range 40 {
+		items = append(items, &InboxItem{ID: fmt.Sprintf("mail-%02d", (i*17)%40), Source: "mail", Kind: KindMail, Title: "t", Last: "u"})
+	}
+	h := memoInbox(t, items)
+	h.inbox.mu.Lock()
+	for _, it := range h.inbox.items {
+		it.UpdatedAt = now // all of the same moment
+	}
+	h.inbox.mu.Unlock()
+	first, want := getInbox(t, h, "?sources=all")
+	if !bytes.Equal(first, want) {
+		t.Fatal("the memo's bytes differ from apierr.WriteJSON's")
+	}
+	var list struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(first, &list); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(list.Items); i++ {
+		if list.Items[i-1].ID >= list.Items[i].ID {
+			t.Fatalf("items of the same moment out of id order at %d: %s, %s", i, list.Items[i-1].ID, list.Items[i].ID)
+		}
+	}
+	strip := func(b []byte) []byte { // as_of is the moment of each listing
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		delete(m, "as_of")
+		out, _ := json.Marshal(m)
+		return out
+	}
+	for range 20 {
+		again, _ := getInbox(t, h, "?sources=all")
+		if !bytes.Equal(strip(first), strip(again)) {
+			t.Fatal("the same items listed in another order")
+		}
+	}
+}

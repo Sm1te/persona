@@ -92,6 +92,7 @@
     <string name="designsystem_core_state_unread">完成未看</string>
     <string name="designsystem_core_state_awaiting_reply">待你回复</string>
     <string name="designsystem_core_state_working">工作中</string>
+    <string name="designsystem_core_state_background_waiting">后台等待中</string>
     <string name="designsystem_core_state_waiting">待唤醒</string>
     <string name="designsystem_core_state_muted">已屏蔽</string>
     <string name="designsystem_core_state_idle">已看</string>

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""The website home page's generated assets (site/public, docs/operations/site.md "Home page"):
+"""The website's generated assets (site/public, docs/operations/site.md "Home page"):
   python3 scripts/assets/make_site_assets.py                 # all three
   python3 scripts/assets/make_site_assets.py serif           # only the headline font, after editing headline text
   python3 scripts/assets/make_site_assets.py --serif-font /path/NotoSerifCJKsc-Bold.otf serif
 
 - img/paper.webp: the mascot alone, cut from Apple Vision Pro's front icon layer (the drawing without its paper).
 - img/recording.webp: the README's demo-mode recording (docs/assets/readme/hero-dark.zh-CN.webp), copied as is.
-- fonts/persona-serif.woff: Noto Serif CJK SC Bold, subset to the characters the page sets in it (h1, h2 and .hello),
+- fonts/persona-serif.woff: Noto Serif CJK SC Bold, subset to the characters the pages set in it (h1, h2 and .hello
+  of the home page and the extensions page),
   so the headlines look the same on every system for about 20 KB. The source font is not in the repository: pass it
   with --serif-font (an .otf, or a .ttc with --font-number), or let the script find a system copy.
 """
@@ -18,7 +19,8 @@ from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SITE = os.path.join(ROOT, "site", "public")
-PAGE = os.path.join(SITE, "index.html")
+# the pages whose headlines are set in the serif
+PAGES = [os.path.join(SITE, "index.html"), os.path.join(SITE, "extensions", "index.html")]
 FRONT = os.path.join(ROOT, "apple/Persona/Resources/Assets.xcassets/AppIcon-Vision.solidimagestack",
                      "Front.solidimagestacklayer/Content.imageset/front.png")
 RECORDING = os.path.join(ROOT, "docs/assets/readme/hero-dark.zh-CN.webp")
@@ -86,8 +88,9 @@ def serif(font, number):
     if not font or not os.path.exists(font):
         sys.exit("serif: Noto Serif CJK SC Bold not found; pass --serif-font (and --font-number for a .ttc)")
     grab = SerifText()
-    with open(PAGE, encoding="utf-8") as f:
-        grab.feed(f.read())
+    for page in PAGES:
+        with open(page, encoding="utf-8") as f:
+            grab.feed(f.read())
     chars = set("".join(grab.text)) | set(" 。，、？！：；「」…·")
     text = "".join(sorted(c for c in chars if c == " " or not c.isspace()))
     out = os.path.join(SITE, "fonts", "persona-serif.woff")

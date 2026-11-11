@@ -256,6 +256,8 @@ internal fun AssistantManagement.inGroup(names: GroupNames): AssistantManagement
         override suspend fun endConversation(session: SessionKey) = source.endConversation(names.raw(session))
         override suspend fun compactConversation(session: SessionKey) = source.compactConversation(names.raw(session))
         override suspend fun archiveConversation(session: SessionKey) = source.archiveConversation(names.raw(session))
+        override suspend fun makeDirection(session: SessionKey) = source.makeDirection(names.raw(session))
+        override suspend fun endDirection(session: SessionKey) = source.endDirection(names.raw(session))
         override suspend fun newMainConversation(carrySummary: Boolean, expect: String?) =
             source.newMainConversation(carrySummary, expect)
         private fun ScheduledTask.local() =
@@ -296,7 +298,7 @@ internal fun AssistantConversations.inGroup(names: GroupNames, scope: CoroutineS
     return object : AssistantConversations {
         override val assistant = source.assistant.mapIn(scope) { snapshot ->
             AssistantSnapshot(snapshot.mainSession?.let(names::key), snapshot.conversations.map(names::session), snapshot.manager, snapshot.managerId,
-                snapshot.leaders, snapshot.directionNames)
+                snapshot.leaders, snapshot.directionNames, leaderCounts = snapshot.leaderCounts)
         }
         override val pinned = source.pinned.mapIn(scope) { keys -> keys.mapTo(LinkedHashSet(), names::key) }
         override suspend fun refresh() = source.refresh()

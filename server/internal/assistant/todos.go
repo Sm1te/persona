@@ -740,6 +740,7 @@ func (s *Service) closedTaskOf(ctx context.Context, mid, sid string) (Todo, bool
 var errTodosUnavailable = errors.New("todos service unavailable")
 
 func (s *Service) todoRoutes() {
+	s.taskReviewDismissalRoutes()
 	s.todoDecisionRoutes()
 	s.todoThreadRoutes()
 	s.todoRetitleRoute()
@@ -756,6 +757,10 @@ func (s *Service) todoRoutes() {
 			list = append(list, listedTodo{Todo: formatTodo(copyTodoLocked(t))})
 		}
 		s.todos.mu.RUnlock()
+		if err := s.listDecisionReviews(r.Context(), list); err != nil {
+			apierr.Write(w, http.StatusServiceUnavailable, errTodosUnavailable)
+			return
+		}
 		asks := s.todoAsks(r.Context()) // once the todos are let go: it reads them itself
 		for i := range list {
 			list[i].Todo = s.withBrief(list[i].Todo) // what was asked and who carried it (task_brief.go)

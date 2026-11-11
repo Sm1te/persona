@@ -173,7 +173,7 @@ describe("Assistant Needs you / In progress trays", () => {
     const firstRound = { outcome: "decide" as const, verdict: "Choose the rollout", recommend: "Use the demo rollout", asked_at: at };
     todo = { ...todo, ask: firstRound, supervision: { ...todo.supervision!, state: "needs_user" } };
     await act(async () => putTodo(todo));
-    act(() => (entry("needs")).click());
+    await act(async () => { entry("needs").click(); await import("./TaskDecision"); });
     expect(host.querySelectorAll('[data-brief-row="accept"]')).toHaveLength(1);
     expect(host.textContent).not.toContain(t("assistant-tasks.review_needs_user"));
     const first = [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === t("assistant-brief.take"))!;
@@ -195,7 +195,7 @@ describe("Assistant Needs you / In progress trays", () => {
     const ask = { outcome: "decide" as const, verdict: "Choose the demo rollout", recommend: "Use the demo rollout", asked_at: at };
     todo = { ...todo, ask, supervision: { ...todo.supervision!, state: "needs_user" } };
     await act(async () => putTodo(todo));
-    act(() => entry("needs").click());
+    await act(async () => { entry("needs").click(); await import("./TaskDecision"); });
     const row = host.querySelector('[data-brief-row="accept"]')!;
     expect([...row.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual([t("assistant-brief.open"), t("assistant-brief.finish"), t("assistant-brief.take")]);
     const read = vi.mocked(fetch).getMockImplementation()!;
@@ -225,6 +225,7 @@ describe("Assistant Needs you / In progress trays", () => {
     await act(async () => {
       entry("needs").click();
       await import("./MessageDraft");
+      await import("./TaskDecision");
     });
     expect(host.querySelector('[data-testid="message-card"]')).not.toBeNull();
     expect(host.textContent).toContain(t("assistant-tasks.review_needs_user"));

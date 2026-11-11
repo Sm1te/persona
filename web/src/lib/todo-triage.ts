@@ -244,10 +244,11 @@ export function triageTodos(
   lookup: SessionLookup | undefined,
   now: number,
   restored: ReadonlyMap<string, number> = new Map(),
-  { quiet = true }: { quiet?: boolean } = {},
+  { quiet = true, superseded: known }: { quiet?: boolean; superseded?: ReadonlySet<string> } = {},
 ): TriageResult {
   const list = quiet ? todos : todos.filter((td) => !td.quiet);
-  const superseded = supersededFailedStarts(list);
+  // a caller that narrows the list (search, a filter) passes the set decided on every to-do
+  const superseded = known ?? supersededFailedStarts(list);
   const placed = new Map(list.map((td) => [td.id, triage(td, lookup, now, restored.get(td.id) ?? 0, superseded.has(td.id))]));
   const find = relatedRoots(list);
   const byRoot = new Map<string, Todo[]>();

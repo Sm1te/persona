@@ -60,8 +60,9 @@ Code: `server/internal/assistant/launcher_secrets.go`, `server/internal/extmgr/s
 
 ## The hand-off to one Agent run
 
-Values handed to one Agent start after the user approves a card (#3962). The computer's side is in place
-(`server/internal/node/secretenv.go`, capability `secret_env`); the card, the Always rules and the hub's approval gate come next.
+Values handed to one Agent start after the user approves a card (#3962). The computer's side
+(`server/internal/node/secretenv.go`, capability `secret_env`) and the hub's approval gate ("Who may approve a hand-off") are in
+place; the card and the Always rules come next.
 
 - **Staged on the computer, sealed on the way**: after the approval the manager that connects the computer resolves the
   references (purpose `agent_run`), asks the node for a one-time key (`secret.stage {check}`), seals the values to it (HPKE)
@@ -107,12 +108,43 @@ Values handed to one Agent start after the user approves a card (#3962). The com
   the node zeroes the copies it holds when they are no longer needed, but other copies may stay in its memory until it is
   reused.
 
+## Who may approve a hand-off
+
+The hand-off card is a permission card with the reserved tool name `secret_handoff` (`proto.SecretHandoffTool`): only the
+manager's own Agent start makes one, and a card from a node, a runtime, a Codex list or an extension that names it is refused,
+as the password card's `secret_run` is. Its `tool_input` lists the variables it hands over, each with its `provider` and the
+item's `title` as the provider describes it (`secrets.describe`), never a reference or a value: the card goes to every client
+and to extensions that read cards, and the manager keeps the references. The hub (`server/internal/hub/secret_handoff.go`)
+holds every answer to it before it reaches the manager:
+
+- **Approved on the card only**: an approval goes through only from a full-access device, by a request that itself declares
+  the feature `secret_handoff` in its `X-Persona-Features` header ([protocol.md](../protocol/protocol.md) "Secret hand-off
+  cards"). A client sends it on the card's own approve request only: never in a header every request carries, nor from a
+  notification, a widget, the Live Activity, the watch or Siri. A connection's `client_hello` does not count, since every
+  request of that app, a lock-screen button's included, would match it. Any other approval gets 403
+  `secret_handoff_elsewhere` ("Approve on iPhone or the web"), and the card stays pending: an answer-only device (the watch),
+  an extension's token whatever its scopes, the hub's own token, and a request without the feature (Android, the Mac and
+  visionOS apps, an older app). A plain no (deny with or without a message, dismiss, cancel, and nothing else set) goes
+  through from any of them. The feature is the client's word: it keeps a client that does not show the card from approving
+  one blindly, and is no boundary between the owner's own full credentials, any of which may do what the owner may.
+- **Refusals are recorded** on every provider the card names (at most 8) that is installed, in that provider's audit log:
+  `secret_handoff_approve_refused`, actor `device:<id>`, `extension:<id>` or `hub token`, detail `{interaction_id, machine_id,
+  session_id, role, reason, device_name?}` (reason `answer_only`, `extension`, `hub_token`, `role` or `client`). Once per card,
+  credential and reason in 10 minutes, so retries fill no log. Never a variable, an item, a reference or a value.
+- **The manager is told who approved, by the hub only**: on an answer to a hand-off card from a device that may approve it,
+  and on one to a card the hub does not hold (after a restart, before the manager reported its cards again), the relayed
+  request carries `handoff_approver {device_id, device_name}` in its own field, not a header, so no client can set it. A
+  manager approves a hand-off only with it, which also refuses the cards the hub could not check. The hub's hello says
+  `secret_handoff_gate`: with an older hub, which neither checks nor says it, a manager shows no hand-off card at all.
+- **No quick approval**: a hand-off card's push and WebSocket notification have the button-less category
+  `INTERACTION_INPUT` (a tap opens the card), its Live Activity row has no Allow / Deny, and a notification's choice
+  (`…/choose`) never answers one.
+
 ## What comes next (#3962)
 
 1. The hand-off card and its Always rules (reference × launcher × computer, listed and removable in the provider's details),
    `secret_env` on the assistant's `agent_start`, results per variable (`granted`, `declined`, `expired`, `failed`), never a value.
-   Only a full-access device whose client draws the card may approve it: the hub refuses any other approval (an answer-only
-   device, an extension, a client without the card's feature) with "Approve on iPhone or the web", and records the refusal.
-   Channels and the assistant cannot answer it.
+   The card's title and summary say to approve on iPhone or the web, for the clients that show it as a plain permission card.
+   Channels and the assistant cannot answer it, and an approval without `handoff_approver` is refused.
 2. The web and iPhone clients. Android's part is #3986, which lists the interfaces it needs; until then an Android phone shows the
    card as the hub sends it and cannot approve it.

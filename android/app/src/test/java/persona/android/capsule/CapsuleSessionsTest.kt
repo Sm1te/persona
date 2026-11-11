@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import persona.feature.agents.AgentsPreferences
+import persona.feature.agents.listSession
 import persona.core.domain.sort.AgentPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,6 +51,69 @@ class CapsuleSessionsTest {
             agent("home", "working"), agent("home", "waiting", "needs_you"), agent("home", "read", "idle")), preferences)
         assertEquals(listOf(unseen), rows)
         assertEquals(listOf(seen.copy(rev = 4)), capsuleUnreadSessions(listOf(seen.copy(rev = 4)), preferences))
+    }
+
+    /** An agent another one created (#4494): a runtime's, its creator named by session id, or a Codex thread's subagent. */
+    private fun subtask(id: String, parent: String, state: String, codex: Boolean = false) = agent("home", id, state).let {
+        if (codex) it.copy(agent = "codex", sourceKind = "codex_app_server", sourceThreadId = id, parentThreadId = parent, isSubagent = true)
+        else it.copy(agent = "claude", sourceKind = "runtime", parentSessionId = parent, isSubagent = true)
+    }
+    private fun codexThread(id: String, state: String) = agent("home", id, state).copy(agent = "codex", sourceKind = "codex_app_server", sourceThreadId = id)
+
+    @Test fun unreadLeavesOutTheSubtasksTheAgentsListFoldsAndCountsWhatItCounts() {
+        val preferences = persona.feature.agents.AgentsPreferencesSnapshot()
+        val lead = agent("home", "lead", "unread").copy(agent = "claude", sourceKind = "runtime")
+        val sessions = listOf(lead, subtask("review", "lead", "unread"), codexThread("codex", "unread"), subtask("probe", "codex", "unread", codex = true),
+            // Its creator is not listed: a row of its own in Agents, not counted there either.
+            subtask("orphan", "gone", "unread"), subtask("asks", "lead", "needs_you"), subtask("busy", "lead", "working"))
+        assertEquals(listOf(lead.sessionId, "codex"), capsuleUnreadSessions(sessions, preferences).map { it.sessionId })
+        val agents = persona.core.domain.sort.buildAgentList(sessions.map { it.listSession(preferences) })
+        assertEquals(agents.counts[persona.core.domain.sort.AgentQuickFilter.Unread], capsuleUnreadSessions(sessions, preferences).size)
+        // Without subtasks the list is as it was.
+        val plain = sessions.map { it.copy(isSubagent = false, parentSessionId = null, parentThreadId = null) }
+        assertEquals(listOf("lead", "review", "codex", "probe", "orphan"), capsuleUnreadSessions(plain, preferences).map { it.sessionId })
+    }
+
+    @Test fun aSubtaskIsNeitherUnreadNorCountedNorActivityOfItsOwn() = runTest {
+        val lead = agent("home", "lead", "unread").copy(agent = "claude", sourceKind = "runtime")
+        val codex = codexThread("codex", "unread")
+        val fixture = Fixture(backgroundScope, listOf(subtask("review", "lead", "unread"), lead, subtask("probe", "codex", "unread", codex = true), codex))
+        runCurrent()
+        var content = fixture.source.content.value
+        assertEquals(listOf(lead, codex).map { capsuleId(it.key) }, content.unreadEntries.map { it.id })
+        assertEquals(2, content.badgeCount)
+        assertEquals(2, content.sections.first().count)
+        assertEquals(setOf(lead, codex).map { capsuleId(it.key) }.toSet(), content.noticeTargetIds)
+        // Both parents read: the subtasks are read under them in Agents, so nothing is left here, nor keeps the capsule up.
+        fixture.sessions.value = fixture.sessions.value.map { if (it.isSubagent) it else it.copy(state = "idle") }
+        runCurrent()
+        content = fixture.source.content.value
+        assertEquals(0, content.badgeCount)
+        assertEquals(0, content.sections.first().count)
+        assertFalse(content.hasActivity)
+        // Working under a working parent, the parent is what goes on; with its creator stopped, a working one is itself.
+        fixture.sessions.value = listOf(subtask("review", "lead", "working"), lead.copy(state = "working"))
+        runCurrent()
+        assertEquals(capsuleId(lead.key), fixture.source.content.value.headline?.id)
+        fixture.sessions.value = listOf(subtask("review", "lead", "working"), lead.copy(state = "idle"))
+        runCurrent()
+        assertTrue(fixture.source.content.value.hasActivity)
+        assertEquals(capsuleId(SessionKey("home", "review")), fixture.source.content.value.headline?.id)
+    }
+
+    @Test fun aSubtaskFinishingIsNoCompletionNotice() = runTest {
+        val lead = agent("home", "lead").copy(agent = "claude", sourceKind = "runtime", rev = 1)
+        val review = subtask("review", "lead", "working").copy(rev = 1)
+        val fixture = Fixture(backgroundScope, listOf(lead, review), fresh = listOf(lead, review))
+        val notices = mutableListOf<CapsuleCompletion>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fixture.source.completions.collect { notices += it } }
+        runCurrent()
+        fixture.connection.events.emit(SessionsEvent("home", listOf(lead, review.copy(state = "unread", rev = 2))))
+        runCurrent()
+        assertTrue(notices.isEmpty())
+        fixture.connection.events.emit(SessionsEvent("home", listOf(lead.copy(state = "unread", rev = 2), review.copy(state = "unread", rev = 2))))
+        runCurrent()
+        assertEquals(listOf(capsuleId(lead.key)), notices.map { it.targetId })
     }
 
     @Test fun theThreeEntrancesHaveIndependentCountsAndUnreadInitiallyShowsAList() = runTest {
@@ -701,7 +765,8 @@ class CapsuleSessionsTest {
     private fun inboxRequest(id: String, session: Session) = persona.core.domain.inbox.InboxInteraction(id, session.machineId, session.sessionId,
         sessionTitle = session.displayTitle, summary = "Waiting for an answer")
 
-    private class Fixture(
+    /** The capsule over fake repositories, its flows unchanged; [CapsuleSubtasksShotsTest] draws it too. */
+    internal class Fixture(
         val scope: CoroutineScope,
         initial: List<Session> = emptyList(),
         assistantState: AssistantSnapshot = AssistantSnapshot(),
@@ -799,7 +864,7 @@ class CapsuleSessionsTest {
         )
     }
 
-    private class TestConnection : HubConnection {
+    internal class TestConnection : HubConnection {
         override val state = MutableStateFlow(ConnectionState.Online)
         override val events = MutableSharedFlow<ServerEvent>()
         override fun reconnect() = Unit

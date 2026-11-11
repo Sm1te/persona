@@ -33,7 +33,7 @@ func serveScopedExtensionForTest() {
 		defer mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{"env": os.Getenv("PERSONA_HUB_TOKEN"), "env_url": os.Getenv("PERSONA_HUB_URL"),
 			"init": init.Token, "url": init.URL, "scopes": init.Scopes, "manager": os.Getenv("PERSONA_MANAGER"),
-			"init_manager": init.Manager})
+			"init_manager": init.Manager, "config": os.Getenv("PERSONA_PLUGIN_CONFIG")})
 	}))
 	_ = pserve.Serve(context.Background(), os.Stdin, os.Stdout, pserve.Program{ID: "scoped", Version: cmp.Or(os.Getenv("PERSONA_TEST_PLUGIN_VERSION"), "1.0.0"),
 		Init: func(_ context.Context, ip extension.InitializeParams, _ *pserve.Hub) (map[string]any, error) {
@@ -58,6 +58,7 @@ func scopedPackageAt(t *testing.T, perms, version string) string {
 	manifest := fmt.Sprintf(`{"manifest_version": 1, "id": "scoped", "name": "Scoped", "version": %q,
 		"engines": {"plugin_protocol": 1}, "runtime": {"command": {%q: "bin/scoped"}, "http": true},
 		"activation_events": ["on_startup"], "contributes": {"api": [{"id": "x", "prefix": "scopedx"}]},
+		"configuration": {"type":"object","properties":{"example":{"type":"string","title":"Example","default":"before-rpc"}}},
 		"permissions": {%s}}`, version, runtime.GOOS+"-"+runtime.GOARCH, perms)
 	_ = os.WriteFile(filepath.Join(dir, extension.ManifestFile), []byte(manifest), 0o644)
 	return dir
@@ -103,6 +104,9 @@ func TestExtensionScopedToken(t *testing.T) {
 	}
 	if got["url"] != hubLocalURL(h.cfg.Listen) || got["manager"] != "" || got["init_manager"] != "" {
 		t.Fatalf("the built-in manager's extension reaches the hub on this machine, and is told no manager: %v", got)
+	}
+	if got["config"] != `{"example":"before-rpc"}` {
+		t.Fatalf("configuration must reach the supervisor before initialize, without secrets: %v", got["config"])
 	}
 
 	// On the hub's own routes the hub asks the manager (extensions.authorize, with the route's pattern on its mux);

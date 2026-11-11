@@ -19,7 +19,7 @@ describe("sidebar row tokens", () => {
 
   it("every interactive sidebar row uses sidebar-row, with no vertical padding of its own", () => {
     const rows = rowClasses.filter((c) => /\bflex\b/.test(c) && /\bitems-center\b/.test(c));
-    expect(rows.length).toBeGreaterThanOrEqual(7);
+    expect(rows.length).toBeGreaterThanOrEqual(6); // the Automatic chats rows went with #4331
     for (const c of rows) {
       expect(c, c).toMatch(/\bsidebar-row\b/);
       expect(c, c).not.toMatch(/\bpy-/);

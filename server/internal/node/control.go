@@ -145,6 +145,11 @@ func (n *Node) start(ctx context.Context, cwd, launcher, prompt, resume, workspa
 		if ws, err = n.workspaceFor(ctx, launch, cwd); err != nil {
 			return nil, err
 		}
+	} else if _, ok := launch.(*herdrHost); ok {
+		// A start into a workspace it names (a task's worktree) brings back a herdr server that stopped since, as
+		// workspaceFor does for the others: an agent always runs in the engine's terminal (#4754). What herdr then says
+		// is reported as before.
+		_ = n.ensureHerdr(ctx, "start a session in a workspace")
 	}
 	if codex && kind != traexAgent { // codex_start.go
 		if resume != "" { // a Codex thread is resumed above: this id is not one
@@ -463,12 +468,14 @@ func exitCommand(text string) bool {
 	return false
 }
 
-// exitAgent is a message that only says to quit: typed in, the agent would exit and leave its tab holding a bare
-// shell, and one already closed would be resumed in a new tab just to quit there. A running agent is closed as
-// session.close does (its tab goes with it); one not running is left as it is.
+// exitAgent is a message that only says to quit: a running agent is stopped as session.stop does (its tab stays with
+// the shell, retire.go), and one already stopped is left as it is rather than resumed in a new tab just to quit there.
+// It runs inside send's turn for the session, so it does not take the typing lock again as stop does.
 func (n *Node) exitAgent(ctx context.Context, id string) error {
-	if _, ok := n.agent(id); !ok {
+	a, ok := n.agent(id)
+	if !ok {
 		return nil
 	}
-	return n.close(ctx, id)
+	_, err := n.quitAgent(ctx, id, a.PaneID)
+	return err
 }

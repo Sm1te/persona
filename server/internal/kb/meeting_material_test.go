@@ -221,6 +221,10 @@ func TestMeetingMaterialOnlyMeetingMaterial(t *testing.T) {
 	if first.Name != "Design review" || first.When != "2026-11-03 14:00–15:10" {
 		t.Errorf("named %q at %q", first.Name, first.When)
 	}
+	// Its minutes have no span of their own (written before #4713): the recording's.
+	if er := recordingNow(t, e, earlier); !first.Start.Equal(er.StartedAt.Truncate(time.Second)) || !first.End.Equal(recordingEnd(er).Truncate(time.Second)) {
+		t.Errorf("span %s – %s", first.Start, first.End)
+	}
 	want := Minutes{Title: "Design review", When: "2026-11-03 14:00–15:10", Attendees: []string{"Ada", "Bo"},
 		Points:    []MinutesPoint{{Text: "Exports over 4 MB are dropped.", Who: "Ada"}},
 		Decisions: []MinutesItem{{Text: "Keep the cap for this release."}},

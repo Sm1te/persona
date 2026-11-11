@@ -26,6 +26,8 @@ data class AgentSession(
      * muted ([awaitsReply] with the mutes): its space stays open and it stays out of the idle folds.
      */
     val asksYou: Boolean get() = state == AgentState.Idle && session.awaitsReply
+    /** Working, but all it still runs in the background only waits (iOS `Session.waitsInBackground`, #6045). */
+    val waitsInBackground: Boolean get() = state == AgentState.Working && session.backgroundWaiting
     fun awaitsReply(mutes: AgentPreferences): Boolean = asksYou && !mutes.mutes(this)
     /** Kept out of the idle folds and quiet spaces: not quiet, waiting to be woken, or Awaiting Reply ([awaitsReply]). */
     fun stays(mutes: AgentPreferences): Boolean = !isQuiet || isWaiting || awaitsReply(mutes)

@@ -11,12 +11,13 @@
     "predev": "npm run pake:build",
     "dev": "vite",
     "check:privacy": "python3 ../scripts/privacy_check.py",
+    "check:deps": "node scripts/installed-deps.mjs",
     "prebuild": "npm run check:privacy && npm run pake:build",
     "build": "tsc -b && vite build && vite build --config vite.public.config.ts",
     "build:public": "vite build --config vite.public.config.ts",
     "dev:public": "vite --config vite.public.config.ts",
     "typecheck": "tsc -b",
-    "lint": "eslint src/lib/session-list.ts src/lib/runtime-list.ts src/lib/store.ts src/lib/sessions.ts src/lib/agents.ts src/lib/agent-groups.ts src/lib/workflows.ts src/lib/types.ts src/lib/runtime-session.ts src/ui/SessionDetailNotice.tsx src/views/chat/ChatView.tsx src/App.tsx src/ui/list-metrics.ts src/views/Sidebar.tsx src/views/SidebarParts.tsx src/views/SidebarRows.tsx src/views/SidebarTree.tsx src/views/SidebarRail.tsx src/views/agents/PagedSessionList.tsx src/views/agents/AgentsView.tsx src/sharing public-share vite.public.config.ts",
+    "lint": "eslint src/lib/session-list.ts src/lib/runtime-list.ts src/lib/store.ts src/lib/sessions.ts src/lib/agents.ts src/lib/agent-groups.ts src/lib/workflows.ts src/lib/types.ts src/lib/runtime-session.ts src/ui/SessionDetailNotice.tsx src/views/chat/ChatView.tsx src/App.tsx src/ui/list-metrics.ts src/views/Sidebar.tsx src/views/SidebarParts.tsx src/views/SidebarRows.tsx src/views/SidebarTree.tsx src/views/SidebarRail.tsx src/views/DirectionMarks.tsx src/lib/direction-tree.ts src/lib/direction-agent-tree.ts src/lib/direction-names.ts src/views/agents/PagedSessionList.tsx src/views/agents/AgentsView.tsx src/sharing public-share vite.public.config.ts",
     "test": "node --test e2e/extension-mirrors-cleanup.node-test.mjs && vitest run"
   },
   "dependencies": {

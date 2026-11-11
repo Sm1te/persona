@@ -50,12 +50,14 @@ class ToolPresentationTest {
         assertEquals("调用 Persona · github read", toolPresentation(res, tool("mcp__persona__github_read")).verb)
     }
 
-    @Test fun claudeCodeAndUnknownToolsKeepTodaysWords() {
+    // Another server's tool reads "<Server> · <Tool>", never "Use" (#4339 C1, iOS `ToolNaming`).
+    @Test fun claudeCodeToolsKeepTheirWordsAndUnknownOnesReadInWords() {
         assertEquals("读取", toolPresentation(res, tool("Read", "file_path" to "/w/a.kt")).verb)
         toolPresentation(res, tool("mcp__github__create_issue")).let {
-            assertEquals("执行", it.verb)
-            assertEquals("执行", it.title)
+            assertEquals("GitHub · Create issue", it.verb)
+            assertEquals("GitHub · Create issue", it.title)
         }
+        assertEquals("Share onboarding guide", toolPresentation(res, tool("ShareOnboardingGuide")).verb)
     }
 
     @Test fun theRunningLineSaysTheNamedToolsWords() {
@@ -64,7 +66,7 @@ class ToolPresentationTest {
         assertEquals("操控电脑 macbook，第 1 步", running(tool("mcp__persona__computer_run", "machine" to "macbook")))
         assertEquals("归档对话，第 1 步", running(tool("mcp__persona__conversation_archive")))
         assertEquals("正在读取 a.kt，第 1 步", running(tool("Read", "file_path" to "/w/a.kt")))
-        assertEquals("正在执行 执行，第 1 步", running(tool("mcp__github__create_issue")))
+        assertEquals("GitHub · Create issue，第 1 步", running(tool("mcp__github__create_issue")))
     }
 
     @Test fun namedToolsHaveTheirIcons() {

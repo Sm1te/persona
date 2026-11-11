@@ -19,5 +19,8 @@
   "chosen": "已回答：{option}",
   "responded": "已交回 Persona",
   "failed": "回答没发出去。{error}",
+  "dismissed": "已选择不处理，任务仍保留，没有执行任何选项",
+  "undo_failed": "没能恢复这条决定。{error}",
+  "missing_options": "这条旧审核没有可直接回答的选项，可以打开任务补充决定。",
   "confirm": "确认：{option}"
 }

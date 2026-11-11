@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initI18n, t } from "../../i18n";
 import { setToken } from "../../lib/api";
-import { minutesKeptUntil, type KBDetailResponse } from "../../lib/kb";
+import { formatAt, formatSpan, minutesKeptUntil, type KBDetailResponse } from "../../lib/kb";
 import { setRosterDefault } from "../../lib/manager-choice";
 import { toast } from "../../ui/atoms";
 import { EntryDetail } from "./KBDetail";
@@ -74,6 +74,19 @@ describe("recording minutes in Knowledge detail", () => {
     const added = [...section().querySelectorAll("li")].find((li) => li.textContent?.includes("Share notes"))!;
     expect(added.textContent).toContain("Added");
     expect(added.textContent).not.toContain("Add to to-dos");
+  });
+
+  it("says when in the app's own dates from start / end, and the hub's when only without them (#4713)", async () => {
+    const body = fixture();
+    const start = new Date(2026, 10, 10, 14).toISOString();
+    const end = new Date(2026, 10, 10, 14, 30).toISOString();
+    Object.assign(body.detail.minutes!, { start, end });
+    await load(body);
+    const when = section().querySelector("[data-minutes-when]")!.textContent!;
+    expect(when).toBe(formatSpan(start, end));
+    expect(when).toContain(formatAt(start));
+    expect(when).toMatch(/14:00–14:30$/);
+    expect(section().textContent).not.toContain("2026-11-10 14:00–14:30");
   });
 
   it("targets the spoken transcript line, scrolls only its scroller and briefly highlights it", async () => {

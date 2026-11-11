@@ -37,7 +37,7 @@ beforeEach(() => {
   listed = { ...conversation };
   vi.stubGlobal("fetch", vi.fn((url: string) => {
     const path = new URL(url, "http://example.com").pathname;
-    const data = path === "/api/v1/assistant" ? { machine_id: "hub", online: true, main: "main", conversations: [main, listed] }
+    const data = path === "/api/v1/assistant" ? { machine_id: "hub", online: true, main: "main", leaders: ["review"], conversations: [main, listed] }
       : path === "/api/v1/sessions" ? { sessions: [main, listed] }
       : path === "/api/v1/machines" ? { machines: [{ id: "hub", name: "Hub", online: true }] }
       : {};

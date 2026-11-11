@@ -21,6 +21,8 @@ import persona.core.domain.lines.ApiErrorInfo
 import persona.core.domain.lines.ChatLine
 import persona.core.domain.lines.ToolCall
 import persona.core.domain.lines.WorkItem
+import persona.core.domain.sort.AgentSession
+import persona.core.domain.sort.foldedSubtasks
 
 // Tasks dispatched from an assistant conversation (docs/assistant/unified-entry.md; iOS TasksStore / Shared/Tasks.swift, web
 // lib/feed.ts): the todos that are tasks, the plans, each conversation's feed, and where those go among the chat's lines.
@@ -234,13 +236,20 @@ object AssistantLines {
  * The agents going on that no task stands for, in the main conversation's dock (#1113; iOS `DockAgent.shown`): working
  * or waiting for the user, not Persona's own, not an agent of a task not done; one the hub tags with a to-do only when
  * that to-do was made by hand. Waiting first, then the newest. Elsewhere none.
+ *
+ * A subtask the Agents list folds under its parent is not one of them while the dock shows its parent, or a session
+ * above that: as one of these agents, or as an agent of a task not done, whose task the dock shows (#4769,
+ * [foldedSubtasks]). One that needs the user stays, and so does a working one whose creator the dock does not show.
  */
 fun dockAgents(conversation: String, main: String?, sessions: List<Session>, todos: List<Todo>): List<Session> {
     if (main.isNullOrBlank() || conversation != main) return emptyList()
     val taskAgents = todos.filter { !it.origin.isNullOrBlank() && !it.isDone }.flatMap { t -> t.activeAgents.map { it.key } }.toSet()
     val manual = todos.filter { it.origin.isNullOrBlank() }.map { it.id }.toSet()
-    return sessions.filter { !it.assistant && (it.agentState == AgentState.NeedsYou || it.agentState == AgentState.Working) }
+    val going = sessions.filter { !it.assistant && (it.agentState == AgentState.NeedsYou || it.agentState == AgentState.Working) }
         .filter { it.key !in taskAgents && (it.todo?.id?.takeIf(String::isNotBlank)?.let { id -> id in manual } ?: true) }
+    val shown = going.mapTo(HashSet()) { it.key } + taskAgents
+    val folded = foldedSubtasks(sessions.map(::AgentSession)) { it.session.key in shown }
+    return going.filterNot { it.key.path in folded }
         .sortedWith(compareBy<Session> { it.agentState.priority }.thenByDescending { it.stateSince.orEmpty() }.thenBy { it.key.path })
 }
 

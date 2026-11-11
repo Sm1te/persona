@@ -101,7 +101,9 @@ type fakeHub struct {
 	judgeBy      func(input string) string // when set, what the done judge answers to its input (instead of f.judge)
 	outcome      string                    // what the outcome model answers (todo_outcome.go; "": an error)
 	outcomeAsked []modelCall
-	retired      []string // session.retire's session ids
+	retired      []string         // the session ids of session.retire and of session.stop with retire (the done and idle passes)
+	retireArgs   []map[string]any // what each of those calls asked
+	stopped      []string         // session.stop's session ids without retire (a cancelled task's agent)
 	retireErr    error
 	tokens       map[string][]map[string]map[string]string // todo.sync_session_tokens, by machine, in order
 
@@ -151,7 +153,8 @@ type fakeHub struct {
 	// onAssistantSend runs (under the fake's lock) when assistant.send arrives, before it is answered
 	onAssistantSend func(f *fakeHub, p map[string]any)
 	// doctor is each machine's node.doctor claude-version detail (none: the report has no such check).
-	doctor map[string]string
+	doctor      map[string]string
+	doctorState map[string]string // each machine's claude-version state ("unanswered": no version came this time)
 	// auth is claude.auth_status's answer by "machine/launcher" (nil: the node has no such method), and the
 	// questions it got.
 	auth      map[string]proto.ClaudeAuthStatus
@@ -396,7 +399,7 @@ func (f *fakeHub) deviceCall(ctx context.Context, p DeviceCall) (json.RawMessage
 	case deviceNodeDoctor:
 		checks := []map[string]string{}
 		if detail, ok := f.doctor[p.Device]; ok {
-			checks = append(checks, map[string]string{"name": "claude-version", "status": "ok", "detail": detail})
+			checks = append(checks, map[string]string{"name": "claude-version", "status": "ok", "state": f.doctorState[p.Device], "detail": detail})
 		}
 		return json.Marshal(map[string]any{"ok": true, "checks": checks})
 	case DeviceAssistantPrepare:
@@ -457,7 +460,19 @@ func (f *fakeHub) deviceCall(ctx context.Context, p DeviceCall) (json.RawMessage
 			return nil, f.retireErr
 		}
 		f.retired = append(f.retired, a["session_id"].(string))
+		f.retireArgs = append(f.retireArgs, map[string]any{"method": p.Method, "close_terminal": a["close_terminal"]})
 		return json.RawMessage(`{"closed":true}`), nil
+	case deviceSessionStop:
+		if f.retireErr != nil {
+			return nil, f.retireErr
+		}
+		if retire, _ := a["retire"].(bool); retire {
+			f.retired = append(f.retired, a["session_id"].(string))
+			f.retireArgs = append(f.retireArgs, map[string]any{"method": p.Method, "retire": true})
+		} else {
+			f.stopped = append(f.stopped, a["session_id"].(string))
+		}
+		return json.RawMessage(`{"stopped":true}`), nil
 	case deviceTodoTokens:
 		var t struct {
 			Tokens map[string]map[string]string `json:"tokens"`

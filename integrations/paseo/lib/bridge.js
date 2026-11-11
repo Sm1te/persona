@@ -10,7 +10,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { createRuntime, light, page, RpcError, snippet } from '../../runtime-sdk/index.js'
 import {
-  EFFORTS, RUNTIME, SESSION_LABEL, agentRoot, agentRow, appAgent, claudeId, defaultProvider, interactionOf,
+  EFFORTS, RUNTIME, SESSION_LABEL, agentRoot, agentRow, appAgent, archivedUnderOwnId, claudeId, defaultProvider, interactionOf,
   launchersOf, linkedWorktree, parentAgentId, paseoMode, projectSpaces, providerRoots, responseOf, sessionIdOf, slotNameOf,
   spaceIdOf, strayRecord, timelineItems, transcriptOf,
 } from './map.js'
@@ -28,7 +28,11 @@ const PAGES_MAX = 10 // directory pages read at connect
 // Agents archived in Paseo have their Claude session named to the node this long: its list of sessions not running
 // goes back 7 days. The ones archived before the bridge was told are read at connect (loadArchived).
 const UNLISTED_DAYS = 8
-const UNLISTED_MAX = 500
+const ARCHIVED_MAX = 500 // archived agents kept (the latest)
+// Those that keep their own id (map.js archivedUnderOwnId) are rows of the bridge's own, not running, beside the
+// LIST_MAX: as many as the node lists sessions not running, the latest 80 archived in the last 7 days.
+const ARCHIVED_DAYS = 7
+const ARCHIVED_ROWS = 80
 // Paseo tells that an agent was deleted only to the client that deleted it (whatBecameOf). Any other sees an agent that
 // ran closed, and Paseo is asked for it this long after, twice: it closes an agent before it removes its record. Of an
 // agent that did not run nothing is seen: the directory is read again this often (sweep).
@@ -71,7 +75,9 @@ export function createPaseoBridge(deps = {}, options = {}) {
   const handedBack = new Set() // permission ids the phone handed back to the computer: Paseo's own app answers them
   const echoes = new Map() // Paseo message id → the client_msg_id the phone sent it with
   const lastTexts = new Map() // agent id → its last words (agents whose content is not a transcript)
-  const unlisted = new Map() // agent id → { transcript, at }: agents of Claude Code archived in Paseo (noteUnlisted)
+  // agent id → { agent, project, transcript, at }: the user's own agents of Claude Code archived in Paseo (noteArchived),
+  // the latest last
+  const archived = new Map()
   let archiveRead = false // Paseo's archive was read since the bridge started: before that it cannot say which they are
   const deleted = new Set() // agents Paseo no longer has (whatBecameOf): an update of one that comes late is not it back
   const closedTimers = new Set()
@@ -160,8 +166,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
     if (!agent?.id || deleted.has(agent.id)) return
     const prev = agents.get(agent.id)
     if (prev && (Date.parse(prev.agent.updatedAt) || 0) > (Date.parse(agent.updatedAt) || 0) && prev.agent.status === agent.status) return
-    if (agent.archivedAt) return remove(agent.id, agent)
-    unlisted.delete(agent.id) // back from the archive: listed again
+    if (agent.archivedAt) return remove(agent.id, agent, project)
+    archived.delete(agent.id) // back from the archive: listed again
     const oldSession = prev ? sessionIdOf(prev.agent, roots) : undefined
     agents.set(agent.id, { agent, project: project ?? prev?.project })
     if (oldSession && oldSession !== sessionIdOf(agent, roots)) reindex()
@@ -178,10 +184,13 @@ export function createPaseoBridge(deps = {}, options = {}) {
     for (const [sid, w] of watches) if (w.agentId === agent.id) scheduleRefresh(sid)
   }
 
-  /** An agent leaves the list. archived: its record when Paseo archived it, when that is why. */
-  function remove(agentId, archived) {
-    if (archived) noteUnlisted(archived)
+  /**
+   * An agent leaves the list. record: its record when Paseo archived it, when that is why, with its placement (project;
+   * else the one it was listed with).
+   */
+  function remove(agentId, record, project) {
     const a = agents.get(agentId)
+    if (record) noteArchived(record, project ?? a?.project)
     if (!a) return
     agents.delete(agentId)
     timelines.delete(agentId)
@@ -192,19 +201,33 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   /**
    * An agent archived in Paseo (closing a session from Persona archives it) is not in Paseo's list any more, but its
-   * conversation is still the user's, and for an agent of Claude Code its transcript is still on this machine: named
-   * to the node (unlistedTranscripts), it stays among the sessions not running. Left alone, the node takes it for a
-   * script's one-shot run: Paseo runs Claude Code's command line itself, and its transcripts say so (#4521).
-   * Not an agent another agent created: its creator's conversation says what it did, and an orchestrator's dozens,
-   * archived with it, would push the user's own sessions out of that list.
+   * conversation is still the user's, and for an agent of Claude Code its transcript is still on this machine: it
+   * stays among the sessions not running. Left alone, the node takes it for a script's one-shot run: Paseo runs Claude
+   * Code's command line itself, and its transcripts say so (#4521). One whose id is its transcript's is named to the
+   * node (unlistedTranscripts); one that keeps an id of its own (a session Persona started) is a row of the bridge's,
+   * under that id (archivedRows, #4771). Not an agent another agent created: its creator's conversation says what it
+   * did, and an orchestrator's dozens, archived with it, would push the user's own sessions out of that list.
    */
-  function noteUnlisted(agent) {
+  function noteArchived(agent, project) {
     if (!agent?.id || parentAgentId(agent)) return
     const transcript = transcriptOf(agent, roots)
     if (!transcript) return
-    unlisted.delete(agent.id) // the latest last: the oldest go first when there are too many
-    unlisted.set(agent.id, { transcript, at: Date.parse(agent.archivedAt) || Date.now() })
-    while (unlisted.size > UNLISTED_MAX) unlisted.delete(unlisted.keys().next().value)
+    const known = archived.get(agent.id)?.project
+    archived.delete(agent.id) // the latest last: the oldest go first when there are too many
+    archived.set(agent.id, { agent, project: project ?? known, transcript, at: Date.parse(agent.archivedAt) || Date.now() })
+    while (archived.size > ARCHIVED_MAX) archived.delete(archived.keys().next().value)
+  }
+
+  /**
+   * The archived agent listed as session id (archivedRows), the one archived last; undefined for any other id. Its
+   * calls reach it whether or not the list has room for its row.
+   */
+  function archivedOf(sessionId) {
+    let found
+    for (const u of archived.values()) {
+      if (archivedUnderOwnId(u.agent, roots) && sessionIdOf(u.agent, roots) === sessionId) found = u.agent
+    }
+    return found
   }
 
   /**
@@ -212,8 +235,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
    * why: archived, deleted, or only hidden (its provider switched off). And Paseo tells that an agent was deleted only
    * to the client that deleted it: any other sees an agent that ran closed (closedSoon), and of one that did not,
    * nothing (sweep). Asked for the agent, Paseo answers with an archived one's record, and with none for a deleted one.
-   * Only an archived agent's session is named (noteUnlisted): a deleted conversation is gone, as it is in Paseo, and
-   * an update of it that comes late does not list it again.
+   * Only an archived agent's session stays (noteArchived): a deleted conversation is gone, as it is in Paseo, and an
+   * update of it that comes late does not list it again.
    */
   async function whatBecameOf(agentId) {
     const was = agents.get(agentId)
@@ -228,13 +251,13 @@ export function createPaseoBridge(deps = {}, options = {}) {
     if (!p.agent) {
       deleted.add(agentId)
       if (deleted.size > 1000) deleted.delete(deleted.values().next().value)
-      const named = unlisted.delete(agentId)
+      const named = archived.delete(agentId)
       if (!agents.has(agentId) && !named) return
       remove(agentId)
     } else if (p.agent.id === agentId && p.agent.archivedAt && agents.get(agentId) === was) {
       // Archived, and nothing was heard of it since Paseo was asked (an update would be it back from the archive).
-      if (!was && unlisted.has(agentId)) return
-      remove(agentId, p.agent)
+      if (!was && archived.has(agentId)) return
+      remove(agentId, p.agent, p.project ?? undefined)
     } else return
     rt.sessionsChanged()
   }
@@ -253,15 +276,17 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   /**
    * The agents deleted in Paseo that nothing told of (whatBecameOf): its directory is read again, and Paseo is asked
-   * for each agent listed here that the directory no longer has, and for each archived one named here that its archive
+   * for each agent listed here that the directory no longer has, and for each archived one kept here that its archive
    * no longer has. Asked, not taken as gone: an agent that changed between the reading of two pages is on neither.
+   * The archived ones it still has are taken as it has them now: Paseo tells no list of a change to one (a rename in
+   * its own app).
    */
   async function sweep() {
     if (sweeping || !runtimeOn || !paseo.connected) return
     sweeping = true
     try {
       const listed = [...agents.keys()]
-      const named = [...unlisted.keys()]
+      const named = [...archived.keys()]
       const missing = []
       if (listed.length) {
         const there = new Set()
@@ -277,12 +302,22 @@ export function createPaseoBridge(deps = {}, options = {}) {
         missing.push(...listed.filter((id) => !there.has(id)))
       }
       if (named.length) {
-        const archived = new Set((await readArchived()).map((agent) => agent.id))
-        missing.push(...named.filter((id) => !archived.has(id)))
+        const there = new Set()
+        let changed = false
+        for (const e of await readArchived()) {
+          there.add(e.agent.id)
+          const u = archived.get(e.agent.id)
+          if (u && u.agent.updatedAt !== e.agent.updatedAt) {
+            archived.set(e.agent.id, { ...u, agent: e.agent, project: e.project ?? u.project })
+            changed = true
+          }
+        }
+        if (changed) rt.sessionsChanged()
+        missing.push(...named.filter((id) => !there.has(id)))
       }
       for (const id of missing) {
         if (!paseo.connected) return
-        if (agents.has(id) || unlisted.has(id)) await whatBecameOf(id)
+        if (agents.has(id) || archived.has(id)) await whatBecameOf(id)
       }
     } catch (err) {
       log(`paseo: reading its directory again: ${err.message}`)
@@ -294,7 +329,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
   /**
    * The Claude sessions of the agents archived lately that are not in the list again under another agent. Nothing
    * (the node keeps what it was told before) until Paseo's archive was read once: the bridge was just started and
-   * knows none of them yet.
+   * knows none of them yet. Not the transcript of an agent that keeps an id of its own: its row names it (archivedRows),
+   * and named here it would be listed under the transcript's id too while that row is not there.
    */
   function unlistedTranscripts() {
     if (!archiveRead) return undefined
@@ -305,11 +341,43 @@ export function createPaseoBridge(deps = {}, options = {}) {
     }
     const since = Date.now() - UNLISTED_DAYS * 86_400_000
     const out = new Set()
-    for (const [id, u] of unlisted) {
-      if (u.at < since) unlisted.delete(id)
+    const own = new Set()
+    for (const [id, u] of archived) {
+      if (u.at < since) archived.delete(id)
+      else if (archivedUnderOwnId(u.agent, roots)) own.add(u.transcript)
       else if (!listed.has(u.transcript)) out.add(u.transcript)
     }
+    for (const t of own) out.delete(t)
     return [...out]
+  }
+
+  /**
+   * The rows of the agents archived lately that keep their own id (map.js archivedUnderOwnId, #4771): not running,
+   * the transcript their content, as a closed agent's (the node reads it, and lists no row of its own for it). A
+   * message to one goes to the agent, which Paseo takes back from the archive under its labels: the session goes on
+   * under the same id. Not one whose id or transcript an agent Paseo lists has (that agent is the session); of two
+   * with one id or one transcript, the one archived last. Beside the list's budget: the latest ARCHIVED_ROWS of the
+   * last ARCHIVED_DAYS, and those the phone touched.
+   */
+  function archivedRows(s) {
+    const transcripts = new Set()
+    for (const { agent } of agents.values()) {
+      const t = transcriptOf(agent, roots)
+      if (t) transcripts.add(t)
+    }
+    const ids = new Set()
+    const rows = []
+    for (const u of [...archived.values()].reverse()) {
+      if (!archivedUnderOwnId(u.agent, roots)) continue
+      const sid = sessionIdOf(u.agent, roots)
+      if (bySession.has(sid) || ids.has(sid) || transcripts.has(u.transcript)) continue
+      ids.add(sid)
+      transcripts.add(u.transcript)
+      const spaceId = s.idOf(u.project)
+      const row = agentRow(u.agent, { project: u.project, roots, labels, spaceId, spaceName: s.names.get(spaceId), canon, archived: true })
+      if (row) rows.push(row)
+    }
+    return rt.recent(rows, { days: ARCHIVED_DAYS, max: ARCHIVED_ROWS })
   }
 
   // ---- connecting ----
@@ -408,16 +476,17 @@ export function createPaseoBridge(deps = {}, options = {}) {
   }
 
   /**
-   * The agents archived before the bridge was told (it was not running, or Paseo was away): their Claude sessions are
-   * named as the ones archived since are (noteUnlisted).
+   * The agents archived before the bridge was told (it was not running, or Paseo was away): kept as the ones archived
+   * since are (noteArchived).
    */
   async function loadArchived() {
-    for (const agent of (await readArchived()).reverse()) if (!agents.has(agent.id)) noteUnlisted(agent)
+    for (const e of (await readArchived()).reverse()) if (!agents.has(e.agent.id)) noteArchived(e.agent, e.project)
   }
 
   /**
-   * The agents archived lately, the latest first: the directory leaves them out unless asked, and then lists them
-   * among the others. Read newest first, until they are older than their sessions are named for (noteUnlisted).
+   * The agents archived lately, the latest first, with their placements ({ agent, project }): the directory leaves
+   * them out unless asked, and then lists them among the others. Read newest first, until they are older than their
+   * sessions are kept for (noteArchived).
    */
   async function readArchived() {
     const since = Date.now() - UNLISTED_DAYS * 86_400_000
@@ -427,7 +496,7 @@ export function createPaseoBridge(deps = {}, options = {}) {
       const p = await paseo.request('fetch_agents_request', { filter: { includeArchived: true }, sort: [{ key: 'updated_at', direction: 'desc' }],
         page: cursor ? { limit: pageSize, cursor } : { limit: pageSize } }, { timeoutMs: 60_000 })
       const list = p?.entries ?? []
-      for (const e of list) if (e?.agent?.id && e.agent.archivedAt) found.push(e.agent)
+      for (const e of list) if (e?.agent?.id && e.agent.archivedAt) found.push({ agent: e.agent, project: e.project ?? undefined })
       const oldest = Date.parse(list.at(-1)?.agent?.updatedAt)
       if (!p?.pageInfo?.hasMore || !p.pageInfo.nextCursor || !(oldest > since)) break
       cursor = p.pageInfo.nextCursor
@@ -549,10 +618,13 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   // ---- the driver ----
 
+  /** The agent a session is: the one Paseo lists under its id, else one archived that keeps it (archivedOf). */
   function agentFor(sessionId) {
     const id = bySession.get(sessionId)
     const a = id ? agents.get(id) : undefined
     if (a) return a.agent
+    const kept = archivedOf(sessionId)
+    if (kept) return kept
     if (!paseo.connected) throw new RpcError('Paseo 现在没有连上（没在运行，或正在重启），稍后再试。这次什么都没做。', 'unavailable')
     throw new RpcError(`Paseo 里没有这个会话（${sessionId}）：可能已经归档或删除了`, 'not_found')
   }
@@ -662,7 +734,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
         if (rowOfSession.has(sid)) listed.set(sid, rowOfSession.get(sid))
       }
     }
-    return [...listed.values()].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+    // Then the archived agents that keep their own id, not running (archivedRows).
+    return [...listed.values(), ...archivedRows(s)].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
   }
 
   const history = (agentId, epoch) => `paseo:${agentId}:${epoch ?? ''}`
@@ -769,7 +842,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
       echoes.set(messageId, params.client_msg_id)
       while (echoes.size > 1000) echoes.delete(echoes.keys().next().value)
     }
-    // Into the turn when it works (as Claude Code takes a message typed while it works), a new turn otherwise.
+    // Into the turn when it works (as Claude Code takes a message typed while it works), a new turn otherwise. An
+    // archived agent (archivedRows) Paseo takes back from the archive first, its labels and so its session id kept.
     const req = { agentId: agent.id, text, messageId, activeTurnBehavior: 'steer' }
     if (images.length) req.images = images
     const res = await within(paseo.request('send_agent_message_request', req, { timeoutMs: 120_000 }), callWait, `send to ${agent.id}`)
@@ -779,6 +853,7 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   async function interrupt(params) {
     const agent = agentFor(params.session_id)
+    if (agent.archivedAt) return // archived in Paseo: nothing runs
     const res = await paseo.request('cancel_agent_request', { agentId: agent.id })
     if (res?.error) throw new RpcError(`Paseo：${res.error}`, 'paseo')
   }
@@ -789,17 +864,28 @@ export function createPaseoBridge(deps = {}, options = {}) {
     if (!title) return
     const res = await paseo.request('update_agent_request', { agentId: agent.id, name: title })
     if (res?.accepted === false) throw new RpcError(`Paseo 没有改名：${res.error ?? '原因不明'}`, 'rejected')
+    // Paseo renames an archived agent's record and tells no list (it lists the agents it has): its row takes the
+    // name from here.
+    const u = agent.archivedAt ? archived.get(agent.id) : undefined
+    if (u) u.agent = { ...u.agent, title }
   }
 
-  /** Closing a session is archiving its agent: it stops, and leaves Paseo's list (and this one). */
+  /**
+   * Closing a session is archiving its agent: it stops, and leaves Paseo's list. A Claude conversation stays among the
+   * sessions not running: under its own id when it keeps one (archivedRows), else as its transcript. One archived
+   * already is closed.
+   */
   async function close(params) {
     const agent = agentFor(params.session_id)
     if (params.force && !(agent.pendingPermissions?.length > 0)) throw new RpcError('The Agent is no longer waiting for confirmation', 'agent_busy')
+    if (agent.archivedAt) return
+    // Its placement as it is listed now: Paseo tells the list of the archive before it answers.
+    const project = agents.get(agent.id)?.project
     // The CLI's archive --force sends this same request; the daemon closes the provider runtime.
     const res = await paseo.request('archive_agent_request', { agentId: agent.id })
     if (res?.error) throw new RpcError(`Paseo: ${res.error}`, 'paseo')
     if (!res?.archivedAt) throw new RpcError('Paseo did not confirm the archive', 'paseo')
-    remove(agent.id, { ...agent, archivedAt: res.archivedAt })
+    remove(agent.id, { ...agent, archivedAt: res.archivedAt }, project)
   }
 
   /** The thinking options of an agent's model ([] when Paseo has not said). */
@@ -811,6 +897,10 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   async function modes(params) {
     const agent = agentFor(params.session_id)
+    if (agent.archivedAt && (params.permission_mode || params.effort)) {
+      // Paseo changes the modes of an agent it has loaded, never of an archived one.
+      throw new RpcError('This session is archived in Paseo: send it a message to continue it, then change its mode. Nothing was changed.', 'not_running')
+    }
     const mode = params.permission_mode
     if (mode) {
       const modeId = paseoMode(agentRoot(agent, roots), mode)
@@ -995,8 +1085,10 @@ export function createPaseoBridge(deps = {}, options = {}) {
 
   /**
    * Take a Claude session over (the machine's engine continuing a session not running anywhere): the Paseo agent
-   * that has it already, else Paseo imports it — its conversation goes on in Paseo under the same id. Refused when
-   * a claude Paseo does not run has it open (two writers of one transcript).
+   * that has it already, else Paseo imports it — its conversation goes on in Paseo under the same id. A session an
+   * archived agent keeps under its own id (archivedRows) is that agent, back from the archive with the id on its
+   * label: Paseo imports a session it has an archived record of into that record. Refused when a claude Paseo does
+   * not run has it open (two writers of one transcript).
    */
   async function takeOver(params) {
     const id = params.resume
@@ -1005,7 +1097,9 @@ export function createPaseoBridge(deps = {}, options = {}) {
     for (const { agent } of agents.values()) {
       if (claudeId(agent) === id && agentRoot(agent, roots) === 'claude' && (!mine || mine.status === 'closed')) mine = agent
     }
-    if (params.permission_mode === 'plan' && mine?.currentModeId !== 'plan') {
+    mine ??= agents.get(bySession.get(id))?.agent // a session listed under an id of its own (Persona's label)
+    const kept = mine ? undefined : archivedOf(id)
+    if (params.permission_mode === 'plan' && (mine ?? kept)?.currentModeId !== 'plan') {
       // A takeover keeps the session's own mode (an import sets none): it cannot promise read-only (caps.readonly).
       throw new RpcError('Paseo 接着已有的会话时不能保证只读（plan）模式，这次没有发送。', 'readonly_unsupported')
     }
@@ -1016,10 +1110,13 @@ export function createPaseoBridge(deps = {}, options = {}) {
     if (params.open_elsewhere) {
       throw new RpcError('这个会话正在别处的 Claude Code 里开着（Paseo 之外），Paseo 再接着它就会有两个进程写同一个会话。先在那边关掉它。这次没有发送。', 'open_elsewhere')
     }
-    const cwd = typeof params.cwd === 'string' ? params.cwd : ''
+    const cwd = kept?.cwd || (typeof params.cwd === 'string' ? params.cwd : '')
     if (!cwd || !isDir(cwd)) throw new RpcError(`接不上这个会话：它的目录不在了（${cwd || '未知'}）`, 'bad_request')
-    // The provider: the launcher's when it runs Claude Code, else the one this machine's Claude agents use most lately.
-    let provider = launchers.some((l) => l.name === params.launcher && roots[l.name] === 'claude') ? params.launcher : undefined
+    // The provider: the archived agent's own (Paseo finds its record by provider and session), else the launcher's
+    // when it runs Claude Code, else the one this machine's Claude agents use most lately.
+    const own = kept?.persistence?.provider ?? kept?.provider
+    let provider = own && entries.some((e) => e.provider === own && e.enabled) ? own : undefined
+    provider ??= launchers.some((l) => l.name === params.launcher && roots[l.name] === 'claude') ? params.launcher : undefined
     if (!provider) {
       let latest
       for (const { agent } of agents.values()) {
@@ -1029,8 +1126,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
       provider = latest?.provider ?? defaultProvider(entries.filter((e) => roots[e.provider] === 'claude'), roots)
     }
     if (!provider) throw new RpcError('Paseo 里没有跑 Claude Code 的 provider，接不了这个会话', 'unavailable')
-    const imp = { provider, sessionId: id, cwd, labels: { [SESSION_LABEL]: id } }
-    const workspaceId = workspaceFor(undefined, cwd)
+    const imp = { provider, sessionId: kept ? transcriptOf(kept, roots) : id, cwd, labels: { [SESSION_LABEL]: id } }
+    const workspaceId = workspaceFor(kept?.workspaceId, cwd)
     if (workspaceId) imp.workspaceId = workspaceId
     const res = await paseo.request('import_agent_request', imp,
       { expect: 'status:agent_resumed', timeoutMs: callWait })
@@ -1058,7 +1155,8 @@ export function createPaseoBridge(deps = {}, options = {}) {
       }
       return
     }
-    const agentId = bySession.get(sessionId)
+    // An archived agent that keeps its id is followed too: a message takes it back from the archive (archivedRows).
+    const agentId = bySession.get(sessionId) ?? archivedOf(sessionId)?.id
     if (!agentId) return
     if (old) {
       old.transcript = o?.transcript === true
@@ -1235,7 +1333,7 @@ export function createPaseoBridge(deps = {}, options = {}) {
     runtime: rt,
     paseo,
     /** Tests: the bridge's view. */
-    state: { agents, bySession, watches, asks, handedBack, echoes, timelines, get launchers() { return launchers } },
+    state: { agents, bySession, archived, watches, asks, handedBack, echoes, timelines, get launchers() { return launchers } },
   }
 }
 

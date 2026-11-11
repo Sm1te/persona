@@ -164,6 +164,18 @@ func TestReadinessClaudeMissing(t *testing.T) {
 	}
 }
 
+// A self-check whose claude --version did not answer this time (a busy machine's 10 s ran out) while the shell found
+// claude is unknown, never claude_missing: Claude Code may well be there.
+func TestReadinessClaudeUnanswered(t *testing.T) {
+	f, s, _ := readyMachine(t)
+	f.doctor["server"] = "这次没读到 claude 的版本（超时或出错），claude 本身找得到"
+	f.doctorState = map[string]string{"server": "unanswered"}
+	r := getReadiness(t, s, "", "")
+	if cl := readinessStep(t, r, StepClaude); cl.State != StepUnknown || cl.Code == proto.CodeClaudeMissing || r.Mode != ReadinessFull {
+		t.Fatalf("claude = %+v (%s)", cl, r.Mode)
+	}
+}
+
 // A node with no self-check (an old one) leaves Claude Code unknown, which does not stop the main conversation.
 func TestReadinessOldNodeUnknown(t *testing.T) {
 	f, s, _ := readyMachine(t)

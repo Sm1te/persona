@@ -235,12 +235,19 @@ const (
 	// AuditTerminalControlRefused: {route, path}: a request with terminal control characters, which an extension may
 	// not send (hub's terminal_controls.go).
 	AuditTerminalControlRefused = "terminal_control_refused"
+	// AuditSecretHandoffRefused: {interaction_id, machine_id, session_id, role, reason, device_name?}: an approval of a
+	// hand-off card from a device or client that may not give one (hub's secret_handoff.go). Extension is a provider
+	// the card hands a value from and Actor who tried ("device:<id>", "extension:<id>", "hub token"); the card's
+	// variables, references and values are not in it.
+	AuditSecretHandoffRefused = "secret_handoff_approve_refused"
 )
 
-// Audit is HubAudit's params: what extension Extension's token was refused. Detail holds ids and reasons only.
+// Audit is HubAudit's params: what extension Extension's token was refused, or (AuditSecretHandoffRefused) whose
+// approval of a card handing over a value of provider Extension was. Detail holds ids and reasons only.
 type Audit struct {
 	Extension string         `json:"extension"`
 	Action    string         `json:"action"`
+	Actor     string         `json:"actor,omitempty"`
 	Detail    map[string]any `json:"detail,omitempty"`
 }
 

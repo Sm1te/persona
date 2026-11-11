@@ -2,6 +2,7 @@ package hub
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,12 +10,16 @@ import (
 	"testing"
 
 	"github.com/nwverse/persona/server/internal/assistantwire"
+	"github.com/nwverse/persona/server/internal/devicewire"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
 )
 
 func TestWorkSessionHTTPUsesExactTarget(t *testing.T) {
 	h := newTestHub(t)
+	if !h.loadMachineTrust(context.Background()) {
+		t.Fatal("machine trust could not be initialized")
+	}
 	h.store = &newAgentStore{memStore: newMemStore(), b: assistantwire.ModelBinding{Provider: "launcher.work", Model: "configured"}}
 	opts, starts := make(chan map[string]any, 2), make(chan map[string]any, 3)
 	cfg := MachineConfig{ID: "box", Launchers: []assistantwire.ConfiguredLauncher{{Launcher: proto.Launcher{Name: "work"}, AgentType: "codex"}}}
@@ -33,6 +38,7 @@ func TestWorkSessionHTTPUsesExactTarget(t *testing.T) {
 		return map[string]any{}, nil
 	})
 	connectAssistant(t, h)
+	h.applyDeviceStates(devicewire.States{})
 	w := modelsRequest(h, "GET", "/api/v1/machines/box/launchers/work/start-options", "")
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"id":"chosen"`) {
 		t.Fatalf("options: %d %s", w.Code, w.Body)
@@ -89,6 +95,9 @@ func TestWorkSessionHealthIgnoresValidationRefusals(t *testing.T) {
 
 func TestWorkSessionOptionsRespectsMachineAndLauncherScope(t *testing.T) {
 	h := newTestHub(t)
+	if !h.loadMachineTrust(context.Background()) {
+		t.Fatal("machine trust could not be initialized")
+	}
 	cfg := MachineConfig{ID: "other", Launchers: []assistantwire.ConfiguredLauncher{{Launcher: proto.Launcher{Name: "private"}, AgentType: "codex"}}}
 	registerMachine(h, newMachine(h, cfg))
 	var probe map[string]any
@@ -100,6 +109,8 @@ func TestWorkSessionOptionsRespectsMachineAndLauncherScope(t *testing.T) {
 		return nil, &rpc.Error{Code: "work_launcher_unavailable", Message: "unknown launcher"}
 	})
 	const target = "/api/v1/machines/box/launchers/private/start-options"
+	connectAssistant(t, h)
+	h.applyDeviceStates(devicewire.States{})
 	h.setLeaving("box", true)
 	if w := modelsRequest(h, "GET", target, ""); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "machine_pending") || probe != nil {
 		t.Fatalf("an unconfirmed device was probed: %d %s", w.Code, w.Body)

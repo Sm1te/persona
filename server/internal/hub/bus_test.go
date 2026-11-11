@@ -236,7 +236,8 @@ func TestBusHello(t *testing.T) {
 		Hello: assistantwire.Hello{DoneDelayMS: taskSettleDelay(h.cfg.Notify).Milliseconds(), Locale: "zh-Hans", // the user's language
 			Mutes: &assistantwire.Mutes{Spaces: []string{}, Sessions: []string{}}, // the hub's mutes (none)
 			// the finished push's timings: the manager's to apply (fleet_push.go there)
-			Notify: assistantwire.NotifyTimings{DoneDelayMS: 60000, LongTurnMS: 60000, BackgroundHoldMS: 7200000}}}
+			Notify:            assistantwire.NotifyTimings{DoneDelayMS: 60000, LongTurnMS: 60000, BackgroundHoldMS: 7200000},
+			SecretHandoffGate: true}} // this hub checks who approves a hand-off card (secret_handoff.go)
 	if !jsonEqual(reply, want) {
 		t.Fatalf("hello answer %+v, want %+v", reply, want)
 	}

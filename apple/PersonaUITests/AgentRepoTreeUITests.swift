@@ -1,8 +1,8 @@
 import XCTest
 
 /// By Repository's tree (#2531), against scripts/mock/mock_hub.py with MOCK_WORKTREES=1 MOCK_ORCA_CHILDREN=1
-/// (PERSONA_WORKTREE_HUB): a repository's header has no ⋯ (its actions are its long-press menu), agent lines name no
-/// model, and the screens it scrolls through go to PERSONA_SHOTS.
+/// (PERSONA_WORKTREE_HUB): a repository's header has no ⋯ (its actions are its long-press menu), its agents are the
+/// display's rows as in By Project (#3753), and the screens it scrolls through go to PERSONA_SHOTS.
 final class AgentRepoTreeUITests: XCTestCase {
     private var hub = ""
 
@@ -46,18 +46,44 @@ final class AgentRepoTreeUITests: XCTestCase {
         shot(app, "repo-tree-menu")
     }
 
-    /// An agent's line says its state, mark, title and time; the model is in the chat's header, not here.
-    @MainActor func testAgentLinesNameNoModel() throws {
-        let app = launch()
-        XCTAssertTrue(app.buttons["agents.filter.all"].waitForExistence(timeout: 20), "no Agents list")
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'agents.row' AND label CONTAINS %@", "给天气 App 加主屏幕小组件")).firstMatch
-        bringUp(row, in: app, column: app.buttons["agents.filter.all"])
-        XCTAssertTrue(row.exists, "no widget agent line")
-        XCTAssertFalse(app.staticTexts.matching(identifier: "agents.workspaceModel").firstMatch.exists, "a model name on an agent line")
+    /// The agents under a repository's worktrees are the display's rows, saying what they say By Project (#3753): the
+    /// widget agent's row is the same there and here, its latest words and where it runs included (the tree's one line
+    /// had its title and time alone), in Avatar and in Compact List, and a finger's height.
+    @MainActor func testAgentsAreTheDisplaysRows() throws {
+        for (display, id) in [("avatar", "agents.row"), ("list", "agents.compactRow")] {
+            let byProject = widgetRow(grouping: "space", display: display, id: id)
+            let byRepository = widgetRow(grouping: "repo", display: display, id: id)
+            XCTAssertFalse(byRepository.label.isEmpty, "no widget agent row By Repository (\(display))")
+            XCTAssertEqual(Self.withoutTime(byRepository.label), Self.withoutTime(byProject.label),
+                           "the widget agent's row By Repository is not the one By Project (\(display))")
+            XCTAssertGreaterThanOrEqual(byRepository.height, 43.5, "the widget agent's row is \(byRepository.height) pt tall (\(display))")
+            if display == "avatar" {
+                XCTAssertGreaterThan(byRepository.height, 60, "By Repository draws a one-line row in Avatar (\(byRepository.height) pt)")
+            }
+        }
     }
 
-    /// Beside the chat (regular width), the open agent's line is washed in the tree.
+    /// The widget agent's row in a grouping and display: its label and height, from a fresh launch.
+    @MainActor private func widgetRow(grouping: String, display: String, id: String) -> (label: String, height: CGFloat) {
+        let look = display == "list" ? ["-dev.compact", "YES"] : ["-dev.compact", "NO", "-agents.rowStyle", display]
+        let app = launch(grouping: grouping, extra: look + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["agents.filter.all"].waitForExistence(timeout: 20), "no Agents list")
+        let row = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", id, "给天气 App 加主屏幕小组件")).firstMatch
+        bringUp(row, in: app, column: app.buttons["agents.filter.all"])
+        guard row.exists else { return ("", 0) }
+        shot(app, "repo-row-\(grouping)-\(display)")
+        return (row.label, row.frame.height)
+    }
+
+    /// A row's spoken label without its time ("3 min ago" moves on between two launches; English, `Fmt.relative`).
+    static func withoutTime(_ label: String) -> String {
+        let time = #"^(Just now|\d+ min ago|\d{1,2}:\d{2}(\s?[AP]M)?|Yesterday|[A-Z][a-z]+day|[A-Z][a-z]{2}\s\d{1,2})$"#
+        return label.components(separatedBy: ", ").filter { $0.range(of: time, options: .regularExpression) == nil }
+            .joined(separator: ", ")
+    }
+
+    /// Beside the chat (regular width), the open agent's row is washed in its repository's card.
     @MainActor func testTheOpenAgentsLineStandsOutBesideTheChat() throws {
         let app = launch()
         XCTAssertTrue(app.buttons["agents.filter.all"].waitForExistence(timeout: 20), "no Agents list")
@@ -83,11 +109,11 @@ final class AgentRepoTreeUITests: XCTestCase {
         }
     }
 
-    @MainActor private func launch() -> XCUIApplication {
+    @MainActor private func launch(grouping: String = "repo", extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         let pair = "persona://pair?url=" + hub.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&token=mock"
         app.launchArguments = ["-pairURL", pair, "-ui.oldLayout", "NO", "-app.tab", "chats", "-tab", "dev", "-dev.openChat", "",
-                               "-openAgentsFresh", "YES", "-dev.grouping", "repo"]
+                               "-openAgentsFresh", "YES", "-dev.grouping", grouping] + extra
         app.launchPinned()
         return app
     }

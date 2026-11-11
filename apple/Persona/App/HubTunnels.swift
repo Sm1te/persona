@@ -174,7 +174,9 @@ extension AppModel {
     @discardableResult
     func outside<T: Sendable>(_ client: APIClient, _ work: @Sendable (APIClient) async throws -> T) async throws -> T {
         let group = client.group
-        guard !hubTunnels(group).isEmpty else { return try await work(client) }
+        // A group with tunnels, or with added addresses (#4670): its paired address alone may not answer.
+        let added = registry.members(group).contains { !($0.addresses ?? []).isEmpty }
+        guard !hubTunnels(group).isEmpty || added else { return try await work(client) }
         var through = client
         if let live = link(group)?.live, live.state == .connected, let config = live.currentConfig {
             through.config = config

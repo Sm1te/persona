@@ -96,6 +96,10 @@ func TestMinutesWritten(t *testing.T) {
 	if got.Version != 1 || got.Revision != 1 || got.Title != "发布评审" || got.When != "2026-11-10 14:00–14:01" {
 		t.Errorf("head %+v", got)
 	}
+	// The same span for clients to format themselves (#4713), in the user's zone, to the second.
+	if got.Start.Format(time.RFC3339Nano) != start.Format(time.RFC3339) || !got.End.Equal(start.Add(time.Minute)) {
+		t.Errorf("span %s – %s", got.Start.Format(time.RFC3339Nano), got.End.Format(time.RFC3339Nano))
+	}
 	// Calendar attendees first; the model's only when the transcript names them (Zed is not).
 	if strings.Join(got.Attendees, ",") != "Ada,Cy,Bo" {
 		t.Errorf("attendees %v", got.Attendees)
@@ -620,5 +624,34 @@ func TestMinutesNoLongerMeetingAndRoundBound(t *testing.T) {
 	e.WriteMinutes(context.Background(), 2)
 	if got := len(model.calls) - calls; got != 2 {
 		t.Fatalf("%d tried in a round, want 2", got)
+	}
+}
+
+// Minutes written before they carried start and end (#4713) get them from their recording in a recording's detail;
+// every other field stays as stored, and minutes that have them are sent as they are.
+func TestMinutesWithSpan(t *testing.T) {
+	zone := time.FixedZone("UTC+8", 8*3600)
+	started := time.Date(2026, 11, 10, 6, 0, 0, 500_000_000, time.UTC)
+	ended := started.Add(70 * time.Minute)
+	r := &Recording{StartedAt: started, EndedAt: &ended}
+	old := []byte(`{"version":2,"title":"Design review","when":"2026-11-10 14:00–15:10","markdown":"# x","future":{"kept":true}}`)
+	var got map[string]any
+	if err := json.Unmarshal(minutesWithSpan(old, r, zone), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["start"] != "2026-11-10T14:00:00+08:00" || got["end"] != "2026-11-10T15:10:00+08:00" {
+		t.Errorf("span %v – %v", got["start"], got["end"])
+	}
+	if got["version"] != float64(2) || got["when"] != "2026-11-10 14:00–15:10" || got["markdown"] != "# x" || got["future"] == nil {
+		t.Errorf("stored fields changed: %v", got)
+	}
+	current := []byte(`{"version":3,"when":"x","start":"2026-11-10T14:00:00+08:00","end":"2026-11-10T15:10:00+08:00"}`)
+	for name, c := range map[string]struct {
+		raw []byte
+		r   *Recording
+	}{"has its span": {current, r}, "no recording": {old, nil}, "recording without a start": {old, &Recording{}}, "not JSON": {[]byte("{"), r}} {
+		if out := minutesWithSpan(c.raw, c.r, zone); string(out) != string(c.raw) {
+			t.Errorf("%s: %s", name, out)
+		}
 	}
 }

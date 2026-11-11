@@ -375,6 +375,81 @@ class AssistantTraysShotsTest {
         }
     }
 
+    /**
+     * Agents another agent created (#4494) are in their creator's row, not rows of their own (#4769): the orchestrator
+     * says how many it runs, the one that asks for you is in Needs you, and one whose creator stopped is its own row.
+     * Each capture comes before its checks, so the same test run on the code before shows what it changed.
+     */
+    @Test fun subtasksAreInTheirCreatorsRowInEveryStyle() {
+        // The card's headline in English too, as the app words it (CoreText falls back to Chinese in unit tests).
+        val words = CoreText.words
+        CoreText.words = { it.resolve(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()) }
+        try { subtaskShots() } finally { CoreText.words = words }
+    }
+
+    private fun subtaskShots() {
+        val lead = Session("computer-a", "lead", title = "Review the release branch", state = "working", status = "working",
+            sourceKind = "runtime", agent = "claude", activity = "Waiting for the reviewers",
+            background = (1..3).map { BackgroundTask("reviewer-$it", kind = "agent") })
+        fun created(id: String, title: String, by: String, state: String = "working", status: String = "working") = Session("computer-a", id,
+            title = title, state = state, status = status, sourceKind = "runtime", agent = "claude", isSubagent = true, parentSessionId = by,
+            activity = "Reading the diff")
+        val thread = Session("computer-b", "codex", title = "Fix the flaky test", state = "working", status = "working", agent = "codex",
+            sourceKind = "codex_app_server", sourceThreadId = "thread-codex", activity = "Running the tests")
+        val subagent = Session("computer-b", "probe", title = "Explore the test logs", state = "working", status = "working", agent = "codex",
+            sourceKind = "codex_app_server", sourceThreadId = "thread-probe", parentThreadId = "thread-codex", isSubagent = true)
+        val deploy = created("deploy", "Deploy to staging", "lead", state = "needs_you", status = "blocked")
+        val planner = Session("computer-a", "planner", title = "Plan the migration", state = "idle", status = "idle", sourceKind = "runtime", agent = "claude")
+        val fixture = Fixture().apply {
+            returnedTodos = emptyList(); tasks.reloadTodos()
+            requests.value = listOf(Interaction("deploy-card", machineId = deploy.machineId, sessionId = deploy.sessionId, kind = "permission",
+                toolName = "Bash", summary = "Deploy the build to staging"))
+            drafts.value = emptyList()
+            sessionRows.value = listOf(Session(main.machineId, main.sessionId, title = "Persona", assistant = true, state = "idle", status = "idle"),
+                lead, created("review-api", "Review the API changes", "lead"), created("review-ui", "Review the UI changes", "lead"), deploy,
+                thread, subagent, planner, created("writer", "Write the migration", "planner"), manual)
+        }
+        var style by mutableStateOf(AppStyle.Glass)
+        var dark by mutableStateOf(false)
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply {
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
+                    Column(Modifier.fillMaxSize().background(PersonaTheme.palette.background).testTag("assistant-page-shot")) {
+                        ChatScreen(main, fixture.chats, fixture.sender, fixture.interactions, fixture.sessions, {},
+                            chrome = ChatChromeBindings(tasks = fixture.tasks, assistantManagement = fixture.management, inboxTrays = fixture.inbox,
+                                inboxScope = "fixture", onOpenSession = { fixture.opened += it }),
+                            renderStyle = ChatRenderStyle.Assistant, embedded = true, showTopBar = false)
+                    }
+                }
+            }
+        }
+        settle()
+        rule.waitUntil(10_000) { rule.onAllNodesWithTag("assistant-tray-bar").fetchSemanticsNodes().isNotEmpty() }
+        for (s in AppStyle.entries) for (d in listOf(false, true)) {
+            style = s; dark = d; settle()
+            val suffix = "${s.name.lowercase()}-${if (d) "dark" else "light"}"
+            rule.onNodeWithTag("assistant-entry-running").performClick(); settle()
+            shot("subtasks-running-$suffix")
+            rule.onNodeWithTag("assistant-tray-running").assertIsDisplayed()
+            // the orchestrator, the Codex thread, the agent whose creator stopped and the one opened by hand: four rows
+            for (id in listOf("lead", "codex", "writer", "manual")) rule.onNodeWithTag("assistant-agent-$id").assertExists()
+            for (id in listOf("review-api", "review-ui", "probe", "deploy")) rule.onNodeWithTag("assistant-agent-$id").assertDoesNotExist()
+            rule.onNodeWithText("4 items").assertIsDisplayed()
+            rule.onNodeWithText("Subagents running: 3").assertIsDisplayed()
+            rule.onNodeWithText("All 5").assertIsDisplayed()
+            rule.onNodeWithTag("assistant-entry-needs").performClick(); settle()
+            shot("subtasks-needs-$suffix")
+            rule.onNodeWithTag("assistant-needs-agent-deploy").assertIsDisplayed()
+            rule.onNodeWithText("1 item").assertIsDisplayed()
+            rule.onNodeWithTag("assistant-entry-needs").performClick(); settle()
+        }
+    }
+
     /** The check's line only while the task is stopped and open, and not for a done or unsure check (#3180). */
     @Test fun aStoppedTasksCheckLineFollowsItsState() {
         val fixture = Fixture()

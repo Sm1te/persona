@@ -952,7 +952,11 @@ func (ps *extensions) specOf(ctx context.Context, p *extension.Extension, hp *hu
 		if err := os.MkdirAll(dataDir, 0o700); err != nil {
 			return s, err
 		}
-		s.Env = []string{"PERSONA_PLUGIN_ID=" + id, "PERSONA_PLUGIN_DIR=" + p.Dir, "PERSONA_PLUGIN_DATA=" + dataDir}
+		s.Env = []string{"PERSONA_PLUGIN_ID=" + id, "PERSONA_PLUGIN_DIR=" + p.Dir, "PERSONA_PLUGIN_DATA=" + dataDir,
+			// The same settings also arrive at initialize. Supplying them here
+			// lets a supervisor choose a configured interpreter before it can
+			// speak RPC; this is configuration, never decrypted secrets.
+			"PERSONA_PLUGIN_CONFIG=" + string(ps.reg.Config(p))}
 		s.Env = append(s.Env, managerEnv...)
 		// Its command-line programs (manifest.tools, installed with this version) first on PATH, for it and what it runs.
 		if len(ps.reg.Tools(id, p.Record.Version)) > 0 {
@@ -1089,6 +1093,11 @@ func (ps *extensions) specOf(ctx context.Context, p *extension.Extension, hp *hu
 			return ps.extensionModelCall(ctx, id, params)
 		case connector.MethodSentRecord:
 			return ps.extensionSentRecord(ctx, id, params)
+		case "cli.call":
+			if len(p.Manifest.HostIntegrations) != 1 || ps.h == nil {
+				return nil, &rpc.Error{Code: extension.CodePermissionDenied, Message: "host CLI: no declared integration"}
+			}
+			return ps.h.extensionHostCLICall(ctx, id, p.Manifest.HostIntegrations[0], params)
 		}
 		if rest, ok := strings.CutPrefix(method, serve.Namespace+"."); ok {
 			c := byID[contributionOf(params)]

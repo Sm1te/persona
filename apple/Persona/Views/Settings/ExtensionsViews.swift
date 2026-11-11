@@ -175,6 +175,8 @@ struct ExtensionDetailView: View {
     @State private var editingSecret: ExtensionSecret?
     @State private var declarations = ExtensionTextContributions()
     @State private var connectorInbox: ExtensionConnectorsModel
+    /// Its connectors' source subscriptions (#2041): the entry row's counts, nil while it is hidden.
+    @State private var subscriptions: SubscriptionCounts?
     @Environment(\.scenePhase) private var phase
 
     @State private var signIn: ExtensionSignInModel
@@ -246,6 +248,7 @@ struct ExtensionDetailView: View {
         .task { await page.load() }
         // A launcher field's choices (format launcher): the hub asks every machine for them, so apart from the page.
         .task(id: page.detail?.plugin.id) { await page.loadLaunchersIfNeeded() }
+        .subscriptionCounts($subscriptions, enabled: page.manager == nil) { [id = page.id] in $0.extensionID == id }
         // Again when the connector's page closes (its switch may have changed there) or the extension is switched.
         // Also once paired (opened at launch, before the hub's address is known) or paired to another hub.
         .task(id: ConnectorSectionsKey(ids: connectorIDs, depth: AppModel.shared.settingsPath.count,
@@ -336,6 +339,9 @@ struct ExtensionDetailView: View {
             }
         }
         pages(d)
+        if d.plugin.enabled ?? true {
+            SubscriptionsEntrySection(counts: subscriptions, state: SubscriptionsUI.state(extension: d.plugin.id))
+        }
         connectorSections(d)
         if !d.readOnly && !d.form.isEmpty { form(d) }
         if !d.readOnly && !d.secrets.isEmpty { secrets(d) }
@@ -517,7 +523,7 @@ struct ExtensionDetailView: View {
         if let members = d.extensionPack, !members.isEmpty {
             Section {
                 ForEach(members, id: \.id) { member in
-                    LabeledContent(member.id, value: member.version ?? "")
+                    ExtensionPackMemberRow(line: ExtensionPackMemberLine(member, name: page.memberNames[member.id]))
                 }
             } header: { SettingsHeading(String(localized: "Pack Members")) }
         }

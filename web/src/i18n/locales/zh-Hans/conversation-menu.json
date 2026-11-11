@@ -1,7 +1,4 @@
 {
-  "pin": "置顶",
-  "unpin": "取消置顶",
-  "unpin_all": "全部取消置顶",
   "rename": "重命名…",
   "title_placeholder": "对话标题",
   "renamed": "已重命名",
@@ -16,5 +13,10 @@
   "end_confirm": "确认结束",
   "ended": "已结束对话，记录仍保留",
   "end_failed": "没能结束对话：{error}",
-  "actions": "对话的操作"
+  "actions": "对话的操作",
+  "make_leader": "设为常驻",
+  "end_leader": "取消常驻",
+  "leader_made": "已设为常驻「{title}」",
+  "leader_ended": "已取消常驻「{title}」，它派出的任务不变",
+  "leader_failed": "没能改常驻：{error}"
 }

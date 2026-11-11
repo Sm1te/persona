@@ -79,10 +79,9 @@ fun ConnectedAssistant(
     val context = LocalContext.current.applicationContext
     val dependencies = remember(context) { EntryPointAccessors.fromApplication(context, AssistantEntryPoint::class.java) }
     val repository = remember(dependencies) { dependencies.assistantConversations() }
-    val pins by repository.pinned.collectAsStateWithLifecycle()
     val sessions = remember(dependencies) { dependencies.sessionsRepository() }
     val machines by sessions.machines.collectAsStateWithLifecycle()
-    AssistantScreen(navigator, repository, dependencies.messageSender(), repository::startConversation, pins,
+    AssistantScreen(navigator, repository, dependencies.messageSender(), repository::startConversation,
         machines = machines, phoneToolsAvailable = phoneToolsAvailable ?: LocalAssistantHost.current?.phoneToolsAvailable,
         management = management ?: LocalAssistantHost.current?.management,
         requestedSession = requestedSession, assistantChatContent = assistantChatContent ?: LocalAssistantHost.current?.chatContent,

@@ -33,6 +33,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import persona.core.contracts.Session
 import persona.core.contracts.SessionKey
+import persona.core.contracts.api.LeaderCounts
 import persona.core.designsystem.*
 import persona.core.designsystem.icons.PhIcons
 import java.io.File
@@ -122,6 +123,12 @@ class AssistantDrawerShotsTest {
         assertTrue(settingsTapped)
         rule.onNodeWithText("收件箱").performScrollTo().performClick()
         assertTrue(inboxTapped)
+        // The leader is the 常驻 group; every other chat waits under one row, which opens the list in place (#4331).
+        rule.onNodeWithText("常驻").assertExists()
+        rule.onNodeWithText("周报草稿").assertExists()
+        rule.onAllNodesWithText("整理收件箱").assertCountEquals(0)
+        rule.onNodeWithText("全部对话（2）").performScrollTo().performClick()
+        rule.onNodeWithText("整理收件箱").assertExists()
         for (s in AppStyle.entries) for (d in listOf(false, true)) {
             style = s; dark = d
             androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
@@ -182,6 +189,7 @@ class AssistantDrawerShotsTest {
                     onArchive = { archived = it })
             }
         }
+        rule.onNodeWithText("全部对话（1）").performClick()
         rule.onAllNodesWithContentDescription("对话操作")[0].performClick()
         rule.onNodeWithText("拷贝会话 ID").assertExists()
         rule.onAllNodesWithText("归档").assertCountEquals(0)
@@ -211,44 +219,37 @@ class AssistantDrawerShotsTest {
         rule.onAllNodesWithText("工作中").assertCountEquals(1)
     }
 
-    // #3264: Automatic chats folded (its count, the red count of those waiting for the user) and open (a chip per origin, the
-    // picked origin's conversations), in every style, light and dark.
-    @Test fun drawsTheAutomaticConversations() {
+    // #4331: the leaders, "常驻", under their names, each saying what it has open, in every style, light and dark; every
+    // other chat waits under one All chats row.
+    @Test fun drawsTheLeadersWithTheirCounts() {
         var style by mutableStateOf(AppStyle.Glass)
         var dark by mutableStateOf(false)
-        var open by mutableStateOf(false)
-        val auto = listOf(
-            Session(machineId = "hub", sessionId = "a1", title = "1106 | 收件箱 | 张三问 1013 合了吗", status = "idle", origin = "inbox",
-                updatedAt = minutesAgo(8), lastText = "草稿：已经合入主干。"),
-            Session(machineId = "hub", sessionId = "a2", title = "1106 | 收件箱 | 报销单要补发票", status = "idle", state = "needs_you",
-                origin = "inbox", updatedAt = minutesAgo(40), lastText = "需要你确认：发票抬头用哪个？"),
-            Session(machineId = "hub", sessionId = "a3", title = "1106 | 定时 | 早报", status = "working", origin = "task", updatedAt = minutesAgo(3)),
-            Session(machineId = "hub", sessionId = "a4", title = "1105 | 研究 | 群里的发布计划", status = "idle", origin = "lark_agent", updatedAt = minutesAgo(600)),
-        )
+        val leadA = Session(machineId = "hub", sessionId = "l1", title = "1110 | 探索 | 增长", status = "working",
+            updatedAt = minutesAgo(4), lastText = "正在整理增长实验的数据。")
+        val leadB = Session(machineId = "hub", sessionId = "l2", title = "1110 | 探索 | 支付", status = "idle", updatedAt = minutesAgo(20))
+        val groups = ConversationGroups(main, listOf(leadA, leadB), recent,
+            names = mapOf("l1" to "增长", "l2" to "支付"),
+            counts = mapOf("l1" to LeaderCounts(working = 2, needsYou = 1), "l2" to LeaderCounts(needsYou = 3)))
         rule.setContent {
             PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
-                Box(Modifier.testTag("shot").width(400.dp).height(1300.dp).background(PersonaTheme.palette.background)) {
-                    AssistantDrawer("", {}, ConversationGroups(main, emptyList(), recent, auto), active = null,
-                        hasMain = true, onEnd = null, onMain = {}, onOpen = {}, onInfo = {}, onNew = {}, onHome = {}, onSettings = {},
-                        autoOpen = open, onAutoOpen = { open = it })
+                Box(Modifier.testTag("shot").width(400.dp).height(900.dp).background(PersonaTheme.palette.background)) {
+                    AssistantDrawer("", {}, groups, active = null, hasMain = true, onEnd = null, onMain = {}, onOpen = {},
+                        onInfo = {}, onNew = {}, onHome = {}, onSettings = {})
                 }
             }
         }
-        rule.onNodeWithText("自动对话").assertExists()
-        rule.onAllNodesWithText("1106 | 收件箱 | 张三问 1013 合了吗").assertCountEquals(0) // folded
+        rule.onNodeWithText("常驻").assertExists()
+        rule.onNodeWithText("增长").assertExists()
+        rule.onNodeWithText("在做 2 · 等你 1").assertExists()
+        rule.onNodeWithText("等你 3").assertExists()
         for (s in AppStyle.entries) for (d in listOf(false, true)) {
             style = s; dark = d
-            capture("drawer-auto-folded-${s.name.lowercase()}-${if (d) "dark" else "light"}")
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+            capture("drawer-leaders-${s.name.lowercase()}-${if (d) "dark" else "light"}")
         }
-        rule.onNodeWithText("自动对话").performClick()
-        assertTrue(open)
-        rule.onNodeWithText("1106 | 收件箱 | 张三问 1013 合了吗").assertExists()
-        rule.onAllNodesWithText("1106 | 定时 | 早报").assertCountEquals(0) // the first origin is picked
-        for (s in AppStyle.entries) for (d in listOf(false, true)) {
-            style = s; dark = d
-            capture("drawer-auto-open-${s.name.lowercase()}-${if (d) "dark" else "light"}")
-        }
-        rule.onAllNodesWithText("定时任务")[1].performClick() // The More row now precedes the automatic-origin chip.
-        rule.onNodeWithText("1106 | 定时 | 早报").assertExists()
+        style = AppStyle.Glass; dark = false
+        rule.onNodeWithText("全部对话（2）").performClick()
+        rule.onNodeWithText("整理收件箱").assertExists()
+        capture("drawer-all-chats-glass-light")
     }
 }

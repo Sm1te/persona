@@ -130,7 +130,9 @@ extension APIClient {
                   values: [String: String]? = nil, manager: String? = nil) async throws -> ExtensionActionResult {
         let body = ExtensionUIRequest(context: context, state: state, action: action, values: values)
         let query = manager.map { ["manager": $0] } ?? [:]
-        return try JSON.decoder.decode(ExtensionActionResult.self, from: try await request("POST", extensionPath("/\(ext)/-/ui/\(ui)"), query: query, body: body))
+        // The source subscription pages (#2041) are the manager's own, drawn and pressed as an extension page.
+        let path = ext == SubscriptionsUI.id ? SubscriptionsUI.path : extensionPath("/\(ext)/-/ui/\(ui)")
+        return try JSON.decoder.decode(ExtensionActionResult.self, from: try await request("POST", path, query: query, body: body))
     }
 }
 
@@ -296,7 +298,8 @@ extension APIClient {
         self.deps = deps
         ExtensionUIRegistry.shared.add(self)
         #if os(iOS) || os(macOS)
-        if context.uiVersion == ExtensionUIContext.pageVersion, let connection = deps.connection() {
+        // The source subscription pages (#2041) are the manager's, drawn over HTTP only.
+        if context.uiVersion == ExtensionUIContext.pageVersion, plugin != SubscriptionsUI.id, let connection = deps.connection() {
             let stream = ExtensionPageStream(connection: connection, owner: plugin, contribution: ui,
                                              context: context, state: state ?? "", manager: manager)
             self.stream = stream
@@ -542,6 +545,97 @@ extension APIClient {
         } catch {
             return Outcome(error: error.localizedDescription)
         }
+    }
+
+    // MARK: Controls (UI version 6, docs/extensions/extensions.md "UI version 6", "Controls")
+
+    /// What a control shows while the user's value is asked about or on its way, by the control's name; the
+    /// extension's value (`ExtensionRowControl.wire`) when it has none here.
+    private(set) var controlValues: [String: String] = [:]
+    /// Controls whose change has been on its way for over a second: a spinner shows beside them.
+    private(set) var slowControls: Set<String> = []
+    /// The controls whose change is on its way, each with the latest value it was changed to meanwhile (sent next).
+    @ObservationIgnored private var controlFlights: [String: ControlFlight] = [:]
+    private struct ControlFlight { var queued: (control: ExtensionRowControl, value: String)? }
+    var sendsControls: Bool { true }
+
+    func preview(_ name: String, _ value: String?) {
+        if let value { controlValues[name] = value } else if controlFlights[name] == nil { controlValues[name] = nil }
+    }
+
+    /// A control changed (after its confirm): the new value shows at once and goes with the control's action as
+    /// `{name: value}`; one request a control at a time, a change made meanwhile goes after it (only the latest). The
+    /// answer's view or `items` say what the control is now, an answer with neither draws the page again; a failure
+    /// puts back the extension's last value and says why. A redraw meanwhile keeps the user's value.
+    func change(_ control: ExtensionRowControl, to value: String) async -> Outcome {
+        let name = control.name
+        guard !name.isEmpty, !control.action.id.isEmpty, control.disabled != true else { return Outcome() }
+        controlValues[name] = value
+        if controlFlights[name] != nil {
+            controlFlights[name]?.queued = (control, value)
+            return Outcome()
+        }
+        controlFlights[name] = ControlFlight()
+        let slow = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            if !Task.isCancelled { self?.slowControls.insert(name) }
+        }
+        var next: (control: ExtensionRowControl, value: String)? = (control, value)
+        var outcome = Outcome()
+        var sent = value
+        defer {
+            slow.cancel()
+            slowControls.remove(name)
+            controlFlights[name] = nil
+            // The answer's value from now on, unless the user is already at another (a stepper's taps not yet sent).
+            if controlValues[name] == sent || outcome.error != nil || outcome.cancelled { controlValues[name] = nil }
+            completedOperations += 1
+        }
+        while let n = next {
+            sent = n.value
+            outcome = await sendControl(n.control, n.value)
+            next = outcome.error == nil && !outcome.cancelled ? controlFlights[name]?.queued : nil
+            controlFlights[name]?.queued = nil
+        }
+        return outcome
+    }
+
+    private func sendControl(_ control: ExtensionRowControl, _ value: String) async -> Outcome {
+        // A native stream page sends it as its other actions (frozen against the tree on screen).
+        if let stream, stream.supported != false { return await perform(control.action, with: [control.name: value]) }
+        do {
+            // The page's fields (submit), the action's own values, then the control's: the control's wins.
+            let sent = (control.action.submit == true ? submitted : [:])
+                .merging(control.action.values ?? [:]) { _, own in own }
+                .merging([control.name: value]) { _, mine in mine }
+            let r = try await call(control.action.id, values: sent)
+            if let v = r.view {
+                show(v, keeping: values)
+            } else if let items = r.items, !items.isEmpty {
+                replace(items)
+            } else if r.push == nil, r.pop != true, let v = try? await call(nil, values: nil).view {
+                show(v, keeping: values)
+            }
+            if let p = r.push, depth < Self.maxDepth { pushed = p }
+            if r.pop == true { popped = true }
+            let url = r.openUrl.flatMap(URL.init(string:)).flatMap { Self.opens($0, item: context.item, owner: plugin) ? $0 : nil }
+            return Outcome(toast: r.toast?.isEmpty == false ? r.toast : nil, url: url)
+        } catch let e as APIError where Self.isUnsupported(e) {
+            unsupported = true
+            return Outcome()
+        } catch {
+            return Outcome(error: error.localizedDescription)
+        }
+    }
+
+    /// An answer's `items` (UI version 5) in place of the components with the same key: the rest is not drawn again.
+    private func replace(_ items: [ExtensionComponent]) {
+        guard var v = view else { return }
+        let byKey = Dictionary(items.compactMap { c in c.key.map { ($0, c) } }) { _, last in last }
+        for i in v.sections.indices {
+            v.sections[i].items = v.sections[i].items.map { c in c.key.flatMap { byKey[$0] } ?? c }
+        }
+        ExtensionMotion.redraw(from: view, to: v) { view = v }
     }
 
     /// The fields' values as the extension gets them: every field of the view, by name.

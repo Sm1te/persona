@@ -217,7 +217,8 @@ class MeetingAttendanceMockTests(Hub, unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual((ask["id"], ask["state"], ask["question_source"], ask["speak"], ask["lang"]), (aid.lower(), "answered", "typed", True, "en"))
         self.assertTrue(ask["answer"] and len(ask["answer"]) <= 400 and ask["answered_at"].endswith("Z"))
-        self.assertEqual(ask["sources"][0], {"kind": "recordings", "id": earlier, "name": "Design review", "when": "2026-11-03 14:00–15:10"})
+        self.assertEqual(ask["sources"][0], {"kind": "recordings", "id": earlier, "name": "Design review", "when": "2026-11-03 14:00–15:10",
+                                             "start": "2026-11-03T14:00:00+08:00", "end": "2026-11-03T15:10:00+08:00"})
         self.assertNotIn("at", ask)
         self.assertEqual(self.call("POST", f"/api/v1/recordings/{rid}/ask", {"id": aid.lower(), "question": "What did we decide last time?"})[1]["ask"], ask)
         self.assertEqual(self.call("POST", f"/api/v1/recordings/{rid}/ask", {"id": aid, "question": "Another?"})[1]["code"], "op_id_reused")

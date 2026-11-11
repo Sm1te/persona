@@ -92,6 +92,7 @@
     <string name="designsystem_core_state_unread">未確認</string>
     <string name="designsystem_core_state_awaiting_reply">返信待ち</string>
     <string name="designsystem_core_state_working">作業中</string>
+    <string name="designsystem_core_state_background_waiting">バックグラウンドで待機中</string>
     <string name="designsystem_core_state_waiting">待機中</string>
     <string name="designsystem_core_state_muted">ミュート中</string>
     <string name="designsystem_core_state_idle">確認済み</string>

@@ -370,6 +370,7 @@
     <string name="settings_ready_cellular_test">蜂窝测试</string>
     <string name="settings_ready_skipped_item">%1$s：已跳过</string>
     <string name="settings_ready_skip_note">可以先跳过。未设置的项目可能影响锁屏后的通知和后台连接，之后可回到这里补。</string>
+    <string name="settings_ready_set_up_later">稍后设置</string>
     <string name="settings_ready_skip_rest">跳过未完成项</string>
     <string name="settings_cancel">取消</string>
     <string name="settings_done">完成</string>

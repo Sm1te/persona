@@ -143,8 +143,10 @@ function Updates({ d, manager, busy, market, canCheck, automatic, reason, onTogg
           {action && <Button tone="secondary" disabled={busy || checking || !canCheck} onClick={() => onUpgrade(u.market, u.rename_to || u.id)}>{action}</Button>}
         </Row>
       )}
+      {/* While the manager's master switch is off, the extension's own switch keeps its value but can't be flipped: it applies
+          again once the master switch is back on (#1828). */}
       <Row label={t("settings-extensions.auto_upgrade")}>
-        <Switch on={d.auto_upgrade ?? false} onChange={onToggle} disabled={busy || checking || !automatic || !!paused} label={t("settings-extensions.auto_upgrade")} describedBy={descriptionId} />
+        <Switch on={d.auto_upgrade ?? false} onChange={onToggle} disabled={busy || checking || !automatic || !!paused || globalAuto === false} label={t("settings-extensions.auto_upgrade")} describedBy={descriptionId} />
       </Row>
       <SettingsHint id={descriptionId} caution={globalAuto === false}>
         {globalAuto === false ? t("settings-extensions.global_upgrade_off") : footer}

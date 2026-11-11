@@ -42,7 +42,6 @@
     <string name="settings_pairing_next">下一步</string>
     <string name="settings_pairing_paste">粘贴链接</string>
     <string name="settings_pairing_back_to_scan">返回扫码配对</string>
-    <string name="settings_pairing_connect_title">连接你的 hub</string>
     <string name="settings_pairing_connect_body">装好 hub 时屏幕上会出二维码；也可以在已经连上的设备里打开 设置 › 设备 › 连接新设备，扫那里的码。</string>
     <string name="settings_pairing_scan">扫码配对</string>
     <string name="settings_pairing_connect_push">没有 Google 服务也能收通知：通知走手机和 hub 的常驻连接。</string>
@@ -203,7 +202,6 @@
     <string name="settings_engine_title">引擎</string>
     <string name="settings_engine_confirm">确认并继续</string>
     <string name="settings_engine_save">保存</string>
-    <string name="settings_engine_heading">这台电脑用哪个引擎</string>
     <string name="settings_engine_reading">正在读这台机器</string>
     <string name="settings_engine_demo">体验模式不能修改引擎。</string>
     <string name="settings_engine_later">配对已完成，稍后可以在 Agents 的机器监控里选择引擎。</string>
@@ -211,7 +209,6 @@
     <string name="settings_engine_missing_title">暂时读不到这台机器</string>
     <string name="settings_engine_retry">重试</string>
     <string name="settings_engine_continue">先继续</string>
-    <string name="settings_engine_must_choose">必须选一个引擎才能继续，检查网络后再点一次确认。</string>
     <string name="settings_engine_save_failed">保存失败：%1$s</string>
 
     <!-- Candidate addresses (Connection diagnostics) -->

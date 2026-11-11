@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  agentRoot, agentRow, codexThreadOf, backgroundOf, defaultProvider, interactionOf, launchersOf, linkedWorktree, parentAgentId, paseoMode,
-  providerRoots, responseOf, rowStatus, projectSpaces, sessionIdOf, slotNameOf, spaceIdOf, strayRecord, timelineItems, toolCall,
-  transcriptOf,
+  agentRoot, agentRow, archivedUnderOwnId, codexThreadOf, backgroundOf, defaultProvider, interactionOf, launchersOf, linkedWorktree,
+  parentAgentId, paseoMode, providerRoots, responseOf, rowStatus, projectSpaces, sessionIdOf, slotNameOf, spaceIdOf, strayRecord,
+  timelineItems, toolCall, transcriptOf,
 } from '../lib/map.js'
 import { agentSnapshot, entry } from './fake-paseo.js'
 
@@ -97,6 +97,28 @@ test('a row: its space, the agent the apps know, model, modes and transcript', (
   assert.equal(g.permission_mode, undefined, "a mode Persona does not have is not shown")
   assert.equal(g.last_text, '出错了：boom')
   assert.equal(agentRow(agentSnapshot({ provider: 'grok', archivedAt: '2026-01-01T00:00:00Z' }), { roots }), undefined)
+})
+
+test("an archived agent keeps its row when its id is not its transcript's: a session Persona started, not one of Paseo's own (#4771)", () => {
+  const roots = providerRoots(CONFIG)
+  const at = '2026-11-04T10:00:00.000Z'
+  const claude = (fields) => agentSnapshot({ provider: 'my-claude', cwd: '/w/proj', title: 'T', status: 'closed', archivedAt: at, updatedAt: at,
+    persistence: { provider: 'my-claude', sessionId: CLAUDE_SID, metadata: { provider: 'claude' } }, ...fields })
+  const started = claude({ id: 'a1', labels: { 'persona.session': 'paseo-a1' } })
+  assert.equal(archivedUnderOwnId(started, roots), true, 'started from Persona: paseo-<agent id>, its transcript another id')
+  assert.equal(archivedUnderOwnId(claude({}), roots), false, "started in Paseo: its id is its transcript's, which the node lists")
+  assert.equal(archivedUnderOwnId(claude({ labels: { 'persona.session': CLAUDE_SID } }), roots), false, 'taken over: the same id either way')
+  assert.equal(archivedUnderOwnId({ ...started, archivedAt: null }, roots), false, 'not archived: a row as any other')
+  assert.equal(archivedUnderOwnId(claude({ labels: { 'persona.session': 'paseo-a1', 'paseo.parent-agent-id': 'boss' } }), roots), false,
+    "another agent created it: its creator's conversation says what it did")
+  assert.equal(archivedUnderOwnId({ ...started, persistence: null }, roots), false, 'no transcript: nothing to read')
+  assert.equal(archivedUnderOwnId(agentSnapshot({ id: 'c1', provider: 'my-codex', archivedAt: at, labels: { 'persona.session': 'paseo-c1' } }), roots),
+    false, 'not Claude Code: no transcript the node reads')
+  // Its row: the session's own id, not running, its transcript the conversation.
+  const row = agentRow(started, { roots, project: { projectKey: 'prj', projectName: 'proj' }, archived: true })
+  assert.deepEqual([row.session_id, row.status, row.transcript, row.title, row.space_id, row.updated_at], ['paseo-a1', 'offline', CLAUDE_SID, 'T', 'prj', at])
+  assert.equal(agentRow({ ...started, status: 'idle' }, { roots, archived: true }).status, 'offline', 'whatever its record says')
+  assert.equal(agentRow(started, { roots }), undefined, 'without archived: no row, as before')
 })
 
 test("a delegated agent is its creator's subtask: its parent, no waiting to be looked at; the unfinished ones are the creator's background work", () => {

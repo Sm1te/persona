@@ -45,7 +45,8 @@ describe("the sidebar's grouping", () => {
   it("goes round the groupings", () => {
     expect(nextGrouping("todo")).toBe("machine");
     expect(nextGrouping("machine")).toBe("repo");
-    expect(nextGrouping("state")).toBe("todo");
+    expect(nextGrouping("state")).toBe("direction");
+    expect(nextGrouping("direction")).toBe("todo");
   });
   it("skips the ones a hub does not offer", () => {
     expect(nextGrouping("state", ["machine", "repo", "space", "state"])).toBe("machine");

@@ -722,15 +722,9 @@ struct TopFog: View {
         .accessibilityHidden(true)
     }
 
-    /// Opaque down to `start`, then out to clear over `length` (unit points) along a smoothstep curve: no kink where the
-    /// fade begins or ends for the eye to read as an edge.
+    /// Opaque down to `start`, then out to clear over `length` (unit points) along the eased curve the chat's footer fog
+    /// shares (`EasedFade`).
     private static func easedMask(from start: CGFloat, over length: CGFloat) -> LinearGradient {
-        let steps = 8
-        let stops = (0...steps).map { i -> Gradient.Stop in
-            let t = CGFloat(i) / CGFloat(steps)
-            let eased = t * t * (3 - 2 * t)
-            return .init(color: .black.opacity(1 - eased), location: min(1, start + length * t))
-        }
-        return LinearGradient(stops: [.init(color: .black, location: 0)] + stops, startPoint: .top, endPoint: .bottom)
+        LinearGradient(stops: EasedFade.stops(.black, from: start, over: length), startPoint: .top, endPoint: .bottom)
     }
 }

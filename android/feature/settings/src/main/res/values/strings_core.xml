@@ -371,6 +371,7 @@
     <string name="settings_ready_cellular_test">Cellular test</string>
     <string name="settings_ready_skipped_item">%1$s: skipped</string>
     <string name="settings_ready_skip_note">You can skip for now. Items not set up may affect notifications and the background connection after locking; come back here to finish them later.</string>
+    <string name="settings_ready_set_up_later">Set up later</string>
     <string name="settings_ready_skip_rest">Skip the rest</string>
     <string name="settings_cancel">Cancel</string>
     <string name="settings_done">Done</string>

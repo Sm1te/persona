@@ -640,9 +640,9 @@ func (s *Service) leaderReview(ctx context.Context, lead TodoAgent, args json.Ra
 		}
 		if verdict == reviewCancelled {
 			s.stopTaskAgents(ctx, t)
-			return fmt.Sprintf("Worker task %s is cancelled and closed; its agent is being closed and archived.", t.ID), nil
+			return fmt.Sprintf("Worker task %s is cancelled and closed; its agent is being stopped (its terminal stays) and archived.", t.ID), nil
 		}
-		return fmt.Sprintf("Worker task %s is accepted and closed; its agent is closed once it stays still.", t.ID), nil
+		return fmt.Sprintf("Worker task %s is accepted and closed; its agent is stopped once it stays still (its terminal stays).", t.ID), nil
 	case reviewNeedsUser:
 		why := cmp.Or(clip(oneLine(a.Reason), 200), clip(oneLine(note), 200))
 		if over && a.Reason == "" {

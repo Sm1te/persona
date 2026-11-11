@@ -630,6 +630,9 @@ func serveHTTP(ctx context.Context, s http.Handler, p assistantwire.HTTPRequest,
 	if p.ShareAuthority != nil {
 		ctx = devicewire.WithShareAuthority(ctx, *p.ShareAuthority)
 	}
+	if p.HandoffApprover != nil { // set by the hub only, never from a header (secret_handoff.go there)
+		ctx = assistantwire.WithHandoffApprover(ctx, *p.HandoffApprover)
+	}
 	r, err := http.NewRequestWithContext(ctx, p.Method, target, bytes.NewReader(p.Body))
 	if err != nil {
 		return assistantwire.HTTPResponse{}, &rpc.Error{Code: bus.CodeInvalidParams, Message: err.Error()}

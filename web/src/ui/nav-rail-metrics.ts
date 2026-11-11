@@ -5,6 +5,7 @@ export const NAV_RAIL_METRICS = {
   idleMs: 2000,
   pendingMs: 3000,
   width: 36,
+  edgeGap: 16,
   tickPitch: 10,
   tickWidth: 6,
   tickHeight: 1.5,

@@ -43,7 +43,7 @@ const panes: PanesResponse = {
   }],
 };
 const answers: Record<string, unknown> = {
-  "/api/v1/assistant": { machine_id: "hub", online: true, main: "main", conversations: [main, pinned] },
+  "/api/v1/assistant": { machine_id: "hub", online: true, main: "main", leaders: ["pinned"], conversations: [main, pinned] },
   "/api/v1/sessions": { sessions: [main, pinned, agent, lead, split] },
   "/api/v1/machines": { machines: [{ id: "hub", name: "Hub", online: true }, { id: "mac", name: "MacBook", online: true }] },
   "/api/v1/machines/mac/panes": panes,
@@ -127,7 +127,7 @@ describe("a sidebar row's ⋯", () => {
 
     await press(more(link("Release notes"))!);
     expect(menus()).toHaveLength(1);
-    expect(menus()[0].textContent).toContain(t("conversation-menu.unpin"));
+    expect(menus()[0].textContent).toContain(t("conversation-menu.end_leader"));
 
     act(() => void document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })));
     await flush();

@@ -25,7 +25,7 @@ extension MessageComment {
         return String(localized: "Comment \(number) [Message Comments]")
     }
 
-    var icon: String { element != nil ? Theme.Icon.pointer : code != nil ? Theme.Icon.code : Theme.Icon.quote }
+    var icon: String { element != nil ? Theme.Icon.pickElement : code != nil ? Theme.Icon.code : Theme.Icon.quote }
 
     /// Where it points: the file and its lines, the element and its page's path, or the picked words.
     var location: String {

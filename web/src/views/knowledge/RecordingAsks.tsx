@@ -4,7 +4,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, ApiError, enc, errorText } from "../../lib/api";
-import { isKind, recordingClock, type KBDetail, type RecordingAsk, type RecordingLive, type RecordingView } from "../../lib/kb";
+import { formatSpan, isKind, recordingClock, type KBDetail, type RecordingAsk, type RecordingLive, type RecordingView } from "../../lib/kb";
 import { href, onLinkClick, type Route } from "../../lib/router";
 import { useStore } from "../../lib/store";
 import { documentPage, visiblePoll } from "../../lib/visible-poll";
@@ -151,13 +151,14 @@ export function AskRow({ ask, startedAt }: { ask: RecordingAsk; startedAt?: stri
             <span>{t("knowledge-kbdetail.ask_sources")}</span>
             {sources.map((s) => {
               const to: Route = { name: "kb", kind: s.kind, id: s.id };
+              const when = formatSpan(s.start, s.end, s.when);
               // Each opens its knowledge entry (an earlier meeting, or a project).
               return (
                 <a key={`${s.kind}/${s.id}`} href={href(to)} onClick={(ev) => onLinkClick(ev, to)}
                   className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-field px-2 py-0.5 transition-colors hover:bg-hover">
                   <KBIcon name={isKind(s.kind) ? KIND_ICON[s.kind] : "book"} size={11} stroke={2} className="shrink-0" />
                   <span className="truncate font-medium text-accent-ink">{s.name || s.id}</span>
-                  {s.when && <span className="shrink-0 whitespace-nowrap tabular-nums">{s.when}</span>}
+                  {when && <span className="shrink-0 whitespace-nowrap tabular-nums">{when}</span>}
                 </a>
               );
             })}

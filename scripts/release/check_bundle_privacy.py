@@ -507,6 +507,11 @@ def main():
     inherent = [v for v in (persona_config.get(cfg, "app.bundle_id", ""), persona_config.get(cfg, "app.team_id", "")) if v]
     words, _ = pc.terms()
     words = [w for w in words if w not in inherent]
+    # Hermes stores the same pinned public resource as strings in the main executable, not as a .js file.
+    # Its longer JavaScript tokens use the resource's existing short-word boundary; every other binary stays strict.
+    hermes_public_js = not whole_short and os.path.isfile(os.path.join(root, "Persona")) and any(
+        verified_public_js(os.path.join(dirpath, filename), open(os.path.join(dirpath, filename), "rb").read())
+        for dirpath, _, filenames in os.walk(root) for filename in filenames)
     bad = []
     for dirpath, dirnames, files in os.walk(root):
         dirnames[:] = [d for d in dirnames if d != "_CodeSignature"]
@@ -518,7 +523,8 @@ def main():
             dependencies = go_dependencies(path) if whole_short else set()
             with open(path, "rb") as source:
                 data = source.read()
-            public_js = not whole_short and verified_public_js(path, data)
+            public_js = (not whole_short and verified_public_js(path, data)) or (
+                hermes_public_js and f == "Persona")
             # Reference bytes can spell a configured value too; only generic IP/email detection skips them.
             modes = (False, True) if data[:6] == b"bplist" or data[:3] == b"bvx" else (False,)
             for private_only in modes:

@@ -48,7 +48,7 @@ func (h *Hub) serveChoose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q, ok := askQuestion(ix)
-	if !ok {
+	if !ok || ix.ToolName == proto.SecretHandoffTool { // a hand-off card is approved on the card only (secret_handoff.go)
 		refuse(http.StatusBadRequest, "not_choosable")
 		return
 	}

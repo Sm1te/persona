@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Todo } from "../lib/todos";
 import type { Session } from "../lib/types";
+import { SESSIONS_LIST_FEATURE } from "../lib/session-list";
 
 vi.hoisted(() => {
   window.matchMedia = ((query: string) => ({
@@ -92,6 +93,107 @@ const openHandover = async () => {
 };
 
 describe("交给 Agent 对话框开着时", () => {
+  it("loads complete metadata on paging hubs instead of relying on the bounded summary list", async () => {
+    const closed = session("closed", "Paged closed agent", { status: "offline", state: "offline", source_kind: "claude_cli", capabilities: { send: true } });
+    seed({
+      loaded: true,
+      features: [SESSIONS_LIST_FEATURE],
+      sessionSummaries: [session("s1", "Only summary")],
+      todos: [{ ...todo, agents: [{ machine_id: "m1", session_id: "closed", linked_at: iso(1000) }] }],
+    });
+    api.mockImplementation(async (path: string) => path.startsWith("/sessions?")
+      ? { sessions: [closed], remove: [], has_more: false, total: 1, revision: "handover-1" }
+      : path.endsWith("/launchers") ? { launchers: [] } : {});
+    await openHandover();
+    expect(picked()).toContain("Paged closed agent");
+    expect(agentRow("Only summary")).toBeUndefined();
+    expect(api).toHaveBeenCalledWith("/sessions?summary=0&limit=200", expect.anything());
+  });
+
+  it("includes closed sendable agents only on online computers, preferring unreleased task agents", async () => {
+    seed({
+      todos: [{ ...todo, agents: [
+        { machine_id: "m1", session_id: "closed", linked_at: iso(1000) },
+        { machine_id: "m1", session_id: "released", linked_at: iso(2000), released_at: iso(1000) },
+      ] }],
+      machines: [{ id: "m1", name: "Online", online: true }, { id: "m2", name: "Offline", online: false }],
+      sessions: {
+        m1: [
+          session("old", "Older", { updated_at: iso(3000) }),
+          session("closed", "Closed task agent", { state: "offline", status: "offline", updated_at: iso(10000) }),
+          session("released", "Released", { updated_at: iso(2000) }),
+          session("recent", "Recent", { updated_at: iso(1000) }),
+          session("readonly", "Read only", { source_kind: "codex_history", capabilities: { read: true } }),
+          session("assistant", "Assistant", { assistant: true }),
+        ],
+        m2: [session("offline-host", "Offline host", { machine_id: "m2" })],
+      },
+    });
+    await openHandover();
+    const rows = [...dialog().querySelectorAll<HTMLElement>("div.cursor-pointer")];
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining("Closed task agent"),
+      expect.stringContaining("Recent"),
+      expect.stringContaining("Released"),
+      expect.stringContaining("Older"),
+    ]);
+    expect(picked()).toContain("Closed task agent");
+    expect(agentRow("Closed task agent")?.textContent).toContain("已关闭，发送后恢复");
+  });
+
+  it("keeps the user's selection and text when its process closes or another task agent arrives", async () => {
+    seed({ todos: [{ ...todo, agents: [{ machine_id: "m1", session_id: "linked", linked_at: iso(1000) }] }] });
+    await openHandover();
+    await click(agentRow("第二个 Agent"));
+    await typeInto(box(), "Keep this draft");
+    await act(async () => {
+      upsertSession(session("s2", "第二个 Agent", { status: "offline", state: "offline" }));
+      upsertSession(session("linked", "Linked later", { updated_at: iso(0) }));
+    });
+    await flush();
+    expect(picked()).toContain("第二个 Agent");
+    expect(box().value).toBe("Keep this draft");
+  });
+
+  it("falls back when the selected computer disconnects and clears a vanished selection", async () => {
+    seed({
+      machines: [{ id: "m1", name: "First", online: true }, { id: "m2", name: "Second", online: true }],
+      sessions: { m1: [session("s1", "First")], m2: [session("s2", "Second", { machine_id: "m2" })] },
+    });
+    await openHandover();
+    await typeInto(box(), "Keep this draft");
+    await act(async () => {
+      seed({ machines: [{ id: "m1", name: "First", online: false }, { id: "m2", name: "Second", online: true }] });
+      upsertSession(session("s2", "Second", { machine_id: "m2", status: "working" }));
+    });
+    await flush();
+    expect(picked()).toContain("Second");
+    expect(box().value).toBe("Keep this draft");
+    await act(async () => dropSession("m2", "s2"));
+    await flush();
+    expect(picked()).toBe("");
+    expect(dialog().textContent).toContain("在线电脑上暂无可用 Agent");
+  });
+
+  it("scopes the default and submission to the linked computer when session ids collide", async () => {
+    seed({
+      todos: [{ ...todo, agents: [{ machine_id: "m2", session_id: "same", linked_at: iso(1000) }] }],
+      machines: [{ id: "m1", name: "First", online: true }, { id: "m2", name: "Second", online: true }],
+      sessions: {
+        m1: [session("same", "Unrelated", { updated_at: iso(0) })],
+        m2: [session("same", "Linked closed", { machine_id: "m2", status: "offline", state: "offline" })],
+      },
+    });
+    await openHandover();
+    expect(picked()).toContain("Linked closed");
+    const send = [...dialog().querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("发送") && !b.disabled);
+    await click(send);
+    expect(api).toHaveBeenCalledWith("/sessions/m2/same/messages", expect.objectContaining({
+      method: "POST",
+      json: expect.objectContaining({ todo_id: "t1", client_msg_id: expect.any(String) }),
+    }));
+  });
+
   it("会话推送不清空输入、不改选中的 Agent", async () => {
     await openHandover();
     await click(agentRow("第二个 Agent"));

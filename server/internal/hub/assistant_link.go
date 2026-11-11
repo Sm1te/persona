@@ -82,6 +82,16 @@ func (h *Hub) assistantRoutesRelayed(api *http.ServeMux) {
 			by = h.byTodo
 		}
 		var relay http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) { h.forwardOwned(w, r, by) }
+		if pattern == "GET /api/v1/machines/{mid}/launchers/{name}/start-options" {
+			next := relay
+			relay = h.withMachine(func(w http.ResponseWriter, r *http.Request, m *Machine) {
+				if h.machineUntrusted(m.cfg.ID) {
+					writeErrCode(w, http.StatusConflict, "machine_pending", errors.New("Confirm this computer before starting a session."))
+					return
+				}
+				next(w, r)
+			})
+		}
 		if slices.Contains(storedTerminalTexts, pattern) {
 			relay = h.withoutTerminalControls(relay)
 		}
@@ -137,7 +147,8 @@ type assistantLink struct{ h *Hub }
 // "manager.json").
 func (l assistantLink) Hello(context.Context) (assistantwire.Hello, error) {
 	h := l.h
-	out := assistantwire.Hello{Locale: string(h.userLang())}
+	// SecretHandoffGate: this hub checks who approves a hand-off card (secret_handoff.go).
+	out := assistantwire.Hello{Locale: string(h.userLang()), SecretHandoffGate: true}
 	if m, ok := h.mutesEvent(); ok { // the hub's mutes, before the manager pushes anything (fleet_link.go)
 		out.Mutes = m.Mutes
 	}

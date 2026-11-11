@@ -560,6 +560,10 @@ func (h *Hub) fleetRoutesRelayed(api *http.ServeMux) {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
+		r, ok := h.handoffGate(w, r, r.PathValue("id"), res) // who may approve a hand-off card (secret_handoff.go)
+		if !ok {
+			return
+		}
 		if answerOnly(r) && (!answerMayResolve(res) || h.picksFreeText(r.PathValue("id"), res)) {
 			writeErr(w, http.StatusForbidden, errors.New("this device can only answer with a card's own choices"))
 			return

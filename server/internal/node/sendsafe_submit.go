@@ -85,7 +85,7 @@ func (n *Node) ensureSubmitted(ctx context.Context, pane, text string, typedAt t
 		}
 		confirm := submitWindow > 0 && watch.usable() // not a transcript that shrank: it tells nothing more (took)
 		in := screen.ClaudeInput(s)
-		stuck := err == nil && in.Box && in.Draft && (stillPrompted(in.Text, text) || longPaste(text) && pastePlaceholder.MatchString(in.Text))
+		stuck := err == nil && in.Box && in.Draft && pendingPrompt(in.Text, text)
 		switch {
 		case stuck && !entered:
 			if n.logger != nil {
@@ -231,7 +231,9 @@ type promptWatch struct {
 	rest []byte // the start of a line not written whole yet
 	want []rune // the prompt's words (echoWords)
 	seen bool
-	lost bool // the file shrank: written anew, its lines are no longer what came after the typing
+	// after filters rows when startup must attach after the transcript file appears; older matching prompts are not delivery.
+	after time.Time
+	lost  bool // the file shrank: written anew, its lines are no longer what came after the typing
 }
 
 // usable: the watch can still tell (not nil, its file not written anew).
@@ -300,11 +302,18 @@ const promptWords = 24
 func (w *promptWatch) isPrompt(line []byte) bool {
 	var e struct {
 		Type      string          `json:"type"`
+		Timestamp json.RawMessage `json:"timestamp"`
 		Operation string          `json:"operation"`
 		Content   json.RawMessage `json:"content"`
 	}
 	if json.Unmarshal(line, &e) != nil {
 		return false
+	}
+	if !w.after.IsZero() {
+		var at time.Time
+		if json.Unmarshal(e.Timestamp, &at) != nil || at.Before(w.after.Add(-time.Second)) {
+			return false
+		}
 	}
 	var words []rune
 	image := false
@@ -373,6 +382,14 @@ func longPaste(text string) bool {
 		return true
 	}
 	return strings.Count(t, "\n") >= 2 || len([]rune(t)) >= 800
+}
+
+// pendingPrompt matches our just-pasted input, including text hidden behind Claude's paste placeholder.
+// Callers must hold the input turn and stop checking once delivery is confirmed; a placeholder alone is not
+// ownership of an arbitrary draft. A short prompt cannot own a long-paste placeholder.
+func pendingPrompt(box, prompted string) bool {
+	return stillPrompted(box, prompted) || longPaste(prompted) && pastePlaceholder.MatchString(box) &&
+		strings.TrimSpace(boxChips.ReplaceAllString(box, "")) == ""
 }
 
 // stillPrompted: the input box shows the start of what was prompted. Claude turns an image path into an `[Image #n]`

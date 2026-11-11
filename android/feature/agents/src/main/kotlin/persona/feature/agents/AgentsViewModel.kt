@@ -627,6 +627,10 @@ internal class AgentsViewModel(
                 folded = current.folded - group.id + if (group.folded) emptySet() else setOf(group.id),
                 expandedIdle = if (group.folded) current.expandedIdle + TodoNoneOpened else current.expandedIdle - TodoNoneOpened,
             )
+            // By Status's Seen starts folded: opening it is kept ([StateSeenOpened]), folding it again forgets that.
+            else if (group.id == StateSeenGroup) current.copy(
+                folded = current.folded - group.id - StateSeenOpened + if (group.folded) setOf(StateSeenOpened) else emptySet(),
+            )
             else current.copy(folded = if (group.folded) current.folded - group.id else current.folded + group.id)
         }
         saveFolds()
@@ -638,7 +642,8 @@ internal class AgentsViewModel(
     fun foldAll(fold: Boolean) {
         previous = null
         settings.update { it.copy(
-            folded = if (fold) (page.value.list.groups.map { group -> group.id } + page.value.list.machines.map { machine -> machine.id }).toSet() else emptySet(),
+            folded = if (fold) (page.value.list.groups.map { group -> group.id } + page.value.list.machines.map { machine -> machine.id }).toSet()
+                else if (page.value.settings.grouping == AgentGrouping.State) setOf(StateSeenOpened) else emptySet(),
             expandedQuiet = if (fold) emptySet() else page.value.list.groups.filter { group -> group.parent == "quiet" }.map { group -> group.id }.toSet(),
         ) }
         saveFolds()
@@ -646,7 +651,6 @@ internal class AgentsViewModel(
     }
     fun showIdle(group: AgentListGroup) {
         val key = when {
-            group.id == "state/idle" -> "state-idle"
             group.id.startsWith("machine/") -> "machine-${group.id.removePrefix("machine/")}"
             else -> group.id
         }

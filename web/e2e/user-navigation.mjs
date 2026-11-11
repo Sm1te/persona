@@ -396,8 +396,24 @@ async function standard(browser, theme, size) {
       await page.waitForTimeout(2200);
       assert.ok(await page.locator(RAIL).evaluate((el) => Number(getComputedStyle(el).opacity) > 0.95), "Hover keeps the navigation visible");
       const style = await previewStyle(page, 3);
+      const profile = await page.locator(`${RAIL} button[data-tick]`).evaluateAll((buttons) => buttons.map((button) => {
+        const mark = button.querySelector("[data-nav-mark]");
+        return { index: Number(button.dataset.tick), current: button.getAttribute("aria-current") === "true", width: mark.getBoundingClientRect().width };
+      }));
+      const current = profile.find((mark) => mark.current);
+      assert.ok(current && Math.abs(current.index - 3) > 3, "The viewport-current input is distinct and well away from the hovered input");
+      for (const mark of profile) {
+        const distance = mark.index - 3;
+        const expected = 6 + (22 - 6) * Math.exp(-(distance * distance) / (2 * 1.5 * 1.5));
+        assert.ok(Math.abs(mark.width - expected) < 0.1, "Every mark, including aria-current, follows only the pointer-centered bell width");
+      }
+      assert.ok(current.width < 7, "The distant viewport-current mark has no independent expansion");
       await screenshot(page, run, "preview");
-      return style;
+      await page.evaluate(() => { document.documentElement.dataset.textSize = "large"; });
+      await preview(page, 3);
+      await screenshot(page, run, "preview-large-text");
+      await page.evaluate(() => { delete document.documentElement.dataset.textSize; });
+      return { style, hoveredInput: 4, currentInput: current.index + 1, currentWidth: current.width, pointerOnlyWidths: true };
     });
     await check(`${name}: rail/card hover ownership and immediate outside dismissal`, async () => {
       const card = await page.locator(PREVIEW).boundingBox();

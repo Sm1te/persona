@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -52,7 +53,8 @@ class AgentsHomeAffordancesTest {
 
     @Test fun groupingIsAMenuButtonAndQuickFiltersStayToggles() {
         showScreen()
-        val grouping = rule.onNodeWithText("Grouping: By repository")
+        // As iOS: the grouping's own name on the pill, which opens a Group By picker with the groupings only (#4338 A4).
+        val grouping = rule.onNodeWithText("By repository")
         grouping.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
             .assertHasClickAction()
@@ -61,7 +63,9 @@ class AgentsHomeAffordancesTest {
                 SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
         ).assertCountEquals(1)
         grouping.performClick()
+        rule.onNodeWithText("Group By").assertIsDisplayed()
         rule.onNodeWithText("By status").assertIsDisplayed()
+        rule.onAllNodesWithText("All machines").assertCountEquals(0) // the computers are behind ⋯, not in the picker
     }
 
     // #4338 A3, iOS's "Only <computer>": a chosen computer shows on the page, and a tap shows every computer again.
@@ -86,6 +90,29 @@ class AgentsHomeAffordancesTest {
         val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
         File("build/machine-filter-shots").also { it.mkdirs() }.resolve("only-machine-${if (dark) "dark" else "light"}.png")
             .outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    // With the home chrome, the rest of the list's settings (computers, range, sort, display) are behind ⋯ (#4338 A4).
+    @Test fun moreOpensTheRestOfTheListSettings() {
+        showScreen()
+        rule.onNodeWithContentDescription("List settings").performClick()
+        rule.onNodeWithText("All machines").assertIsDisplayed()
+        rule.onAllNodesWithText("By status").assertCountEquals(0)
+    }
+
+    @Test fun groupingLight() = shootGrouping(dark = false)
+    @Test fun groupingDark() = shootGrouping(dark = true)
+
+    private fun shootGrouping(dark: Boolean) {
+        showScreen(dark)
+        val out = File("build/grouping-shots").also { it.mkdirs() }
+        fun save(name: String) = rule.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
+            out.resolve("$name-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        save("pill")
+        rule.onNodeWithText("By repository").performClick()
+        rule.waitForIdle()
+        save("picker")
     }
 
     @Test fun requestHistoryKeepsItsNavigationAction() {

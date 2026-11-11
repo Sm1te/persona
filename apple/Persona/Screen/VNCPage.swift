@@ -187,7 +187,7 @@ struct VNCPage: View {
             Button { toPictureInPicture() } label: { Label("Picture in Picture", systemImage: Theme.Icon.pictureInPicture) }
             #endif
             #if DEBUG
-            if let s = session { Text(String(format: "%.0f 帧/秒", s.fps) + (s.latency.map { String(format: " · %.0f 毫秒", $0) } ?? "")) } // i18n-ignore
+            if let s = session { Text(String(format: "%.0f 帧/秒 · %.1f Mbit/s", s.fps, s.mbps) + (s.latency.map { String(format: " · %.0f 毫秒", $0) } ?? "")) } // i18n-ignore
             #endif
         } label: {
             barIcon(Theme.Icon.more)

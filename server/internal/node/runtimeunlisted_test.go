@@ -3,6 +3,7 @@ package node
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +99,66 @@ func TestRuntimeNamesItsUnlistedTranscripts(t *testing.T) {
 	freshOffline()
 	if _, ok := listed(t, n)[archived]; ok {
 		t.Fatal("a session of a runtime that stayed away is still listed")
+	}
+}
+
+// A session the runtime lists under an id of its own (Paseo's paseo-<agent id>: a session Persona started) keeps that
+// id once archived: the runtime lists it on, not running, naming its transcript, and does not name the transcript as
+// unlisted (#4771). Nothing new is asked of the node: the row is the conversation (the transcript's content, a send to
+// the runtime), and no row under the transcript's id is listed beside it: not when a list names the transcript as
+// well, nor while the runtime is away.
+func TestRuntimeArchivedSessionKeepsItsID(t *testing.T) {
+	const transcript = "5d510000-0000-4000-8000-0000000000a1"
+	t.Setenv("PERSONA_HOME", "")
+	n, _ := runtimeNode(t)
+	t.Cleanup(freshOffline)
+	writeClaudeRun(t, filepath.Join(n.home, ".claude", "projects", "-src-app"), transcript, time.Minute, "sdk-cli", "sdk-cli")
+	host := dialRuntime(t, n, paseoHello())
+	row := map[string]any{"session_id": "paseo-a1", "transcript": transcript, "agent": "claude", "title": "Fix the build",
+		"cwd": "/src/app", "status": "offline"}
+	push := func(unlisted ...string) { // the list as the bridge sends it once it has read the archive: [] for none
+		_ = host.peer.Notify("runtime.sessions", map[string]any{"sessions": []map[string]any{row}, "unlisted_transcripts": append([]string{}, unlisted...)})
+	}
+	push()
+	waitFor(t, "listed under its own id", func() bool { return listed(t, n)["paseo-a1"].Status == proto.StatusOffline })
+	freshOffline()
+	got := listed(t, n)
+	if s := got["paseo-a1"]; s.SourceKind != proto.SourceRuntime || s.Title != "Fix the build" || s.LastText != "done" {
+		t.Fatalf("listed as %+v", s)
+	}
+	if _, twice := got[transcript]; twice {
+		t.Fatal("the conversation is listed under its transcript's id too")
+	}
+	raw, err := nodeCall(t, n, "session.items", map[string]any{"session_id": "paseo-a1", "limit": 20})
+	if err != nil || !strings.Contains(string(raw), `"summarize the diff"`) || len(host.got("session.items")) != 0 {
+		t.Fatalf("its content, from the transcript: %s %v (the runtime asked %d times)", raw, err, len(host.got("session.items")))
+	}
+	// A message goes to the runtime as a message to that session (it continues it under the same id), not as a
+	// session to take over.
+	if _, err := nodeCall(t, n, "session.send", map[string]any{"session_id": "paseo-a1", "text": "go on", "client_msg_id": "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.got("session.send")) != 1 || len(host.got("session.start")) != 0 {
+		t.Fatalf("sent %d, started %d", len(host.got("session.send")), len(host.got("session.start")))
+	}
+
+	// A list that names the transcript as well: the row that names it is the conversation.
+	push(transcript)
+	waitFor(t, "named", func() bool { return n.runtimes.unlistedTranscripts()[transcript] })
+	freshOffline()
+	if got := listed(t, n); got["paseo-a1"].Status != proto.StatusOffline || got[transcript].SessionID != "" {
+		t.Fatalf("listed %q and %q", got["paseo-a1"].Status, got[transcript].Status)
+	}
+
+	// The runtime away (its bridge restarting) after a list that names none: its row goes with it, and the transcript
+	// is not listed under its own id meanwhile.
+	push()
+	waitFor(t, "named no more", func() bool { return n.runtimes.unlistedTranscripts() == nil })
+	host.conn.Close()
+	waitFor(t, "the runtime left", func() bool { _, there := listed(t, n)["paseo-a1"]; return !there })
+	freshOffline()
+	if _, ok := listed(t, n)[transcript]; ok {
+		t.Fatal("the conversation is listed under its transcript's id while the runtime is away")
 	}
 }
 

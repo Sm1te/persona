@@ -1,4 +1,5 @@
-// The site is static files, except /relay/* and the downloads /dl/*.gz.
+// The site is static files, except /relay/*, the downloads /dl/*.gz and the extension catalog /extensions/catalog.json
+// with its icons /extensions/icons/<id> (extensions.mjs).
 //
 // /dl/*.gz (the public personad, docs/operations/release.md "Publishing personad") come from the R2 bucket bound as DL: a Workers static
 // file is at most 25 MiB and personad outgrew it (#2541). publish.sh uploads a release's files to one of two slots,
@@ -19,6 +20,8 @@
 // hostname, so cf-connecting-ip is the entry's address. The entry sends the client's address in X-Forwarded-For and
 // proves itself with x-persona-edge-secret, the Worker secret EDGE_SECRET (`npx wrangler secret put EDGE_SECRET`);
 // only then is X-Forwarded-For believed.
+import { serveCatalog, serveIcon } from "./extensions.mjs";
+
 function clientAddress(request, env) {
   const own = request.headers.get("cf-connecting-ip") || "";
   const proof = request.headers.get("x-persona-edge-secret");
@@ -98,9 +101,14 @@ async function serveDownload(request, env, name, version) {
   return new Response(object.body, { status: 200, headers });
 }
 
+const extensionIcon = /^\/extensions\/icons\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/extensions/catalog.json") return serveCatalog(request, env, ctx);
+    const icon = extensionIcon.exec(url.pathname);
+    if (icon) return serveIcon(request, env, ctx, icon[1]);
     const dl = download.exec(url.pathname);
     if (dl) return serveDownload(request, env, dl[1]);
     const kept = versioned.exec(url.pathname);

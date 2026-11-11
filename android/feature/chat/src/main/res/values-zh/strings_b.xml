@@ -39,6 +39,8 @@
     <string name="chat_chrome_status_unconfirmed">待核对</string>
     <string name="chat_chrome_status_needs_you">等你处理</string>
     <string name="chat_chrome_status_stopping">中断中</string>
+    <string name="chat_chrome_worked_minutes">%1$d 分</string>
+    <string name="chat_chrome_worked_hours">%1$d 小时 %2$d 分</string>
     <string name="chat_chrome_more">更多操作</string>
     <string name="chat_chrome_actions_title">会话操作</string>
     <string name="chat_chrome_todo">待办 · %1$s</string>
@@ -441,4 +443,11 @@
     <string name="chat_doc_rtf">RTF 文档</string>
     <string name="chat_doc_pdf">PDF 文档</string>
     <string name="chat_doc_other">文档</string>
+    <string name="chat_turn_fix_not_logged_in">模型没接好：Claude Code 没登录</string>
+    <string name="chat_turn_fix_not_logged_in_detail">在那台电脑上登录一次，或者改用 API Key。</string>
+    <string name="chat_turn_fix_auth_failed">模型没接好：Key 不对</string>
+    <string name="chat_turn_fix_auth_failed_detail">Key 不对或过期了，换一个能用的。</string>
+    <string name="chat_turn_fix_model_route">模型没接好：这个模型用不了</string>
+    <string name="chat_turn_fix_model_route_detail">模型名不对，或者这个模型现在用不了，换一个试试。</string>
+    <string name="chat_turn_fix_action">去修</string>
 </resources>

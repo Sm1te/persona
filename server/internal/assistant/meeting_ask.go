@@ -722,7 +722,7 @@ func answerSources(m kb.MeetingMaterial, named []json.RawMessage) []kb.AskSource
 		}
 		for _, em := range m.Earlier {
 			if strings.EqualFold(em.ID, ref) {
-				add(kb.AskSource{Kind: kb.KindRecording, ID: em.ID, Name: em.Name, When: em.When})
+				add(kb.AskSource{Kind: kb.KindRecording, ID: em.ID, Name: em.Name, When: em.When, Start: em.Start, End: em.End})
 			}
 			for _, p := range em.Projects {
 				if p.Slug == ref {

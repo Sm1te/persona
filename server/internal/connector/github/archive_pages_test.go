@@ -28,6 +28,8 @@ func fakeLongThread(t *testing.T, comments, reviews, inline int) (*Connector, *a
 	if reviews+inline > 0 {
 		pr = `,"pull_request":{}`
 	}
+	item := `{"number":%d,"title":"Long thread","user":{"login":"alice"},"body":"Many replies","created_at":"` + fixtureAt(dayBefore+7*time.Hour) + `",
+		"repository_url":"https://api.github.com/repos/example-org/example-repo","updated_at":"%s"%s}`
 	list := func(w http.ResponseWriter, r *http.Request, n, offset int, item string) {
 		q := r.URL.Query()
 		per, _ := strconv.Atoi(q.Get("per_page"))
@@ -50,10 +52,10 @@ func fakeLongThread(t *testing.T, comments, reviews, inline int) (*Connector, *a
 		case p == "/user":
 			_, _ = w.Write([]byte(`{"login":"me"}`))
 		case p == "/search/issues":
-			item := `{"number":%d,"title":"Long thread","user":{"login":"alice"},"body":"Many replies","created_at":"` + fixtureAt(dayBefore+7*time.Hour) + `",
-				"repository_url":"https://api.github.com/repos/example-org/example-repo","updated_at":"%s"%s}`
 			_, _ = fmt.Fprintf(w, `{"total_count":2,"items":[%s,%s]}`, fmt.Sprintf(item, 6, fixtureAt(9*time.Hour), ""),
 				fmt.Sprintf(item, 7, fixtureAt(10*time.Hour), pr))
+		case p == "/repos/example-org/example-repo/issues/7":
+			_, _ = fmt.Fprintf(w, item, 7, fixtureAt(10*time.Hour), pr)
 		case p == "/repos/example-org/example-repo/issues/6/comments":
 			_, _ = w.Write([]byte(`[]`))
 		case p == "/repos/example-org/example-repo/issues/7/comments":

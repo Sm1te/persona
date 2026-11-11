@@ -319,6 +319,7 @@ fun JTopBar(
     LocalHomeChrome.current?.takeIf { onBack == null }?.let { home ->
         CompositionLocalProvider(LocalIconsRaised provides true) {
             HomeNavigation(home.items, home.selected, home.onSelect, home.leading,
+                modifier = home.barHeight?.let { height -> Modifier.onSizeChanged { height.intValue = it.height } } ?: Modifier,
                 trailing = actions, onSelectedMenu = onTitleClick)
         }
         return
@@ -327,7 +328,7 @@ fun JTopBar(
     val style = PersonaTheme.style
     val leading: @Composable () -> Unit = {
         when {
-            onBack != null -> JIconButton(if (style == AppStyle.Glass) PhIcons.CaretLeft else PhIcons.ArrowLeft, stringResource(R.string.designsystem_back), onBack)
+            onBack != null -> JBackButton(onClick = onBack)
             else -> LocalRootLeading.current?.invoke()
         }
     }
@@ -378,6 +379,13 @@ fun JTopBar(
 /** Icon buttons in a glass bar that is not drawn yet float as glass circles of their own. */
 val LocalIconsRaised = compositionLocalOf { false }
 
+@Composable
+fun JBackButton(enabled: Boolean = true, onClick: () -> Unit) {
+    val icon = if (PersonaTheme.style == AppStyle.Glass) PhIcons.CaretLeft else PhIcons.ArrowLeft
+    JIconButton(icon, stringResource(R.string.designsystem_back), onClick,
+        enabled = enabled, raised = enabled && LocalIconsRaised.current)
+}
+
 /**
  * A root or list page whose content is a lazy list. Glass and brief show a large title that scrolls away and
  * hands over to the bar; the board keeps a compact title. [summary] is Persona speaking about the page (brief
@@ -401,6 +409,8 @@ fun JListPage(
     onRefresh: (() -> Unit)? = null,
     largeTitle: Boolean = onBack == null,
     bottomBar: (@Composable () -> Unit)? = null,
+    /** False when the list should stop above the bottom inset instead of drawing a scroll edge over it. */
+    scrollUnderBottom: Boolean = true,
     content: LazyListScope.() -> Unit,
 ) {
     val style = PersonaTheme.style
@@ -411,13 +421,17 @@ fun JListPage(
         modifier, ambience,
         topBar = { JTopBar(title, barSubtitle.takeIf { collapsed }, onBack ?: LocalRootBack.current, actions, titleBusy, onTitleClick, showTitle = collapsed) },
         bottomBar = bottomBar,
-        underTop = { state.canScrollBackward }, underBottom = { state.canScrollForward },
+        underTop = { state.canScrollBackward },
+        underBottom = { scrollUnderBottom && state.canScrollForward },
     ) { padding ->
         val pad = pagePadding
+        val bottom = padding.calculateBottomPadding()
+        val viewport = if (scrollUnderBottom) Modifier.fillMaxSize() else Modifier.fillMaxSize().padding(bottom = bottom)
         val list: @Composable () -> Unit = {
             LazyColumn(
-                Modifier.fillMaxSize(), state,
-                contentPadding = PaddingValues(start = pad, end = pad, top = padding.calculateTopPadding() + 4.dp, bottom = padding.calculateBottomPadding() + 24.dp),
+                viewport, state,
+                contentPadding = PaddingValues(start = pad, end = pad, top = padding.calculateTopPadding() + 4.dp,
+                    bottom = if (scrollUnderBottom) bottom + Tokens.Space.section else Tokens.Space.section),
             ) {
                 if (large) item("page-title", contentType = "page-title") { PageTitle(title, subtitle, summary, greet, titleBusy, onTitleClick) }
                 content()

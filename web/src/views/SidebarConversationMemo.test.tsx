@@ -39,7 +39,7 @@ const agent: Session = { machine_id: "mac", session_id: "agent", title: "Build",
 // an agent on the assistant's own machine: its pushes carry that machine's whole list, the conversations too
 const hubAgent: Session = { machine_id: "hub", session_id: "hub-agent", title: "Deploy", cwd: "/srv", status: "working", state: "working" };
 const answers: Record<string, unknown> = {
-  "/api/v1/assistant": { machine_id: "hub", online: true, main: "main", conversations: [main, pinned, recent] },
+  "/api/v1/assistant": { machine_id: "hub", online: true, main: "main", leaders: ["pinned", "recent"], conversations: [main, pinned, recent] },
   "/api/v1/sessions": { sessions: [main, pinned, recent, agent, hubAgent] },
   "/api/v1/machines": { machines: [{ id: "hub", name: "Hub", online: true }, { id: "mac", name: "MacBook", online: true }] },
 };
@@ -190,7 +190,7 @@ describe("the Persona conversation rows", () => {
     act(() => more().click());
     await flush();
     expect(menu()?.textContent).toContain(t("conversation-menu.copy_id"));
-    expect(menu()?.textContent).not.toContain(t("conversation-menu.pin"));
+    expect(menu()?.textContent).not.toContain(t("conversation-menu.make_leader"));
     expect(menu()?.textContent).toContain(t("conversation-menu.end"));
     await close();
 
@@ -208,7 +208,7 @@ describe("the Persona conversation rows", () => {
     // a right click on the pinned row: that conversation's menu (pinned), as it is now
     act(() => row("pinned").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })));
     await flush();
-    expect(menu()?.textContent).toContain(t("conversation-menu.unpin"));
+    expect(menu()?.textContent).toContain(t("conversation-menu.end_leader"));
     expect(menu()?.textContent).toContain(t("conversation-menu.rename"));
     expect(menu()?.textContent).not.toContain(t("conversation-menu.end"));
   });

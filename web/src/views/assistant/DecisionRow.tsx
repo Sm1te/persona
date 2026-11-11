@@ -4,7 +4,7 @@
 // "Other…", which opens the task to answer in words. The answers that are no option — "You decide", "This isn't what I
 // asked for", "Tell me the background first" — and the options that do not fit the row are in its ⋯ menu. Every answer
 // goes through POST /todos/{id}/accept (lib/feed acceptBrief), as the recommendation's OK always did.
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../../i18n";
 import { errorText } from "../../lib/api";
 import { acceptBrief, type AskAnswer } from "../../lib/feed";
@@ -86,20 +86,23 @@ function useFitting(count: number, round: string) {
   return { row, fit: Math.min(fit, count) };
 }
 
-export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "title">; ask: TodoAsk; rowKey: string }) {
+export function DecisionRow({ todo, ask, rowKey, admission, onBusyChange, blocked = false, footer }: { todo: Pick<Todo, "id" | "title">; ask: TodoAsk; rowKey: string; admission?: { current: boolean }; onBusyChange?: (busy: boolean) => void; blocked?: boolean; footer?: ReactNode }) {
   const options = askOptions(ask);
   const responses = askResponses(ask);
   const [answering, setAnswering] = useState<Answering>({ state: "idle" });
   // Admit one answer synchronously, before React disables the other buttons.
-  const admitted = useRef(false);
+  const ownAdmission = useRef(false);
+  const admitted = admission ?? ownAdmission;
   const menu = useMenu();
   const { row, fit } = useFitting(options.length, ask.asked_at);
   const busy = answering.state === "busy";
+  const disabled = busy || blocked;
   const open = () => openPanel({ kind: "task", todo: todo.id });
 
   const answer = (key: string, body: AskAnswer, done: string) => {
     if (admitted.current || answering.state !== "idle") return;
     admitted.current = true;
+    onBusyChange?.(true);
     setAnswering({ state: "busy", key });
     acceptBrief(todo.id, ask.asked_at, body).then(
       (res) => {
@@ -108,6 +111,7 @@ export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "ti
       },
       (e) => {
         admitted.current = false;
+        onBusyChange?.(false);
         setAnswering({ state: "idle" });
         toast(t("assistant-decisionrow.failed", { error: errorText(e) }), "error");
       },
@@ -134,9 +138,12 @@ export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "ti
 
   return (
     <div data-needs-row={rowKey} data-decision-row={ask.why_owner || ""} className="flex min-w-0 flex-col gap-1.5 rounded-control bg-field px-3 py-2.5">
-      <button type="button" onClick={open} className="block max-w-full truncate text-left text-[12px] text-ink-2 hover:underline" title={t("assistant-brief.open_row", { title: todo.title })}>
-        {todo.title}
-      </button>
+      <div className="flex min-w-0 items-center gap-2">
+        <button type="button" onClick={open} className="block min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 hover:underline" title={t("assistant-brief.open_row", { title: todo.title })}>
+          {todo.title}
+        </button>
+        <span className="shrink-0 text-xs text-ink-2">{t("assistant-tasks.review_needs_user")}</span>
+      </div>
       <p data-decision-question className="text-[13.5px] font-medium select-text [overflow-wrap:anywhere]">
         {question}
       </p>
@@ -166,6 +173,7 @@ export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "ti
           {t("assistant-decisionrow.responded")}
         </p>
       )}
+      <div className={footer ? "sticky -bottom-2.5 bg-field" : undefined}>
       {answering.state === "done" ? (
         <p data-decision-done className="truncate text-[12.5px] text-ink-2" title={answering.text}>
           {answering.text}
@@ -178,7 +186,7 @@ export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "ti
               key={i}
               tone={i === 0 ? "primary" : "secondary"}
               busy={busy && answering.key === `option:${i}`}
-              disabled={busy}
+              disabled={disabled}
               title={i === 0 ? t("assistant-decisionrow.choose_recommended", { option: o.label, title: todo.title }) : t("assistant-decisionrow.choose", { option: o.label, title: todo.title })}
               onClick={() => choose(o, i)}
               // alone and still wider than the row, the button gives way and cuts its label; it never wraps
@@ -190,17 +198,19 @@ export function DecisionRow({ todo, ask, rowKey }: { todo: Pick<Todo, "id" | "ti
             </Button>
           ))}
           <span data-decision-tail className="flex shrink-0">
-            <Button tone="quiet" disabled={busy} title={t("assistant-decisionrow.another_row", { title: todo.title })} onClick={open}>
+            <Button tone="quiet" disabled={disabled} title={t("assistant-decisionrow.another_row", { title: todo.title })} onClick={open}>
               {t("assistant-decisionrow.another")}
             </Button>
           </span>
           {items.length > 0 && (
             <span data-decision-tail className="flex shrink-0">
-              <IconButton icon="more" label={t("assistant-decisionrow.more")} onClick={menu.open} active={Boolean(menu.anchor)} disabled={busy} size={32} />
+              <IconButton icon="more" label={t("assistant-decisionrow.more")} onClick={menu.open} active={Boolean(menu.anchor)} disabled={disabled} size={32} />
             </span>
           )}
         </div>
       )}
+      {footer}
+      </div>
       {menu.anchor && <Menu anchor={menu.anchor} onClose={menu.close} side="top" align="right" width={264} items={items} />}
     </div>
   );

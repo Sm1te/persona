@@ -810,12 +810,15 @@ func (s *Service) expireLoop(ctx context.Context) {
 }
 
 // errReservedCard: a card from a node (a hook, a runtime, a daemon, a Codex list) or an extension may not pass for the
-// password card: only the assistant's secret_run tool makes one (secret_run.go), and the clients show it as that card,
-// with no Agent's name on it.
-var errReservedCard = errors.New("the tool name " + proto.SecretRunTool + " is reserved for the assistant's password card")
+// password card or the hand-off card: only the assistant's secret_run tool makes the one (secret_run.go) and only the
+// manager's Agent start the other, and the clients show them as those cards, the password card with no Agent's name on it.
+var errReservedCard = errors.New("the tool names " + proto.SecretRunTool + " and " + proto.SecretHandoffTool +
+	" are reserved for the manager's password and hand-off cards")
 
-// reservedCard: ix calls itself the password card.
-func reservedCard(ix proto.Interaction) bool { return ix.ToolName == proto.SecretRunTool }
+// reservedCard: ix calls itself the password card or the hand-off card.
+func reservedCard(ix proto.Interaction) bool {
+	return ix.ToolName == proto.SecretRunTool || ix.ToolName == proto.SecretHandoffTool
+}
 
 // askHub is fleet.ask: a card one of the hub's own features asks (a mail send, Cua's apps, persona_settings),
 // waited for like a hook's.

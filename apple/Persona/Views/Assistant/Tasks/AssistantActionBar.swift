@@ -360,7 +360,7 @@ struct AssistantActionBar: View {
             HStack(spacing: Theme.Space.s) {
                 ForEach(ActionTray.allCases) { entry($0, count: content.count($0)) }
                 if ComputerActivityPill.shows(computer) {
-                    ComputerActivityPill(activity: computer)
+                    ComputerActivityPill(activity: computer).background(Theme.pageBackground, in: .capsule) // as the entries
                 }
             }
             .padding(.horizontal, Theme.Space.xs)
@@ -369,13 +369,7 @@ struct AssistantActionBar: View {
             #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        #if !os(macOS)
-        // On the whole bar, after its full-width frame (#3643): as wide as the chat, and over whatever is topmost, the
-        // capsules or the open tray. On the capsule row it was as wide as the capsules and under the tray.
-        .dockChatFade()
-        // Drawn under the question and the @ list over it in the footer, so the fade reaches only the chat.
-        .zIndex(-1)
-        #endif
+        // No fade of its own: the chat runs on behind the bar and fades out there (`FooterFog`, #3696).
         .onChange(of: conversation) { open = nil }
         #if DEBUG
         .onAppear {
@@ -431,6 +425,9 @@ struct AssistantActionBar: View {
                 if count > 0 { Text(count > 99 ? "99+" : "\(count)").monospacedDigit() }
             }
             .dockCapsule(look)
+            // On the page under its see-through fill: the chat fading out behind the row does not read through the
+            // words (#3696); with nothing behind, the same pixels as before.
+            .background(Theme.pageBackground, in: .capsule)
             .fixedSize()
         }
         .buttonStyle(.plain)

@@ -822,7 +822,7 @@ func TestHerdrRenames(t *testing.T) {
 	assertTrace(t, f.trace(), nil)
 }
 
-// markTab is the call that marks a tab the node opened for session id as Persona's (shelltabs.go).
+// markTab is the call that marks a tab the node opened for session id as Persona's (personatab.go).
 func markTab(pane, id string) string {
 	return call("pane.report_metadata", map[string]any{"pane_id": pane, "source": "persona", "tokens": map[string]any{personaTabToken: id}})
 }

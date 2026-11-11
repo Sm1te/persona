@@ -2,23 +2,12 @@ import SwiftUI
 
 #if os(iOS)
 /// Settings › Appearance › Layout (#2530): how the Agents list draws its agents, each choice showing two agents as the
-/// list would draw them.
+/// list would draw them. Every grouping draws them so, By Repository too (#3753).
 struct LayoutSettingsPage: View {
     private let choice = AgentListDisplayChoice()
-    /// The Agents list's grouping: By Repository draws its own tree, one line per agent, whatever is chosen here (#3182).
-    @StoredValue("dev.grouping") private var grouping: DevGrouping = .standard
 
     var body: some View {
         SettingsForm {
-            if grouping == .repo {
-                // Said first: picked under By Repository, a style changed nothing on screen and the footer below the
-                // previews went unseen (2026-11-10).
-                Section {
-                    Label("The Agents list is grouped By Repository: its tree keeps one line per agent. These styles show in the other groupings.", systemImage: Theme.Icon.info)
-                        .font(Theme.Font.secondary).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("layout-repo-note")
-                }
-            }
             Section {
                 ForEach(AgentListDisplay.allCases) { display in
                     Button { choice.display = display } label: {
@@ -31,13 +20,8 @@ struct LayoutSettingsPage: View {
             } header: {
                 Text("Agents List [Layout]")
             } footer: {
-                if grouping == .repo {
-                    // Said at the top already, and the BeautifulUI style's capsules are not the tree's either.
-                    EmptyView()
-                } else if AppStyle.current.usesBeautifulUI {
+                if AppStyle.current.usesBeautifulUI {
                     Text("The BeautifulUI style draws its agents as its own capsules; this choice shows in the other styles and in Compact List.")
-                } else {
-                    Text("By Repository keeps its own tree of worktrees and agents.")
                 }
             }
         }

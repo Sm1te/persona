@@ -136,11 +136,17 @@ describe("navRailMark", () => {
     expect(previous.opacity).toBeLessThan(0.42);
   });
 
-  it("moves the bell with hover while preserving the viewport owner's marker", () => {
+  it("moves the bell with hover without independently widening the viewport owner's marker", () => {
     const hover = navRailMark(8, 25, 12, 8);
     expect(hover.state).toBe("hover");
     expect(hover.width).toBe(M.hoverWidth);
-    expect(navRailMark(12, 25, 12, 8).width).toBeGreaterThanOrEqual(M.currentWidth);
+    for (const current of [0, 7, 9, 12, 24]) {
+      const mark = navRailMark(current, 25, current, 8);
+      expect(mark.state).toBe("current");
+      expect(mark.opacity).toBe(1);
+      expect(mark.width).toBe(navRailMark(current, 25, null, 8).width);
+    }
+    expect(navRailMark(24, 25, 24, 8).width).toBeCloseTo(M.tickWidth);
     expect(navRailMark(12, 25, 12, 12).width).toBe(M.currentHoverWidth);
     expect(navRailMark(12, 25, 12, 12).height).toBeGreaterThan(M.currentHeight);
   });

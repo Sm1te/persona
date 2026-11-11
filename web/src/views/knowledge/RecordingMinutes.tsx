@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, ApiError, enc, errorText } from "../../lib/api";
-import { minutesKeptUntil, recordingClock, transcriptTarget, type KBDetail, type MinutesPoint, type RecordingView } from "../../lib/kb";
+import { formatSpan, minutesKeptUntil, recordingClock, transcriptTarget, type KBDetail, type MinutesPoint, type RecordingView } from "../../lib/kb";
 import { documentPage, visiblePoll } from "../../lib/visible-poll";
 import { Button, copyText, toast } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
@@ -146,7 +146,7 @@ export function RecordingMinutes({ detail, rec, auth, current, refresh, onSaved,
         <div className="px-4 py-3.5">
           <h3 className="break-words text-[14px] font-semibold leading-relaxed text-ink">{minutes.title}</h3>
           <div className="mt-1.5 space-y-1 break-words text-[12.5px] leading-relaxed text-ink-2">
-            {minutes.when && <p>{minutes.when}</p>}
+            {(minutes.start || minutes.when) && <p data-minutes-when>{formatSpan(minutes.start, minutes.end, minutes.when)}</p>}
             {minutes.where && <p>{t("knowledge-kbdetail.minutes_where", { where: minutes.where })}</p>}
             {!!minutes.attendees?.length && <p>{t("knowledge-kbdetail.minutes_attendees", { attendees: minutes.attendees.join(" · ") })}</p>}
           </div>

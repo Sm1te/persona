@@ -177,6 +177,20 @@ export function parentAgentId(agent) {
 }
 
 /**
+ * Whether an agent archived in Paseo stays a row of its own, not running (#4771): one of the user's own that ran Claude
+ * Code, whose session id is not its transcript's: one Persona started (paseo-<agent id>) or took over, which keeps
+ * its id on the persona.session label. Named to the node as a transcript (unlisted_transcripts) it would come back
+ * under the transcript's id, and what Persona keeps under the session's own (a to-do's link, a pin, an archive mark)
+ * would be left behind. An agent whose id is its transcript's (one started in Paseo itself) is named as before.
+ */
+export function archivedUnderOwnId(agent, roots = {}) {
+  if (!agent?.archivedAt || parentAgentId(agent)) return false
+  const transcript = transcriptOf(agent, roots)
+  const id = sessionIdOf(agent, roots)
+  return Boolean(transcript && id && id !== transcript)
+}
+
+/**
  * A session row's status for an agent: needing you while a request waits, working, "Offline" when closed. Stopped (idle,
  * or a turn that failed): done while Paseo says it waits for you to look at it (requiresAttention, cleared once you
  * open it in Paseo), idle — seen — once it does not (#2831), as herdr's done / idle carry herdr's own seen state.
@@ -292,17 +306,18 @@ export function projectSpaces(placed, canon = (p) => p) {
  * @param {object} agent - an AgentSnapshotPayload
  * @param {{ project?: object, roots?: Record<string, string>, labels?: Record<string, string>, lastText?: string,
  *   spaceId?: string, spaceName?: string, parent?: string, quiet?: boolean, fleet?: object[],
- *   canon?: (path: string) => string }} [o]
+ *   canon?: (path: string) => string, archived?: boolean }} [o]
  *   project: its ProjectPlacement; labels: provider id → its label (the name of a provider the apps do not know);
  *   spaceId, spaceName: its project space and that space's name (projectSpaces); parent: the session of the agent that
  *   created it, when that one is listed beside it; quiet: Paseo shows what it did on no workspace (rowStatus); fleet:
  *   the agents it created that have not finished (the bridge knows all three); canon: a path as its physical
- *   directory (the bridge resolves symbolic links).
+ *   directory (the bridge resolves symbolic links); archived: an agent archived in Paseo that is listed all the same
+ *   (archivedUnderOwnId): not running, whatever its record says. Without it an archived agent has no row.
  */
 export function agentRow(agent, o = {}) {
   const roots = o.roots ?? {}
   const id = sessionIdOf(agent, roots)
-  if (!id || agent?.archivedAt) return undefined
+  if (!id || (agent?.archivedAt && !o.archived)) return undefined
   const root = agentRoot(agent, roots)
   const cwd = typeof agent.cwd === 'string' ? agent.cwd : ''
   const p = o.project
@@ -311,7 +326,7 @@ export function agentRow(agent, o = {}) {
     session_id: id,
     title: (typeof agent.title === 'string' && agent.title.trim()) || basename(cwd),
     cwd,
-    status: rowStatus(agent, { quiet: o.quiet, fleet: (o.fleet?.length ?? 0) > 0 }),
+    status: o.archived ? 'offline' : rowStatus(agent, { quiet: o.quiet, fleet: (o.fleet?.length ?? 0) > 0 }),
     updated_at: new Date(Date.parse(agent.updatedAt) || Date.now()).toISOString(),
     rev: Date.parse(agent.updatedAt) || 0,
     space_id: space ?? (agent.workspaceId || cwd),

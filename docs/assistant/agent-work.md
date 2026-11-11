@@ -186,7 +186,7 @@ An Agent still linked to a completed to-do, with no open to-do linked to it, rec
 wakeup or triage card. Triage can record its work state, but checks the current to-do links before acting; pending
 wakes are checked again before sending. Released and dismissed links do not count. A later manual message is allowed;
 to resume follow-ups while keeping the completed link, reopen the to-do or link the Agent to an open to-do (see
-`docs/assistant/todos.md`, "Close Agents for completed tasks"). If the to-do state cannot be read, triage and wakes retry
+`docs/assistant/todos.md`, "Stop Agents of completed tasks"). If the to-do state cannot be read, triage and wakes retry
 later without sending.
 
 ### Transient errors: automatic continuation

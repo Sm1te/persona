@@ -769,6 +769,10 @@ private fun ChatPage(
         taps = taps.pending(allRequests.map { it.id }.toSet())
     }
     val lastUserId = snapshot.items.lastOrNull { it.role == "user" && it.kind == "text" }?.id
+    // Persona's last turn ended on a model set-up error the hub named: the fix replaces the error line (#4339 C18, iOS
+    // `turnFix`). Persona's conversations only, as iOS and the web.
+    val turnFix = if (renderStyle == ChatRenderStyle.Assistant) TurnErrorFix.of(session?.turnErrorCode) else null
+    val fixModel = chrome.onFixModel?.let { open -> { action: persona.core.designsystem.ReadinessActionId -> open(action, session?.launcher, session?.manager) } }
     ChatCompletionFeedback(lastUserId, session?.status,
         lifecycle == Lifecycle.State.RESUMED && !chrome.covered && !overlay && !chromeOverlay && !linkVisible &&
             !statusSheet && !terminalHelp && !taskPageVisible && fullText == null && !search.visible &&
@@ -1055,11 +1059,13 @@ private fun ChatPage(
                                 }
                                 items(lines, key = { it.contentKey }, contentType = { it.contentType() }) { line ->
                                     ChatSearchHighlight(search, line.contentKey) {
-                                        androidx.compose.runtime.CompositionLocalProvider(LocalAssistantTaskHost provides taskHost) {
+                                        androidx.compose.runtime.CompositionLocalProvider(LocalAssistantTaskHost provides taskHost,
+                                            LocalTurnErrorFixAction provides fixModel) {
                                         ChatLineContent(line, key, loader,
                                         line.recordedDuration(snapshot.recordedTurnDurations),
                                         ::toggle, ::expand, folding, foldErrors,
                                         lastUserId = lastUserId,
+                                        turnFix = turnFix.takeIf { line.contentKey == lines.firstOrNull()?.contentKey },
                                         onLastLine = { extent -> chatList.reportLastLine(line.contentKey, extent) }, onFullText = { item ->
                                         scope.launch {
                                             try { fullText = repository.fullText(key, item.id) }

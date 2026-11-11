@@ -58,16 +58,21 @@ fun cleanText(s: String, photo: String): String {
 /** A tool's own name without its MCP prefix (iOS `ToolPresentation.baseName`): "mcp__persona__agent_read" → "agent_read". */
 fun toolBaseName(name: String): String = if (name.startsWith("mcp__")) name.substringAfterLast("__") else name
 
-/** The word for a tool call (iOS `ToolPresentation.verb`): a name the table knows, else its bare name; "tool" without one. */
+/**
+ * The word for a tool call (iOS `ToolPresentation.verb`): a name the table knows, else its name in words ([toolWords]:
+ * "GitHub · Create issue"); "tool" without one.
+ */
 fun toolVerb(name: String?): CoreText =
-    if (name == null) CoreText.of(Key.ToolGeneric) else namedToolVerb(name) ?: CoreText.plain(toolBaseName(name))
+    if (name == null) CoreText.of(Key.ToolGeneric) else namedToolVerb(name) ?: CoreText.plain(toolWords(name))
 
 /**
- * The words for a tool the table knows, null for any other (its bare name is all there is). Matched on the base name,
- * so an MCP tool reads like the bare one; Persona's own tools ([isPersonaTool]) first get their own words, and the
- * ones neither table knows read "Call Persona · agent read" (iOS `PersonaToolNames`).
+ * The words for a tool the table knows, null for any other ([toolWords] puts its name into words). Matched on the base
+ * name of Persona's own tools ([isPersonaTool]), which first get their own words; the ones neither table knows read
+ * "Call Persona · agent read" (iOS `PersonaToolNames`). Another server's MCP tool is that server's, never the
+ * built-in one of the same bare name ("mcp__files__Read" is "Files · Read", iOS `ToolNaming.tableName`).
  */
 fun namedToolVerb(name: String): CoreText? {
+    if (ToolNaming.isOtherMcp(name)) return null
     val n = toolBaseName(name)
     if (isPersonaTool(name)) personaToolVerb(ProtocolCompatibility.canonicalTool(n))?.let { return CoreText.of(it) }
     genericToolVerb(n)?.let { return CoreText.of(it) }

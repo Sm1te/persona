@@ -44,6 +44,8 @@
   "surfaces_external_title": "Display its own UI inside and outside the app",
   "secrets_title": "Use secrets you provide",
   "tools_title": "Install command-line tools",
+  "host_integrations_title": "Use the configured host CLI integration",
+  "host_integrations_detail": "{tools}. Bounded, read-only calls through the manager; no shell access, message sending, or credential export.",
   "node_secrets_title": "Send secrets to these computers",
   "tools_more_title": "Install more command-line tools",
   "network_more_title": "Access more network hosts",

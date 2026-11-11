@@ -166,3 +166,180 @@ final class ChatBottomGapTests: XCTestCase {
         return false
     }
 }
+
+/// The end of the chat behind its footer (#3696): what scrolls down fades out behind the capsules over Persona's composer,
+/// and by the composer in an Agents chat, with no line across a message (`FooterFog`). At rest the newest message stays
+/// clear of the fade; scrolled, the jump-to-latest arrow is over the list and takes its tap, and the capsules over the chat
+/// that runs on behind them take theirs. Persona's main conversation and an Agents chat, light and dark: at rest, a message
+/// reaching the footer, scrolled up with the arrow, an open tray and the keyboard up; in the Liquid Glass and the BeautifulUI
+/// styles, whose footers differ. Every state gets its screenshot (in PERSONA_SHOTS, with PERSONA_SHOTS_SUFFIX after each
+/// name) before it is checked.
+///   PORT=18832 MOCK_TASKS=1 MOCK_TASKS_NO_ASKS=1 MOCK_TASKS_REPORTS=1 MOCK_EXCHANGES=1 MOCK_TASKS_AT=5.5 python3 scripts/mock/mock_hub.py &
+///   TEST_RUNNER_PERSONA_MOCK_HUB=http://127.0.0.1:18832 xcodebuild test … -only-testing:PersonaUITests/ChatBottomFadeTests
+final class ChatBottomFadeTests: XCTestCase {
+    private var hub = ""
+    /// Persona's main conversation: its newest rows are a long message to a task and the task's long report (the mock's
+    /// MOCK_TASKS_AT=5.5).
+    private let persona = "server/b2e4d6f8-0000-4000-8000-000000000001"
+    /// An Agents chat whose answer is taller than the screen (the mock's MOCK_MESSAGE_LIFT=1).
+    private let longAnswer = "macbook/a1f3c2d4-0000-4000-8000-0000000c1e09"
+    /// From the newest message to the footer at rest (`ChatView.newestGap`).
+    private let endGap: CGFloat = 48
+    /// Each look the footer has, in each appearance.
+    private let looks = ["glass", "beautiful"].flatMap { style in ["light", "dark"].map { (style, $0) } }
+
+    override func setUpWithError() throws {
+        guard let h = ProcessInfo.processInfo.environment["PERSONA_MOCK_HUB"] else {
+            throw XCTSkip("needs scripts/mock/mock_hub.py with MOCK_TASKS=1 MOCK_TASKS_NO_ASKS=1 MOCK_TASKS_REPORTS=1 MOCK_EXCHANGES=1 MOCK_TASKS_AT=5.5 MOCK_MESSAGE_LIFT=1 (PERSONA_MOCK_HUB)")
+        }
+        hub = h
+    }
+
+    @MainActor func testPersonaChatFadesBehindTheCapsules() throws {
+        for (style, appearance) in looks {
+            let look = "\(style)-\(appearance)"
+            let app = launch(["-tab", "assistant", "-dev.openChat", "", "-openAssistant", persona], style, appearance)
+            let running = app.buttons["action-bar.running"]
+            XCTAssertTrue(running.waitForExistence(timeout: 20), "no action bar:\n\(app.debugDescription)")
+            let bar = app.otherElements["action-bar"].firstMatch
+            settle()
+            shot(app, "\(look)-persona-rest")
+            let top = bar.frame.minY
+            let gap = top - (try newestBottom(app, above: top))
+            XCTAssertGreaterThanOrEqual(gap, endGap - 1, "\(look): \(gap) pt from the newest message to the capsules")
+            try reachAndJump(app, footerTop: top, name: "\(look)-persona")
+            // The chat runs on behind the capsules: they still take their taps.
+            running.tap()
+            XCTAssertTrue(app.otherElements["action-tray.running"].firstMatch.waitForExistence(timeout: 5), "the tray did not open")
+            settle()
+            shot(app, "\(look)-persona-tray")
+            running.tap()
+            keyboard(app, name: "\(look)-persona")
+            app.terminate()
+        }
+    }
+
+    @MainActor func testAgentChatFadesAboveTheComposer() throws {
+        for (style, appearance) in looks {
+            let look = "\(style)-\(appearance)"
+            let app = launch(["-tab", "dev", "-openSession", longAnswer], style, appearance)
+            let field = app.descendants(matching: .any)["shell-composer-field"].firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 20), "no composer:\n\(app.debugDescription)")
+            settle()
+            shot(app, "\(look)-agent-rest")
+            let top = field.frame.minY
+            let gap = top - (try newestBottom(app, above: top))
+            XCTAssertGreaterThanOrEqual(gap, endGap - 1, "\(look): \(gap) pt from the newest message to the composer")
+            try reachAndJump(app, footerTop: top, name: "\(look)-agent")
+            keyboard(app, name: "\(look)-agent")
+            app.terminate()
+        }
+    }
+
+    /// A chat opened at its newest end in that style and appearance, with no chat kept from an earlier run.
+    @MainActor private func launch(_ args: [String], _ style: String, _ appearance: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        let pair = "persona://pair?url=" + hub.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&token=mock"
+        app.launchArguments = ["-pairURL", pair, "-openChatsFresh", "YES", "-openImagesFresh", "YES",
+                               "-ui.style", style, "-ui.scheme", appearance] + args
+        app.launchPersona()
+        // The app's icon follows the appearance: switching it, the system says so in an alert over the chat.
+        _ = waitUntil(4) { self.dismissIconNotice(app) }
+        return app
+    }
+
+    /// Taps away the system's "You have changed the icon" alert, if it is up; true when it was.
+    @MainActor @discardableResult private func dismissIconNotice(_ app: XCUIApplication) -> Bool {
+        let notice = NSPredicate(format: "label CONTAINS[c] 'icon' OR label CONTAINS '图标'")
+        for source in [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")] {
+            let alert = source.alerts.containing(notice).firstMatch
+            if alert.exists, alert.buttons.firstMatch.exists {
+                alert.buttons.firstMatch.tap()
+                settle()
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Down a little, so a message reaches the footer and runs on into the fade; then up until the arrow comes, which is
+    /// over the list and clear of the footer, and brings the chat back to its newest end.
+    @MainActor private func reachAndJump(_ app: XCUIApplication, footerTop: CGFloat, name: String) throws {
+        let list = try XCTUnwrap(app.scrollViews.allElementsBoundByIndex.max { $0.frame.height < $1.frame.height })
+        drag(list, by: 80)
+        shot(app, "\(name)-reach")
+        let jump = app.buttons["回到最新"]
+        for _ in 0..<4 where !jump.waitForExistence(timeout: 1.5) { drag(list, by: 160) }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "no jump-to-latest arrow:\n\(app.debugDescription)")
+        settle()
+        shot(app, "\(name)-arrow")
+        XCTAssertLessThanOrEqual(jump.frame.maxY, footerTop + 0.5, "the arrow is over the footer")
+        jump.tap()
+        XCTAssertTrue(waitUntil(8) { !jump.exists }, "the arrow stayed after its tap")
+        settle()
+    }
+
+    /// The composer focused: the footer over the keyboard, the chat still fading out above it.
+    @MainActor private func keyboard(_ app: XCUIApplication, name: String) {
+        let field = app.descendants(matching: .any)["shell-composer-field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no composer")
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "no keyboard")
+        settle()
+        shot(app, "\(name)-keyboard")
+    }
+
+    /// A slow drag on the list, held at its end so it does not glide on.
+    @MainActor private func drag(_ list: XCUIElement, by dy: CGFloat) {
+        let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.4))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: dy)), withVelocity: .slow, thenHoldForDuration: 0.4)
+        settle()
+    }
+
+    /// The lowest bottom edge of what the chat list draws above `limit` (its rows' texts, buttons, pictures).
+    @MainActor private func newestBottom(_ app: XCUIApplication, above limit: CGFloat) throws -> CGFloat {
+        let root = try app.snapshot()
+        var scrolls: [XCUIElementSnapshot] = []
+        walk(root) { if $0.elementType == .scrollView { scrolls.append($0) } }
+        let list = try XCTUnwrap(scrolls.max { $0.frame.height < $1.frame.height })
+        let drawn: Set<XCUIElement.ElementType> = [.staticText, .button, .image, .link, .textView]
+        var newest = -CGFloat.infinity
+        walk(list) { s in
+            let f = s.frame
+            guard drawn.contains(s.elementType), f.height > 0, f.height < list.frame.height, f.maxY <= limit + 0.5 else { return }
+            newest = max(newest, f.maxY)
+        }
+        guard newest > list.frame.minY else { throw XCTSkip("nothing drawn above the footer") }
+        return newest
+    }
+
+    private func walk(_ s: XCUIElementSnapshot, _ visit: (XCUIElementSnapshot) -> Void) {
+        visit(s)
+        for c in s.children { walk(c, visit) }
+    }
+
+    private func settle() { RunLoop.current.run(until: Date().addingTimeInterval(1.2)) }
+
+    /// An attachment, and a file in PERSONA_SHOTS when set.
+    @MainActor private func shot(_ app: XCUIApplication, _ name: String) {
+        let env = ProcessInfo.processInfo.environment
+        let full = "fade-\(name)\(env["PERSONA_SHOTS_SUFFIX"] ?? "")"
+        dismissIconNotice(app)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = full
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        if let dir = env["PERSONA_SHOTS"] {
+            try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(full).png"))
+        }
+    }
+
+    private func waitUntil(_ timeout: TimeInterval, _ ok: @escaping () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if ok() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        }
+        return false
+    }
+}

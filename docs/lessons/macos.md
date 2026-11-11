@@ -347,3 +347,23 @@ the same cause. Recheck scrolling, folding and layout separately with synthetic 
   light mode; only `NSColor`-backed colors (`secondaryLabelColor`) came out as written. The real window draws glass with vibrancy, which the
   offscreen copy does not have. A shot of a glass note (the resume line over the composer, `FailureNote`…) that looks unreadable is not evidence
   either way: check it in a style with solid surfaces (`-ui.style lark`, the same layout and text styles) or in a real window when the Mac is unlocked.
+
+## Screen Sharing leaves requests for part of the screen unanswered (2026-11-11, #3067)
+
+- RFB lets a client ask for updates of a rectangle only, which looks like a free saving when the view is zoomed in or
+  shows one display. macOS's Screen Sharing (26.6) doesn't honor it: while the bench page played a canvas video,
+  incremental requests for the page's part, the video's own box, a full-width band starting at y 300 or 340, or the
+  screen's left 1850 of 1920 columns got no updates for 5 s, and asked for the page's part the page's switch to its
+  typing scene never arrived either. Requests from the top that cover nearly all of it (1919 × 1080, 1920 × 884)
+  worked. An earlier check only asked for a strip where nothing seemed to change and read the silence as "nothing to send".
+- Asking for part of the screen would freeze a zoomed-in picture, so the app always asks for the whole framebuffer.
+  Before relying on a server behavior, trace the case that must work (the area containing the change):
+  `vncbench trace -trace-area page|stage|x,y,w,h` prints each request and each update's painted box.
+
+## Screen Sharing answers a request sent early later (2026-11-11, #3067)
+
+- Sending the next FramebufferUpdateRequest before the current update is read looks like it saves a round trip.
+  On macOS's Screen Sharing it doesn't: asked for as each update starts, it goes quiet for up to 2 s whenever the
+  request arrives while it is still writing a big update; asked for early only after a single rectangle of at most
+  64 KB, typed text still came back later (p50 374 ms against 215 for stop-and-wait over a 25 ms, 30 Mbit/s link,
+  slower in all 5 interleaved pairs, median +81 ms). The app asks for the next update once one is in (`RFBFrameTests.nextUpdateIsAskedOnceAnUpdateIsIn`).

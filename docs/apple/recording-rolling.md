@@ -2,6 +2,8 @@
 
 Built on the recording in `docs/apple/recording.md`: it is not a second recording product, only a mode of the existing one. Raw audio is never uploaded automatically, and text goes to an Agent only after the user asks.
 
+All-day recording, which does transcribe and upload everything and gets a daily recap from the hub, is a separate kind with its own contract: `docs/assistant/day-recap.md`.
+
 ## In one sentence
 
 The watch records continuously in segments and keeps only the last 6 hours; the oldest are deleted automatically. The minutes around an unusual heart rate or HRV, a manual bookmark, or a mood entry the user logged in the Health app are kept instead of being overwritten.

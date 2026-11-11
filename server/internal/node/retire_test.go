@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nwverse/persona/server/internal/orcart/orcarttest"
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
@@ -25,8 +24,8 @@ func withoutAgentReports(trace []string) []string {
 	})
 }
 
-// session.retire closes a stopped Claude that can be resumed (its pane, as session.close does), keeps what it was
-// started with, and refuses one that works, waits, or has no transcript to resume from; one not running is no error.
+// session.retire (what a hub before #4754 asks for a finished or idle agent) stops a still Claude and keeps its pane,
+// with what it was started with, and refuses one that works or waits; one not running is no error.
 func TestHerdrRetire(t *testing.T) {
 	n, f, home := herdrNode(t)
 	cwd := mkdir(t, filepath.Join(home, "proj"))
@@ -50,6 +49,17 @@ func TestHerdrRetire(t *testing.T) {
 	waitCalls(t, f, "pane.report_agent_session", 1)
 	f.reset()
 
+	for _, id := range []string{sidB, sidC} {
+		_, err := request(t, n, "session.retire", map[string]any{"session_id": id})
+		if code, _ := refusalOf(t, err); code != notRetirable {
+			t.Errorf("%s: code %q", id, code)
+		}
+	}
+	quitsOn(f, "w1:p1", sidA, []any{
+		claudeAgent(sidB, proto.StatusWorking, "w1:p2", "w1:t2", "w1", cwd, ""),
+		claudeAgent(sidC, proto.StatusBlocked, "w1:p3", "w1:t3", "w1", cwd, ""),
+		claudeAgent(sidD, proto.StatusIdle, "w1:p4", "w1:t4", "w1", cwd, ""),
+	}, shellPane("w1:p1", "w1:t1", "w1", cwd, sidA))
 	res, err := request(t, n, "session.retire", map[string]any{"session_id": sidA})
 	if err != nil || res["closed"] != true {
 		t.Fatalf("retire = %v, %v", res, err)
@@ -57,16 +67,8 @@ func TestHerdrRetire(t *testing.T) {
 	if st, _ := n.state.get(sidA); st.Launcher != "cc" || st.Cwd != cwd || st.Model != "opus" {
 		t.Errorf("state after retire = %+v", st)
 	}
-	for _, id := range []string{sidB, sidC, sidD} {
-		_, err := request(t, n, "session.retire", map[string]any{"session_id": id})
-		if code, _ := refusalOf(t, err); code != notRetirable {
-			t.Errorf("%s: code %q", id, code)
-		}
-	}
-	assertTrace(t, withoutAgentReports(f.trace()), []string{
+	assertTrace(t, withoutAgentReports(f.trace("pane.send_keys", "tab.close", "pane.close")), []string{
 		sendKeys("w1:p1", "ctrl+c"), sendKeys("w1:p1", "ctrl+c"),
-		call("pane.list", map[string]any{"workspace_id": "w1"}),
-		call("tab.close", map[string]any{"tab_id": "w1:t1"}),
 	})
 
 	f.reset()
@@ -138,33 +140,25 @@ func TestHerdrSendResumesARetiredCodex(t *testing.T) {
 	}
 }
 
-// Orca continues only Claude sessions (#5548): retire closes there only what a message brings back. A stopped Codex
-// on Orca is not closed — the task closer would close an agent that could not be continued (send refuses it as not
-// running) — while a stopped Claude is.
-func TestOrcaRetiresOnlyWhatItCanContinue(t *testing.T) {
-	withCodexLaunchers(t, map[string][]string{"cx": {"codex"}})
-	n, _, o, procs, home := orcaNode(t)
-	const cx = "0a000000-0000-4000-8000-0000000000c1"
-	writeRollout(t, home, cx, orcaCwd, time.Now(), time.Now().Add(-time.Minute), event("task_started"), event("task_complete"))
-	n.state.put(cx, sessionState{Launcher: "cx", Cwd: orcaCwd})
-	o.SetTerminals(orcaTerm("term_1", "tab1", "leaf1", "codex"))
-	o.SetWorktrees(orcarttest.Worktree("repo::"+orcaCwd, orcaCwd, "refs/heads/main"))
-	procs.set("tab1:leaf1", orcaProc{pid: 4250, agent: "codex", start: time.Now().Add(-time.Hour)})
-	if m := byID(listSessions(t, n)); m[cx].PaneID != "orca:tab1:leaf1" {
-		t.Fatalf("codex not listed: %v", m)
-	}
-	o.Reset()
-	_, err := request(t, n, "session.retire", map[string]any{"session_id": cx})
-	if code, _ := refusalOf(t, err); code != notRetirable {
-		t.Fatalf("codex on Orca: %v", err)
-	}
-	if c := o.Trace("terminal.close"); len(c) != 0 {
-		t.Errorf("closed: %v", c)
-	}
-
-	cn, co, _ := orcaSession(t) // a stopped Claude (done): closed, the next message resumes it
+// On Orca too, retire stops a still agent with Ctrl+C and never closes its terminal, a Codex as well as a Claude: the
+// terminal stays, so whether Orca could continue the session does not matter any more (#4754).
+func TestOrcaRetireKeepsTheTerminal(t *testing.T) {
+	withStop(t, 1, orcaProcsMaxAge+time.Second) // the node reads Orca's processes at most this often
+	cn, co, procs := orcaSession(t)
+	go func() { // claude quits once Ctrl+C has been pressed twice: its process leaves the terminal
+		for range 200 {
+			if len(co.Trace("terminal.send")) >= 2 {
+				procs.set("tab1:leaf1")
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
 	res, err := request(t, cn, "session.retire", map[string]any{"session_id": sidA})
 	if err != nil || res["closed"] != true {
 		t.Fatalf("claude on Orca: %v, %v (calls %v)", res, err, co.Trace())
+	}
+	if c := co.Trace("terminal.close"); len(c) != 0 {
+		t.Errorf("closed: %v", c)
 	}
 }

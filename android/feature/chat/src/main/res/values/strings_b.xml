@@ -42,6 +42,8 @@
     <string name="chat_chrome_status_unconfirmed">Needs checking</string>
     <string name="chat_chrome_status_needs_you">Waiting for you</string>
     <string name="chat_chrome_status_stopping">Interrupting</string>
+    <string name="chat_chrome_worked_minutes">%1$d min</string>
+    <string name="chat_chrome_worked_hours">%1$d hr %2$d min</string>
     <string name="chat_chrome_more">More actions</string>
     <string name="chat_chrome_actions_title">Session actions</string>
     <string name="chat_chrome_todo">To-do · %1$s</string>
@@ -454,4 +456,11 @@
     <string name="chat_doc_rtf">RTF document</string>
     <string name="chat_doc_pdf">PDF document</string>
     <string name="chat_doc_other">Document</string>
+    <string name="chat_turn_fix_not_logged_in">Model not connected: Claude Code isn\'t signed in</string>
+    <string name="chat_turn_fix_not_logged_in_detail">Sign in once on that computer, or use an API key instead.</string>
+    <string name="chat_turn_fix_auth_failed">Model not connected: the key is wrong</string>
+    <string name="chat_turn_fix_auth_failed_detail">The key is wrong or has expired; use one that works.</string>
+    <string name="chat_turn_fix_model_route">Model not connected: this model can\'t be used</string>
+    <string name="chat_turn_fix_model_route_detail">The model name is wrong, or the model isn\'t available right now; try another one.</string>
+    <string name="chat_turn_fix_action">Fix it</string>
 </resources>

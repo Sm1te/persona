@@ -49,6 +49,8 @@ data class ChatChromeBindings(
     val inboxTrays: persona.core.contracts.api.AssistantInboxTrays? = null,
     val inboxScope: String? = null,
     val agentShares: (() -> persona.core.contracts.api.AgentShares)? = null,
+    /** Opens what fixes a turn's model error ([TurnErrorFix]): the model's set-up, or the [launcher]'s provider; null: no button. */
+    val onFixModel: ((action: persona.core.designsystem.ReadinessActionId, launcher: String?, manager: String?) -> Unit)? = null,
 )
 
 /** Where a branch made by "Branch to new chat" opens: an assistant's branch is an assistant conversation, an agent's an agent chat. */

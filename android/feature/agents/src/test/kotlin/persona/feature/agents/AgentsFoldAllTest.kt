@@ -119,4 +119,30 @@ class AgentsFoldAllTest {
         startModel()
         assertEquals(setOf(id), model.page.value.settings.folded)
     }
+
+    // #4338 A5, as iOS: By Status's Seen starts folded and opens from its header; opening it is kept, "Expand all" opens it,
+    // and rows under a section that names their state leave the word out (Muted mixes states, so its rows keep it).
+    @Test fun byStatusSeenOpensFromItsHeaderAndRowsLeaveTheirStateOut() = runTest {
+        startModel(listOf(Session("shown", "seen", state = "idle", title = "Seen one")))
+        model.grouping(AgentGrouping.State)
+        runCurrent()
+        fun seen() = model.page.value.list.groups.single { it.id == StateSeenGroup }
+        assertTrue(seen().folded)
+        model.fold(seen())
+        runCurrent()
+        assertFalse(seen().folded)
+        assertEquals(setOf(StateSeenOpened), preferences.snapshots.first().folds[AgentGrouping.State])
+        model.fold(seen())
+        runCurrent()
+        assertTrue(seen().folded)
+        assertTrue(preferences.snapshots.first().folds[AgentGrouping.State].orEmpty().isEmpty())
+        model.foldAll(true)
+        runCurrent()
+        model.foldAll(false)
+        runCurrent()
+        assertFalse(seen().folded)
+        val rows = agentTreeEntries(model.page.value.list, "").filterIsInstance<TreeRowEntry>()
+        assertTrue(rows.isNotEmpty())
+        assertTrue(rows.all { it.inStateSection })
+    }
 }

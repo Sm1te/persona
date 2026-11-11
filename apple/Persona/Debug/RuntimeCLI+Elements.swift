@@ -30,6 +30,12 @@ extension RuntimeCLI {
         let value: String
         let frame: CGRect
         let traits: UIAccessibilityTraits
+        /// Not an element but a container with an id (`.accessibilityElement(children: .contain)`), listed when asked
+        /// (`containers`): what holds the elements, as XCUITest sees it (the chat's `chatMark`).
+        var container = false
+        /// The id of the nearest container with an id around it, listed with `containers`: what holds it in the tree,
+        /// not by where it is drawn (an alert over a chat bubble is not in the bubble).
+        var holder: String?
 
         /// The frame is on screen, whether or not something covers it.
         var onScreen: Bool {
@@ -68,7 +74,12 @@ extension RuntimeCLI {
             let t = traitNames
             // A frame can be NaN or infinite (an element mid-layout): 0, never a value JSON cannot hold.
             let f = [frame.minX, frame.minY, frame.width, frame.height].map { $0.isFinite ? (Double($0) * 10).rounded() / 10 : 0 }
-            return ["id": id, "label": label, "value": value, "traits": t, "visible": visible, "onScreen": onScreen, "frame": f]
+            var out: Reply = ["id": id, "label": label, "value": value, "traits": t, "visible": visible, "onScreen": onScreen, "frame": f]
+            if container { out["container"] = true }
+            if let holder { out["in"] = holder }
+            // Its custom actions (VoiceOver's Actions rotor), by name: what `activate` `action:` performs.
+            if let actions = object.accessibilityCustomActions, !actions.isEmpty { out["actions"] = actions.map(\.name) }
+            return out
         }
     }
 
@@ -95,36 +106,42 @@ extension RuntimeCLI {
     }
 
     /// Every accessibility element of the app's windows, top-most window first (menus, sheets), in reading order.
-    static func allElements() -> [Element] {
+    static func allElements(containers: Bool = false) -> [Element] {
         var out: [Element] = []
         var seen = Set<ObjectIdentifier>()
-        func visit(_ o: NSObject, depth: Int) {
+        func visit(_ o: NSObject, depth: Int, holder: String?) {
             guard depth < 80, seen.insert(ObjectIdentifier(o)).inserted else { return }
             if let v = o as? UIView, v.isHidden || v.alpha < 0.01 { return }
+            let id = (o as? UIAccessibilityIdentification)?.accessibilityIdentifier
+                ?? (o.responds(to: Selector(("accessibilityIdentifier"))) ? o.value(forKey: "accessibilityIdentifier") as? String : nil)
+            var inner = holder
             if o.isAccessibilityElement {
-                let id = (o as? UIAccessibilityIdentification)?.accessibilityIdentifier
-                    ?? (o.responds(to: Selector(("accessibilityIdentifier"))) ? o.value(forKey: "accessibilityIdentifier") as? String : nil)
                 out.append(Element(object: o, id: id ?? "", label: o.accessibilityLabel ?? "", value: o.accessibilityValue ?? "",
-                                   frame: o.accessibilityFrame, traits: o.accessibilityTraits))
+                                   frame: o.accessibilityFrame, traits: o.accessibilityTraits, holder: containers ? holder : nil))
+            } else if containers, let id, !id.isEmpty {
+                out.append(Element(object: o, id: id, label: o.accessibilityLabel ?? "", value: o.accessibilityValue ?? "",
+                                   frame: o.accessibilityFrame, traits: o.accessibilityTraits, container: true, holder: holder))
+                inner = id
             }
             if let children = o.accessibilityElements as? [NSObject] {
-                for c in children { visit(c, depth: depth + 1) }
+                for c in children { visit(c, depth: depth + 1, holder: inner) }
             } else {
                 let n = o.accessibilityElementCount()
                 if n > 0, n != NSNotFound {
-                    for i in 0..<n { if let c = o.accessibilityElement(at: i) as? NSObject { visit(c, depth: depth + 1) } }
+                    for i in 0..<n { if let c = o.accessibilityElement(at: i) as? NSObject { visit(c, depth: depth + 1, holder: inner) } }
                 }
             }
-            if let v = o as? UIView { for s in v.subviews { visit(s, depth: depth + 1) } }
+            if let v = o as? UIView { for s in v.subviews { visit(s, depth: depth + 1, holder: inner) } }
         }
-        for w in windows.reversed() where !w.isHidden { visit(w, depth: 0) }
+        for w in windows.reversed() where !w.isHidden { visit(w, depth: 0, holder: nil) }
         return out
     }
 
     /// Filters: `id` (exact), `idPrefix`, `label` (exact), `labelContains`, `labelPrefix`, `trait` ("button"…),
-    /// `visibleOnly` (a touch reaches it), `onScreenOnly` (its frame is on screen).
+    /// `visibleOnly` (a touch reaches it), `onScreenOnly` (its frame is on screen), `containers` (also the containers
+    /// that have an id).
     static func elements(matching a: Args) -> [Element] {
-        allElements().filter { e in
+        allElements(containers: a["containers"] as? Bool == true).filter { e in
             if let id = a["id"] as? String, e.id != id { return false }
             if let p = a["idPrefix"] as? String, !e.id.hasPrefix(p) { return false }
             if let l = a["label"] as? String, e.label != l { return false }

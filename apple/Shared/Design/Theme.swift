@@ -41,16 +41,14 @@ nonisolated enum AppStyle: String, CaseIterable, Identifiable, Sendable {
 nonisolated enum Theme {
     #if os(iOS)
     /// By Repository's tree on iOS (#2531): a card per repository, its worktrees and their agents a level in each, every
-    /// line's mark in one column per level, a worktree's agents on a thin line down from its mark.
+    /// line's mark in one column per level; the agents in the display's rows (#3753).
     enum Tree {
         /// A level in.
         static let indent: CGFloat = 22
         /// The column a line's mark sits in: the folder, a worktree's mark, an agent's state.
         static let column: CGFloat = 18
-        /// Above and below a line: its height is its own, so the guide line runs on from row to row.
+        /// Above and below a line's words: the line is its whole row, at least a finger's height (`RepoTreeLine`).
         static let rowPadding = Space.sm
-        /// The line down a worktree's agents.
-        static let guide = Color(uiColor: .separator)
         /// The agent or worktree open beside the list (regular width).
         static let selected = Palette.systemBlue.opacity(0.1)
     }

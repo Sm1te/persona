@@ -126,7 +126,7 @@ struct CodexSubtasksRow: View {
             switch style {
             case .tree(let level):
                 #if os(iOS)
-                RepoTreeLine(level: level, guide: true) {
+                RepoTreeLine(level: level) {
                     ThemedIcon(Theme.Icon.subagent).font(Theme.Font.caption).foregroundStyle(.tertiary)
                 } content: {
                     HStack(spacing: Theme.Space.xs) {
@@ -153,6 +153,7 @@ struct CodexSubtasksRow: View {
             case .card(let last):
                 regular
                     .padding(.horizontal, Theme.Space.m)
+                    .modifier(TouchHeight()) // a finger's height with the card's color under all of it (#3753)
                     .background(UnevenRoundedRectangle(bottomLeadingRadius: last ? theme.radii.card : 0,
                                                        bottomTrailingRadius: last ? theme.radii.card : 0, style: .continuous)
                         .fill(theme.colors.surface))

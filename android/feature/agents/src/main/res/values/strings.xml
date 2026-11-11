@@ -66,12 +66,6 @@
     <string name="agents_count_pair">%1$s, %2$s</string>
     <string name="agents_flag_space_pinned">Space pinned</string>
     <string name="agents_flag_space_muted">Space muted</string>
-    <string name="agents_kind_todo">To-do</string>
-    <string name="agents_kind_project">Project</string>
-    <plurals name="agents_count_todos">
-        <item quantity="one">1 to-do</item>
-        <item quantity="other">%1$d to-dos</item>
-    </plurals>
     <string name="agents_kind_space">Space</string>
     <string name="agents_view_todo">View to-do</string>
     <string name="agents_history_unknown_folder">Unknown folder</string>
@@ -80,6 +74,7 @@
     <string name="agents_range_all">All</string>
     <string name="agents_range_history">History</string>
     <string name="agents_grouping_current">Grouping: %1$s</string>
+    <string name="agents_group_by">Group By</string>
     <string name="agents_only_machine">Only %1$s</string>
     <string name="agents_only_machine_hint">Shows all machines</string>
     <string name="agents_grouping_repo">By repository</string>

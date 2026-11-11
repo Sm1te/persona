@@ -12,6 +12,7 @@ import (
 	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 )
 
 // Leader conversations (#3133, docs/assistant/unified-entry.md "Leader conversations"). By default only the main
@@ -182,8 +183,10 @@ func (s *Service) stopTaskAgents(ctx context.Context, t Todo) {
 	}()
 }
 
-// stopCancelledAgent closes, ends the cards of and archives one agent of cancelled task id; one that works for another
+// stopCancelledAgent stops, ends the cards of and archives one agent of cancelled task id; one that works for another
 // open task now, an assistant conversation (the user's to stop) or a session its machine does not list is left alone.
+// The agent quits and its terminal stays (session.stop, #4754); a session with no terminal (another tool's, an engine
+// that runs agents itself) is closed as before.
 func (s *Service) stopCancelledAgent(ctx context.Context, id, machine, session string) {
 	s.todos.mu.RLock()
 	other, linked := s.todos.activeBySession[[2]string{machine, session}]
@@ -200,8 +203,12 @@ func (s *Service) stopCancelledAgent(ctx context.Context, id, machine, session s
 	machine = c.MachineID
 	if c.Status != proto.StatusOffline {
 		cctx, cancel := context.WithTimeout(ctx, agentArchiveCloseTimeout)
-		if err := s.call(cctx, machine, "session.close", map[string]any{"session_id": session}, nil); err != nil {
-			s.logf("task %s cancelled: close agent %s/%s: %v", id, machine, short(session), err)
+		err := s.call(cctx, machine, deviceSessionStop, map[string]any{"session_id": session}, nil)
+		if re := (*rpc.Error)(nil); errors.As(err, &re) && re.Code == "no_terminal" {
+			err = s.call(cctx, machine, "session.close", map[string]any{"session_id": session}, nil)
+		}
+		if err != nil {
+			s.logf("task %s cancelled: stop agent %s/%s: %v", id, machine, short(session), err)
 		}
 		cancel()
 	}

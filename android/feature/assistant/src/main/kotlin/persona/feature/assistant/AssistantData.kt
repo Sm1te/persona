@@ -8,6 +8,7 @@ import persona.core.contracts.AgentState
 import persona.core.contracts.SessionKey
 import persona.core.contracts.api.AssistantRepository
 import persona.core.contracts.api.AssistantSnapshot
+import persona.core.contracts.api.LeaderCounts
 import persona.core.contracts.api.DeliveryState
 import persona.core.contracts.api.MessageSender
 import persona.core.contracts.api.OutboxMessage
@@ -25,40 +26,18 @@ import kotlinx.coroutines.flow.update
 import java.util.UUID
 
 /**
- * [auto]: the conversations the hub opened by itself (#3264), out of [recent] while nothing is searched. [directions]: the
- * leader conversations (`assistant.leaders`), first, in the hub's order, out of [pinned] and [recent]; [names] what each
- * direction is called, by session id, shown instead of its title.
+ * The drawer's Persona chats (#4331): [main] the main conversation (its own row, above the search), [directions] the
+ * leader conversations under their [names] ("常驻", in the hub's order), and [others] every other conversation, which
+ * "All chats" lists and a search narrows. [counts] each leader's open tasks, by session id.
  */
 internal data class ConversationGroups(
-    val main: Session?, val pinned: List<Session>, val recent: List<Session>, val auto: List<Session> = emptyList(),
-    val directions: List<Session> = emptyList(), val names: Map<String, String> = emptyMap(),
-    /** Directions also pinned (before they became one): their menu keeps Unpin, so the pin can still go. */
-    val pinnedDirections: Set<SessionKey> = emptySet(),
+    val main: Session?, val directions: List<Session> = emptyList(), val others: List<Session> = emptyList(),
+    val names: Map<String, String> = emptyMap(), val counts: Map<String, LeaderCounts> = emptyMap(),
 )
-
-/** The drawer's groups of automatic conversations, in its order; [Other] is any origin this app doesn't know. */
-internal enum class AutoOrigin(val wire: String) { Inbox("inbox"), Task("task"), LarkAgent("lark_agent"), Spawned("spawned"), Extension("extension"), Other("other") }
-
-/** The automatic group of a conversation; null for the user's own (none, user, channel). */
-internal fun Session.autoOrigin(): AutoOrigin? = when (val o = origin.orEmpty()) {
-    "", "user", "channel" -> null
-    else -> AutoOrigin.entries.firstOrNull { it.wire == o } ?: AutoOrigin.Other
-}
-
-/** How a set of automatic conversations stands: how many, how many run, how many wait for the user. */
-internal data class OriginTally(val origin: AutoOrigin?, val count: Int, val working: Int, val needsYou: Int)
-
-internal fun tally(origin: AutoOrigin?, list: List<Session>) = OriginTally(origin, list.size,
-    list.count { it.agentState == AgentState.Working }, list.count { it.agentState == AgentState.NeedsYou })
-
-/** The automatic conversations by origin, only the origins that have any, in the drawer's order. */
-internal fun autoGroups(auto: List<Session>): List<OriginTally> =
-    AutoOrigin.entries.map { o -> tally(o, auto.filter { it.autoOrigin() == o }) }.filter { it.count > 0 }
 
 internal fun conversationGroups(
     snapshot: AssistantSnapshot,
     query: String,
-    pinned: Set<SessionKey>,
     words: ConversationWords,
 ): ConversationGroups {
     val matches = snapshot.conversations.distinctBy { it.key }.filter {
@@ -66,32 +45,29 @@ internal fun conversationGroups(
                 it.lastText.orEmpty().contains(query.trim(), ignoreCase = true))
     }.map { it to it.updated } // each time parsed once, not on every comparison
         .sortedWith(compareByDescending<Pair<Session, java.time.Instant?>> { it.second }.thenBy { it.first.key.path }).map { it.first }
-    // The leaders are the Directions group, under their names (a search matches the name too), in the hub's order.
+    // The leaders are the drawer's 常驻 group, under their names; a search matches the name too. Every other
+    // conversation waits under one "All chats" row (there is no all-conversations page on this app): main and the
+    // leaders are not listed twice.
     val names = snapshot.directionNames
     val directions = snapshot.leaders.mapNotNull { id ->
         snapshot.conversations.firstOrNull { it.sessionId == id && it.key != snapshot.mainSession && !it.archived }
     }.filter { query.isBlank() || it in matches || names[it.sessionId].orEmpty().contains(query.trim(), ignoreCase = true) }
-    val isDirection = directions.map { it.key }.toSet()
-    val others = matches.filter { it.key != snapshot.mainSession && it.key !in pinned && it.key !in isDirection }
-    // A search finds every conversation, wherever it comes from; otherwise "Recent" is the user's own.
-    val searching = query.isNotBlank()
-    // The main conversation is the drawer's first row, above the search: a search does not take it away.
-    return ConversationGroups(snapshot.conversations.firstOrNull { it.key == snapshot.mainSession && !it.archived },
-        matches.filter { it.key != snapshot.mainSession && it.key in pinned && it.key !in isDirection },
-        if (searching) others else others.filter { it.autoOrigin() == null },
-        if (searching) emptyList() else others.filter { it.autoOrigin() != null },
-        directions, names, directions.map { it.key }.filter { it in pinned }.toSet())
+    val listed = directions.mapTo(HashSet()) { it.key }
+    val others = matches.filter { it.key != snapshot.mainSession && it.key !in listed }
+    return ConversationGroups(
+        snapshot.conversations.firstOrNull { it.key == snapshot.mainSession && !it.archived },
+        directions, others, names, snapshot.leaderCounts,
+    )
 }
 
-/** How many recent conversations the history lists before folding the rest into "See all N". */
-internal const val RecentShown = 30
-
-internal data class RecentRows(val shown: List<Session>, val hidden: Int)
-
-/** The recent group as the history shows it: the first [limit], unless all were asked for or a search is on. */
-internal fun recentRows(recent: List<Session>, query: String, showAll: Boolean, limit: Int = RecentShown): RecentRows =
-    if (showAll || query.isNotBlank() || recent.size <= limit) RecentRows(recent, 0)
-    else RecentRows(recent.take(limit), recent.size - limit)
+/** A leader's open tasks 「在做 1 · 等你 2」 (#4331): only the parts that are not zero, null when both are. */
+internal fun leaderCountsLabel(counts: LeaderCounts?, resources: android.content.res.Resources): String? {
+    counts ?: return null
+    return listOfNotNull(
+        counts.working.takeIf { it > 0 }?.let { resources.getString(R.string.assistant_leader_working, it) },
+        counts.needsYou.takeIf { it > 0 }?.let { resources.getString(R.string.assistant_leader_needs_you, it) },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
 
 @StringRes
 internal fun greeting(hour: Int): Int = when (hour) {
@@ -126,7 +102,6 @@ internal class DemoAssistantRepository(private val words: DemoWords) : Assistant
     override val assistant = snapshot.asStateFlow()
     private val messages = MutableStateFlow<List<OutboxMessage>>(emptyList())
     override val outbox = messages.asStateFlow()
-    val pinned = setOf(SessionKey("demo", "weekly"))
 
     override suspend fun refresh() = Unit
 

@@ -407,6 +407,10 @@ struct PendingBubble: View {
                         ThemedIcon(Theme.Icon.errorFilled).font(Theme.Font.body).foregroundStyle(Theme.danger)
                     }
                     .accessibilityLabel("Failed to send. Resend or delete.")
+                    // The menu's items as actions too: VoiceOver's Actions rotor, and the Runtime CLI (`activate`
+                    // `action:`), which cannot touch a menu's items.
+                    .accessibilityAction(named: Text("Resend"), retry)
+                    .accessibilityAction(named: Text("Delete"), discard)
                 }
                 let split = MessageComments.inBubble(shown)
                 UserBubbleBody(quotes: ContextRef.quotes(parsed.refs) ?? [], text: split?.rest ?? shown, comments: split?.comments ?? [], lead: split?.quote)

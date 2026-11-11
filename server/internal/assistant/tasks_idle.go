@@ -7,13 +7,13 @@ import (
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
-// Closing agents that have been idle for a long time (docs/assistant/todos.md "Idle agents close too"). The pass in
+// Stopping agents that have been idle for a long time (docs/assistant/todos.md "Idle Agents stop too"). The pass in
 // tasks_close.go only knows agents of finished tasks; agents started directly (agent_start), agents of tasks that
-// stall or are never accepted, and closed agents a message resumed (agent_send, the chat) would stay open for good.
-// An agent Persona started that has been still for idle_close_hours with nothing going on (retirable) is retired the
-// same way: its transcript and launch state stay and the next message resumes it.
+// stall or are never accepted, and stopped agents a message resumed (agent_send, the chat) would run for good.
+// An agent Persona started that has been still for idle_close_hours with nothing going on (retirable) is stopped the
+// same way (session.stop): its terminal, transcript and launch state stay and the next message resumes it.
 //
-// Left open besides what retirable keeps: an agent with a wake due (Work.WakeAt) or blocked on anything (Work.Phase
+// Left running besides what retirable keeps: an agent with a wake due (Work.WakeAt) or blocked on anything (Work.Phase
 // blocked: the user, another agent, CI or a deploy, a transient error), and one of an open task unless that task has
 // itself been quiet for idleStalledFactor times the idle time.
 

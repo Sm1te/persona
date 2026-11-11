@@ -78,25 +78,8 @@
     <string name="assistant_search_chats">チャットを検索</string>
     <string name="assistant_start_main">メインチャットを開始</string>
     <string name="assistant_main_chat">メインチャット</string>
-    <string name="assistant_pinned">ピン留め</string>
-    <string name="assistant_pinned_actions">ピン留めの操作</string>
-    <string name="assistant_unpin_all">すべてのピン留めを解除</string>
-    <string name="assistant_recent">最近</string>
-    <string name="assistant_directions">方向性</string>
-    <string name="assistant_other_chats">その他のチャット</string>
-    <string name="assistant_auto">自動のチャット</string>
+    <string name="assistant_directions">常駐</string>
     <string name="assistant_origin_inbox">受信箱</string>
-    <string name="assistant_origin_task">定期タスク</string>
-    <string name="assistant_origin_lark_agent">Lark /agent</string>
-    <string name="assistant_origin_spawned">チャットから</string>
-    <string name="assistant_origin_extension">拡張機能</string>
-    <string name="assistant_origin_other">その他</string>
-    <plurals name="assistant_auto_needs_you">
-        <item quantity="other">%d 件が対応待ち</item>
-    </plurals>
-    <plurals name="assistant_auto_working">
-        <item quantity="other">%d 件実行中</item>
-    </plurals>
     <string name="assistant_empty_title">チャットはまだありません</string>
     <string name="assistant_empty_detail">メッセージを送って、Personaと話してみましょう。</string>
     <string name="assistant_no_match">一致するチャットはありません</string>
@@ -105,9 +88,11 @@
     <string name="assistant_home">ホームに戻る</string>
     <string name="assistant_todos">ToDo</string>
     <string name="assistant_open_settings">設定</string>
+    <string name="assistant_make_leader">常駐にする</string>
+    <string name="assistant_end_leader">常駐をやめる</string>
+    <string name="assistant_leader_working">作業中 %1$d</string>
+    <string name="assistant_leader_needs_you">対応待ち %1$d</string>
     <string name="assistant_conversation_actions">チャットの操作</string>
-    <string name="assistant_pin">ピン留め</string>
-    <string name="assistant_unpin">ピン留めを解除</string>
     <string name="assistant_demo_title">体験モード</string>
     <string name="assistant_demo_notice">内容はこの体験中のみ保存されます。</string>
     <string name="assistant_demo_reply">これはサンプルのチャットです。アシスタントに接続すると、ここに返信が表示されます。</string>
@@ -131,7 +116,7 @@
     <string name="assistant_needs_you_agent">エージェント</string>
     <string name="assistant_pair_first">先にハブをペアリングしてください</string>
     <plurals name="assistant_show_all_recent">
-        <item quantity="other">すべて表示（%1$d件）</item>
+        <item quantity="other">すべてのチャット（%1$d）</item>
     </plurals>
     <plurals name="assistant_needs_you_more">
         <item quantity="other">受信トレイにあと%1$d件</item>

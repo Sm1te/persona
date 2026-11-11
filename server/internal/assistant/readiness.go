@@ -162,7 +162,7 @@ type readinessStart struct {
 
 // claudeSeen is a machine's Claude Code as its node's self-check found it.
 type claudeSeen struct {
-	known   bool   // the node answered with a claude-version check
+	known   bool   // the node answered with a claude-version check that says what it found (not "unanswered")
 	version string // "" when it could not read one
 	at      time.Time
 }
@@ -871,6 +871,7 @@ func (s *Service) askClaudeVersion(machine string, done chan struct{}) {
 		Checks []struct {
 			Name   string `json:"name"`
 			Status string `json:"status"`
+			State  string `json:"state"`
 			Detail string `json:"detail"`
 		} `json:"checks"`
 	}
@@ -880,7 +881,10 @@ func (s *Service) askClaudeVersion(machine string, done chan struct{}) {
 	} else {
 		for _, c := range rep.Checks {
 			if c.Name == "claude-version" {
-				seen.known = true
+				// "unanswered" (node.ClaudeVersionUnanswered): the shell found claude but no version came this time
+				// (a busy machine's 10 s ran out). That says nothing about whether it is installed: unknown, asked
+				// again after readinessClaudeRetry, never claude_missing.
+				seen.known = c.State != "unanswered"
 				if m := doctorVersion.FindStringSubmatch(c.Detail); m != nil {
 					seen.version = m[1]
 				}

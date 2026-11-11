@@ -131,7 +131,7 @@ class InboxDataOwner @Inject constructor(
             // Persona' own transport gives plain ids, so it reads the group's own sessions and preferences; the sessions
             // as the pages show them, so a card just answered here stops saying "Needs you" on the Persona tab too (#4525).
             val assistant = RealAssistantRepository(connection, stack.repositories.shownRepository, data.coroutineScope, snapshots,
-                stack.repositories.preferences ?: preferences.takeIf { names.plain })
+                stack.repositories.preferences ?: preferences.takeIf { names.plain }, events = socket.events)
             persona = assistant.inGroup(names, data.coroutineScope)
             val composers = ReplyComposers(wrapped, data.coroutineScope)
             Repositories(data, wrapped, checkNotNull(persona), mail,

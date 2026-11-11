@@ -29,6 +29,8 @@ import { dropElicitationDraft } from "./elicitation";
 import type { OutboxEntry } from "./outbox";
 import { NO_LINK, RESTARTING_MS, type ConnLink } from "./connection";
 import { setOfflineProbe } from "./feedback";
+import { readDirectionTree } from "./direction-names";
+import { directionTreeAwaitsHello } from "./direction-tree";
 import { afterEvent, afterHello, graceUntil, isResumed, NO_CURSOR, RESTART_FAST_MS, retryDelay, shownConn, wsQuery, type Drop, type EventCursor } from "./reconnect";
 
 export type Conn = "connecting" | "online" | "offline";
@@ -539,12 +541,14 @@ export function connect() {
   socketChanged(false);
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   socketToken = getToken();
+  directionTreeAwaitsHello(true); // its hello reads the direction tree: the screens wait for that read
   const sock = new WebSocket(`${proto}//${location.host}${BASE}/api/v1/ws?${wsQuery(socketToken, cursor, [SESSIONS_LIST_FEATURE, SESSIONS_DELTA_FEATURE, SESSION_LIVE_FEATURE, "extension_ui_stream_v1", "persona_contracts_v1"])}`);
   ws = sock;
   restartNotice = false;
   // an attempt does not move offline back to connecting: the pill stays on one phase while the hub is down instead of
   // flipping at every backoff tick (the app's ConnectionTitle); shownConn decides it when the attempt fails
   sock.onopen = () => {
+    socketOpenedAt = Date.now(); // a direction tree read since then serves this hello (lib/direction-tree.ts)
     // the interface language: this connection's text, and the user's language for pushes and the assistant (docs/protocol/i18n.md)
     // and what it can render: MCP forms and links come only to a socket that says so
     sock.send(JSON.stringify({ type: "client_hello", platform: CLIENT_PLATFORM, version: CLIENT_VERSION, features: CLIENT_FEATURES, locale: currentLanguage(), heartbeat: { pong_timeout: CLIENT_PONG_TIMEOUT } }));
@@ -576,6 +580,7 @@ export function connect() {
     }
   };
   sock.onclose = (ev) => {
+    if (ws === sock) directionTreeAwaitsHello(false); // no hello: whoever waited for the tree reads it now
     if (ws !== sock) return;
     const wasLive = authenticatedSocket === sock;
     ws = null;
@@ -678,6 +683,27 @@ if (typeof window !== "undefined") {
   window.addEventListener("offline", () => set({ link: { ...state.link, networkUp: false } }));
 }
 
+/** The tree read again: its leaders become the assistant's (a new one not listed yet: the assistant is read again). */
+/** When the socket last opened. */
+let socketOpenedAt = 0;
+
+async function followDirections(changed = false) {
+  if (pageOf() !== "") return; // the tree is the default assistant's (docs/protocol/protocol.md)
+  const ids = await readDirectionTree(changed, changed ? undefined : socketOpenedAt);
+  const a = state.assistant;
+  if (!ids || !a) return;
+  const known = new Set(a.conversations.map((c) => c.session_id));
+  if (ids.some((id) => !known.has(id))) void refreshAssistant().catch(() => {});
+  else if (JSON.stringify(ids) !== JSON.stringify((a.leaders ?? []).filter((id) => id !== a.main))) set({ assistant: { ...a, leaders: ids } });
+}
+
+const helloHooks = new Set<() => void>();
+/** Runs `f` on every hello (lib/new-version.ts asks for the shell then); loaded after the first screen, so it is not in it. */
+export function onHello(f: () => void): () => void {
+  helloHooks.add(f);
+  return () => void helloHooks.delete(f);
+}
+
 // The assistant's live updates about the page itself rather than one conversation: only the shown manager's count.
 const PAGE_EVENTS = new Set(["assistant_schedule"]);
 
@@ -685,6 +711,7 @@ function onMessage(msg: Record<string, unknown>) {
   cursor = msg.type === "hello" ? afterHello(cursor, msg) : afterEvent(cursor, msg);
   switch (msg.type) {
     case "hello": {
+      helloHooks.forEach((f) => f()); // e.g. a hub that came back may serve a new web build (lib/new-version.ts)
       setCompatibilityFeatures(Array.isArray(msg.features) ? msg.features as string[] : []);
       const mesh = (msg.mesh as { hubs?: MeshHub[] } | undefined)?.hubs;
       set({
@@ -708,12 +735,19 @@ function onMessage(msg: Record<string, unknown>) {
       resendSeen();
       // resumed: the hub replays every broadcast missed since the cursor, nothing needs refetching
       if (!isResumed(msg)) {
+        void followDirections(); // the direction tree again: a `directions` may have been missed while away
         void refresh();
         void refreshAgentSessions();
         void refreshAgentPrefs();
       }
+      directionTreeAwaitsHello(false); // after followDirections started its read: those waiting share it
       break;
     }
+    case "directions":
+      // the direction tree changed (#4352): a leader made or ended anywhere, a name, a task's state. The sidebar's 常驻
+      // follow at once (#4331: a sixth leader stayed hidden until a reload); a read already out may predate the change
+      void followDirections(true);
+      break;
     case "hub_restarting":
       restartNotice = true; // the close that follows is a restart: retry at once, stay quiet longer
       break;

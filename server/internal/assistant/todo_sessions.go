@@ -21,8 +21,13 @@ import (
 
 // Node methods the todos call through device.call.
 const (
-	deviceTodoTokens    = "todo.sync_session_tokens" // {tokens: {session_id: {name: value}}} → {}
-	deviceSessionRetire = "session.retire"           // {session_id} → {closed} (tasks_close.go)
+	deviceTodoTokens = "todo.sync_session_tokens" // {tokens: {session_id: {name: value}}} → {}
+	// {session_id, close_terminal: true} → {closed}: the user's "Archive and close" (agent_archive_close.go); without
+	// close_terminal a node since #4754 only stops the agent.
+	deviceSessionRetire = "session.retire"
+	// {session_id, retire?} → {stopped}: the agent quits, its terminal stays (tasks_close.go, tasks_idle.go,
+	// supervise_leader.go; node retire.go). A node before #4754 does not know it: a refusal, nothing closed.
+	deviceSessionStop = "session.stop"
 )
 
 // todosSessionsChanged: machine's node sent its session list.

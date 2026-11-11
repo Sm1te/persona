@@ -293,6 +293,13 @@ func (s *Service) askRound(id, asked string) (*acceptAsk, error) {
 // "OK" takes it; another is their own choice, kept in the to-do's decisions and sent to the task's agent, which ends
 // the decision. False: the round is over. errDecisionOption: no such option; else acceptTry's errors, or the send's.
 func (s *Service) chooseOption(ctx context.Context, id, asked, label string) (bool, error) {
+	s.reviewDismissals.actions.acquire(id)
+	defer s.reviewDismissals.actions.release(id)
+	if t, ok := s.todoNow(id); ok {
+		if dismissed, err := s.decisionDismissed(ctx, t); err != nil || dismissed {
+			return false, err
+		}
+	}
 	a, err := s.askRound(id, asked)
 	if err != nil || a == nil {
 		return false, err
@@ -301,7 +308,7 @@ func (s *Service) chooseOption(ctx context.Context, id, asked, label string) (bo
 	i := slices.IndexFunc(a.Options, func(o DecisionOption) bool { return o.Label == label })
 	switch {
 	case label == a.Recommend && label != "":
-		return s.acceptTry(ctx, id, "")
+		return s.acceptTryAsDismissalLocked(ctx, id, "", false)
 	case i < 0:
 		return false, errDecisionOption
 	}
@@ -368,6 +375,13 @@ func (s *Service) endAsk(ctx context.Context, id string, asked time.Time, respon
 //
 // False: the round is over, or response is none of them.
 func (s *Service) ownerCannotAnswer(ctx context.Context, id, asked, response string) (bool, error) {
+	s.reviewDismissals.actions.acquire(id)
+	defer s.reviewDismissals.actions.release(id)
+	if t, ok := s.todoNow(id); ok {
+		if dismissed, err := s.decisionDismissed(ctx, t); err != nil || dismissed {
+			return false, err
+		}
+	}
 	if !slices.Contains(ownerResponses, response) {
 		return false, nil
 	}

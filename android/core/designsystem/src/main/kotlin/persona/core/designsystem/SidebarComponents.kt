@@ -28,9 +28,11 @@ fun JSidebarHistoryRow(
     onClick: () -> Unit,
     onMenu: () -> Unit,
     menuLabel: String,
+    /** The line under the title (a leader conversation's open tasks, #4331); null: one line only. */
+    hint: String? = null,
     titleAccessory: (@Composable () -> Unit)? = null,
 ) {
-    JRow(title, onClick = onClick, onLongClick = onMenu, selected = selected, chevron = false,
+    JRow(title, onClick = onClick, onLongClick = onMenu, selected = selected, chevron = false, subtitle = hint,
         titleAccessory = titleAccessory, trailing = {
             if (status == Status.NeedsYou || status == Status.Working || status == Status.Unread) JStatusDot(status)
             JIconButton(PhIcons.DotsThree, menuLabel, onMenu)

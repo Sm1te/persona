@@ -142,6 +142,17 @@ Selecting `herdr-both` attaches both herdr and herdr-core hosts:
   it works normally while the other list is empty).
 - Orca next to herdr goes through "Host sets" above; there are no more combination options.
 
+## Agents run in a terminal
+
+#4754. An Agent runs on top of a terminal: every Agent Persona starts runs in the computer's terminal engine, and Persona never closes an Agent's terminal on its own. The Agents list shows only Agents, but each has a terminal under it.
+
+- **Starting**: every start or resume of an Agent goes through the node's `session.start` / `session.send`: New Agent in the apps and the web, the assistant's `agent_start`, `dispatch_start` and `task_plan`, auto-review reviewers, launcher repair, the Lark bot's `/start` card, extension tokens, Run Agent Here. On herdr, Herdr App, Orca and Tern the Agent runs in a new tab (or the pane picked), never headless (`claude -p`, `codex exec`, an SDK process). A start into a workspace it names starts herdr's server first when it has stopped, as every other start does ("When herdr is not running").
+- **Not Agents, headless by design**: assistant conversations (the main chat, leader chats, scheduled tasks, channels, meetings, the Inbox AI twin, Lark `/agent`), listed in the Persona tab and not under Agents, and model calls (titles, triage, the launcher Test).
+- **No terminal, by the user's choice**: an engine that runs Agents through provider SDKs (Paseo, Cindy), Orca's native chats and runtimes (DSH, pi, Antigravity, daemons) own their sessions; Persona leaves them as they are.
+- **Stopping keeps the terminal**: Persona's own passes stop an Agent with node `session.stop`: a finished task's, an idle one, a cancelled task's, and `/exit` sent by `agent_send` (`docs/assistant/todos.md` "Stop Agents of completed tasks"). The Agent process quits and its tab stays with the shell it ran in. Nothing closes such a tab on a timer.
+- **Only the user closes a terminal**: **Close** on a session, **Archive and close**, force archive of an Agent blocked on a confirmation, closing a pane or tab from the terminal list. The one exception is a finished review's reviewer, an internal helper, which closes with its worktree copy.
+- **Checks**: `server/internal/assistant/terminal_guard_test.go` pins the manager functions that ask a node to close something, `server/internal/node/terminal_guard_test.go` the node functions that close a pane or tab; `TestHerdrStopKeepsTheTerminal`, `TestOrcaRetireKeepsTheTerminal` and `TestStartStartsHerdrFirst` cover the behavior.
+
 ## Tern
 
 [Tern](https://stencil.so) is Stencil's multiplexing terminal. The node drives it through its `tern` command line (`server/internal/terncli`,

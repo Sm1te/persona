@@ -164,14 +164,29 @@ export async function startFakePaseo(t, o = {}) {
           window: { minSeq: 1, maxSeq, nextSeq: maxSeq + 1 }, entries: stale ? tl.entries : list, error: a ? null : 'Agent not found',
         })
       }
-      case 'send_agent_message_request':
+      case 'send_agent_message_request': {
+        // A message to an archived agent takes it back from the archive first, its labels as they were (Paseo 0.14
+        // sendPromptToAgent: unarchive, load, run).
+        const e = f.agents.get(msg.agentId)
+        if (e?.agent.archivedAt) f.upsert({ ...e.agent, archivedAt: null, status: 'running', updatedAt: new Date().toISOString() })
         return reply(c, 'send_agent_message_response', { requestId: id, agentId: msg.agentId, accepted: true, error: null })
+      }
       case 'cancel_agent_request':
         return reply(c, 'cancel_agent_response', { requestId: id, agentId: msg.agentId, agent: f.agents.get(msg.agentId)?.agent ?? null, error: null })
-      case 'update_agent_request':
-      case 'set_agent_mode_request':
-      case 'set_agent_thinking_request':
+      case 'update_agent_request': {
+        // An archived agent's record is renamed where it is stored, and no list is told (it lists the agents Paseo has).
+        const e = f.agents.get(msg.agentId)
+        if (e?.agent.archivedAt && msg.name) e.agent = { ...e.agent, title: msg.name, updatedAt: new Date().toISOString() }
         return reply(c, replyType(msg.type), { requestId: id, agentId: msg.agentId, accepted: true, error: null })
+      }
+      case 'set_agent_mode_request':
+      case 'set_agent_thinking_request': {
+        // Paseo loads the agent first, and refuses an archived one (ensureUnarchivedAgentLoaded).
+        if (f.agents.get(msg.agentId)?.agent.archivedAt) {
+          return reply(c, replyType(msg.type), { requestId: id, agentId: msg.agentId, accepted: false, error: `Agent is archived: ${msg.agentId}` })
+        }
+        return reply(c, replyType(msg.type), { requestId: id, agentId: msg.agentId, accepted: true, error: null })
+      }
       case 'archive_agent_request': {
         const at = new Date().toISOString()
         reply(c, 'agent_archived', { requestId: id, agentId: msg.agentId, archivedAt: at })
@@ -194,9 +209,19 @@ export async function startFakePaseo(t, o = {}) {
         return reply(c, 'agent.create.response', { requestId: id, agent, error: null })
       }
       case 'import_agent_request': {
-        const agent = agentSnapshot({ provider: msg.provider, cwd: msg.cwd, labels: msg.labels ?? {},
-          persistence: { provider: msg.provider, sessionId: msg.sessionId, metadata: { provider: 'claude' } },
-          runtimeInfo: { provider: msg.provider, sessionId: msg.sessionId } })
+        // Paseo 0.14 (import-sessions.ts): a session an agent has is not imported twice; one an archived agent has is
+        // that agent, back from the archive with the request's labels over its own; any other is a new agent.
+        const records = [...f.agents.values()].filter((e) => e.agent.persistence?.provider === msg.provider && e.agent.persistence?.sessionId === msg.sessionId)
+        if (records.some((e) => !e.agent.archivedAt)) {
+          return send(c, { type: 'status', payload: { status: 'agent_create_failed', requestId: id, error: `Provider session is already imported: ${msg.sessionId}` } })
+        }
+        const old = records.find((e) => e.agent.archivedAt)
+        const agent = old
+          ? { ...old.agent, archivedAt: null, status: 'idle', updatedAt: new Date().toISOString(), labels: { ...old.agent.labels, ...msg.labels },
+            workspaceId: msg.workspaceId ?? old.agent.workspaceId }
+          : agentSnapshot({ provider: msg.provider, cwd: msg.cwd, labels: msg.labels ?? {},
+            persistence: { provider: msg.provider, sessionId: msg.sessionId, metadata: { provider: 'claude' } },
+            runtimeInfo: { provider: msg.provider, sessionId: msg.sessionId } })
         f.upsert(agent)
         return send(c, { type: 'status', payload: { status: 'agent_resumed', requestId: id, agentId: agent.id, agent } })
       }

@@ -9,7 +9,8 @@ import { t } from "../../i18n";
 import { getFeedState, loadFeed, type FeedItem, type TaskPlan } from "../../lib/feed";
 import { clock } from "../../lib/format";
 import { closePanel, getPanel } from "../../lib/panel";
-import { refresh, refreshTodos, reset } from "../../lib/store";
+import { decisionLaterKey } from "../../lib/assistant-entries";
+import { putTodo, refresh, refreshTodos, reset } from "../../lib/store";
 import type { Todo, TodoAsk } from "../../lib/todos";
 import { AssistantActionBar } from "./Tasks";
 
@@ -41,20 +42,29 @@ const decision: TodoAsk = {
   responses: ["decide_yourself", "not_what_i_asked", "explain_first"],
 };
 
-let ask: TodoAsk;
+let ask: TodoAsk | undefined;
+let todo: Todo;
 let host: HTMLDivElement;
 let root: Root;
 let posts: { path: string; body: unknown }[];
 let status: number;
 
 async function mount() {
-  const todo: Todo = { id: "decision-task", title: "Demo release", origin: conversation, plan_id: plan.id, created_at: at, updated_at: at,
-    agents: [{ machine_id: "demo", session_id: "worker", linked_at: at }], supervision: { supervisor: conversation, state: "needs_user" }, ask };
+  todo = { id: "decision-task", title: "Demo release", origin: conversation, plan_id: plan.id, created_at: at, updated_at: at,
+    agents: [{ machine_id: "demo", session_id: "worker", linked_at: at }], supervision: { supervisor: conversation, state: "needs_user", reviews: [{ at, verdict: "needs_user", note: "The example checks passed; release approval is still needed." }] }, decision_review: { review_at: at }, ask };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url);
     if (init?.method === "POST") {
       posts.push({ path, body: JSON.parse(String(init.body)) });
       if (status !== 200) return new Response(JSON.stringify({ error: "The computer is offline" }), { status, headers: { "Content-Type": "application/json" } });
+      if (path.endsWith("/decision-dismiss")) {
+        todo = { ...todo, decision_review: { review_at: at, dismissal_id: "dismiss-demo" } };
+        return new Response(JSON.stringify(todo.decision_review), { headers: { "Content-Type": "application/json" } });
+      }
+      if (path.endsWith("/decision-undo-dismiss")) {
+        todo = { ...todo, decision_review: { review_at: at } };
+        return new Response(JSON.stringify(todo.decision_review), { headers: { "Content-Type": "application/json" } });
+      }
       return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
     }
     const body = path.includes("/feed") ? { items: feed, plans: { [plan.id]: plan }, task_cards: [{ id: `plan:${plan.id}:0`, plan_id: plan.id, index: 0, todo_id: todo.id, at, updated_at: at, state: "accepted" }] }
@@ -72,7 +82,7 @@ async function mount() {
   root = createRoot(host);
   act(() => root.render(<AssistantActionBar conversation={conversation} />));
   act(() => host.querySelector<HTMLButtonElement>('[data-tray-entry="needs"]')!.click());
-  await act(async () => void (await import("./DecisionRow"))); // the row's code arrives with the first decision
+  await act(async () => void (await import("./TaskDecision"))); // the row's code arrives with the first decision
 }
 
 beforeEach(() => {
@@ -88,6 +98,7 @@ afterEach(() => {
   delete getFeedState().plans[plan.id];
   delete getFeedState().feeds[conversation];
   delete getFeedState().taskCards[conversation];
+  delete getFeedState().later[decisionLaterKey(todo)];
   vi.unstubAllGlobals();
 });
 
@@ -191,6 +202,62 @@ describe("a decision in the Needs you tray", () => {
     const row = host.querySelector("[data-decision-row]")!;
     expect(row.querySelector("[data-decision-response]")?.textContent).toBe(t("assistant-decisionrow.responded"));
     expect(row.querySelector("[data-decision-option]")).not.toBeNull(); // the options can still be chosen
+  });
+
+  it("defers only this decision round without writing or completing the task", async () => {
+    await mount();
+    const actions = row().querySelector("[data-decision-actions]")!;
+    expect([...actions.querySelectorAll("button")].map((b) => b.textContent)).toEqual([t("assistant-tasks.later"), t("assistant-tasks.dismiss_draft")]);
+    act(() => actions.querySelector<HTMLButtonElement>("button")!.click());
+    expect(row()).toBeNull();
+    expect(posts).toEqual([]);
+    const next = "2026-11-11T08:00:00Z";
+    await act(async () => putTodo({ ...todo, supervision: { ...todo.supervision!, reviews: [{ at: next, verdict: "needs_user" }] }, decision_review: { review_at: next }, ask: { ...decision, asked_at: next } }));
+    expect(row()).not.toBeNull();
+  });
+
+  it("dismisses the exact review, never accepts an option or completes the task", async () => {
+    await mount();
+    const buttons = row().querySelector("[data-decision-actions]")!.querySelectorAll<HTMLButtonElement>("button");
+    await act(async () => { buttons[1].click(); optionButtons()[0].click(); buttons[0].click(); });
+    expect(posts).toEqual([{ path: expect.stringContaining("/todos/decision-task/decision-dismiss"), body: { review_at: at } }]);
+    expect(row()).toBeNull();
+    expect(todo.done_at).toBeUndefined();
+    expect(todo.ask).toEqual(decision);
+    expect(todo.supervision?.state).toBe("needs_user");
+  });
+
+  it("keeps dismiss and later on a legacy review without inventing acceptance options", async () => {
+    ask = undefined;
+    await mount();
+    expect(row().querySelector("[data-decision-legacy]")?.textContent).toContain("release approval is still needed");
+    expect(row().querySelector("[data-decision-option]")).toBeNull();
+    expect(row().textContent).toContain(t("assistant-decisionrow.missing_options"));
+    const buttons = row().querySelector("[data-decision-actions]")!.querySelectorAll<HTMLButtonElement>("button");
+    await act(async () => buttons[1].click());
+    expect(posts).toEqual([{ path: expect.stringContaining("/decision-dismiss"), body: { review_at: at } }]);
+    expect(row()).toBeNull();
+  });
+
+  it("does not let a stale dismissal projection hide a newly pushed review", async () => {
+    await mount();
+    await act(async () => row().querySelector("[data-decision-actions]")!.querySelectorAll<HTMLButtonElement>("button")[1].click());
+    const next = "2026-11-11T09:00:00Z";
+    await act(async () => putTodo({ ...todo, supervision: { ...todo.supervision!, reviews: [{ at: next, verdict: "needs_user" }] }, ask: { ...decision, asked_at: next } }));
+    expect(row()).not.toBeNull();
+    expect(row().querySelector("[data-decision-option]")).not.toBeNull();
+  });
+
+  it("allows retry after dismiss fails and blocks dismissal after option acceptance starts", async () => {
+    status = 503;
+    await mount();
+    const dismiss = row().querySelector("[data-decision-actions]")!.querySelectorAll<HTMLButtonElement>("button")[1];
+    await act(async () => dismiss.click());
+    expect(row()).not.toBeNull();
+    expect(dismiss.disabled).toBe(false);
+    status = 200;
+    await act(async () => { optionButtons()[0].click(); dismiss.click(); });
+    expect(posts.map((p) => p.path.split("/").at(-1))).toEqual(["decision-dismiss", "accept"]);
   });
 
   it("leaves an ask without options as it was: one Take button, no decision row", async () => {

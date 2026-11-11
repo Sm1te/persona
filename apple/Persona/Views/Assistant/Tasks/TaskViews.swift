@@ -1199,20 +1199,6 @@ struct DockCapsule: ViewModifier {
 extension View {
     /// An entry of the row above the assistant's composer (`DockCapsule`).
     func dockCapsule(_ look: DockCapsule.Look = .plain) -> some View { modifier(DockCapsule(look: look)) }
-
-    /// Over the end of the chat, right above the dock or the action bar (the footer adds no margin there): the page fades
-    /// in, instead of the list's edge cutting a message in two. As tall as the room the newest message keeps from that
-    /// edge (`ChatView.newestGap`), so at rest nothing is under it; out to the footer's side margins, where the chat shows too.
-    func dockChatFade() -> some View {
-        background(alignment: .top) {
-            LinearGradient(colors: [Theme.pageBackground.opacity(0), Theme.pageBackground], startPoint: .top, endPoint: .bottom)
-                .frame(height: ChatView.newestGap)
-                .padding(.horizontal, -Theme.Space.m)
-                .offset(y: -ChatView.newestGap)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-    }
 }
 
 /// A dock pill's face, the same for a task and an agent: its marks, the title (which gives way), and Needs You tinted with

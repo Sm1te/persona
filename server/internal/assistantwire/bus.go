@@ -86,14 +86,16 @@ const (
 
 // HTTPRequest is http.request's params: an app's request on one of Routes, with an escaped URL path (header without
 // the hub's credentials and hop-by-hop headers, the asking device's role in RoleHeader; body as base64).
+// HandoffApprover is set by the hub on a card's answer from a device that may approve a hand-off card.
 type HTTPRequest struct {
-	Caller         *devicewire.Caller         `json:"caller,omitempty"`
-	ShareAuthority *devicewire.ShareAuthority `json:"share_authority,omitempty"`
-	Method         string                     `json:"method"`
-	Path           string                     `json:"path"`
-	Query          string                     `json:"query,omitempty"`
-	Header         map[string][]string        `json:"header,omitempty"`
-	Body           []byte                     `json:"body,omitempty"`
+	Caller          *devicewire.Caller         `json:"caller,omitempty"`
+	ShareAuthority  *devicewire.ShareAuthority `json:"share_authority,omitempty"`
+	HandoffApprover *HandoffApprover           `json:"handoff_approver,omitempty"`
+	Method          string                     `json:"method"`
+	Path            string                     `json:"path"`
+	Query           string                     `json:"query,omitempty"`
+	Header          map[string][]string        `json:"header,omitempty"`
+	Body            []byte                     `json:"body,omitempty"`
 }
 
 // HTTPResponse is http.request's answer, written back to the app unchanged.
@@ -173,6 +175,8 @@ var Routes = []string{
 	"PUT /api/v1/todos/{id}/thread",
 	"DELETE /api/v1/todos/{id}/thread",
 	"POST /api/v1/todos/{id}/accept",
+	"POST /api/v1/todos/{id}/decision-dismiss",
+	"POST /api/v1/todos/{id}/decision-undo-dismiss",
 	"POST /api/v1/later/{id}/handled", // a question that can wait, marked handled (later.go)
 	"POST /api/v1/todos/{id}/done-check",
 	"POST /api/v1/todos/{id}/retry",

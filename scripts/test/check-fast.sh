@@ -13,7 +13,7 @@
 #
 # Path mapping (diff mode):
 #   web/**                     npm ci (only with no node_modules or a changed package.json/package-lock.json),
-#                              typecheck, vitest run
+#                              node_modules against package-lock.json, typecheck, vitest run
 #   schema/extension/**, spec/fixtures/injected/**, spec/fixtures/sync/**, spec/fixtures/attention/**,
 #   scripts/mock/inbox_events.json
 #                              also the web check: web/src and its vitest suite read these files. They are the inputs
@@ -318,6 +318,8 @@ job_web() {  # $1 = ci when npm ci must run first
     in_dir web step "$TIMEOUT_NPM_CI" "web: npm ci" npm ci || return $?
     JOB_HINT=""
   fi
+  # A node_modules from before the last lock bump runs old packages: stop with the list instead (#4776).
+  in_dir web step "$TIMEOUT_OTHER" "web: node_modules matches package-lock.json" npm run check:deps || return $?
   in_dir web step "$TIMEOUT_OTHER" "web: tsc -b (typecheck)" npm run typecheck || return $?
   in_dir web step "$TIMEOUT_WEB_TEST" "web: vitest run" npm test
 }

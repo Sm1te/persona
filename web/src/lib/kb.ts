@@ -108,7 +108,11 @@ export interface RecordingMinutes {
   revision: number;
   generated_at: string;
   title: string;
+  /** The hub's fixed-format span ("2026-11-10 14:00–15:10"), shown only without `start` / `end` (an older hub). */
   when: string;
+  /** The recording's span (RFC 3339, #4713), formatted here like the app's other dates (`formatSpan`). */
+  start?: string;
+  end?: string;
   where?: string;
   attendees?: string[];
   points?: MinutesPoint[];
@@ -136,7 +140,8 @@ export interface RecordingAsk {
   answer: string;
   lang?: string;
   speak?: boolean;
-  sources?: { kind: string; id: string; name: string; when?: string }[] | null;
+  /** An earlier meeting's `when` / `start` / `end` are its minutes' (#4713). */
+  sources?: { kind: string; id: string; name: string; when?: string; start?: string; end?: string }[] | null;
   error?: string;
   asked_at: string;
   answered_at?: string;
@@ -770,6 +775,17 @@ export function formatAt(iso: string, now = new Date()): string {
   return d.getFullYear() === now.getFullYear()
     ? t("lib-kb.at_this_year", { date: monthDay(d), weekday: weekday(d), time: hm })
     : t("lib-kb.at_other_year", { date: yearMonthDay(d), time: hm });
+}
+
+/** A span the hub sends as `start` / `end` (RFC 3339) in this app's dates, as `formatAt` says a time (#4713): "Fri, Oct 30
+ *  14:00–15:10", with the end's date too when it is another day. `fallback` (the hub's fixed-format `when`) when either
+ *  is missing or unreadable: a hub from before them. */
+export function formatSpan(start: string | undefined, end: string | undefined, fallback = "", now = new Date()): string {
+  const s = new Date(start ?? "");
+  const e = new Date(end ?? "");
+  if (!start || !end || Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return fallback;
+  const sameDay = s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth() && s.getDate() === e.getDate();
+  return sameDay ? `${formatAt(start, now)}–${pad(e.getHours())}:${pad(e.getMinutes())}` : `${formatAt(start, now)} – ${formatAt(end, now)}`;
 }
 
 /** "2026-10-30" → "Fri, Oct 30", with the year when it is not this one. */

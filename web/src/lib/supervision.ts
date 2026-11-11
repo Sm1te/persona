@@ -29,6 +29,9 @@ export interface TaskReview {
   round?: number;
   checks?: ReviewCheck[];
   note?: string;
+  reason?: string;
+  recommend?: string;
+  options?: { label: string; leads_to?: string }[];
 }
 
 export interface Supervision {

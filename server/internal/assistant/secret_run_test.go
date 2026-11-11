@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -733,27 +734,60 @@ func forgedCard(id string) proto.Interaction {
 		CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().Add(time.Hour).UTC()}
 }
 
+// forgedHandoffCard is a card from outside the manager's Agent start that calls itself the hand-off card.
+func forgedHandoffCard(id string) proto.Interaction {
+	input, _ := json.Marshal(proto.SecretHandoffInput{Variables: []proto.SecretHandoffVariable{
+		{Name: "GITHUB_TOKEN", Provider: "vault", Title: "GitHub › credential"}}})
+	return proto.Interaction{ID: id, MachineID: "mac", SessionID: "s1", Kind: proto.IxPermission, ToolName: proto.SecretHandoffTool,
+		ToolInput: input, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().Add(time.Hour).UTC()}
+}
+
 // A node's interaction.create (a hook, a runtime, a daemon), a Codex list and an extension's card (fleet.ask) cannot
-// put a password card on the phone: it would be shown as the trusted card without its Agent's name, and the password
-// would go back to whoever asked.
+// put a password card or a hand-off card on the phone: it would be shown as the trusted card (the password card
+// without its Agent's name), and the password would go back to whoever asked, or a yes would pass for a hand-off's.
 func TestOnlyTheToolMakesThePasswordCard(t *testing.T) {
-	ft := newFleetTest(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	params, _ := json.Marshal(map[string]any{"interaction": forgedCard("ix_node")})
-	if _, handled, err := ft.s.NodeRequest(ctx, "mac", "interaction.create", params); !handled || !errors.Is(err, errReservedCard) {
-		t.Fatalf("node interaction.create: handled %v, err %v; want it refused", handled, err)
+	for name, forged := range map[string]func(string) proto.Interaction{"password": forgedCard, "hand-off": forgedHandoffCard} {
+		ft := newFleetTest(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		params, _ := json.Marshal(map[string]any{"interaction": forged("ix_node")})
+		if _, handled, err := ft.s.NodeRequest(ctx, "mac", "interaction.create", params); !handled || !errors.Is(err, errReservedCard) {
+			t.Fatalf("%s card, node interaction.create: handled %v, err %v; want it refused", name, handled, err)
+		}
+		if _, err := ft.s.askHub(ctx, forged("ix_ext")); !errors.Is(err, errReservedCard) {
+			t.Fatalf("%s card, fleet.ask: err %v, want it refused", name, err)
+		}
+		cancel()
+		codex, _ := json.Marshal(map[string]any{"interactions": []proto.Interaction{forged("ix_codex")}})
+		ft.s.syncCodexInteractions("mac", codex)
+		if got := ft.s.pendingInteractions(); len(got) != 0 {
+			t.Fatalf("%s card, pending: %+v", name, got)
+		}
+		if told := ft.toldOf(assistantwire.EventFleetInteraction); len(told) != 0 {
+			t.Fatalf("the phone was told of %d forged %s cards", len(told), name)
+		}
 	}
-	if _, err := ft.s.askHub(ctx, forgedCard("ix_ext")); !errors.Is(err, errReservedCard) {
-		t.Fatalf("fleet.ask: err %v, want it refused", err)
+}
+
+// The device the hub found may approve a hand-off card reaches the manager's routes in the request's context, from
+// the relayed request's own field only: a header of any name does not put one there.
+func TestHandoffApproverComesFromTheHubOnly(t *testing.T) {
+	var got []string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a, ok := assistantwire.HandoffApproverOf(r.Context())
+		got = append(got, fmt.Sprintf("%v %s %s", ok, a.DeviceID, a.DeviceName))
+	})
+	forged := map[string][]string{"X-Persona-Handoff-Approver": {`{"device_id":"d9"}`}, "Handoff_approver": {"d9"}}
+	for _, req := range []assistantwire.HTTPRequest{
+		{Method: "POST", Path: "/api/v1/interactions/ix/resolve", Header: forged},
+		{Method: "POST", Path: "/api/v1/interactions/ix/resolve", HandoffApprover: &assistantwire.HandoffApprover{DeviceID: "d1", DeviceName: "iPhone"}},
+		{Method: "POST", Path: "/api/v1/interactions/ix/resolve", HandoffApprover: &assistantwire.HandoffApprover{}},
+	} {
+		if _, err := serveHTTP(context.Background(), h, req, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
-	codex, _ := json.Marshal(map[string]any{"interactions": []proto.Interaction{forgedCard("ix_codex")}})
-	ft.s.syncCodexInteractions("mac", codex)
-	if got := ft.s.pendingInteractions(); len(got) != 0 {
-		t.Fatalf("pending: %+v", got)
-	}
-	if told := ft.toldOf(assistantwire.EventFleetInteraction); len(told) != 0 {
-		t.Fatalf("the phone was told of %d forged cards", len(told))
+	if want := []string{"false  ", "true d1 iPhone", "false  "}; !slices.Equal(got, want) {
+		t.Fatalf("approvers %q, want %q", got, want)
 	}
 }
 

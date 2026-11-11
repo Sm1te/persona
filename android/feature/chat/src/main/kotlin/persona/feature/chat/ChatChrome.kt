@@ -22,7 +22,9 @@ import persona.core.domain.sort.closeConfirmation
 import persona.core.domain.sort.deleteConfirmation
 import persona.core.domain.sort.isTern
 import persona.core.domain.sort.resumeCommand
+import persona.core.domain.sort.slotLabel
 import persona.core.domain.sort.source
+import persona.core.domain.sort.sourceSubtitle
 
 @Composable
 internal fun ChatHeader(
@@ -58,6 +60,14 @@ internal fun ChatHeader(
     DisposableEffect(Unit) { onDispose { onOverlay(false) } }
     val line = resolveStatusLine(statusState)
     val status = line?.status ?: Status.entries.firstOrNull { it.name == session?.agentState?.name } ?: Status.Unknown
+    // How long it has worked this turn, in minutes (the work line in the chat has the seconds): read again every 30 s.
+    val since = session?.takeIf { status == Status.Working && it.backgroundWorking != true }?.stateSince?.let(::parseTime)
+    val now by produceState(java.time.Instant.now(), since) {
+        while (since != null) { kotlinx.coroutines.delay(30_000); value = java.time.Instant.now() }
+    }
+    val worked = workedMinutes(since, now)?.let { m ->
+        if (m < 60) stringResource(R.string.chat_chrome_worked_minutes, m) else stringResource(R.string.chat_chrome_worked_hours, m / 60, m % 60)
+    }
     // While the hub is out of reach the status line under the title says so ("Waiting for network" / "Connecting…" / "Updating…") instead of
     // the session's state, which may be stale; it is back the moment the connection is.
     ChatTopBar(
@@ -70,11 +80,16 @@ internal fun ChatHeader(
             StatusLineKind.Unconfirmed -> stringResource(R.string.chat_chrome_status_unconfirmed)
             StatusLineKind.NeedsYou -> stringResource(R.string.chat_chrome_status_needs_you)
             StatusLineKind.Stopping -> stringResource(R.string.chat_chrome_status_stopping)
-            else -> status.localizedLabel
+            // As iOS (#4339 C4): Seen and the other quiet states say nothing in words, the dot carries them; a turn
+            // that has run a minute says for how long ("Working 22 min").
+            else -> when {
+                status in QuietStatuses -> null
+                worked != null -> "${status.localizedLabel} $worked"
+                else -> status.localizedLabel
+            }
         },
-        // A session from a Codex app-server, Codex history or an agent runtime names its source first.
-        source = listOfNotNull(session?.source?.label, machine?.displayName, session?.cwd?.takeIf(String::isNotBlank))
-            .joinToString(" / ").takeIf(String::isNotBlank),
+        source = session?.let { chatPlace(it, machine?.displayName, it.sourceSubtitle?.text()) },
+        sourceShort = session?.let { chatPlace(it, machine?.displayName, it.sourceSubtitle?.text(), short = true) },
         busy = connection in setOf(ConnectionState.Connecting, ConnectionState.Updating),
         onTitleClick = onDetails,
         agentMark = session?.agentMark,
@@ -213,3 +228,23 @@ internal fun ChatActionsSheet(actions: List<JAction>, onDismiss: () -> Unit, tit
         }
     }
 }
+
+/** The states the line under the title names by its dot only (iOS `ChatView.quiet`). */
+internal val QuietStatuses = setOf(Status.Idle, Status.Offline, Status.Unknown)
+
+/**
+ * Where a conversation runs, as the line under its title says it (iOS `devSubtitle`, #4339 C4): its [source] first (a
+ * Codex app-server, Codex history or an agent runtime, `sourceSubtitle` in words), then the computer and "space › tab".
+ * Never the working directory, which DESIGN_SYSTEM.md 5.6 keeps off primary screens; null when there is nothing to say.
+ */
+internal fun chatPlace(session: Session, machine: String?, source: String? = null, short: Boolean = false): String? {
+    val place = listOfNotNull(session.spaceName?.takeIf(String::isNotBlank), session.slotLabel).joinToString(" › ")
+    // [short], for a line too narrow for all of it: the place without the computer, or the computer when there is no place.
+    val computer = machine?.takeIf { it.isNotBlank() && (!short || place.isEmpty()) }
+    return listOfNotNull(source?.takeIf(String::isNotBlank), computer, place.takeIf(String::isNotEmpty))
+        .joinToString(" · ").takeIf(String::isNotEmpty)
+}
+
+/** Whole minutes from [since] to [now], null under one minute or without a start. */
+internal fun workedMinutes(since: java.time.Instant?, now: java.time.Instant): Long? =
+    since?.let { java.time.Duration.between(it, now).toMinutes() }?.takeIf { it >= 1 }

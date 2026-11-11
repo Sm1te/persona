@@ -370,8 +370,10 @@ internal fun toolPresentation(res: Resources, item: Item): ToolPresentation {
         "AskUserQuestion" -> ToolVerb.Ask
         else -> ToolVerb.Use
     }
-    // Persona's own tools, the computer's and the phone's have words of their own (iOS ToolPresentation.verb).
-    val named = if (kind == ToolVerb.Use) persona.core.domain.namedToolVerb(name)?.resolve(res) else null
+    // Persona's own tools, the computer's and the phone's have words of their own (iOS ToolPresentation.verb); any
+    // other reads its name in words, another server's MCP tool as "GitHub · Create issue" (#2986), never "Use".
+    val named = if (kind == ToolVerb.Use && name.isNotEmpty())
+        persona.core.domain.namedToolVerb(name)?.resolve(res) ?: persona.core.domain.toolWords(name) else null
     val verb = named ?: res.getString(kind.label)
     val path = input?.string("file_path") ?: input?.string("notebook_path")
     if (!path.isNullOrBlank()) {

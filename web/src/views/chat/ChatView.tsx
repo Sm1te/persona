@@ -72,6 +72,7 @@ import { navRailTicks, type NavRailSource, type NavRailTick } from "../../lib/na
 import { containsInput, indexedNavTicks, userInputRevision } from "../../lib/user-input-index";
 import { useUserInputs } from "./useUserInputs";
 import { NavRail } from "./NavRail";
+import { useChatScrollbar } from "./useChatScrollbar";
 import { ChatLineView, closedRecap, closeRecap, OpenRecapLine } from "./Lines";
 import { useTranscript } from "./useTranscript";
 import { ArchiveCloseDialog, CloseAgentDialog, DeleteSessionDialog, HeaderModeButton, ModeChips, RenameDialog, RenameSpaceDialog, SessionInfoDialog } from "./SessionDialogs";
@@ -531,6 +532,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // terminal to switch to) and React then draws the chat in another element, so listeners left on the first one stop
   // following the end (an agent's page opened by its address did not keep its live text in view, #1309)
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  useChatScrollbar(scrollEl);
   const scrollRef = useCallback((el: HTMLDivElement | null) => {
     scroller.current = el;
     if (el) setScrollEl(el);

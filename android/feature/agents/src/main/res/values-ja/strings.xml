@@ -56,11 +56,6 @@
     <string name="agents_count_pair">%1$s、%2$s</string>
     <string name="agents_flag_space_pinned">ピン留め中のスペース</string>
     <string name="agents_flag_space_muted">ミュート中のスペース</string>
-    <string name="agents_kind_todo">ToDo</string>
-    <string name="agents_kind_project">プロジェクト</string>
-    <plurals name="agents_count_todos">
-        <item quantity="other">ToDo %1$d件</item>
-    </plurals>
     <string name="agents_kind_space">スペース</string>
     <string name="agents_view_todo">ToDoを表示</string>
     <string name="agents_history_unknown_folder">不明なフォルダ</string>
@@ -69,6 +64,7 @@
     <string name="agents_range_all">すべて</string>
     <string name="agents_range_history">履歴</string>
     <string name="agents_grouping_current">グループ化：%1$s</string>
+    <string name="agents_group_by">グループ</string>
     <string name="agents_only_machine">%1$sのみ表示</string>
     <string name="agents_only_machine_hint">すべてのマシンを表示</string>
     <string name="agents_grouping_repo">リポジトリ別</string>

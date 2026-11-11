@@ -58,7 +58,7 @@ class AgentsLanguageShotsTest {
     @Test fun simplifiedChinese() = shots("zh", listOf("等你定", "全部机器"), listOf("其他未完成", "正在做的 Agent", "开始对话"))
 
     @Config(sdk = [35], qualifiers = "en-w400dp-h2400dp-xhdpi")
-    @Test fun english() = shots("en", listOf("Needs your decision", "All machines"), listOf("Other open", "Agents on it", "Start chat"))
+    @Test fun english() = shots("en", listOf("Needs you", "All machines"), listOf("Other open", "Agents on it", "Start chat"))
 
     @Config(sdk = [35], qualifiers = "ja-w400dp-h2400dp-xhdpi")
     @Test fun japanese() = shots("ja", listOf("判断待ち", "すべてのマシン"), listOf("その他の未完了", "対応中のエージェント", "チャットを開始"))

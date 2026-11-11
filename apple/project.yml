@@ -481,9 +481,9 @@ targets:
     sources:
       - path: PersonaShare
         excludes: ["*.plist", "*.entitlements"]
-      # The app's String Catalog and interface language (docs/apple/ios.md「Interface language」).
-      - path: Shared/Localization
-      - path: Shared/NativeStateMigration.swift
+      # The app's hub client, models and design system, as the watch has them (HubStore, APIClient, Theme), with the
+      # String Catalog and interface language (docs/apple/ios.md「Interface language」).
+      - path: Shared
     entitlements:
       path: PersonaShare/PersonaShare.entitlements
       properties:
@@ -495,7 +495,7 @@ targets:
         PRODUCT_MODULE_NAME: PersonaShare
         PRODUCT_NAME: PersonaShare
         INFOPLIST_FILE: PersonaShare/Info.plist
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) NATIVE_MIGRATION_STORAGE_ONLY"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) NATIVE_MIGRATION_STORAGE_ONLY SHARE_EXTENSION"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: NO
@@ -509,8 +509,7 @@ targets:
     sources:
       - path: PersonaShare
         excludes: ["*.plist", "*.entitlements"]
-      - path: Shared/Localization
-      - path: Shared/NativeStateMigration.swift
+      - path: Shared
     entitlements:
       path: PersonaShare/PersonaVisionShare.entitlements
       properties:
@@ -521,7 +520,7 @@ targets:
         PRODUCT_MODULE_NAME: PersonaShare
         PRODUCT_NAME: PersonaShare
         INFOPLIST_FILE: PersonaShare/Info.plist
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) NATIVE_MIGRATION_STORAGE_ONLY"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) NATIVE_MIGRATION_STORAGE_ONLY SHARE_EXTENSION"
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES

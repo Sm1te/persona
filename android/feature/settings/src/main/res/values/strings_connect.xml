@@ -44,7 +44,6 @@
     <string name="settings_pairing_next">Next</string>
     <string name="settings_pairing_paste">Paste link</string>
     <string name="settings_pairing_back_to_scan">Back to scanning</string>
-    <string name="settings_pairing_connect_title">Connect your hub</string>
     <string name="settings_pairing_connect_body">When the hub is installed it shows a QR code on screen. You can also open Settings › Devices › Connect a new device on a device that\'s already connected, and scan the code there.</string>
     <string name="settings_pairing_scan">Scan to pair</string>
     <string name="settings_pairing_connect_push">Notifications work without Google services: they come over a persistent connection to the hub.</string>
@@ -208,7 +207,6 @@
     <string name="settings_engine_title">Engine</string>
     <string name="settings_engine_confirm">Confirm and continue</string>
     <string name="settings_engine_save">Save</string>
-    <string name="settings_engine_heading">Which engine does this computer use?</string>
     <string name="settings_engine_reading">Reading this machine</string>
     <string name="settings_engine_demo">The engine can\'t be changed in demo mode.</string>
     <string name="settings_engine_later">Pairing is done. You can choose the engine later in Agents, under machine monitoring.</string>
@@ -216,7 +214,6 @@
     <string name="settings_engine_missing_title">Can\'t read this machine yet</string>
     <string name="settings_engine_retry">Retry</string>
     <string name="settings_engine_continue">Continue for now</string>
-    <string name="settings_engine_must_choose">Choose an engine to continue. Check the network, then tap Confirm again.</string>
     <string name="settings_engine_save_failed">Couldn\'t save: %1$s</string>
 
     <!-- Candidate addresses (Diagnostics) -->

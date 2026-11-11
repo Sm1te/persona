@@ -53,6 +53,9 @@ type Hello struct {
 	// Notify is hub.json's notify: the finished push's timings; HookTimeoutMS, how long a hook's card waits by default,
 	// is manager.json's hook_timeout_minutes, over the hello (the interactions and the pushes are the manager's).
 	Notify NotifyTimings `json:"notify,omitzero"`
+	// SecretHandoffGate: the hub lets only a device that may approve a hand-off card say yes to one, and names it in
+	// HTTPRequest.HandoffApprover. An older hub never sends it; a manager then shows no hand-off card at all.
+	SecretHandoffGate bool `json:"secret_handoff_gate,omitempty"`
 }
 
 // NotifyTimings are hub.json's notify section, and manager.json's hook_timeout_minutes, in milliseconds (0: the

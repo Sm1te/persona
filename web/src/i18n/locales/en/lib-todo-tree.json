@@ -1,5 +1,6 @@
 {
   "no_project": "Other",
   "unsorted": "Unsorted",
-  "spawned_agents": "{count} agents it spawned"
+  "spawned_agents": "{count} agents it spawned",
+  "secretary": "Secretary"
 }

@@ -103,7 +103,8 @@ func TestMeetingAskTyped(t *testing.T) {
 		ask["at"] != nil || ask["error"] != nil || ask["answered_at"] == nil || ask["asked_at"] == nil || len(sources) != 1 {
 		t.Fatalf("answered: %v", ask)
 	}
-	if src := sources[0].(map[string]any); src["kind"] != "recordings" || src["id"] != earlier || src["name"] != "Design review" || src["when"] == "" {
+	if src := sources[0].(map[string]any); src["kind"] != "recordings" || src["id"] != earlier || src["name"] != "Design review" || src["when"] == "" ||
+		src["start"] == nil || src["end"] == nil { // the minutes' span for the apps to format (#4713)
 		t.Fatalf("source: %v", src)
 	}
 	calls := m.model.called()

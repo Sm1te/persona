@@ -36,6 +36,8 @@ class HomeChrome(
     val selected: String,
     val onSelect: (String) -> Unit,
     val leading: @Composable () -> Unit,
+    /** Where the home bar ends, in pixels from the page's top: what floats under it starts there (the link pill). */
+    val barHeight: androidx.compose.runtime.MutableIntState? = null,
 )
 
 val LocalHomeChrome = staticCompositionLocalOf<HomeChrome?> { null }

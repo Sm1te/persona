@@ -63,8 +63,11 @@ nonisolated struct ExtensionManifest: Codable, Hashable, Sendable {
     /// manifest.
     var tools: [ExtensionToolSpec]?
     var auth: ExtensionAuthSpec?
+    /// Configured host CLI integrations the program may use through a bounded, read-only typed RPC. IDs never name an
+    /// executable; writes and arbitrary command lines are not part of this contract.
+    var hostIntegrations: [ExtensionHostIntegrationSpec]?
 
-    init(manifestVersion: Int = 0, id: String = "", name: String = "", version: String = "", description: String? = nil, publisher: String? = nil, homepage: String? = nil, tags: [String]? = nil, engines: ExtensionEngines? = nil, runtime: ExtensionRuntime? = nil, node: ExtensionNodeRuntime? = nil, activationEvents: [String]? = nil, contributes: ExtensionContributes? = nil, offByDefault: [String]? = nil, depends: [ExtensionDependency]? = nil, exports: ExtensionExports? = nil, extensionPack: [ExtensionPackMember]? = nil, configuration: JSONValue? = nil, secrets: [ExtensionSecretSpec]? = nil, settingsCheck: Bool? = nil, permissions: ExtensionPermissions? = nil, tools: [ExtensionToolSpec]? = nil, auth: ExtensionAuthSpec? = nil) {
+    init(manifestVersion: Int = 0, id: String = "", name: String = "", version: String = "", description: String? = nil, publisher: String? = nil, homepage: String? = nil, tags: [String]? = nil, engines: ExtensionEngines? = nil, runtime: ExtensionRuntime? = nil, node: ExtensionNodeRuntime? = nil, activationEvents: [String]? = nil, contributes: ExtensionContributes? = nil, offByDefault: [String]? = nil, depends: [ExtensionDependency]? = nil, exports: ExtensionExports? = nil, extensionPack: [ExtensionPackMember]? = nil, configuration: JSONValue? = nil, secrets: [ExtensionSecretSpec]? = nil, settingsCheck: Bool? = nil, permissions: ExtensionPermissions? = nil, tools: [ExtensionToolSpec]? = nil, auth: ExtensionAuthSpec? = nil, hostIntegrations: [ExtensionHostIntegrationSpec]? = nil) {
         self.manifestVersion = manifestVersion
         self.id = id
         self.name = name
@@ -88,6 +91,7 @@ nonisolated struct ExtensionManifest: Codable, Hashable, Sendable {
         self.permissions = permissions
         self.tools = tools
         self.auth = auth
+        self.hostIntegrations = hostIntegrations
     }
 
     enum CodingKeys: String, CodingKey {
@@ -114,6 +118,7 @@ nonisolated struct ExtensionManifest: Codable, Hashable, Sendable {
         case permissions
         case tools
         case auth
+        case hostIntegrations = "host_integrations"
     }
 
     init(from decoder: Decoder) throws {
@@ -141,6 +146,29 @@ nonisolated struct ExtensionManifest: Codable, Hashable, Sendable {
         self.permissions = try? c.decodeIfPresent(ExtensionPermissions.self, forKey: .permissions)
         self.tools = try? c.decodeIfPresent([ExtensionToolSpec].self, forKey: .tools)
         self.auth = try? c.decodeIfPresent(ExtensionAuthSpec.self, forKey: .auth)
+        self.hostIntegrations = try? c.decodeIfPresent([ExtensionHostIntegrationSpec].self, forKey: .hostIntegrations)
+    }
+}
+
+/// A configured CLI integration, selected by a closed ID rather than by an extension-provided executable.
+nonisolated struct ExtensionHostIntegrationSpec: Codable, Hashable, Sendable {
+    var id: String
+    var version: String
+
+    init(id: String = "", version: String = "") {
+        self.id = id
+        self.version = version
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case version
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+        self.version = (try? c.decodeIfPresent(String.self, forKey: .version)) ?? ""
     }
 }
 

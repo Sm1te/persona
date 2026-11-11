@@ -254,6 +254,16 @@ final class VideoAttachments {
     /// The message went with the ready ones.
     func sent() { items.removeAll { $0.file != nil } }
 
+    /// Videos already on the machine, ready cards again (a queued message taken back to edit, #3022), as many as fit;
+    /// returns the ones that did not.
+    @discardableResult func restore(_ files: [AttachedFile]) -> [AttachedFile] {
+        let room = max(0, Self.most - items.count)
+        for f in files.prefix(room) {
+            items.append(Item(name: f.name, size: f.size, sent: f.size, duration: f.duration, step: .ready, file: f))
+        }
+        return Array(files.dropFirst(room))
+    }
+
     private func add(_ source: Source, name: String, machine: MachineRef, model: AppModel) {
         let features = model.features(machine.group)
         if !features.isEmpty, !features.contains("file_upload") {

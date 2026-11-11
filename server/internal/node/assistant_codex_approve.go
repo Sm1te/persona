@@ -86,7 +86,7 @@ func (c *codexConn) decide(ctx context.Context, method string, raw json.RawMessa
 	}
 	switch method {
 	case "item/commandExecution/requestApproval":
-		command := unwrapShell(r.Command)
+		command := r.Command
 		ix.ToolName = "Bash"
 		ix.ToolInput, _ = json.Marshal(map[string]any{"command": command})
 		decision, reason, err := n.larkCheck(ctx, p.id, cwd, command, ix)
@@ -100,6 +100,7 @@ func (c *codexConn) decide(ctx context.Context, method string, raw json.RawMessa
 			c.tellModel(reason)
 			return map[string]any{"decision": "decline"}, nil
 		}
+		command = unwrapShell(command) // display and ordinary permission keys only, after the shared gate
 		if mode == proto.ModeBypass || readsOnlyMemory(command, cwd, c.memDir) {
 			return map[string]any{"decision": "accept"}, nil // Claude reads its auto-memory unasked too
 		}
@@ -248,7 +249,7 @@ func withReason(s, reason string) string {
 	return firstNonEmpty(s, reason)
 }
 
-// unwrapShell takes the script out of Codex's `/bin/zsh -lc '…'` so the gate reads the command the model wrote.
+// unwrapShell shortens command text for display. Approval classification uses the original command.
 func unwrapShell(cmd string) string {
 	segs, ok := shellSegments(cmd)
 	if !ok || len(segs) != 1 {

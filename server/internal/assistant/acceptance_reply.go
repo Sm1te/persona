@@ -149,7 +149,19 @@ func (s *Service) acceptTry(ctx context.Context, id, card string) (bool, error) 
 // acceptTryAs is acceptTry; byDefault: nobody answered decision id by its deadline and the hub takes its recommendation
 // (sweepTaskDeadlines), which only a reversible decision past its deadline allows.
 func (s *Service) acceptTryAs(ctx context.Context, id, card string, byDefault bool) (bool, error) {
+	s.reviewDismissals.actions.acquire(id)
+	defer s.reviewDismissals.actions.release(id)
+	return s.acceptTryAsDismissalLocked(ctx, id, card, byDefault)
+}
+
+// acceptTryAsDismissalLocked holds only this task's action lock across its send, not the book mutex.
+func (s *Service) acceptTryAsDismissalLocked(ctx context.Context, id, card string, byDefault bool) (bool, error) {
 	t, todoOK := s.todoNow(id)
+	if todoOK {
+		if dismissed, err := s.decisionDismissed(ctx, t); err != nil || dismissed {
+			return false, err
+		}
+	}
 	b := &s.accept
 	b.mu.Lock()
 	if !s.loadAcceptLocked(ctx) {

@@ -19,5 +19,7 @@
   "watched_doc_unreadable": "Watched document \u201c{title}\u201d can\u2019t be read right now; it is tried again every 10 minutes, or remove it in Settings \u203a Connectors",
   "doc_comment_label": "Document comment",
   "doc_comment_rule": "Rule: a document comment mentions you or replies to your comment.",
-  "larkcli_name": "Lark · my messages"
+  "larkcli_name": "Lark · my messages",
+  "github_rate_low": "The GitHub request quota for this hour is nearly exhausted; only reading notifications for about {minutes} min",
+  "github_paused": "GitHub asked for a pause; not reading anything for about {minutes} min"
 }

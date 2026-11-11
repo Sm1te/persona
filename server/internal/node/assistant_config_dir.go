@@ -68,8 +68,10 @@ func (n *Node) assistantProfileSelection(ctx context.Context, id, launcher, runt
 		// the old point and drop the later turns, so it moves too, unless:
 		//   - a live process of the conversation runs in it: the next message goes to
 		//     that process, and the record keeps naming the profile it writes to;
-		//   - the launcher sets its own profile and would refuse the newest copy's: the
-		//     older copy still resumes, a conflict would refuse every message.
+		//   - the launcher sets its own profile and would refuse the newest copy's: an
+		//     older copy in that profile resumes, whichever profile was recorded, as a
+		//     conflict would refuse every message. With no copy there, nothing this
+		//     launcher can open holds the conversation and the conflict stays.
 		// A profile whose copy is the newest, its projects/ shared through a symlink
 		// included, keeps the conversation. Copies with the same modification time are
 		// a tie the recorded profile keeps.
@@ -91,20 +93,16 @@ func (n *Node) assistantProfileSelection(ctx context.Context, id, launcher, runt
 					// Preserve the old unset-profile global config.
 					newest = "default"
 				}
-				move := !copied
-				if !move {
-					own, err := ownProfile()
-					if err != nil {
-						return "", err
-					}
-					if own == "" {
-						move = true
-					} else if to, err := normalize(newest); err == nil {
-						move = sameAssistantProfile(to, own)
-					}
+				own, err := ownProfile()
+				if err != nil {
+					return "", err
 				}
-				if move {
-					selected = newest
+				selected = newest
+				if to, err := normalize(newest); own != "" && (err != nil || !sameAssistantProfile(to, own)) &&
+					fileExists(filepath.Join(n.assistantConfigPath(own), "projects", filepath.Base(project), filepath.Base(path))) {
+					// The wrapper's own profile holds an older copy: the only one it can resume. With no copy
+					// there, every copy is where the wrapper cannot go, and the conflict below says so (#4310).
+					selected = own
 				}
 			}
 		}

@@ -14,6 +14,7 @@ final class AgentsGroupingTests: XCTestCase {
         "state": ["By Status", "按状态", "状態別"],
         "space": ["By Project", "按项目", "プロジェクト別"],
         "machine": ["By Machine", "按机器", "マシン別"],
+        "app": ["By App", "按 App", "アプリ別"],
         "recent": ["Recently Used", "最近使用", "最近使用した項目"],
     ]
 
@@ -69,7 +70,9 @@ final class AgentsGroupingTests: XCTestCase {
         // than tapping a stale picker coordinate after the interruption.
         for _ in 0..<3 where !item.exists {
             closeSearchIfNeeded()
-            menu.tap()
+            // The menu's element is its whole row (370 pt wide on an iPhone), and its middle is empty space beside the
+            // pill: tap the pill, near the row's leading edge.
+            menu.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 48, dy: 0)).tap()
             _ = item.waitForExistence(timeout: 2)
         }
         guard item.exists else { return XCTFail("no menu item for \(grouping)") }
@@ -138,6 +141,35 @@ final class AgentsGroupingTests: XCTestCase {
             print("PERSISTED \(g) after restart: \(menu.label); no -dev.grouping argument")
             shot("grouping-\(g)-restarted")
         }
+    }
+
+    /// One agent row in every grouping (#3753): the weather widget's agent is drawn in the Display style (Avatar, the
+    /// default) whichever grouping is picked, By Repository included: an avatar row with its latest words, not a line of
+    /// the grouping's own.
+    func testOneAgentRowInEveryGrouping() {
+        launch(fresh: true)
+        XCTAssertTrue(says("repo"), "a fresh list is By Repository: \(menu.label)")
+        var heights: [String: CGFloat] = [:]
+        for g in ["repo", "space", "state", "machine", "app", "recent"] {
+            if g != "repo" { choose(g) }
+            closeSearchIfNeeded()
+            let row = app.buttons.matching(NSPredicate(format: "identifier == 'agents.row' AND label CONTAINS %@", "给天气 App 加主屏幕小组件")).firstMatch
+            // Slow drags without momentum (a flick skipped past the row, By App's first row): back up when it went by.
+            for _ in 0..<40 where !comfortablyVisible(row) {
+                let past = row.exists && row.frame.maxY < app.frame.height * 0.2
+                let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: past ? 0.4 : 0.7))
+                let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: past ? 0.7 : 0.4))
+                from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+            }
+            XCTAssertTrue(row.exists, "\(g): no row for the widget agent")
+            XCTAssertTrue(row.label.contains("小组件的时间线"), "\(g): the row does not say the agent's latest words: \(row.label)")
+            heights[g] = row.frame.height
+            shot("grouping-\(g)-row")
+            for _ in 0..<30 where !menu.isHittable { scrollContent(down: false) }
+            XCTAssertTrue(menu.isHittable, "back to the grouping menu")
+        }
+        // Avatar rows: two lines of words under the title (the tree's line was about 30 pt).
+        for (g, h) in heights { XCTAssertGreaterThan(h, 60, "\(g): the widget agent's row is \(h) pt tall") }
     }
 
     /// Passive search stays unfocused while menus open, but an explicit search tap still opens and accepts text.

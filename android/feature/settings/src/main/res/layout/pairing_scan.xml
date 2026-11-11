@@ -6,29 +6,45 @@
     android:orientation="vertical"
     android:background="@android:color/black">
 
-    <LinearLayout
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
         android:padding="16dp">
         <Button
             android:id="@+id/pairing_scan_close"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
             android:minHeight="48dp"
             android:singleLine="true"
             android:text="@string/settings_pairing_scan_close"
             android:textColor="@android:color/white" />
-        <TextView
-            android:layout_width="0dp"
+        <!-- Reserve the same width opposite Close, including when its localized label grows. -->
+        <Button
+            android:id="@+id/pairing_scan_close_space"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:importantForAccessibility="no"
+            android:singleLine="true"
+            android:text="@string/settings_pairing_scan_close"
+            android:visibility="invisible" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/pairing_scan_close"
+            android:layout_toStartOf="@id/pairing_scan_close_space"
+            android:layout_centerVertical="true"
+            android:accessibilityHeading="true"
             android:gravity="center"
             android:text="@string/settings_pairing_scan_title"
             android:textSize="20sp"
             android:textColor="@android:color/white" />
-    </LinearLayout>
+    </RelativeLayout>
 
     <com.journeyapps.barcodescanner.DecoratedBarcodeView
         android:id="@+id/zxing_barcode_scanner"

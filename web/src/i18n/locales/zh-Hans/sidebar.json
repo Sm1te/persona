@@ -25,8 +25,7 @@
   "filter_empty": "没有{filter}的 Agent",
   "show_all": "看全部",
   "pinned_section": "置顶",
-  "directions": "方向",
-  "other_chats": "其他对话",
+  "directions": "常驻",
   "launching": "正在启动",
   "launch_untitled": "新 Agent",
   "launch_failed": "启动失败",
@@ -130,10 +129,6 @@
   "folded_states": "收起的 Agent：{list}",
   "unread_messages_count": "{count} 条未读消息",
   "inbox_badge_title": "收件箱：{count} 条未读事项，在等你的 Agent 看「总览」",
-  "auto_chats": "自动对话",
-  "auto_chats_label": "自动对话 {count} 段",
-  "auto_working": "{count} 段在运行",
-  "auto_needs_you": "{count} 段需要你",
   "list_menu": "Agent 列表选项",
   "list_menu_sorted": "Agent 列表选项：{sort}",
   "not_connected_yet": "还没连上",
@@ -149,5 +144,7 @@
   "switched_to": "已切换到 {name}",
   "switcher_label": "{name}，切换助手",
   "switcher_label_waiting": "{name}，切换助手。别的助手有事等你处理",
-  "switcher_count": "{count} 件等你处理"
+  "switcher_count": "{count} 件等你处理",
+  "leader_working": "在做 {count}",
+  "leader_needs_you": "等你 {count}"
 }

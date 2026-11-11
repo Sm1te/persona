@@ -790,25 +790,13 @@ struct AssistantSidebar: View {
     /// Its header is in the title bar's row (#830): past the traffic lights when the window's sections column is hidden.
     @Environment(\.macTitleRowLeading) private var titleRowLeading
     #endif
-    @State private var showAll = false
     @State private var ending: Session?
     @State private var renaming: Session?
     @State private var showArchived = false
-    /// Auto Chats open in the list (#3264): closed until the user opens it, then as they left it on this device.
-    @StoredValue("assistant.autoOpen") private var autoOpen = false
     @State private var autoList: AutoConversationsRoute?
     @State private var feed = SidebarFeed()
     private let taskChats = AssistantTaskChatsStore.shared
     @FocusState private var searching: Bool
-    /// Conversations pinned on this phone (session ids, comma-separated); the main conversation always is.
-    @StoredValue("assistant.pinned") private var pinnedRaw = ""
-
-    /// Recent shows this many until View All.
-    private static let recentCount = 30
-
-    private var pinnedIDs: Set<String> { Set(pinnedRaw.split(separator: ",").map(String.init)) }
-
-    private func isPinned(_ s: Session) -> Bool { s.key == model.assistantMain || pinnedIDs.contains(s.sessionID) }
 
     var body: some View {
         #if DEBUG || PERF_SIGNPOST
@@ -1255,85 +1243,31 @@ struct AssistantSidebar: View {
 
     @ViewBuilder private func conversations(_ all: [Session], archived: Int) -> some View {
         let main = model.assistantMain
-        // The leader conversations are the Directions group, first, in the hub's order, under each direction's name
-        // (docs/assistant/unified-entry.md "Leader conversations"); this phone's own pins stay Pinned, the rest are Other Chats.
+        // The leader conversations are the Directions group, in the hub's order, under each direction's name
+        // (docs/assistant/unified-entry.md "Leader conversations"). They are the only Persona chats listed here
+        // besides the main one's own first row: everything else is one tap away in All Chats (#4331).
         let directions = AssistantSidebarGroups.directions(all, leaders: model.assistantLeaders, main: main)
-        let isDirection = { (s: Session) in directions.contains { $0.key == s.key } }
         if !directions.isEmpty {
             heading(String(localized: "Directions")) { EmptyView() }
             ForEach(directions) { row($0, named: model.directionNames[$0.sessionID]) }
         }
-        let pinned = all.filter { isPinned($0) && $0.key != main && !isDirection($0) }
-        if !pinned.isEmpty {
-            heading(String(localized: "section.pinned", defaultValue: "Pinned")) {
-                Button { unpinAll() } label: { Label("Unpin All", systemImage: Theme.Icon.unpin) }
-            }
-            ForEach(pinned) { row($0) }
-        }
-        // The main conversation is the list's first row (`mainItem`): not here, and not in Auto Chats (`isPinned`).
-        // Those Persona opened by itself are in Auto Chats (#3264); with a hub that does not say, the scheduled tasks' ones
-        // are on Scheduled Tasks, under each task (#2838). The open one keeps its row.
-        let split = AutoConversations(all.filter { !isPinned($0) && !isDirection($0) }, tasks: taskChats.known(on: model.api), current: current,
-                                      hubSays: model.hubFeatures.contains(AutoConversationSource.feature))
-        let rest = AssistantSidebarGroups.newestFirst(split.mine)
-        if rest.isEmpty && split.auto.isEmpty {
-            Text("No other chats yet")
-                .font(Theme.Font.secondary).foregroundStyle(.secondary)
-                .padding(.horizontal, Theme.Space.m).padding(.top, Theme.Space.xl)
-        } else {
-            heading(directions.isEmpty ? String(localized: "Recent") : String(localized: "Other Chats")) {
-                Button { newConversation() } label: { Label("New Chat [Quick Actions ea4b29]", systemImage: Theme.Icon.compose) }
-                if split.supported {
-                    Button { autoList = AutoConversationsRoute(source: nil) } label: { Label("All Chats", systemImage: Theme.Icon.list) }
-                }
-                Button { showArchived = true } label: { Label("Archived", systemImage: Theme.Icon.archive) }
-                if rest.count > Self.recentCount {
-                    Button { withAnimation(Theme.Motion.standard) { showAll.toggle() } } label: {
-                        Label(showAll ? String(localized: "Show Only the Latest \(Self.recentCount)") : String(localized: "Show All (\(rest.count))"), systemImage: Theme.Icon.list)
-                    }
-                }
-            }
-            // Right under Recent's name, where a closed one still shows that one waits.
-            if !split.auto.isEmpty { autoGroup(split) }
-            ForEach(showAll ? rest : Array(rest.prefix(Self.recentCount))) { row($0) }
-            if rest.count > Self.recentCount {
-                Button {
-                    withAnimation(Theme.Motion.standard) { showAll.toggle() }
-                } label: {
-                    Text(showAll ? String(localized: "Collapse") : String(localized: "Show All (\(rest.count))"))
-                        .font(Theme.Font.secondary)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.leading, Theme.Space.m + Theme.Size.wellM + Theme.Space.m)
-                        .padding(.vertical, Theme.Space.m)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-            }
-        }
+        allChatsRow
         archivedRow(archived)
     }
 
-    /// Auto Chats (#3264, docs/protocol/protocol.md「Sidebar」): the conversations Persona opened by itself (Inbox's AI twin, scheduled
-    /// tasks, Lark /agent…) in one row, closed at first. Open, a row for each source with its count (and All); each
-    /// opens All Chats filtered to it. Closed, it still says how many wait for the user (or that one works, or is unread),
-    /// as a conversation's row does.
-    @ViewBuilder private func autoGroup(_ split: AutoConversations) -> some View {
-        Button {
-            withAnimation(Theme.Motion.state) { autoOpen.toggle() }
-        } label: {
+    /// All Chats (#4331): the full list with its filters and search (`AutoConversationsView`). It works on every hub
+    /// (its rows come from the conversations the app already has); a hub that predates the origins only lacks the
+    /// source filters there.
+    private var allChatsRow: some View {
+        Button { autoList = AutoConversationsRoute(source: nil) } label: {
             HStack(spacing: Theme.Space.m) {
                 if !isShell {
-                    ThemedIcon(Theme.Icon.autoConversations).font(Theme.Font.label).foregroundStyle(.secondary)
+                    ThemedIcon(Theme.Icon.list).font(Theme.Font.label).foregroundStyle(.secondary)
                         .scaledFrame(width: Theme.Sidebar.mark, height: Theme.Sidebar.mark)
                 }
-                Text("Auto Chats").font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(1)
-                Text("\(split.auto.count)").font(Theme.Font.secondary.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                Text("All Chats").font(Theme.Font.body).foregroundStyle(Color.primary).lineLimit(1)
                 Spacer(minLength: Theme.Space.xs)
-                stateMark(needsYou: split.needsYou, working: split.working, unread: split.unread)
-                ThemedIcon(autoOpen ? Theme.Icon.collapse : Theme.Icon.expand)
-                    .font(Theme.Font.labelStrong).foregroundStyle(.tertiary)
+                ThemedIcon(Theme.Icon.disclosure).font(Theme.Font.labelStrong).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Sidebar.rowPadding)
@@ -1342,64 +1276,7 @@ struct AssistantSidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel([String(localized: "\(split.auto.count) auto chats"), stateWords(needsYou: split.needsYou, working: split.working, unread: split.unread)]
-            .compactMap { $0 }.joined(separator: String(localized: ", ", comment: "Separator between the parts of a VoiceOver label")))
-        .accessibilityValue(autoOpen ? String(localized: "Expanded") : String(localized: "Collapsed [Assistant Sidebar e64447]"))
-        .accessibilityIdentifier("sidebar-auto")
-        if autoOpen {
-            ForEach(split.bySource(tasks: taskChats.known(on: model.api)), id: \.source) { g in
-                sourceRow(g.source.name, symbol: g.source.symbol, count: g.sessions.count, needsYou: g.needsYou, working: g.working,
-                          id: g.source.id) { autoList = AutoConversationsRoute(source: g.source.id) }
-            }
-            sourceRow(String(localized: "All Chats"), symbol: Theme.Icon.list, count: nil, needsYou: 0, working: false, id: "all") {
-                autoList = AutoConversationsRoute(source: nil)
-            }
-        }
-    }
-
-    /// One source under an open Auto Chats: a small row, set in from the group's, with its count and state (All Chats: none).
-    private func sourceRow(_ name: String, symbol: String, count: Int?, needsYou: Int, working: Bool, id: String,
-                           run: @escaping () -> Void) -> some View {
-        Button(action: run) {
-            HStack(spacing: Theme.Space.s) {
-                ThemedIcon(symbol).font(Theme.Font.label).foregroundStyle(.secondary)
-                    .scaledFrame(width: Theme.Size.iconS)
-                Text(name).font(Theme.Font.secondary).foregroundStyle(Color.primary).lineLimit(1)
-                if let count {
-                    Text("\(count)").font(Theme.Font.secondary.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: Theme.Space.xs)
-                stateMark(needsYou: needsYou, working: working, unread: 0)
-                ThemedIcon(Theme.Icon.disclosure).font(Theme.Font.labelStrong).foregroundStyle(.tertiary)
-            }
-            .padding(.leading, isShell ? Theme.Space.xl : Theme.Space.m + Theme.Sidebar.mark + Theme.Space.m)
-            .padding(.trailing, Theme.Space.m)
-            .padding(.vertical, Theme.Sidebar.rowPadding)
-            .scaledFrame(minHeight: Theme.Sidebar.row)
-            .macHoverShade(in: RoundedRectangle(cornerRadius: Theme.Sidebar.radius, style: .continuous))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel([count.map { String(localized: "\(name), \($0) [Assistant Sidebar 6c49c2]") } ?? name, stateWords(needsYou: needsYou, working: working, unread: 0)].compactMap { $0 }.joined(separator: String(localized: ", ", comment: "Separator between the parts of a VoiceOver label")))
-        .accessibilityIdentifier("sidebar-auto-" + id)
-    }
-
-    /// A group's state on the right: how many wait for the user, else one working, else one unread.
-    @ViewBuilder private func stateMark(needsYou: Int, working: Bool, unread: Int) -> some View {
-        if needsYou > 0 {
-            CountBadge(count: needsYou, look: .solid(Theme.needsYou))
-        } else if working {
-            ProgressView().controlSize(.mini)
-        } else if unread > 0 {
-            Circle().fill(Theme.accent).scaledFrame(width: Theme.Size.dot, height: Theme.Size.dot)
-        }
-    }
-
-    private func stateWords(needsYou: Int, working: Bool, unread: Int) -> String? {
-        if needsYou > 0 { return StateName.count(.needsYou, needsYou) }
-        if working { return String(localized: "Some working") }
-        if unread > 0 { return StateName.count(.unread, unread) }
-        return nil
+        .accessibilityIdentifier("sidebar-all-chats")
     }
 
     /// Archived (N) at the end of the list when there are any: where swiped-away conversations are.
@@ -1498,6 +1375,9 @@ struct AssistantSidebar: View {
         let isMain = s.key == model.assistantMain
         let title = isMain ? Self.mainTitle : named ?? (s.title.isEmpty || s.title == "Claude Code" ? String(localized: "New Chat [Quick Actions ea4b29]") : s.title)
         let preview = s.lastText.map { Fmt.plain($0).replacingOccurrences(of: "\n", with: " ") } ?? ""
+        let counts: String? = model.assistantLeaders.contains(s.sessionID)
+            ? model.directionCounts[s.sessionID].flatMap { DirectionCountsText.label(working: $0.working, needsYou: $0.needsYou) }
+            : nil
         return Button { open(s.key) } label: {
             HStack(spacing: Theme.Space.m) {
                 // The shell's list is ChatGPT's: titles only, all in one column (the marks made it busy); the main
@@ -1512,6 +1392,10 @@ struct AssistantSidebar: View {
                 titleText(title, named: !isMain)
                 ConversationChannelMark(ids: s.channels) // the channel its latest message came in from
                 Spacer(minLength: Theme.Space.xs)
+                // A direction's work at this moment ("N working · N need you"), never a zero part (#4331).
+                if let counts {
+                    Text(counts).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
+                }
                 mark(s)
             }
             .padding(.horizontal, Theme.Space.m)
@@ -1528,7 +1412,7 @@ struct AssistantSidebar: View {
         .buttonStyle(.plain)
         .tag(s.key)
         .macListRow(selected: selected, in: Rectangle(), drawsShade: false) // the row draws its own (`selectedFill`)
-        .accessibilityLabel([title, isMain && s.title != title ? s.title : nil, stateWord(s), preview.isEmpty ? nil : preview]
+        .accessibilityLabel([title, counts, isMain && s.title != title ? s.title : nil, stateWord(s), preview.isEmpty ? nil : preview]
             .compactMap { $0 }.joined(separator: String(localized: ", ", comment: "Separator between parts of an accessibility label")))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(isMain ? "sidebar-main" : "sidebar-conversation")
@@ -1546,8 +1430,14 @@ struct AssistantSidebar: View {
         .contextMenu {
             if isMain { MainConversationMenu(key: s.key) } // Compact context, New Main Chat… (#1762)
             if !isMain {
-                Button { togglePin(s) } label: {
-                    isPinned(s) ? Label("Unpin [Personal Agent List View c92179]", systemImage: Theme.Icon.unpin) : Label("Pin [Personal Agent List View 173f88]", systemImage: Theme.Icon.pin)
+                // A direction is the hub's, for every device (#4331): the long press makes a conversation one, or ends
+                // the direction there (#4331, `make` / `end`).
+                let lead = model.assistantLeaders.contains(s.sessionID)
+                Button {
+                    Task { await model.setDirectionLead(s.sessionID, !lead) }
+                } label: {
+                    lead ? Label("Unpin [Assistant Sidebar b7c40e]", systemImage: Theme.Icon.unpin)
+                        : Label("Pin [Assistant Sidebar 6d1f2a]", systemImage: Theme.Icon.pin)
                 }
             }
             if !isMain {
@@ -1592,18 +1482,6 @@ struct AssistantSidebar: View {
         case .working, .needsYou, .unread: s.state.label
         default: s.updatedAt.map { Fmt.relative($0) }
         }
-    }
-
-    private func togglePin(_ s: Session) {
-        var ids = pinnedIDs
-        if ids.contains(s.sessionID) { ids.remove(s.sessionID) } else { ids.insert(s.sessionID) }
-        pinnedRaw = ids.sorted().joined(separator: ",")
-        Haptics.tap()
-    }
-
-    private func unpinAll() {
-        pinnedRaw = ""
-        Haptics.tap()
     }
 
     // MARK: Foot: Persona, Settings

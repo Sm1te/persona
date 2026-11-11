@@ -796,28 +796,9 @@ struct ToolDetail: View {
         }
     }
 
-    /// The file a diff is in: name, folder, +N −N; a tap opens it.
     @ViewBuilder private func diffHeader(_ p: String?, _ diffs: [DiffView]) -> some View {
         if let p, !p.isEmpty {
-            let adds = diffs.reduce(0) { $0 + $1.adds }, dels = diffs.reduce(0) { $0 + $1.dels }
-            let header = HStack(spacing: Theme.Space.sm) {
-                ThemedIcon(FileViewer.symbol(for: p)).font(Theme.Font.label).foregroundStyle(.secondary)
-                Text((p as NSString).lastPathComponent).font(Theme.Font.captionStrong).foregroundStyle(.primary).lineLimit(1)
-                Text((p as NSString).deletingLastPathComponent).font(Theme.Font.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.head)
-                Spacer(minLength: 4)
-                if adds > 0 { Text("+\(adds)").foregroundStyle(Theme.Diff.add) }
-                if dels > 0 { Text("−\(dels)").foregroundStyle(Theme.Diff.del) }
-                if openFile != nil { ThemedIcon(Theme.Icon.openDocument).font(Theme.Font.label).foregroundStyle(Theme.accent) }
-            }
-            .font(Theme.Font.captionStrong.monospacedDigit())
-            if let openFile {
-                Button { openFile(p) } label: { header.contentShape(.rect) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("View file \((p as NSString).lastPathComponent), \(adds) added, \(dels) removed")
-            } else {
-                header
-            }
+            DiffFileHeader(path: p, adds: diffs.reduce(0) { $0 + $1.adds }, dels: diffs.reduce(0) { $0 + $1.dels })
         }
     }
 
@@ -1198,6 +1179,37 @@ struct FullOutputSheet: View {
     }
 }
 
+/// The file a diff is in: name, folder, +N −N; a tap opens it where the page opens files (`openFile`). The chat's edits
+/// (`ToolDetail`) and a file tool's permission card (`PermissionDiffView`) draw the same one.
+struct DiffFileHeader: View {
+    var path: String
+    var adds: Int
+    var dels: Int
+    @Environment(\.openFile) private var openFile
+
+    var body: some View {
+        let header = HStack(spacing: Theme.Space.sm) {
+            ThemedIcon(FileViewer.symbol(for: path)).font(Theme.Font.label).foregroundStyle(.secondary)
+            Text((path as NSString).lastPathComponent).font(Theme.Font.captionStrong).foregroundStyle(.primary).lineLimit(1)
+                .layoutPriority(1) // the folder gives way first: at the largest sizes the two cut each other to a letter
+            Text((path as NSString).deletingLastPathComponent).font(Theme.Font.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.head)
+            Spacer(minLength: 4)
+            if adds > 0 { Text("+\(adds)").foregroundStyle(Theme.Diff.add) }
+            if dels > 0 { Text("−\(dels)").foregroundStyle(Theme.Diff.del) }
+            if openFile != nil { ThemedIcon(Theme.Icon.openDocument).font(Theme.Font.label).foregroundStyle(Theme.accent) }
+        }
+        .font(Theme.Font.captionStrong.monospacedDigit())
+        if let openFile {
+            Button { openFile(path) } label: { header.contentShape(.rect) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View file \((path as NSString).lastPathComponent), \(adds) added, \(dels) removed")
+        } else {
+            header
+        }
+    }
+}
+
 /// The chat's one diff: Edit / MultiEdit / Write (old and new text, compared line by line and word by word with
 /// `LineDiff`, #2915) and Codex's patches (a unified diff), on the Git page's line model (`DiffText.Line`,
 /// `DiffText.parse`; the Git page draws whole files with MonoTextView). Only the sign and the line's background are
@@ -1322,6 +1334,8 @@ struct DiffView: View {
     var lines: [DiffText.Line]
     /// Until Show All (`ToolDiffMemo.Content.short`), at most `maxLines` of it.
     var short: [DiffText.Line]
+    /// The chat's tool rows show 40 rows until Show All; a permission card fewer, so its buttons stay in view.
+    var maxLines = 40
     var adds: Int
     var dels: Int
     /// What the chat's pin knows it by (`chatPinned`): Show All keeps its top where it is on screen.
@@ -1329,7 +1343,6 @@ struct DiffView: View {
     @Environment(\.chatPin) private var pin
     @State private var full = false
     @State private var moreRight = false
-    private static let maxLines = 40
 
     /// Old and new text compared (`LineDiff`): unchanged lines as context, a stretch of more than a few of them folded
     /// into one row until Show All, removed lines before added ones, and in a line changed rather than rewritten, the
@@ -1343,16 +1356,17 @@ struct DiffView: View {
         self.init(ToolDiffMemo.unified(diff), pinKey: pinKey)
     }
 
-    private init(_ content: ToolDiffMemo.Content, pinKey: String) {
+    init(_ content: ToolDiffMemo.Content, pinKey: String, maxLines: Int = 40) {
         lines = content.lines
         short = content.short
         adds = content.adds
         dels = content.dels
         self.pinKey = pinKey
+        self.maxLines = maxLines
     }
 
     var body: some View {
-        let shown = full ? lines : Array(short.prefix(Self.maxLines))
+        let shown = full ? lines : Array(short.prefix(maxLines))
         // Something is left out: lines past the cap, or a folded stretch (folding always takes away a row).
         let clipped = shown.count < lines.count
         VStack(alignment: .leading, spacing: Theme.Space.xs) {

@@ -5,11 +5,12 @@
   "name": "persona-site",
   "compatibility_date": "2026-10-01",
   "account_id": "2de3432934ff3b7c3cb742a2f09635a1",
-  // Static files, except /relay/* (the push relay, docs/operations/push-relay.md), which worker.mjs forwards, and /dl/*.gz (the
-  // public personad), which worker.mjs reads from the R2 bucket DL (#2541: a static file is at most 25 MiB).
+  // Static files, except /relay/* (the push relay, docs/operations/push-relay.md), which worker.mjs forwards, /dl/*.gz (the
+  // public personad), which worker.mjs reads from the R2 bucket DL (#2541: a static file is at most 25 MiB), and the
+  // extension catalog and icons behind the /extensions page (extensions.mjs).
   "main": "worker.mjs",
   "assets": { "directory": "public", "binding": "ASSETS", "html_handling": "auto-trailing-slash", "not_found_handling": "404-page",
-              "run_worker_first": ["/relay/*", "/dl/*"] },
+              "run_worker_first": ["/relay/*", "/dl/*", "/extensions/catalog.json", "/extensions/icons/*"] },
   "r2_buckets": [
     { "binding": "DL", "bucket_name": "persona-dl" }
   ],

@@ -91,6 +91,9 @@ nonisolated struct PairedHub: Codable, Hashable, Sendable, Identifiable {
     /// SHA-256 (hex) of the pairing token `deviceID`'s token was traded for: the same pairing link handled again (scanned
     /// twice, opened from the camera too) keeps the device's token instead of going back to one the hub drops (#2766).
     var tradedPairing: String?
+    /// Other addresses of the same hub the user added (Settings › hub › Addresses, docs/operations/network.md
+    /// "Client-added candidates"), in the order to try after the paired one. nil in pairings saved before them.
+    var addresses: [HubAddress]?
 
     init(id: String = PairedHub.newID(), config: ServerConfig, group: String = "", hubID: String? = nil, hubName: String? = nil,
          deviceID: String? = nil, watch: ServerConfig? = nil, mesh: [MeshHub]? = nil, addedAt: Date = .now) {
@@ -118,6 +121,18 @@ nonisolated struct PairedHub: Codable, Hashable, Sendable, Identifiable {
         guard let id = other.hubID, !id.isEmpty, id != hubID else { return false }
         return mesh?.contains { $0.hubID == id } == true
     }
+
+    /// Every address of the hub in the order to try: the paired one, then the added ones, each with this device's
+    /// credential and only its own Cloudflare Access token.
+    var configs: [ServerConfig] {
+        [config] + (addresses ?? []).map { ServerConfig(url: $0.url, token: config.token, access: $0.access) }
+    }
+}
+
+/// An address the user added for a paired hub, with the Cloudflare Access service token for that address, if any.
+nonisolated struct HubAddress: Codable, Hashable, Sendable {
+    var url: URL
+    var access: HubAccess?
 }
 
 /// Every hub paired, in the order they were paired, and the names the user gave the groups. Kept in the keychain
@@ -247,7 +262,8 @@ nonisolated enum HubGrouping {
 /// Where a group's connection may go (docs/protocol/multi-hub.md「Connections and routing」): every paired hub of the group with its own
 /// credential, then the addresses the group's hellos list for hubs not paired here, with the group's first credential
 /// (credentials work on every hub of a group, docs/archive/operations/plan-hub-mesh.md 2.6). The group's center comes first
-/// (docs/archive/operations/plan-hub-center.md 5): a member passes everything on to it, one hop more.
+/// (docs/archive/operations/plan-hub-center.md 5): a member passes everything on to it, one hop more. A paired hub's
+/// added addresses follow its paired one (#4670).
 nonisolated enum HubRoute {
     struct Candidate: Hashable, Sendable {
         var config: ServerConfig
@@ -255,6 +271,14 @@ nonisolated enum HubRoute {
         var hub: String?
         /// It is the group's center (`mesh.hubs[].center`).
         var center = false
+        /// Its place among its hub's addresses (`PairedHub.configs`): 0 the paired one, then the added ones in order.
+        var address = 0
+        /// The `hub_id` an added address must answer as (the paired hub's); nil: not checked.
+        var hubID: String?
+
+        var url: URL { config.url }
+        /// Lower is preferred: the center, then a hub's earlier addresses.
+        var rank: (Int, Int) { (center ? 0 : 1, address) }
     }
 
     /// The group's center as its hellos say (nil: a hub before the single center, or no mesh).
@@ -272,7 +296,11 @@ nonisolated enum HubRoute {
             let key = c.config.url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if seen.insert(key).inserted { out.append(c) }
         }
-        for h in members { add(Candidate(config: h.config, hub: h.id, center: center != nil && h.hubID == center)) }
+        for h in members {
+            for (i, config) in h.configs.enumerated() {
+                add(Candidate(config: config, hub: h.id, center: center != nil && h.hubID == center, address: i, hubID: i > 0 ? h.hubID : nil))
+            }
+        }
         let paired = Set(members.compactMap(\.hubID))
         for h in members {
             for m in h.mesh ?? [] where !paired.contains(m.hubID) && m.online != false {
@@ -286,17 +314,18 @@ nonisolated enum HubRoute {
         return out.filter(\.center) + out.filter { !$0.center }
     }
 
-    typealias Probe = @Sendable (ServerConfig) async -> Bool
+    typealias Probe = @Sendable (Candidate) async -> Bool
 
-    /// How long a member that answered first waits for the center to answer too.
+    /// How long a candidate that answered first waits for a preferred one (the center, a hub's earlier address) to
+    /// answer too.
     static let centerGrace: Duration = .milliseconds(1500)
-    /// How often a socket on a member asks whether the center answers again (AppModel.watchCenter).
+    /// How often a socket on a candidate behind a preferred one asks whether that one answers again (AppModel.watchCenter).
     static let centerRecheck: Duration = .seconds(300)
 
-    /// Asks every candidate at once (GET /api/v1/health, a few seconds at most) and takes the center when it answers,
-    /// else the quickest that answers: a member that answers first is taken once every center probe failed, or once
-    /// `grace` went by without the center answering. None answering: the first (the center when there is one), for
-    /// the socket's own retries. One candidate: no probe.
+    /// Asks every candidate at once (GET /api/v1/health, a few seconds at most) and takes the best-ranked that answers
+    /// (`Candidate.rank`: the center, then a hub's earlier addresses), the quickest among equals: one that answers is
+    /// taken once every better-ranked probe failed, or once `grace` went by since the first answer. None answering: the
+    /// first (the center when there is one), for the socket's own retries. One candidate: no probe.
     static func pick(_ candidates: [Candidate], grace: Duration = centerGrace, probe: @escaping Probe = healthProbe) async -> Candidate? {
         guard candidates.count > 1 else { return candidates.first }
         return await answering(candidates, grace: grace, probe: probe) ?? candidates.first
@@ -306,39 +335,37 @@ nonisolated enum HubRoute {
     /// directly at all (its SSH tunnel is the way when not, docs/operations/network.md「Connecting to hub through SSH」).
     static func answering(_ candidates: [Candidate], grace: Duration = centerGrace, probe: @escaping Probe = healthProbe) async -> Candidate? {
         guard !candidates.isEmpty else { return nil }
-        enum Answer: Sendable { case reached(Candidate), missed(Candidate), graceOver }
+        enum Answer: Sendable { case reached(Int), missed(Int), graceOver }
         return await withTaskGroup(of: Answer.self) { group in
-            for c in candidates { group.addTask { await probe(c.config) ? .reached(c) : .missed(c) } }
-            var centersLeft = candidates.filter(\.center).count
-            var member: Candidate?
+            for (i, c) in candidates.enumerated() { group.addTask { await probe(c) ? .reached(i) : .missed(i) } }
+            var pending = Set(candidates.indices)
+            var best: Candidate?
             for await answer in group {
                 switch answer {
-                case .reached(let c) where c.center || centersLeft == 0:
-                    group.cancelAll()
-                    return c
-                case .reached(let c):
-                    if member == nil {
-                        member = c
-                        group.addTask { try? await Task.sleep(for: grace); return .graceOver }
-                    }
-                case .missed(let c):
-                    if c.center { centersLeft -= 1 }
-                    if centersLeft == 0, let member {
-                        group.cancelAll()
-                        return member
-                    }
+                case .reached(let i):
+                    pending.remove(i)
+                    if best == nil { group.addTask { try? await Task.sleep(for: grace); return .graceOver } }
+                    if best.map({ candidates[i].rank < $0.rank }) ?? true { best = candidates[i] }
+                case .missed(let i):
+                    pending.remove(i)
                 case .graceOver:
                     group.cancelAll()
-                    return member
+                    return best
+                }
+                if let best, !pending.contains(where: { candidates[$0].rank < best.rank }) {
+                    group.cancelAll()
+                    return best
                 }
             }
-            return member
+            return best
         }
     }
 
     /// Whether the hub answers at its own address (never through its SSH tunnel: this is how the app finds out it
-    /// does not need it).
-    static let healthProbe: Probe = { config in
+    /// does not need it). An added address must answer as the paired hub (docs/operations/network.md "Client-added
+    /// candidates"); the answer is only evidence the address reaches it, never a source of trust.
+    static let healthProbe: Probe = { candidate in
+        let config = candidate.config
         var req = URLRequest(url: APIClient(config: config).url("/api/v1/health", direct: true), timeoutInterval: 3)
         req.httpMethod = "GET"
         RequestClientMetadata.current.apply(to: &req)
@@ -346,6 +373,7 @@ nonisolated enum HubRoute {
         guard let (data, resp) = try? await URLSession.shared.data(for: req, delegate: HubRedirects.shared),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        if let want = candidate.hubID, !want.isEmpty, let got = obj["hub_id"] as? String, !got.isEmpty, got != want { return false }
         return obj["ok"] as? Bool == true
     }
 }

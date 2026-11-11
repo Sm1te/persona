@@ -26,12 +26,8 @@ const featuresHeader = "X-Persona-Features"
 // requestWants reports whether a REST request's client declared feature: in its X-Persona-Features header, or on a
 // connection of the same device, platform and version (requestHasElicitation's rule).
 func (h *Hub) requestWants(r *http.Request, feature string) bool {
-	for _, v := range r.Header.Values(featuresHeader) {
-		for _, f := range strings.Split(v, ",") {
-			if strings.TrimSpace(f) == feature {
-				return true
-			}
-		}
+	if requestDeclares(r, feature) {
+		return true
 	}
 	who, rc := principalOf(r.Context()), requestClientOf(r.Context())
 	if rc.Platform == "" {
@@ -45,6 +41,18 @@ func (h *Hub) requestWants(r *http.Request, feature string) bool {
 		c.mu.Unlock()
 		if matches && c.has(feature) {
 			return true
+		}
+	}
+	return false
+}
+
+// requestDeclares reports whether this request itself declares feature in its X-Persona-Features header.
+func requestDeclares(r *http.Request, feature string) bool {
+	for _, v := range r.Header.Values(featuresHeader) {
+		for _, f := range strings.Split(v, ",") {
+			if strings.TrimSpace(f) == feature {
+				return true
+			}
 		}
 	}
 	return false

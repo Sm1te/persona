@@ -1,6 +1,6 @@
 // A decision answered on its Needs you row (#3804): the real web app with synthetic HTTP/WS only; it never connects to a
-// user's hub or conversation. Two decisions wait: one taken by default at its deadline, one never taken by default.
-// node web/e2e/decision-row.mjs <web URL> --shots <directory> [--chromium <executable>]
+// user's hub or conversation. Two answerable decisions and a legacy note-only review wait.
+// node web/e2e/decision-row.mjs <web URL> --shots <directory> [--large] [--chromium <executable>]
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
 const base = args[0]?.replace(/\/$/, "");
 const shots = flag("--shots");
+const textSize = args.includes("--large") ? "large" : "standard";
 if (!base || !shots) {
   console.error("usage: node web/e2e/decision-row.mjs <web URL> --shots <directory> [--chromium <executable>]");
   process.exit(2);
@@ -33,7 +34,7 @@ function todos() {
   const deadline = new Date();
   deadline.setHours(23, 30, 0, 0);
   const task = (id, title, ask) => ({ id, title, origin: sid, created_at: AT, updated_at: AT, agents: [{ machine_id: "demo", session_id: `${id}-worker`, linked_at: AT }],
-    supervision: { supervisor: sid, state: "needs_user" }, ask: { outcome: "decide", asked_at: AT, responses: RESPONSES, ...ask } });
+    supervision: { supervisor: sid, state: "needs_user", reviews: [{ at: AT, verdict: "needs_user", note: "Example extension checks passed; the rollout still needs your decision." }] }, decision_review: { review_at: AT }, ask: { outcome: "decide", asked_at: AT, responses: RESPONSES, ...ask } });
   return [
     task("demo-rollout", "Example rollout", {
       verdict: "Needs your decision: roll out to everyone now, or to 10% first",
@@ -63,16 +64,18 @@ function todos() {
       background: "Started by the assistant on Nov 6 · the export script is written and tested on a copy",
       default: "never",
     }),
+    { ...task("demo-legacy", "Example extension rollout", {}), ask: undefined },
   ];
 }
 
 async function run(browser, size, theme, language) {
   const context = await browser.newContext({ viewport: size === "wide" ? { width: 1280, height: 900 } : { width: 390, height: 844 }, colorScheme: theme, reducedMotion: "reduce" });
-  await context.addInitScript(({ theme, language }) => {
+  await context.addInitScript(({ theme, language, textSize }) => {
     localStorage.setItem("persona.token", "synthetic-demo-token");
     localStorage.setItem("persona.language", language);
     localStorage.setItem("persona.theme", theme);
-  }, { theme, language });
+    localStorage.setItem("persona.text-size", textSize);
+  }, { theme, language, textSize });
   const session = { machine_id: "demo", session_id: sid, title: "Example conversation", assistant: true, state: "idle", status: "idle", updated_at: AT };
   let list = todos();
   const agents = list.map((t) => ({ machine_id: "demo", session_id: `${t.id}-worker`, title: `${t.title} Agent`, state: "idle", status: "idle", updated_at: AT, state_since: AT }));
@@ -88,8 +91,18 @@ async function run(browser, size, theme, language) {
     if (request.method() !== "GET") {
       const body = request.postDataJSON();
       writes.push({ path, method: request.method(), body });
+      const dismissal = /^\/todos\/([^/]+)\/decision-(dismiss|undo-dismiss)$/.exec(path);
+      if (dismissal) {
+        assert.equal(body.review_at, AT);
+        const todo = list.find((t) => t.id === dismissal[1]);
+        assert(todo && !todo.done_at);
+        if (dismissal[2] === "undo-dismiss") assert.equal(body.dismissal_id, "demo-dismissal");
+        todo.decision_review = { review_at: AT, ...(dismissal[2] === "dismiss" ? { dismissal_id: "demo-dismissal" } : {}) };
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(todo.decision_review) });
+        return;
+      }
       const m = /^\/todos\/([^/]+)\/accept$/.exec(path);
-      assert(m && request.method() === "POST", `only the accept route is written: ${request.method()} ${path}`);
+      assert(m && request.method() === "POST", `only decision routes are written: ${request.method()} ${path}`);
       list = list.map((t) => (t.id === m[1] ? { ...t, ask: undefined, supervision: { ...t.supervision, state: "" } } : t));
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
       return;
@@ -119,7 +132,7 @@ async function run(browser, size, theme, language) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
   page.setDefaultTimeout(12_000);
-  const name = (step) => join(shots, `decision-${size}-${theme}-${language}-${step}.png`);
+  const name = (step) => join(shots, `decision-${size}-${theme}-${language}-${step}${textSize === "large" ? "-large" : ""}.png`);
   try {
     await page.goto(`${base}/`);
     await page.locator('[data-tray-entry="needs"]').click();
@@ -132,6 +145,7 @@ async function run(browser, size, theme, language) {
     assert.match(await rollout.locator('[data-decision-default="taken"]').innerText(), /23:30/);
     assert.equal(await cleanup.locator('[data-decision-default="never"]').count(), 1, "the irreversible one says it is never taken by default");
     for (const row of [rollout, cleanup]) {
+      assert.equal(await row.locator("[data-decision-actions] button").count(), 2, "Later and Don't handle stay on the row");
       const buttons = row.locator("div.overflow-hidden > button, div.overflow-hidden > span > button");
       const geometry = await buttons.evaluateAll((els) => els.map((el) => ({ top: Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2), height: el.clientHeight, scroll: el.scrollHeight })));
       assert(geometry.every((g) => g.top === geometry[0].top), `the buttons are on one line: ${JSON.stringify(geometry)}`);
@@ -140,8 +154,14 @@ async function run(browser, size, theme, language) {
       const primary = await row.locator("[data-decision-option]").first().evaluate((el) => el.closest("button").className);
       assert(primary.includes("bg-ink"), "the recommended option is the solid button");
       assert(shown >= 1);
+      const separate = await row.evaluate((el) => {
+        const footer = el.querySelector("[data-decision-actions]").getBoundingClientRect();
+        return [...el.querySelectorAll("[data-decision-option]")].every((label) => label.closest("button").getBoundingClientRect().bottom <= footer.top + 1);
+      });
+      assert(separate, "deferral controls never cover the decision option buttons");
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, "no horizontal page overflow");
+    await rollout.scrollIntoViewIfNeeded(); // keep this decision's whole action group in the evidence capture
     await page.waitForTimeout(300); // the entry has turned to its selected colors
     await page.screenshot({ path: name("tray") });
     // the menu: the options that did not fit, then the three answers that are no option
@@ -159,8 +179,34 @@ async function run(browser, size, theme, language) {
     assert.deepEqual(writes, [{ path: "/todos/demo-rollout/accept", method: "POST", body: { asked_at: AT, response: "not_what_i_asked" } }]);
     // an option on the other row
     await cleanup.locator("[data-decision-option]").nth(0).click();
+    assert.equal(writes.length, 1, "irreversible options require confirmation");
+    await cleanup.locator("[data-decision-option]").nth(0).click();
     await cleanup.waitFor({ state: "detached" });
     assert.deepEqual(writes[1], { path: "/todos/demo-cleanup/accept", method: "POST", body: { asked_at: AT, option: "Delete after an export" } });
+    const legacy = page.locator('[data-needs-row="task:demo-legacy"]');
+    await legacy.locator("[data-decision-actions]").scrollIntoViewIfNeeded();
+    assert.equal(await legacy.locator("[data-decision-option]").count(), 0, "no invented options for a review without an ask");
+    assert.match(await legacy.locator("[data-decision-legacy]").innerText(), /Example extension checks passed/);
+    await page.screenshot({ path: name("legacy") });
+    await legacy.locator("[data-decision-actions] button").nth(0).click();
+    await legacy.waitFor({ state: "detached" });
+    assert.equal(writes.length, 2, "Later writes nothing");
+    await page.reload();
+    await page.locator('[data-tray-entry="needs"]').click();
+    await legacy.waitFor();
+    await legacy.locator("[data-decision-actions] button").nth(1).click();
+    await legacy.waitFor({ state: "detached" });
+    assert.deepEqual(writes[2], { path: "/todos/demo-legacy/decision-dismiss", method: "POST", body: { review_at: AT } });
+    const undo = page.locator('[aria-live="polite"] button').filter({ hasText: /Undo|撤销|元に戻す/ });
+    await undo.click();
+    await legacy.waitFor();
+    assert.deepEqual(writes[3], { path: "/todos/demo-legacy/decision-undo-dismiss", method: "POST", body: { review_at: AT, dismissal_id: "demo-dismissal" } });
+    await legacy.locator("[data-decision-actions] button").nth(1).click();
+    await legacy.waitFor({ state: "detached" });
+    await page.reload();
+    await page.locator('[data-tray-entry="needs"]').click();
+    assert.equal(await legacy.count(), 0, "dismissal survives a read and reload without completing the task");
+    assert(!list.find((t) => t.id === "demo-legacy").done_at);
     await page.screenshot({ path: name("answered") });
     assert.deepEqual(errors, []);
     console.log(`PASS ${size} ${theme} ${language}: rows=2, option buttons on the first row=${shownOptions}, menu=${labels.length}, POST=${writes.length}`);
@@ -178,8 +224,9 @@ try {
   for (const theme of ["light", "dark"]) {
     await run(browser, "wide", theme, "en");
     await run(browser, "narrow", theme, "en");
+    await run(browser, "wide", theme, "zh-Hans");
   }
-  for (const language of ["zh-Hans", "ja"]) await run(browser, "narrow", "light", language);
+  for (const language of ["zh-Hans", "ja"]) for (const theme of ["light", "dark"]) await run(browser, "narrow", theme, language);
   console.log("PASS decision-row browser verification");
 } catch (error) {
   console.error("FAIL decision-row browser verification", error);

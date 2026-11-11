@@ -44,6 +44,8 @@
   "surfaces_external_title": "在 App 内外显示自己的界面",
   "secrets_title": "使用你填的密钥",
   "tools_title": "安装命令行程序",
+  "host_integrations_title": "使用已配置的主机 CLI 集成",
+  "host_integrations_detail": "{tools}。只能经 manager 做有边界的只读调用，不能执行 shell、发消息或导出凭据。",
   "node_secrets_title": "把密钥发给这些电脑",
   "tools_more_title": "安装更多命令行程序",
   "network_more_title": "访问更多网络",

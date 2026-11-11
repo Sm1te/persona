@@ -62,13 +62,26 @@
           "description": "Command-line programs the hub installs into the extension's own directory and puts first on its PATH (docs \"Command-line programs (tools)\", #4507). Installing them is a permission. Hubs before them refuse the manifest.",
           "type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/ToolSpec"}
         },
-        "auth": {"$ref": "#/$defs/AuthSpec"}
+        "auth": {"$ref": "#/$defs/AuthSpec"},
+        "host_integrations": {
+          "description": "Configured host CLI integrations the program may use through a bounded, read-only typed RPC. IDs never name an executable; writes and arbitrary command lines are not part of this contract.",
+          "type": "array", "maxItems": 1, "items": {"$ref": "#/$defs/HostIntegrationSpec"}
+        }
       },
       "required": ["manifest_version", "id", "name", "version"],
       "anyOf": [
         {"not": {"anyOf": [{"required": ["runtime"]}, {"required": ["node"]}]}},
         {"required": ["engines"], "properties": {"engines": {"anyOf": [{"required": ["extension_protocol"]}, {"required": ["plugin_protocol"]}]}}}
       ]
+    },
+    "HostIntegrationSpec": {
+      "description": "A configured CLI integration, selected by a closed ID rather than by an extension-provided executable.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "enum": ["lark-cli"]},
+        "version": {"$ref": "#/$defs/VersionRange"}
+      },
+      "required": ["id", "version"]
     },
     "ToolSpec": {
       "description": "One command-line program. Exactly one of archive and npm.",

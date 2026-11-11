@@ -54,6 +54,91 @@ nonisolated struct ExtensionDisableConfirmation {
     }
 }
 
+/// A pack's uninstall with its members that stopped part way (409 `partial_uninstall`, #4072): the pack is still
+/// installed, the members already uninstalled stay uninstalled, nothing was put back, and it can be tried again. Only
+/// the synchronous answer has the lists; an async uninstall's operation carries just the hub's sentence.
+nonisolated struct ExtensionPartialRemoval: Equatable, Sendable {
+    struct Failure: Equatable, Sendable {
+        var id: String
+        /// The hub's reason, in the request's language (may be empty).
+        var error: String
+    }
+
+    /// Members uninstalled; they stay uninstalled.
+    var removed: [String]
+    /// Members the hub couldn't uninstall (or the pack itself, once every member went), each with its reason.
+    var failed: [Failure]
+    /// Members not tried and still installed. The hub's `remaining_members` is every member still installed, the failed
+    /// ones included: those are said once, under `failed`.
+    var remaining: [String]
+
+    init(removed: [String], failed: [Failure], remaining: [String]) {
+        self.removed = removed
+        self.failed = failed
+        let failedIDs = Set(failed.map(\.id))
+        self.remaining = remaining.filter { !failedIDs.contains($0) }
+    }
+
+    /// nil for any other error.
+    init?(error: Error) {
+        guard let e = error as? APIError, e.code == "partial_uninstall", let body = e.details else { return nil }
+        let ids = { (key: String) in (body[key]?.array ?? []).compactMap(\.string) }
+        let failed = (body["failed_members"]?.array ?? []).compactMap { item in
+            item["id"]?.string.map { Failure(id: $0, error: item["error"]?.string ?? "") }
+        }
+        self.init(removed: ids("removed_members"), failed: failed, remaining: ids("remaining_members"))
+    }
+
+    static var title: String { String(localized: "Pack partly uninstalled") }
+
+    /// What it means for `pack` (its name), then one line per group that has members, each member by its installed
+    /// name in `names` (its id when it has none).
+    func lines(pack: String, names: [String: String]) -> [String] {
+        let separator = String(localized: "、", comment: "Separator between list items")
+        let named = { (ids: [String]) in ids.map { names[$0] ?? $0 }.joined(separator: separator) }
+        var out = [String(localized: "“\(pack)” is still installed. Members already uninstalled stay uninstalled, and nothing was put back. You can try again.")]
+        if !removed.isEmpty { out.append(String(localized: "Uninstalled: \(named(removed))")) }
+        if !failed.isEmpty {
+            let items = failed.map { f in
+                let name = names[f.id] ?? f.id
+                return f.error.isEmpty ? name : String(localized: "\(name) (\(f.error))", comment: "A member's name and why it wasn't uninstalled")
+            }
+            out.append(String(localized: "Not uninstalled: \(items.joined(separator: separator))"))
+        }
+        if !remaining.isEmpty { out.append(String(localized: "Not tried, still installed: \(named(remaining))")) }
+        return out
+    }
+}
+
+/// A pack member's row (#4122): its installed name as the title, and under it the id beside the version and market;
+/// one that isn't installed (no name) keeps its id as the title, with the version and market under it.
+nonisolated struct ExtensionPackMemberLine: Equatable, Sendable {
+    var title: String
+    var detail: String?
+}
+
+nonisolated extension ExtensionPackMemberLine {
+    init(_ member: ExtensionPackMember, name: String?) {
+        let named = name.flatMap { $0.isEmpty || $0 == member.id ? nil : $0 }
+        title = named ?? member.id
+        let parts = [named == nil ? nil : member.id, member.version, member.market].compactMap { $0 }.filter { !$0.isEmpty }
+        detail = parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// The installed extensions' names by id, for naming a pack's members (an empty name is left out).
+    static func names(_ installed: [HubExtension]) -> [String: String] {
+        Dictionary(installed.filter { !$0.name.isEmpty }.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// An install preview's: the installed names, and the ones installed with it by their own manifests (those win: a
+    /// member being upgraded is named as its new version is).
+    static func names(installed: [String: String], preview: ExtensionPreview) -> [String: String] {
+        var out = installed
+        for b in preview.bundle ?? [] { if let n = b.manifest.name, !n.isEmpty { out[b.manifest.id] = n } }
+        return out
+    }
+}
+
 nonisolated struct ExtensionRemovalResult: Decodable, Sendable {
     var removedMembers: [String]?
     /// What the hub could not clean up (#4466): the extension is removed, these are for the user to do by hand. nil

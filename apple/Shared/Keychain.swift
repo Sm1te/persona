@@ -2,8 +2,10 @@ import Foundation
 import Security
 
 nonisolated enum Keychain {
-    // The phone app's bundle id on both phone and watch (the watch app's is <id>.watchkitapp).
-    private static let service = (Bundle.main.bundleIdentifier ?? "persona").replacingOccurrences(of: ".watchkitapp", with: "")
+    // The phone app's bundle id on the phone, the watch (the watch app's is <id>.watchkitapp) and in Share › Persona,
+    // whose Info.plist names it (`PersonaAppBundleID`; the extension's own is <id>.share).
+    private static let service = (Bundle.main.object(forInfoDictionaryKey: "PersonaAppBundleID") as? String).flatMap { $0.isEmpty ? nil : $0 }
+        ?? (Bundle.main.bundleIdentifier ?? "persona").replacingOccurrences(of: ".watchkitapp", with: "")
 
     /// Whether it was written (callers that must not lose what they replace read it back: HubStore).
     /// `thisDeviceOnly`: never leaves this device (not restored onto another one from a backup, not synced): the SSH

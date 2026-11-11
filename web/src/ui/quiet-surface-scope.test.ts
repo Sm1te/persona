@@ -13,11 +13,4 @@ describe("quiet surfaces independent of restored status tints", () => {
     expect(card).toContain("text-attention");
     expect(card).not.toMatch(/bg-(green|orange|ai|red)-tint|text-red/);
   });
-
-  it("keeps automatic-conversation Needs you counts amber instead of borrowing the error role", () => {
-    const sidebar = source("../views/Sidebar.tsx");
-    const tally = sidebar.slice(sidebar.indexOf("function TallyMark("), sidebar.indexOf("function TallyMark(") + 1100);
-    expect(tally).toContain("BADGE_CLASS.attention");
-    expect(tally).not.toContain("BADGE_CLASS.red");
-  });
 });

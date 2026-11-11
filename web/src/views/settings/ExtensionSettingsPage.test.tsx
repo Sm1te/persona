@@ -123,6 +123,32 @@ describe("host-owned extension settings", () => {
     expect(host.textContent).toContain("助手已关闭自动升级");
   });
 
+  it.each([true, false])("greys out the switch while the master switch is off, keeping its value (%s), and frees it once it is on (#1828)", async (own) => {
+    globalAuto = false;
+    let callbacks = render({ ...BASE, auto_upgrade: own }); await flush();
+    expect(button("自动升级").getAttribute("aria-checked")).toBe(String(own));
+    expect(button("自动升级").disabled).toBe(true);
+    act(() => button("自动升级").click());
+    expect(callbacks.onAutoUpgrade).not.toHaveBeenCalled();
+    expect(document.getElementById(button("自动升级").getAttribute("aria-describedby")!)?.textContent).toContain("重新打开后恢复");
+    // the master switch back on: the page opened again reads it and the extension's own value applies
+    act(() => root.unmount()); root = createRoot(host);
+    globalAuto = true;
+    callbacks = render({ ...BASE, auto_upgrade: own }); await flush();
+    expect(button("自动升级").getAttribute("aria-checked")).toBe(String(own));
+    expect(button("自动升级").disabled).toBe(false);
+    act(() => button("自动升级").click());
+    expect(callbacks.onAutoUpgrade).toHaveBeenCalledWith(!own);
+    expect(host.textContent).not.toContain("重新打开后恢复");
+  });
+
+  it("leaves the switch alone on a hub without the master switch (#1828)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.endsWith("/-/upgrades") ? { ok: false, status: 404, text: async () => "", headers: new Headers() } : reply(BASE))));
+    render(); await flush();
+    expect(button("自动升级").disabled).toBe(false);
+    expect(host.textContent).not.toContain("助手已关闭自动升级");
+  });
+
   it("checks the selected manager's market without installing and refreshes the detail", async () => {
     const callbacks = render(BASE, { manager: "example-manager" }); await flush();
     await act(async () => button("检查更新").click()); await flush();

@@ -91,6 +91,14 @@ interface InboxAssistantTransport {
      * (#3519, #3695). A transport without it answers none, and the drawer shows the leaders' titles.
      */
     suspend fun assistantLeadersOf(manager: String?): JsonObject = JsonObject(emptyMap())
+    /**
+     * The direction tree of the default manager (`GET /api/v1/assistant/directions/tree`, #4352): `{directions: [{id,
+     * name, secretary?, counts: {working, needs_you, stuck, review}}]}`, the current directions in the leaders' order.
+     * The hub answers it for the default manager alone. A transport without it says so (as an older hub's 404 does), and
+     * the drawer keeps the flat direction rows.
+     */
+    suspend fun directionsTreeOf(manager: String?): JsonObject =
+        throw UnsupportedOperationException("Direction tree unavailable")
     /** [createConversation] for one manager (null: the default), as [assistantOf]. */
     suspend fun createConversationOf(manager: String?, main: Boolean, launcher: String? = null): JsonObject =
         if (launcher == null) createConversation(main) else createConversation(main, launcher)

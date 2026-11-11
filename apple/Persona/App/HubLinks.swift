@@ -239,10 +239,12 @@ extension AppModel {
         defer { watchCenter(group) } // on a member now? (after the registry learned who the center is)
         var r = registry
         let on = link.live.currentConfig
-        // The paired hub the socket is on; on an address only the mesh gave, the group's first hub stands for it.
-        guard let i = r.hubs.firstIndex(where: { $0.group == group && $0.config == on })
+        // The paired hub the socket is on (at any of its addresses); on an address only the mesh gave, the group's first
+        // hub stands for it.
+        let at = { (h: PairedHub) in on.map { h.configs.contains($0) } == true }
+        guard let i = r.hubs.firstIndex(where: { $0.group == group && at($0) })
                 ?? r.hubs.firstIndex(where: { $0.group == group }) else { return }
-        let paired = r.hubs[i].config == on
+        let paired = at(r.hubs[i])
         if paired {
             if let id = hello.hubID, !id.isEmpty { r.hubs[i].hubID = id }
             if let name = hello.hubName, !name.isEmpty { r.hubs[i].hubName = name }
@@ -283,34 +285,53 @@ extension AppModel {
         pushWatchConfigs()
     }
 
-    /// The socket is on a member while the group's center is another hub (docs/protocol/multi-hub.md「Connections and routing」): ask the center
-    /// every few minutes and move there once it answers. Ends when the socket is on the center, or the group or its
-    /// center is gone.
+    /// The socket is on a member while the group's center is another hub (docs/protocol/multi-hub.md「Connections and routing」), or on a
+    /// hub's later address while an earlier one is there (#4670): ask the preferred ones every few minutes and move once
+    /// one answers. Ends when the socket is on the best-ranked candidate, or the group is gone.
     func watchCenter(_ group: String) {
         guard centerWatch[group] == nil, onMember(group) else { return }
         centerWatch[group] = Task { @MainActor [weak self] in
             defer { self?.centerWatch[group] = nil }
             while !Task.isCancelled {
                 try? await Task.sleep(for: HubRoute.centerRecheck)
-                guard let self, !Task.isCancelled, let link = self.link(group), self.onMember(group) else { return }
-                if link.live.suspended { continue } // in the background: nothing opens the socket anyway
-                for c in HubRoute.candidates(self.registry, group: group) where c.center {
-                    if await HubRoute.healthProbe(c.config) {
-                        link.live.reroute()
-                        return
-                    }
-                }
+                guard let self, !Task.isCancelled, self.onMember(group) else { return }
+                if await self.preferredAnswers(group) { self.link(group)?.live.reroute(); return }
             }
         }
     }
 
-    /// A group's socket is on a hub other than its center (the center known from the hellos).
-    func onMember(_ group: String) -> Bool {
-        guard let link = link(group), !link.isDemo, let on = link.live.currentConfig else { return false }
-        let candidates = HubRoute.candidates(registry, group: group)
-        guard candidates.contains(where: \.center) else { return false }
-        return !candidates.contains { $0.center && $0.config == on }
+    /// The network changed (another Wi-Fi, a VPN on or off): a socket on a fallback moves back now when a preferred
+    /// candidate answers, instead of at the next recheck.
+    func recheckRoutes() {
+        for l in links where onMember(l.group) {
+            Task { @MainActor [weak self] in
+                if await self?.preferredAnswers(l.group) == true { l.live.reroute() }
+            }
+        }
     }
+
+    /// One of the candidates ranked before the one the socket is on answers. Nothing while in the background: nothing
+    /// opens the socket anyway.
+    private func preferredAnswers(_ group: String) async -> Bool {
+        guard let link = link(group), !link.live.suspended else { return false }
+        for c in preferred(group) {
+            if await HubRoute.healthProbe(c) { return true }
+        }
+        return false
+    }
+
+    /// The candidates ranked before the one the group's socket is on.
+    private func preferred(_ group: String) -> [HubRoute.Candidate] {
+        guard let link = link(group), !link.isDemo, let on = link.live.currentConfig else { return [] }
+        let candidates = HubRoute.candidates(registry, group: group)
+        guard let current = candidates.first(where: { $0.url == on.url }) else {
+            return candidates.filter(\.center) // on an address no candidate has (the center known only now)
+        }
+        return candidates.filter { $0.rank < current.rank }
+    }
+
+    /// A group's socket is on a candidate behind another (a member while the center is known, a hub's later address).
+    func onMember(_ group: String) -> Bool { !preferred(group).isEmpty }
 
     /// The SSH tunnels that go with group (#2379): each of its hubs may have one, kept under the hub's id.
     nonisolated static func tunnelIDs(removing group: String, from registry: HubRegistry) -> [String] {
@@ -383,6 +404,17 @@ extension AppModel {
         guard let link = link(hub.group), !link.isDemo else { return }
         link.live.disconnect()
         link.live.connect(link.fallback) // its route picks the group's hub again, from the registry
+    }
+
+    /// Settings › hub › Addresses saved: the hub's added addresses in the order to try (#4670). The group's socket picks
+    /// its way again among them.
+    func setHubAddresses(_ addresses: [HubAddress], hub id: String) {
+        guard let hub = registry.hubs.first(where: { $0.id == id }), (hub.addresses ?? []) != addresses else { return }
+        updateHub(id) { $0.addresses = addresses.isEmpty ? nil : addresses }
+        buildLinks() // the links' route pickers
+        guard let link = link(hub.group), !link.isDemo else { return }
+        link.live.disconnect()
+        link.live.connect(link.fallback)
     }
 
     // MARK: Live Activity

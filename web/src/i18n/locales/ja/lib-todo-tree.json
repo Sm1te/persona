@@ -1,5 +1,6 @@
 {
   "no_project": "その他",
   "unsorted": "未分類",
-  "spawned_agents": "派生した Agent {count} 件"
+  "spawned_agents": "派生した Agent {count} 件",
+  "secretary": "書記官"
 }

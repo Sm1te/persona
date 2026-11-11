@@ -835,22 +835,40 @@ func wikiPageLimit(limit int) int {
 // Message search is typed; the other supported kinds are returned as the CLI's
 // normalized JSON data because their schemas belong to later connector steps.
 func (r *Runner) Search(ctx context.Context, kind, query string) (json.RawMessage, error) {
+	return r.SearchLimit(ctx, kind, query, 0)
+}
+
+// SearchLimit bounds the requested search page. A nonpositive limit preserves
+// the CLI's default page size; message search retains its existing default.
+func (r *Runner) SearchLimit(ctx context.Context, kind, query string, limit int) (json.RawMessage, error) {
+	var args []string
+	maximum := 0
 	switch kind {
 	case "", "messages":
-		page, err := r.SearchMessages(ctx, query, SearchOptions{})
+		page, err := r.SearchMessages(ctx, query, SearchOptions{Limit: limit})
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(page)
 	case "chats":
-		return r.rawSearch(ctx, []string{"im", "+chat-search", "--query", query})
+		args = []string{"im", "+chat-search", "--query", query}
+		maximum = 50
 	case "docs":
-		return r.rawSearch(ctx, []string{"drive", "+search", "--query", query})
+		args = []string{"drive", "+search", "--query", query}
+		maximum = 20
 	case "people":
-		return r.rawSearch(ctx, []string{"contact", "+search-user", "--query", query})
+		args = []string{"contact", "+search-user", "--query", query}
+		maximum = 30
 	default:
 		return nil, fmt.Errorf("unknown search kind %q", kind)
 	}
+	if limit > 0 {
+		if limit > maximum {
+			limit = maximum
+		}
+		args = append(args, "--page-size", fmt.Sprint(limit))
+	}
+	return r.rawSearch(ctx, args)
 }
 
 // SendText sends a plain text message as the bot identity. The idempotency key

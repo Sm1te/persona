@@ -99,6 +99,33 @@ struct AppGroupsTests {
         #expect(!AppGroups.isCodexChatFolder("/Users/me/Documents/ChatGPT/botmux"))
     }
 
+    /// The Codex App's projects as its sidebar orders them (the node's `space_index`, from the App's project-order), then
+    /// any it does not number by their latest chat, Other last. Another app's agents keep the latest project first,
+    /// whatever their space's number (a herdr workspace's).
+    @Test func codexAppProjectsGoInTheAppsOrder() {
+        func chat(_ id: String, root: String?, place: Int?, updated: TimeInterval) -> Session {
+            var extra: [String: Any] = ["space_kind": "codex_app", "space_id": root.map { "codex-project:" + $0 } ?? "codex-chats:/Users/me/.codex",
+                                        "space_name": root.map { ($0 as NSString).lastPathComponent } ?? "Codex chats", "repo_root": root ?? ""]
+            if let place { extra["space_index"] = place }
+            return Self.placed(id, agent: "codex", cwd: root ?? "", updated: updated, extra: extra)
+        }
+        let codex = AppGroups.build([
+            chat("site-chat", root: "/Users/me/code/site", place: 2, updated: 50),
+            chat("tools-chat", root: "/Users/me/code/tools", place: 1, updated: 10),
+            chat("tools-sub", root: "/Users/me/code/tools", place: 1, updated: 5),
+            chat("unlisted-new", root: "/Users/me/.codex/.chatgpt-projects/g-p-1", place: nil, updated: 60),
+            chat("unlisted-old", root: "/Users/me/code/old", place: nil, updated: 20),
+            chat("loose", root: nil, place: nil, updated: 70),
+        ])[0]
+        #expect(codex.projects.map(\.title) == ["tools", "site", "g-p-1", "old", String(localized: "Other")])
+        #expect(codex.projects.first?.sessions.map(\.sessionID) == ["tools-chat", "tools-sub"])
+        let claude = AppGroups.build([
+            Self.placed("numbered-old", cwd: "/Users/me/code/a", updated: 10, extra: ["space_kind": "herdr", "space_id": "w1", "space_index": 1]),
+            Self.placed("latest", cwd: "/Users/me/code/b", updated: 30),
+        ])[0]
+        #expect(claude.projects.map(\.title) == ["b", "a"])
+    }
+
     /// A working tree's project is its repository's, from its path when an older node says nothing; when the home
     /// directory is a repository itself, a session's own folder is its project; one hub's folder is not another hub's.
     @Test func projectsFromRepositoriesAndHubs() {

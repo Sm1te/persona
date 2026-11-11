@@ -65,6 +65,9 @@ type Manifest struct {
 	// Hubs before them refuse the manifest (strict), so an extension using them asks for a newer hub in engines.
 	Tools []ToolSpec `json:"tools,omitempty"`
 	Auth  *AuthSpec  `json:"auth,omitempty"`
+	// HostIntegrations declares typed, read-only access to a configured host
+	// CLI. Unlike Tools, it never installs a program or accepts a command line.
+	HostIntegrations []HostIntegrationSpec `json:"host_integrations,omitempty"`
 }
 
 // Engines are what the extension runs on.

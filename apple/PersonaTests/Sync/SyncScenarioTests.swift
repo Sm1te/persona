@@ -119,6 +119,7 @@ final class SyncRun {
         // A new chat's first message starts it from the new-conversation page (AssistantStart, #1349), not through
         // AppModel's send, so there is no chat page to project until it has started.
         if c["chat"]?["new"]?.bool == true { throw SyncUnplayable(description: "a new chat: its start is the new-conversation page's, not AppModel's") }
+        AgentSync.shared.forgetChatsForTests()
         for n in names { try await start(n) }
         for (i, step) in (c["steps"]?.array ?? []).enumerated() {
             try await run(step)

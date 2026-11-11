@@ -51,6 +51,9 @@ final class ConnectionStatus {
 
     /// Every group's socket (docs/protocol/multi-hub.md); one while there is one group.
     @ObservationIgnored var lives: () -> [LiveConnection] = { [] }
+    /// The network is up on another path (Wi-Fi, cellular, a VPN on or off): sockets on a fallback address try the
+    /// preferred one again (AppModel.recheckRoutes).
+    @ObservationIgnored var onPathChange: (() -> Void)?
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var due: Task<Void, Never>?
     /// What each group is still fetching after its reconnect.
@@ -189,6 +192,7 @@ final class ConnectionStatus {
                 live.probe() // another interface: the old socket may be dead without knowing it
             }
         }
+        if up && was { onPathChange?() }
         update()
     }
 

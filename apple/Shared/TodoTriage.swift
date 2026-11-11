@@ -311,12 +311,13 @@ nonisolated enum TodoTriageLogic {
     /// Every to-do placed in its section, related ones merged into one row (union of shared keys). Closed to-dos are
     /// not merged into open ones' rows. A row takes its most urgent member's section (a superseded failed start never
     /// leads); rows in a section go most recently active first. `quiet: false` leaves quiet tasks (#1731) out, as
-    /// badges do; the page lists them.
+    /// badges do; the page lists them. A caller that narrows the list (search, a filter) passes `superseded` decided on
+    /// every to-do, so a failed start whose finished work is left out does not wait again.
     static func triageTodos(_ todos: [TodoItem], lookup: TodosLogic.SessionLookup?, now: Date,
-                            restored: [String: Date] = [:], quiet: Bool = true,
+                            restored: [String: Date] = [:], quiet: Bool = true, superseded known: Set<String>? = nil,
                             calendar: Calendar = .current) -> TodoTriageResult {
         let list = quiet ? todos : todos.filter { !$0.quiet }
-        let superseded = supersededFailedStarts(list)
+        let superseded = known ?? supersededFailedStarts(list)
         var placed: [String: TodoTriage] = [:]
         for td in list {
             placed[td.id] = triage(td, lookup: lookup, now: now, restoredAt: restored[td.id], superseded: superseded.contains(td.id),

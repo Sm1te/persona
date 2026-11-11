@@ -453,8 +453,8 @@ struct RepoMenuItems: View, Equatable {
     }
 }
 
-/// Moves a row that is not one of the tree's lines (a tab's, Show All) in by `level` of By Repository's levels on iOS
-/// (#2531); elsewhere nothing.
+/// Moves a row that is not one of the tree's lines (an agent's, a tab's, Show All) in by `level` of By Repository's
+/// levels on iOS (#2531, #3753), outside whatever the row draws (a state card, a capsule); elsewhere nothing.
 struct TreeIndent: ViewModifier {
     /// 0: not in the tree, left as it is.
     var level: Int
@@ -468,17 +468,80 @@ struct TreeIndent: ViewModifier {
     }
 }
 
+/// A row of the Agents list that is one button, on iOS: a line of By Repository's structure, a fold, Show All, a tab's
+/// row. A plain button takes taps on its label alone, so the button is made the whole row (#3753): the row keeps only
+/// the sides of `edges` (nil: the grouped list's own), and the room it had above and below is the label's
+/// (`ButtonRowLabel`; `RepoTreeLine` has its own), at least a finger's height. The Mac and Apple Vision Pro keep `edges`,
+/// and so does a row that is not one (`on` false: a link, a button in the list's own style, which are their whole row).
+struct ButtonRowInsets: ViewModifier {
+    var edges: EdgeInsets?
+    var on = true
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if !on {
+            content.listRowInsets(edges)
+        } else if let edges {
+            content.listRowInsets(EdgeInsets(top: Theme.Space.flush, leading: edges.leading, bottom: Theme.Space.flush, trailing: edges.trailing))
+        } else {
+            content.listRowInsets(.vertical, Theme.Space.flush)
+        }
+        #else
+        content.listRowInsets(edges)
+        #endif
+    }
+}
+
+/// The label of a `ButtonRowInsets` row on iOS: the room `edges` gave the row above and below (the grouped list's:
+/// `room`), at least a finger's height, the row's whole width. Elsewhere, or `on` false, the label as it is.
+struct ButtonRowLabel: ViewModifier {
+    var edges: EdgeInsets?
+    var on = true
+    /// Above and below a row's words where the grouped list set the row's edges.
+    static let room = Theme.Space.m
+
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(iOS)
+        if on {
+            content
+                .padding(.top, edges?.top ?? Self.room)
+                .padding(.bottom, edges?.bottom ?? Self.room)
+                .modifier(TouchHeight())
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+/// On iOS at least a finger's height and the width it is given, all of it hit (#3753): a heading or a row that is a
+/// button and draws less. The Mac and Apple Vision Pro keep their sizes.
+struct TouchHeight: ViewModifier {
+    var alignment: Alignment = .center
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .tapTargetHeight(alignment: alignment)
+            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: .leading, vertical: alignment.vertical))
+            .contentShape(.rect)
+        #else
+        content
+        #endif
+    }
+}
+
 #if os(iOS)
 // MARK: - By Repository on iOS (#2531)
 
-/// A line of By Repository's tree on iOS: `level` levels in (a repository's header is 0), its mark in the tree's column
-/// so marks line up level by level. `guide`: on the thin line that runs down from the mark a level up (a worktree's
-/// agents, the agents of a repository with one checkout). Its height is its own (`Theme.Tree.rowPadding`): the row
-/// has no padding of its own, so the guide runs on from line to line. Levels follow the text size as `scaledFrame`
-/// does (capped, `Theme.sizeScale`).
+/// A line of By Repository's structure on iOS (a repository's header, a worktree's line, a fold's): `level` levels in
+/// (a repository's header is 0), its mark in the tree's column so marks line up level by level. At least a finger's
+/// height (#3753), with `Theme.Tree.rowPadding` above and below its words: the row adds no room of its own, so the
+/// whole row is the line to tap. Levels follow the text size as `scaledFrame` does (capped, `Theme.sizeScale`).
 struct RepoTreeLine<Mark: View, Content: View>: View {
     var level: Int
-    var guide = false
     @ViewBuilder var mark: Mark
     @ViewBuilder var content: Content
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -490,27 +553,13 @@ struct RepoTreeLine<Mark: View, Content: View>: View {
         }
         .padding(.leading, Theme.Tree.indent * Theme.sizeScale(typeSize) * CGFloat(level))
         .padding(.vertical, Theme.Tree.rowPadding)
+        .tapTargetHeight()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .leading) { RepoTreeGuide(level: guide ? level : 0) }
         .contentShape(.rect)
     }
 }
 
-/// The guide line beside a line `level` levels in: down from the middle of the mark a level up. None at level 0.
-struct RepoTreeGuide: View {
-    var level: Int
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    var body: some View {
-        if level > 0 {
-            Theme.Tree.guide
-                .frame(width: Theme.Size.line)
-                .padding(.leading, (Theme.Tree.indent * CGFloat(level - 1) + Theme.Tree.column / 2) * Theme.sizeScale(typeSize))
-        }
-    }
-}
-
-/// Moves a row that is not one of the tree's lines (a tab's, Show All) in by `level` of its levels, on the guide line.
+/// Moves a row that is not one of the tree's lines (an agent's, a tab's, Show All) in by `level` of its levels.
 struct RepoTreeIndent: ViewModifier {
     var level: Int
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -519,7 +568,6 @@ struct RepoTreeIndent: ViewModifier {
         content
             .padding(.leading, Theme.Tree.indent * Theme.sizeScale(typeSize) * CGFloat(level))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(alignment: .leading) { RepoTreeGuide(level: level) }
     }
 }
 
@@ -604,66 +652,6 @@ struct RepoWorktreeLine: View {
     private var tally: String? { quiet ? String(localized: "Idle") : count > 0 ? String(localized: "\(count) agents") : nil }
 }
 
-/// An agent's line: its state, its mark and title; at the end the time, or Needs You while it waits for you, and a
-/// muted one's bell. No model: the chat's header says it. At the accessibility text sizes the title takes up to three
-/// lines and the end goes under it.
-struct RepoAgentLine: View {
-    var session: Session
-    var time: AgentTime?
-    var muted: Bool
-    var level: Int
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    var body: some View {
-        RepoTreeLine(level: level, guide: true) {
-            StatusDot(state: session.state, size: Theme.Size.dot, waiting: session.waitsInBackground)
-        } content: {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) { mark; title(lines: 3) }
-                    HStack(spacing: Theme.Space.s) { bell; end }
-                }
-            } else {
-                HStack(spacing: Theme.Space.s) {
-                    mark
-                    title(lines: 1)
-                    bell
-                    end
-                }
-            }
-        }
-        .opacity(muted ? 0.8 : 1)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(session.stateLabel(muted: muted))
-    }
-
-    @ViewBuilder private var mark: some View {
-        if !session.assistant { AgentMark(session, side: Theme.Size.markS) }
-    }
-
-    private func title(lines: Int) -> some View {
-        UltracodeMark.after(session.displayTitle, on: Ultracode.rowMark(session))
-            .font(session.state == .unread ? Theme.Font.secondaryStrong : Theme.Font.secondary)
-            .foregroundStyle(Color.primary)
-            .lineLimit(lines)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder private var bell: some View {
-        if muted {
-            ThemedIcon(Theme.Icon.muted).font(Theme.Font.label).foregroundStyle(.secondary).accessibilityLabel("Notifications muted")
-        }
-    }
-
-    @ViewBuilder private var end: some View {
-        if session.state == .needsYou && !muted {
-            Chip(text: session.state.label, look: .tint(StatusPalette.needsYou.text), compact: true).fixedSize()
-        } else {
-            AgentTimeText(time: time, fallback: session.updatedAt, font: Theme.Font.label)
-        }
-    }
-}
-
 /// A worktree's idle agents behind one quiet line: "N idle · their tabs" and a chevron; or, opened, the line that folds
 /// them again (`title`).
 struct RepoIdleLine: View {
@@ -673,7 +661,7 @@ struct RepoIdleLine: View {
     var title: String? = nil
 
     var body: some View {
-        RepoTreeLine(level: level, guide: true) {
+        RepoTreeLine(level: level) {
             ThemedIcon(title == nil ? Theme.Icon.idleFold : Theme.Icon.collapse).font(Theme.Font.caption).foregroundStyle(.tertiary)
         } content: {
             HStack(spacing: Theme.Space.xs) {

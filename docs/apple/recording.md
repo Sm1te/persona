@@ -7,6 +7,8 @@ Since 2026-11-05 (#3235), there is no longer a "Composer + › Recording context
 
 Rolling recording (the watch keeps recording and only retains the last 6 hours, with health bookmarks) is a mode of this same system — see `docs/apple/recording-rolling.md`. Pulled ranges are transcribed on device and sync into Knowledge like any other recording; there is no composer "as context" path.
 
+All-day recording (the watch records the whole day, the phone transcribes it as it arrives and appends the text to the hub, which writes a daily recap) is the recording kind `day`; its contract, the watch-to-phone transfer included, is `docs/assistant/day-recap.md`.
+
 ## Why send only text
 
 - Audio is roughly 14 MB / hour; the knowledge base searches text, so text is enough. The assistant needs "who said what at that day's meeting," not the audio itself.

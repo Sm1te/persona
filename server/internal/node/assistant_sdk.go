@@ -286,6 +286,9 @@ func (n *Node) sdkCommand(b sdkBridge, launcher string, s sdkStart, base []strin
 	if s.compaction != nil {
 		base = identity.Environment(base, s.compaction.env()...)
 	}
+	if claudeDir := filepath.Dir(b.claude); claudeDir != "" && claudeDir != "." {
+		base = prependEnvPath(base, claudeDir)
+	}
 	opts, err := s.options(b.claude)
 	if err != nil {
 		return nil, nil, err
@@ -332,4 +335,30 @@ func (n *Node) sdkBridgeEvent(p *assistantProc, line []byte) bool {
 		n.logger.Printf("assistant %s: agent sdk bridge exiting", short(p.id))
 	}
 	return true
+}
+
+// prependEnvPath puts dir first on PATH, for an npm shim that runs `env node`.
+func prependEnvPath(env []string, dir string) []string {
+	if dir == "" || dir == "." {
+		return env
+	}
+	found := false
+	out := make([]string, len(env))
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			out[i] = "PATH=" + dir + string(os.PathListSeparator) + strings.TrimPrefix(kv, "PATH=")
+			found = true
+		} else {
+			out[i] = kv
+		}
+	}
+	if !found {
+		p := os.Getenv("PATH")
+		if p == "" {
+			out = append(out, "PATH="+dir)
+		} else {
+			out = append(out, "PATH="+dir+string(os.PathListSeparator)+p)
+		}
+	}
+	return out
 }

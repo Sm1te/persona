@@ -31,6 +31,9 @@ import SwiftUI
     /// Frames a second shown, and how long the last one took from the mock's Screen Sharing to here (its stamp).
     private(set) var fps: Double = 0
     private(set) var latency: Double?
+    /// Megabits a second from the Mac lately (the page's numbers in DEBUG builds).
+    private(set) var mbps: Double = 0
+    @ObservationIgnored private var counted: (bytes: Int, at: Date)?
     /// A frame of this connection has been shown: the small window shows it instead of its card (VNCPiPCard).
     private(set) var pictured = false
     /// When the last frame of this connection was copied out (not observed: read when it matters), and which
@@ -72,20 +75,28 @@ import SwiftUI
         c.onCursor = { [weak self] cursor in Task { @MainActor in self?.cursor = cursor } }
         c.onResize = { [weak self] w, h in Task { @MainActor in self?.resized(width: w, height: h) } }
         c.onScreens = { [weak self] screens in Task { @MainActor in self?.screens = screens } }
-        sink.attach(c) { [weak self] fps, latency in
+        sink.attach(c) { [weak self, weak c] fps, latency in
             // Stamped here, when the frame was copied: a report still queued from before a suspension keeps its time.
-            let at = Date.now
+            let at = Date.now, bytes = c?.received ?? 0
             Task { @MainActor in
-                self?.fps = fps
-                self?.latency = latency
-                self?.lastFrame = at
-                if self?.pictured == false { self?.pictured = true }
+                guard let self else { return }
+                self.fps = fps
+                self.latency = latency
+                self.lastFrame = at
+                if let was = self.counted, at.timeIntervalSince(was.at) >= 1 {
+                    self.mbps = Double(bytes - was.bytes) * 8 / 1e6 / at.timeIntervalSince(was.at)
+                    self.counted = (bytes, at)
+                } else if self.counted == nil {
+                    self.counted = (bytes, at)
+                }
+                if !self.pictured { self.pictured = true }
             }
         }
         client = c
         phase = .connecting
         pictured = false
         lastFrame = nil
+        counted = nil
         connection += 1
         c.start()
     }
@@ -99,7 +110,8 @@ import SwiftUI
         if case .closed = phase {} else { phase = .closed(nil) }
     }
 
-    /// Shown in this layer from now on (until it goes).
+    /// Shown in this layer from now on (until it goes). Updates are always asked for the whole screen, even when one
+    /// display or a zoomed-in part is shown: macOS's Screen Sharing leaves most smaller requests unanswered (#3067).
     func show(in layer: AVSampleBufferDisplayLayer, timed: Bool = false) { sink.add(layer, timed: timed) }
     func hide(from layer: AVSampleBufferDisplayLayer) { sink.remove(layer) }
 
@@ -300,165 +312,4 @@ import SwiftUI
     }
 
     static func current(_ ref: MachineRef) -> RFBSession? { sessions[ref]?.session }
-}
-
-nonisolated private struct SampleBox: @unchecked Sendable { let sample: CMSampleBuffer }
-nonisolated private struct LayersBox: @unchecked Sendable { let layers: [AVSampleBufferDisplayLayer] }
-
-/// The frames out of the client into the layers that show them: a CVPixelBuffer copied from the framebuffer at most
-/// 30 times a second (a last copy after a burst, so nothing is left out), as a sample buffer to display at once.
-nonisolated final class RFBFrameSink: @unchecked Sendable {
-    private let lock = NSLock()
-    private let queue = DispatchQueue(label: "persona.vnc.frames")
-    private weak var client: RFBClient?
-    private var layers = NSHashTable<AVSampleBufferDisplayLayer>.weakObjects()
-    /// Layers with a timebase of their own (the small window's source, VNCPiP): their samples carry a time on the host
-    /// clock instead of DisplayImmediately, which AVFoundation advises against mixing with a timebase.
-    private var timed = NSHashTable<AVSampleBufferDisplayLayer>.weakObjects()
-    private var dirty = false, scheduled = false
-    private var last = Date.distantPast
-    private var pool: CVPixelBufferPool?
-    private var poolSize = (0, 0)
-    private var shown: [Date] = []
-    private var report: (@Sendable (Double, Double?) -> Void)?
-    private var latest: CVPixelBuffer?
-
-    func attach(_ client: RFBClient, report: @escaping @Sendable (Double, Double?) -> Void) {
-        lock.withLock {
-            self.client = client
-            self.report = report
-        }
-        client.onFrame = { [weak self] _, _ in self?.changed() }
-    }
-
-    func detach() { lock.withLock { client = nil } }
-
-    func add(_ layer: AVSampleBufferDisplayLayer, timed isTimed: Bool = false) {
-        let frame = lock.withLock { () -> CVPixelBuffer? in
-            (isTimed ? timed : layers).add(layer)
-            return latest
-        }
-        if let frame, let sample = Self.sample(frame, immediate: !isTimed) {
-            let box = SampleBox(sample: sample), one = LayersBox(layers: [layer])
-            Task { @MainActor in for l in one.layers { Self.enqueue(box.sample, in: l) } }
-        }
-    }
-
-    func remove(_ layer: AVSampleBufferDisplayLayer) {
-        lock.withLock {
-            layers.remove(layer)
-            timed.remove(layer)
-        }
-    }
-
-    private func changed() {
-        lock.withLock {
-            dirty = true
-            guard !scheduled else { return }
-            scheduled = true
-            let wait = max(0, 1.0 / 30 - Date().timeIntervalSince(last))
-            queue.asyncAfter(deadline: .now() + wait) { [weak self] in self?.copy() }
-        }
-    }
-
-    private func copy() {
-        guard let client = lock.withLock({ () -> RFBClient? in
-            scheduled = false
-            dirty = false
-            last = Date()
-            return self.client
-        }) else { return }
-        var stamp: Double?
-        let buffer: CVPixelBuffer? = client.withFramebuffer { fb in
-            guard fb.width > 1, let pb = pixelBuffer(fb.width, fb.height) else { return nil }
-            CVPixelBufferLockBaseAddress(pb, [])
-            if let dst = CVPixelBufferGetBaseAddress(pb) {
-                let row = CVPixelBufferGetBytesPerRow(pb)
-                if row == fb.bytesPerRow {
-                    memcpy(dst, fb.pixels, fb.bytesPerRow * fb.height)
-                } else {
-                    for y in 0..<fb.height { memcpy(dst + y * row, fb.pixels + y * fb.bytesPerRow, fb.bytesPerRow) }
-                }
-            }
-            CVPixelBufferUnlockBaseAddress(pb, [])
-            stamp = Self.stamp(fb)
-            return pb
-        }
-        guard let buffer, let sample = Self.sample(buffer, immediate: true) else { return }
-        let (targets, timedTargets, report, fps) = lock.withLock {
-            () -> ([AVSampleBufferDisplayLayer], [AVSampleBufferDisplayLayer], (@Sendable (Double, Double?) -> Void)?, Double) in
-            latest = buffer
-            let now = Date()
-            shown.append(now)
-            shown.removeAll { now.timeIntervalSince($0) > 1 }
-            return (layers.allObjects, timed.allObjects, self.report, Double(shown.count))
-        }
-        let latency = stamp.map { Date().timeIntervalSince1970 * 1000 - $0 }
-        report?(fps, latency.flatMap { $0 >= 0 && $0 < 60_000 ? $0 : nil })
-        let box = SampleBox(sample: sample), onScreen = LayersBox(layers: targets)
-        Task { @MainActor in for l in onScreen.layers { Self.enqueue(box.sample, in: l) } }
-        if !timedTargets.isEmpty, let atTime = Self.sample(buffer, immediate: false) {
-            let box = SampleBox(sample: atTime), small = LayersBox(layers: timedTargets)
-            Task { @MainActor in for l in small.layers { Self.enqueue(box.sample, in: l) } }
-        }
-        if lock.withLock({ dirty && !scheduled }) { changed() }
-    }
-
-    /// The mock's Screen Sharing stamps when it sent a frame (MOCK_SCREEN_ANIMATE) in its first two pixels: a marker
-    /// (pure magenta) then the low 24 bits of its clock in milliseconds; nil on any other screen.
-    private static func stamp(_ fb: RFBFramebuffer) -> Double? {
-        let m = fb.pixel(0, 0)
-        guard m[0] == 255, m[1] == 0, m[2] == 255 else { return nil }
-        let t = fb.pixel(1, 0)
-        let low = Double(Int(t[2]) << 16 | Int(t[1]) << 8 | Int(t[0]))
-        let now = Date().timeIntervalSince1970 * 1000
-        let base = now - now.truncatingRemainder(dividingBy: 16_777_216)
-        let sent = base + low
-        return sent > now ? sent - 16_777_216 : sent
-    }
-
-    private func pixelBuffer(_ w: Int, _ h: Int) -> CVPixelBuffer? {
-        if pool == nil || poolSize != (w, h) {
-            let attrs: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                                        kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h,
-                                        kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
-            CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pool)
-            poolSize = (w, h)
-        }
-        var pb: CVPixelBuffer?
-        guard let pool, CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb) == kCVReturnSuccess else { return nil }
-        return pb
-    }
-
-    /// A sample of the frame at this moment on the host clock (rising from one to the next); `immediate`: shown at once
-    /// whatever the layer's time (the page's), else when its timebase reaches it (the small window's, at once too).
-    private static func sample(_ pb: CVPixelBuffer, immediate: Bool) -> CMSampleBuffer? {
-        var format: CMVideoFormatDescription?
-        guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pb, formatDescriptionOut: &format) == noErr,
-              let format else { return nil }
-        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30), presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
-                                        decodeTimeStamp: .invalid)
-        var sample: CMSampleBuffer?
-        guard CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pb, formatDescription: format,
-                                                       sampleTiming: &timing, sampleBufferOut: &sample) == noErr, let sample else { return nil }
-        if immediate, let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true),
-           CFArrayGetCount(attachments) > 0 {
-            let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
-            CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
-                                 Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
-        }
-        return sample
-    }
-
-    /// A picture of the app's own into a timed layer (the small window's card, VNCPiPCard), at this moment on the host
-    /// clock: the client's next frame, later, replaces it.
-    @MainActor static func show(_ pb: CVPixelBuffer, in layer: AVSampleBufferDisplayLayer) {
-        if let sample = sample(pb, immediate: false) { enqueue(sample, in: layer) }
-    }
-
-    @MainActor private static func enqueue(_ sample: CMSampleBuffer, in layer: AVSampleBufferDisplayLayer) {
-        let r = layer.sampleBufferRenderer
-        if r.status == .failed { r.flush() }
-        r.enqueue(sample)
-    }
 }

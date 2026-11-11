@@ -6,6 +6,8 @@ What it adds:
   GET  /api/v1/machines/{mid}/preview/servers   a project's .claude/launch.json as the node reads it (by mode, below)
   POST /api/v1/machines/{mid}/preview/start     starts an entry: its port answers 3 s later (the panel waits for it)
   POST /api/v1/machines/{mid}/ports/{port}/open the preview's own ports answer, the others do not
+  GET  …/ports/{port}/connect                   a running preview port forwards to a real page server with the same
+                                                made-up app (`forward`), as the iPhone opens it
   GET  …/preview/connect                        a preview socket: pictures of a made-up dev app ("Acme Notes", pages
                                                 /, /settings, /notes) that the browser this computer has draws at the
                                                 size the panel asks, and the messages the node sends (page, external,
@@ -161,10 +163,19 @@ HUB = {}
 
 
 def agent_ports():
-    """The agent's Storybook port, in the mode that has one (the session lists it, as the node's scan would)."""
-    sessions = getattr(HUB.get("hub"), "SESSIONS", None)
-    if sessions:
-        sessions[0]["ports"] = [{"port": 6006, "title": "Storybook", "process": "node"}] if MODE["mode"] == "1" else []
+    """The agent's Storybook port, in the mode that has one (the session lists it, as the node's scan would): the widget
+    session's, the one the previews open from, so a MOCK_PORTS session first in the list keeps its own ports."""
+    hub = HUB.get("hub")
+    sid = getattr(hub, "WIDGET", None)
+    s = next((x for x in getattr(hub, "SESSIONS", None) or [] if x.get("session_id") == sid), None)
+    if s is not None:
+        s["ports"] = [{"port": 6006, "title": "Storybook", "process": "node"}] if MODE["mode"] == "1" else []
+
+
+def forward(port):
+    """Where …/ports/{port}/connect reaches a preview's port on this computer (the Apple clients open the page through the
+    port forwarding, docs/web/preview.md "iPhone"): the made-up app's page server while the port is running, else None."""
+    return page_server() if MODE["mode"] != "old" and listening(port) else None
 
 
 def install(hub):

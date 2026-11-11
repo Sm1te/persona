@@ -141,10 +141,9 @@ class TodoDataTest {
             todos = todos
         )
 
-        // Project › To-do › Agent (#3156): sessions without a cwd are in the project "Other" ("-"); the headings hold no rows
-        assertEquals(listOf("todo-project/-", "todo/t2", "todo/t1", TodoNoneGroup, "todo-loose/todo/none/-"),
-            result.groups.filter { it.id != "pinned" }.map { it.id })
-        // Pinned first, then two to-do sections, and a final "No to-do" section (grouped by project inside).
+        // As iOS (#4338 A5): a section per to-do, then "No to-do", each a flat list.
+        assertEquals(listOf("todo/t2", "todo/t1", TodoNoneGroup), result.groups.filter { it.id != "pinned" }.map { it.id })
+        // Pinned first, then two to-do sections, and a final "No to-do" section.
         val nonPinnedGroups = result.groups.filter { it.id != "pinned" && it.rows.isNotEmpty() }
         assertEquals(3, nonPinnedGroups.size)
 
@@ -152,7 +151,7 @@ class TodoDataTest {
         // Todo state Unread ranks before FollowUp, so section t2 comes before t1.
         assertEquals("todo/t2", (nonPinnedGroups[0].id).zhAny())
         assertEquals("todo/t1", (nonPinnedGroups[1].id).zhAny())
-        assertEquals("todo-loose/todo/none/-", (nonPinnedGroups[2].id).zhAny())
+        assertEquals(TodoNoneGroup, (nonPinnedGroups[2].id).zhAny())
 
         // In section t2: a2 (unread) vs mute1 (muted working). Rank: Unread < Muted -> a2 first
         assertEquals(listOf("a2", "mute1"), (nonPinnedGroups[0].rows.map { it.session.sessionId }).zhAny())
@@ -174,22 +173,24 @@ class TodoDataTest {
         fun groups(settings: AgentListSettings = AgentListSettings(grouping = AgentGrouping.Todo), sessions: List<AgentSession> = listOf(onTodo, manual, started, elsewhere)) =
             buildAgentList(sessions = sessions, pins = AgentPreferences(), mutes = AgentPreferences(), settings = settings, todos = listOf(todo)).groups
         fun List<AgentListGroup>.of(id: String) = single { it.id == id }
-        fun loose(group: String) = "todo-loose/$group/-"
         val list = groups()
-        assertEquals(listOf("todo-project/-", "todo/t1", TodoManualGroup, loose(TodoManualGroup), TodoNoneGroup, loose(TodoNoneGroup)), list.map { it.id })
-        assertEquals(listOf("manual"), list.of(loose(TodoManualGroup)).rows.map { it.session.sessionId })
+        assertEquals(listOf("todo/t1", TodoManualGroup, TodoNoneGroup), list.map { it.id })
+        assertEquals(listOf("manual"), list.of(TodoManualGroup).rows.map { it.session.sessionId })
         assertFalse(list.of(TodoManualGroup).folded)
         // "No to-do" is folded under to-dos while nothing in it needs you…
         assertEquals(true, list.of(TodoNoneGroup).folded)
-        assertEquals(listOf("orca", "started"), list.of(loose(TodoNoneGroup)).rows.map { it.session.sessionId })
+        assertEquals(listOf("orca", "started"), list.of(TodoNoneGroup).rows.map { it.session.sessionId })
         // …open once the user opened it, or when something in it waits, or with no to-do above it.
         assertFalse(groups(AgentListSettings(grouping = AgentGrouping.Todo, expandedIdle = setOf(TodoNoneOpened))).of(TodoNoneGroup).folded)
         assertFalse(groups(sessions = listOf(onTodo, AgentSession(s("waits", "needs_you")))).of(TodoNoneGroup).folded)
         assertFalse(groups(sessions = listOf(elsewhere)).of(TodoNoneGroup).folded)
-        // "Opened by hand" is not a to-do: with only it above, "No to-do" stays open (web: groups with a todoId).
+        // With only "Opened by hand" above, "No to-do" folds as well, as iOS's Unassigned under any section (#4338 A5).
         val manualOnly = groups(sessions = listOf(manual, elsewhere))
-        assertEquals(listOf(TodoManualGroup, loose(TodoManualGroup), TodoNoneGroup, loose(TodoNoneGroup)), manualOnly.map { it.id })
-        assertFalse(manualOnly.of(TodoNoneGroup).folded)
+        assertEquals(listOf(TodoManualGroup, TodoNoneGroup), manualOnly.map { it.id })
+        assertEquals(true, manualOnly.of(TodoNoneGroup).folded)
+        // A search opens it.
+        val titled = listOf(AgentSession(onTodo.session.copy(title = "orca one")), AgentSession(elsewhere.session.copy(title = "orca two")))
+        assertFalse(groups(AgentListSettings(grouping = AgentGrouping.Todo, query = "orca"), titled).of(TodoNoneGroup).folded)
     }
 
     @Test
@@ -214,8 +215,8 @@ class TodoDataTest {
         val byGroup = result.groups.filter { it.id.startsWith("todo/") }.associate { it.id to it.rows.map { r -> r.session.sessionId }.toSet() }
         assertEquals(setOf("a1", "a3"), byGroup["todo/t2"])
         assertEquals(setOf("a2"), byGroup["todo/t1"])
-        // The project heading counts the agent waiting for you once.
-        assertEquals(1, result.groups.filter { it.id.startsWith(TodoProjectPrefix) }.sumOf { it.stateCounts?.get(AgentState.NeedsYou) ?: 0 })
+        // The sections count the agent waiting for you once.
+        assertEquals(1, result.groups.filter { it.id.startsWith("todo/t") }.sumOf { it.stateCounts?.get(AgentState.NeedsYou) ?: 0 })
     }
 
     @Test

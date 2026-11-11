@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/connector"
+	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/lazyre"
 )
 
@@ -269,7 +270,7 @@ func (c *Connector) Manifest() connector.Manifest {
 	}
 }
 
-func (c *Connector) Status(context.Context) connector.Status {
+func (c *Connector) Status(ctx context.Context) connector.Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st := c.status
@@ -279,10 +280,22 @@ func (c *Connector) Status(context.Context) connector.Status {
 	case c.source == SourceMachine && c.fetch != nil:
 		st.Via = "来自 " + c.machine + " 的 gh 登录"
 	}
-	if until := c.limitedUntil(time.Now()); st.State == connector.StateOK && !until.IsZero() {
-		st.State = connector.StateRateLimited
-		// minutes, not a clock time: the hub's clock is not in the user's time zone
-		st.Error = fmt.Sprintf("这个小时的 GitHub 请求额度快用完了，约 %d 分钟内只看通知", int(time.Until(until).Minutes())+1)
+	now := time.Now()
+	if st.State == connector.StateOK {
+		var until time.Time
+		var key string
+		switch {
+		case now.Before(c.pausedUntil):
+			until, key = c.pausedUntil, "hub-connectors.github_paused"
+		case c.rateLow && now.Before(c.rateReset):
+			until, key = c.rateReset, "hub-connectors.github_rate_low"
+		}
+		if key != "" {
+			st.State = connector.StateRateLimited
+			// Minutes, not a clock time: the hub may be in another time zone.
+			minutes := int(until.Sub(now).Minutes()) + 1
+			st.Error = i18n.T(i18n.From(ctx), key, i18n.Args{"minutes": minutes})
+		}
 	}
 	return st
 }

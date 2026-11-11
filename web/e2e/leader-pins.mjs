@@ -1,8 +1,8 @@
-// End-to-end check of the leader conversations in the sidebar (#3623, docs/web/web.md "Persona chats"): with the hub's
-// `assistant.leaders` set, a fresh browser (nothing in localStorage) shows them first among the Persona chats, in the
-// hub's order, as the 方向 (Directions) group under each direction's name from GET /api/v1/assistant/leaders, with no
-// 主管 label and no 置顶 heading; the rest are 其他对话; New chat is the compose icon on the section's title, not a row;
-// a chat pinned in this browser comes after the directions under 置顶; a leader's menu has no Pin / Unpin.
+// End-to-end check of the leader conversations in the sidebar (#3623, #4331, docs/web/web.md "Persona chats"): with the
+// hub's `assistant.leaders` set, a fresh browser shows Persona chats as the leaders only, the 常驻 group, in the hub's
+// order under each one's name from GET /api/v1/assistant/leaders with what it has open (在做 N · 等你 N); every other
+// chat is under 全部对话; New chat is the compose icon on the section's title; a lead's menu has 取消常驻 (no 置顶 anywhere),
+// which ends it on the hub and takes its row away; 全部对话's menu has 设为常驻, which brings it back.
 //
 // Needs the web page against the fake hub with leaders, and Chrome (or any Chromium through --executable):
 //
@@ -75,50 +75,53 @@ async function open(browser, theme, width, pins) {
 }
 
 const browser = await chromium.launch(executable ? { executablePath: executable } : { channel: "chrome" });
+const counted = new Map(((await hub("/assistant/directions/tree")).directions ?? []).filter((d) => !d.secretary).map((d) => [d.id, d.counts]));
+const label = (c) => [c?.working ? `在做 ${c.working}` : "", c?.needs_you ? `等你 ${c.needs_you}` : ""].filter(Boolean).join(" · ");
 try {
   for (const theme of ["light", "dark"]) {
     for (const width of [1280, 390]) {
       const where = `${theme} ${width}px`;
       const { ctx, page } = await open(browser, theme, width, null);
       const ids = await rowIds(page);
-      if (JSON.stringify(ids.slice(0, leaders.length)) !== JSON.stringify(leaders)) fail(`${where}: leaders not first in the hub's order: ${ids.join(",")}`);
+      if (JSON.stringify(ids) !== JSON.stringify(leaders)) fail(`${where}: Persona chats are not the leaders only, in the hub's order: ${ids.join(",")}`);
       for (const id of leaders) {
         const text = await page.locator(`aside a[href^="/persona/${id}"]`).first().textContent();
-        if (text.includes("主管")) fail(`${where}: leader ${id} still has the 主管 label`);
-        if (!names.get(id) || !text.includes(names.get(id))) fail(`${where}: leader ${id} does not show its direction's name ${names.get(id)}: ${text}`);
+        if (!names.get(id) || !text.includes(names.get(id))) fail(`${where}: leader ${id} does not show its name ${names.get(id)}: ${text}`);
+        if (label(counted.get(id)) && !text.includes(label(counted.get(id)))) fail(`${where}: leader ${id} does not say ${label(counted.get(id))}: ${text}`);
       }
       const hs = await headings(page);
-      if (JSON.stringify(hs) !== JSON.stringify(["方向", "其他对话"])) fail(`${where}: group titles are ${hs.join(" | ")}`);
+      if (JSON.stringify(hs) !== JSON.stringify(["常驻"])) fail(`${where}: group titles are ${hs.join(" | ")}`);
+      if (!(await page.locator('aside a[href="/history"]', { hasText: "全部对话" }).count())) fail(`${where}: no 全部对话`);
       const compose = page.locator('aside .group\\/sec a[href="/persona/new"][aria-label="新对话"]');
       if (!(await compose.count()) || (await compose.first().textContent()) !== "") fail(`${where}: New chat is not the icon on the Persona chats title`);
-      if (await page.locator('aside a[href="/persona/new"]', { hasText: "新对话" }).count()) fail(`${where}: New chat still has a row of its own`);
-      ok(`${where}: a fresh browser shows the ${leaders.length} leaders first under 方向 by name (${leaders.map((id) => names.get(id)).join(" / ")}), the rest under 其他对话, New chat as the title's icon`);
+      ok(`${where}: Persona chats are 常驻 (${leaders.map((id) => `${names.get(id)}${label(counted.get(id)) ? " " + label(counted.get(id)) : ""}`).join(" / ")}) then 全部对话; New chat is the title's icon`);
       if (shots) await page.screenshot({ path: join(shots, `web-leader-pins-${width > 600 ? "wide" : "narrow"}-${theme}.png`) });
       await ctx.close();
     }
   }
 
-  const { ctx, page } = await open(browser, "light", 1280, [local]);
-  const ids = await rowIds(page);
-  if (JSON.stringify(ids.slice(0, leaders.length + 1)) !== JSON.stringify([...leaders, local])) fail(`a local pin is not right after the leaders: ${ids.join(",")}`);
-  const hs = await headings(page);
-  if (JSON.stringify(hs) !== JSON.stringify(["方向", "置顶", "其他对话"])) fail(`with a local pin the group titles are ${hs.join(" | ")}`);
-  ok("a chat pinned in this browser comes right after the directions, under 置顶");
-
-  const menuOf = async (id) => {
-    await page.locator(`aside a[href^="/persona/${id}"]`).first().click({ button: "right" });
-    const menu = page.locator('[role="menu"]').last();
-    await menu.waitFor({ state: "visible", timeout: 5000 });
-    const items = await menu.locator('[role="menuitem"]').allTextContents();
-    await page.keyboard.press("Escape");
-    return items;
-  };
-  const leadMenu = await menuOf(leaders[0]);
-  if (leadMenu.some((x) => x.includes("置顶"))) fail(`a leader's menu has Pin / Unpin: ${leadMenu.join(" | ")}`);
-  const localMenu = await menuOf(local);
-  if (!localMenu.some((x) => x.includes("取消置顶"))) fail(`the local pin's menu has no Unpin: ${localMenu.join(" | ")}`);
-  ok("a leader's menu has no Pin / Unpin; the local pin's has Unpin");
-  if (shots) await page.screenshot({ path: join(shots, "web-leader-pins-wide-with-local-pin.png") });
+  const { ctx, page } = await open(browser, "light", 1280, null);
+  const first = leaders[0];
+  await page.locator(`aside a[href^="/persona/${first}"]`).first().click({ button: "right" });
+  const menu = page.locator('[role="menu"]').last();
+  await menu.waitFor({ state: "visible", timeout: 5000 });
+  const items = await menu.locator('[role="menuitem"]').allTextContents();
+  if (items.some((x) => x.includes("置顶"))) fail(`a lead's menu still says 置顶: ${items.join(" | ")}`);
+  if (shots) await page.screenshot({ path: join(shots, "web-lead-menu.png") });
+  await menu.locator('[role="menuitem"]', { hasText: "取消常驻" }).first().click();
+  await page.waitForFunction((id) => !document.querySelector(`aside a[href^="/persona/${id}"]`), first, { timeout: 5000 }).catch(() => fail("取消常驻 left the row in the sidebar"));
+  if ((await hub("/assistant")).leaders?.includes(first)) fail("the hub still lists the ended lead");
+  ok("取消常驻 ends the lead on the hub and its row goes");
+  // back from 全部对话: its menu has 设为常驻
+  await page.goto(`${base}/history`);
+  const histRow = page.locator(`a[href^="/persona/${first}"]`).first();
+  await histRow.waitFor({ timeout: 10000 });
+  await histRow.locator("xpath=..").getByRole("button").last().click();
+  const hmenu = page.locator('[role="menu"]').last();
+  await hmenu.waitFor({ state: "visible", timeout: 5000 });
+  await hmenu.locator('[role="menuitem"]', { hasText: "设为常驻" }).first().click();
+  await page.waitForFunction((id) => !!document.querySelector(`aside a[href^="/persona/${id}"]`), first, { timeout: 8000 }).catch(() => fail("设为常驻 in 全部对话 did not bring the row back"));
+  ok("设为常驻 in 全部对话 makes it a lead again");
   await ctx.close();
 } finally {
   await browser.close();

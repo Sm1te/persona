@@ -117,13 +117,13 @@ to-do with priority `high`, still asks the owner with the card, as before.
 
 ## Header count
 
-The header reads "N open · N shelved · N done". **Open** counts to-dos that are not closed, not accepted or deployed,
+The web's header reads "N open · N shelved · N done" beside the title on wider screens (a phone leaves it out); it counts what the list's filter shows, whatever is searched (#3740). The iOS and
+Android lists have no such line (#3712): it said again what the sections say, so each section's title carries the number of
+to-dos its rows list (a merged row's related ones too), in the section's state color, and the counts follow a search and the
+list's filter (#3740). **Open** counts to-dos that are not closed, not accepted or deployed,
 and not shelved: Waiting on you, Working, PR to merge, Other open, and Just finished rows still open (a finished turn
 is not a closed to-do; only a review or the user closes it). **Done** counts closed, accepted and deployed ones. The
 sidebar's To-dos badge shows the same open count without quiet tasks (#1731), as before; the page lists and counts them. A task whose agent never started (rule 1) counts as open while it waits on the owner.
-
-Android's list (#3712) shows no such line: each section's title carries its count, the to-dos listed under it (a merged
-row's related ones included), so the counts follow a search and the list's filter (#3740).
 
 ## Shelving
 
@@ -183,5 +183,6 @@ hub; a rule change adds or changes a case there first.
 A change to the rules changes all of them in the same PR. Native differences: iOS / Mac keep restores in the device's
 `UserDefaults` (`todos.restored`) and Android in its local preferences, as the web keeps them per browser; the iOS list
 has no Status | Folder switch (it had no folder view), and the Mac shows a merged row's members as a disclosure under the
-lead. Moving the classification to the hub, so the clients only draw the section it sends, would remove the copies; it
+lead. The iOS list draws a row's "N related" inside the lead's row, under its words (Android's card already had it). iOS and
+Android filter and sort the list on the device (`docs/assistant/todos.md`, "List filter and sort"; the web follows). Moving the classification to the hub, so the clients only draw the section it sends, would remove the copies; it
 is not done yet.

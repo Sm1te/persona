@@ -493,6 +493,11 @@ data class Session(
     /** Newest running workflow; bounded list metadata without its agent or phase arrays. */
     @SerialName("workflow_progress") val workflowProgress: Workflow? = null,
     @SerialName("background_working") val backgroundWorking: Boolean? = null,
+    /**
+     * Working only because of background work that only waits (`sleep`, a `--watch`, `tail -f`; the hub's
+     * `background_waiting`, #6045): set only with `state` working. False from older hubs.
+     */
+    @SerialName("background_waiting") val backgroundWaiting: Boolean = false,
 ) {
     val key: SessionKey get() = SessionKey(machineId, sessionId)
     /** A chat of the health space ([space]), which the assistant's own lists leave out. */

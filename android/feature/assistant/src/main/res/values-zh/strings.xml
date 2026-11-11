@@ -78,25 +78,8 @@
     <string name="assistant_search_chats">搜索对话</string>
     <string name="assistant_start_main">开始主对话</string>
     <string name="assistant_main_chat">主对话</string>
-    <string name="assistant_pinned">置顶</string>
-    <string name="assistant_pinned_actions">置顶操作</string>
-    <string name="assistant_unpin_all">全部取消置顶</string>
-    <string name="assistant_recent">最近</string>
-    <string name="assistant_directions">方向</string>
-    <string name="assistant_other_chats">其他对话</string>
-    <string name="assistant_auto">自动对话</string>
+    <string name="assistant_directions">常驻</string>
     <string name="assistant_origin_inbox">收件箱</string>
-    <string name="assistant_origin_task">定时任务</string>
-    <string name="assistant_origin_lark_agent">飞书 /agent</string>
-    <string name="assistant_origin_spawned">对话派生</string>
-    <string name="assistant_origin_extension">扩展</string>
-    <string name="assistant_origin_other">其他</string>
-    <plurals name="assistant_auto_needs_you">
-        <item quantity="other">%d 段需要你</item>
-    </plurals>
-    <plurals name="assistant_auto_working">
-        <item quantity="other">%d 段在运行</item>
-    </plurals>
     <string name="assistant_empty_title">还没有对话</string>
     <string name="assistant_empty_detail">发一句话，开始和 Persona 聊聊。</string>
     <string name="assistant_no_match">没有找到匹配的对话</string>
@@ -105,9 +88,11 @@
     <string name="assistant_home">返回首页</string>
     <string name="assistant_todos">待办</string>
     <string name="assistant_open_settings">设置</string>
+    <string name="assistant_make_leader">设为常驻</string>
+    <string name="assistant_end_leader">取消常驻</string>
+    <string name="assistant_leader_working">在做 %1$d</string>
+    <string name="assistant_leader_needs_you">等你 %1$d</string>
     <string name="assistant_conversation_actions">对话操作</string>
-    <string name="assistant_pin">置顶</string>
-    <string name="assistant_unpin">取消置顶</string>
     <string name="assistant_demo_title">体验模式</string>
     <string name="assistant_demo_notice">内容仅保存在本次体验中。</string>
     <string name="assistant_demo_reply">这是示例对话。接入助手后，回复会显示在这里。</string>
@@ -131,7 +116,7 @@
     <string name="assistant_needs_you_agent">Agent</string>
     <string name="assistant_pair_first">请先配对 hub</string>
     <plurals name="assistant_show_all_recent">
-        <item quantity="other">查看全部 %1$d 个</item>
+        <item quantity="other">全部对话（%1$d）</item>
     </plurals>
     <plurals name="assistant_needs_you_more">
         <item quantity="other">还有 %1$d 件在收件箱</item>

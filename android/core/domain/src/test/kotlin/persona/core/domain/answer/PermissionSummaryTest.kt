@@ -31,7 +31,7 @@ class PermissionSummaryTest {
         val input = Json.parseToJsonElement("""{"custom":"${"x".repeat(300)}"}""")
         val request = Interaction("request", kind = "permission", toolName = "CustomTool", toolInput = input)
         assertEquals(PermissionSummary(CoreText.plain(input.toString().take(240) + "…")), request.permissionSummary())
-        assertEquals(PermissionSummary(CoreText.plain("CustomTool")), request.copy(toolInput = null).permissionSummary())
+        assertEquals(PermissionSummary(CoreText.plain("Custom tool")), request.copy(toolInput = null).permissionSummary())
         assertEquals(PermissionSummary(CoreText.plain("[]")), request.copy(toolInput = Json.parseToJsonElement("[]")).permissionSummary())
     }
 }

@@ -192,7 +192,8 @@ nonisolated struct NativeMigrationKeychain {
     }
 }
 
-#if !WIDGET_EXTENSION && !NATIVE_MIGRATION_STORAGE_ONLY
+// Share › Persona compiles all of Shared (Session included), so it has the envelope too.
+#if !WIDGET_EXTENSION && (!NATIVE_MIGRATION_STORAGE_ONLY || SHARE_EXTENSION)
 /// Keep the canonical synthesized session encoder, adding only the previous marker for old readers.
 nonisolated struct NativeSessionEnvelope: Encodable {
     var session: Session

@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -26,8 +27,17 @@ var (
 
 // archiveCursor is the connector's cursor: the updated_at reached, and per thread the time its messages are archived up to.
 type archiveCursor struct {
-	Since   time.Time            `json:"since"`
-	Threads map[string]time.Time `json:"threads,omitempty"`
+	Since    time.Time            `json:"since"`
+	Threads  map[string]time.Time `json:"threads,omitempty"`
+	Boundary map[string]bool      `json:"boundary,omitempty"`
+	Scan     *archiveBoundaryScan `json:"scan,omitempty"`
+	Partial  *archivePartial      `json:"partial,omitempty"`
+}
+
+type archivePartial struct {
+	Repo   string    `json:"repo"`
+	Number int       `json:"number"`
+	At     time.Time `json:"at"`
 }
 
 // Changes reads the threads updated since the cursor, oldest first, with the messages not archived yet. It waits while
@@ -42,30 +52,34 @@ func (c *Connector) Changes(ctx context.Context, cursor string, limit int) ([]co
 			return nil, cursor, false, fmt.Errorf("cursor: %v", err)
 		}
 	}
+	if len(cur.Boundary) > archiveSearchWindow {
+		return nil, cursor, false, errors.New("GitHub archive cursor exceeds the search window")
+	}
+	if cur.Scan != nil && !cur.Scan.valid(cur.Since) {
+		return nil, cursor, false, errors.New("invalid GitHub archive scan checkpoint")
+	}
 	if cur.Threads == nil {
 		cur.Threads = map[string]time.Time{}
 	}
 	if cur.Since.IsZero() {
 		cur.Since = time.Now().UTC().AddDate(0, 0, -archiveFirstDays)
 	}
+	// Search timestamps have one-second precision, including an old cursor's initial time.
+	cur.Since = cur.Since.UTC().Truncate(time.Second)
+	limit = max(1, min(limit, 100))
 	me := c.Status(ctx).Account
-	q := url.Values{"q": {"involves:@me updated:>=" + cur.Since.UTC().Format(time.RFC3339)}, "sort": {"updated"}, "order": {"asc"},
-		"per_page": {fmt.Sprint(max(1, min(limit, 100)))}}
-	var res struct {
-		Total int     `json:"total_count"`
-		Items []issue `json:"items"`
-	}
-	if _, err := c.Get(ctx, "/search/issues?"+q.Encode(), &res); err != nil {
-		return nil, cursor, false, err
-	}
 	var batches []connector.ChatBatch
-	partial := "" // a thread read only in part, which the next call goes on with
-	for _, it := range res.Items {
-		thread := it.repo() + "#" + fmt.Sprint(it.Number)
+	processed := 0
+	// A partial thread must finish even if search reorders it out of the first page or its update time moves.
+	var resumed string
+	var resumedAt time.Time
+	read := func(it issue) (bool, error) {
+		thread := archiveThread(it)
 		msgs, upTo, whole, err := c.threadMessages(ctx, it, cur.Threads[thread], me)
 		if err != nil {
-			return batches, encode(cur), false, err // what was read so far is archived; this thread comes again
+			return false, err
 		}
+		processed++
 		if !upTo.IsZero() {
 			cur.Threads[thread] = upTo
 		}
@@ -80,19 +94,213 @@ func (c *Connector) Changes(ctx context.Context, cursor string, limit int) ([]co
 				Name: fmt.Sprintf("%s#%d %s", name, it.Number, it.Title), Kind: kind, UpdatedAt: it.UpdatedAt}, Messages: msgs})
 		}
 		if !whole {
-			partial = thread // cur.Since stays before it, so the next search finds it again
+			at := it.UpdatedAt
+			if cur.Partial != nil && !cur.Partial.At.IsZero() {
+				at = cur.Partial.At
+			}
+			cur.Partial = &archivePartial{Repo: it.repo(), Number: it.Number, At: at}
+			return false, nil
+		}
+		cur.Partial = nil
+		return true, nil
+	}
+	if cur.Partial != nil {
+		partialAt := cur.Partial.At
+		it, err := c.archivePartialIssue(ctx, *cur.Partial)
+		if err != nil {
+			return nil, cursor, false, err
+		}
+		whole, err := read(it)
+		if err != nil {
+			return batches, encode(cur), false, err
+		}
+		if !whole {
+			return batches, encode(cur), true, nil
+		}
+		resumed, resumedAt = archiveThread(it), it.UpdatedAt
+		if partialAt.Equal(cur.Since) {
+			if cur.Boundary == nil {
+				cur.Boundary = map[string]bool{}
+			}
+			cur.Boundary[resumed] = true
+			if cur.Scan != nil && cur.Scan.Validated && archiveBoundaryDone(cur.Boundary, cur.Scan.Ready) {
+				cur.Scan.reset() // verify the boundary again after completing the partial thread
+			}
+		}
+	}
+
+	var res archiveSearchResult
+	var items []issue
+	var moreSearch bool
+	var err error
+	if cur.Scan == nil {
+		res, err = c.archiveSearch(ctx, ">="+cur.Since.Format(time.RFC3339), 1)
+		if errors.Is(err, errArchiveSearchPaused) {
+			return batches, encode(cur), false, nil
+		}
+		if err != nil {
+			return batches, encode(cur), false, err
+		}
+		items, moreSearch = res.Items, res.Total > len(res.Items)
+		if len(cur.Boundary) > 0 && moreSearch && len(items) > 0 && items[len(items)-1].UpdatedAt.Equal(cur.Since) {
+			cur.Scan = newArchiveBoundaryScan(cur.Since, 0)
+		} else {
+			// This one page contains the whole current boundary, so departed IDs need no longer occupy the cursor.
+			present := map[string]bool{}
+			for _, it := range items {
+				if it.UpdatedAt.Equal(cur.Since) {
+					present[archiveThread(it)] = true
+				}
+			}
+			for thread := range cur.Boundary {
+				if !present[thread] {
+					delete(cur.Boundary, thread)
+				}
+			}
+		}
+	}
+
+	// Large ties keep a bounded scan checkpoint. Its page numbers find candidates only; two complete matching
+	// identity sets, and a further verification after processing, are required before moving to a later second.
+	for pages := 0; cur.Scan != nil && pages < 2*archiveSearchWindow/archiveSearchPageSize; pages++ {
+		scan := cur.Scan
+		justValidated := false
+		if !scan.Validated {
+			complete, scanErr := c.advanceArchiveBoundary(ctx, scan)
+			if scanErr != nil {
+				return batches, cursor, false, scanErr
+			}
+			if !complete {
+				return batches, encode(cur), true, nil
+			}
+			justValidated = true
+			for thread := range cur.Boundary {
+				if !scan.Ready[thread] {
+					delete(cur.Boundary, thread)
+				}
+			}
+		}
+		stamp := cur.Since.Format(time.RFC3339)
+		if archiveBoundaryDone(cur.Boundary, scan.Ready) {
+			if justValidated {
+				return batches, encode(cur), true, nil
+			}
+			var changed, noRoom bool
+			res, changed, noRoom, err = c.confirmArchiveBoundary(ctx, scan)
+			if changed {
+				scan.reset()
+				return batches, encode(cur), true, nil
+			}
+			if err != nil {
+				return batches, cursor, false, err
+			}
+			if noRoom {
+				if scan.NoRoom >= 2 {
+					return batches, cursor, false, errors.New("GitHub archive boundary needs enough search quota to verify every page and continue in one window; retry when more quota is available")
+				}
+				scan.NoRoom++
+				scan.Epoch++
+				return batches, encode(cur), false, nil
+			}
+			cur.Scan = nil
+			items, moreSearch = res.Items, res.Total > len(res.Items)
 			break
+		}
+		if processed >= limit {
+			return batches, encode(cur), true, nil
+		}
+		page, scanErr := c.archiveSearch(ctx, stamp+".."+stamp, scan.ProcessPage)
+		if errors.Is(scanErr, errArchiveSearchPaused) {
+			return batches, encode(cur), true, nil
+		}
+		if scanErr != nil {
+			return batches, cursor, false, scanErr
+		}
+		if !archiveBoundaryMatches(page, scan) {
+			scan.reset()
+			return batches, encode(cur), true, nil
+		}
+		for _, it := range page.Items {
+			thread := archiveThread(it)
+			if cur.Boundary[thread] {
+				continue
+			}
+			if processed >= limit {
+				return batches, encode(cur), true, nil
+			}
+			if c.ratesLow() {
+				return batches, encode(cur), false, nil
+			}
+			whole, readErr := read(it)
+			if readErr != nil {
+				return batches, encode(cur), false, readErr
+			}
+			if !whole {
+				return batches, encode(cur), true, nil
+			}
+			if cur.Boundary == nil {
+				cur.Boundary = map[string]bool{}
+			}
+			cur.Boundary[thread] = true
+		}
+		if archiveBoundaryDone(cur.Boundary, scan.Ready) {
+			scan.reset() // catch items inserted while the validated set was being processed
+			return batches, encode(cur), true, nil
+		}
+		scan.ProcessPage++
+		if scan.ProcessPage > max(1, (len(scan.Ready)+archiveSearchPageSize-1)/archiveSearchPageSize) {
+			scan.ProcessPage = 1 // a reorder can move an unseen ID to a page already read
+			scan.Epoch++
+		}
+	}
+	if cur.Scan != nil {
+		return batches, encode(cur), true, nil
+	}
+
+	more := moreSearch
+	for _, it := range items {
+		thread := archiveThread(it)
+		if it.UpdatedAt.Before(cur.Since) || it.UpdatedAt.Equal(cur.Since) && cur.Boundary[thread] {
+			continue
+		}
+		alreadyRead := thread == resumed && it.UpdatedAt.Equal(resumedAt)
+		if !alreadyRead && processed >= limit {
+			more = true
+			break
+		}
+		if !alreadyRead {
+			if c.ratesLow() {
+				return batches, encode(cur), false, nil
+			}
+			whole, err := read(it)
+			if err != nil {
+				return batches, encode(cur), false, err
+			}
+			if !whole {
+				more = true
+				break
+			}
 		}
 		if it.UpdatedAt.After(cur.Since) {
 			cur.Since = it.UpdatedAt
+			cur.Boundary = nil
+		}
+		if it.UpdatedAt.Equal(cur.Since) {
+			if cur.Boundary == nil {
+				cur.Boundary = map[string]bool{}
+			}
+			cur.Boundary[thread] = true
 		}
 	}
 	for t, at := range cur.Threads {
-		if time.Since(at) > archiveForget && t != partial {
+		if time.Since(at) > archiveForget && (cur.Partial == nil || t != fmt.Sprintf("%s#%d", cur.Partial.Repo, cur.Partial.Number)) {
 			delete(cur.Threads, t)
 		}
 	}
-	return batches, encode(cur), partial != "" || res.Total > len(res.Items), nil
+	if !more {
+		cur.Boundary = nil // a later poll must still revisit this second for new thread messages
+	}
+	return batches, encode(cur), more, nil
 }
 
 func encode(cur archiveCursor) string {

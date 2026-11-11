@@ -183,6 +183,9 @@ class HttpInboxAssistantTransport private constructor(
     // the default, dropped before it goes).
     override suspend fun assistantOf(manager: String?) = json(url("api", "v1", "assistant").pinned(manager))
     override suspend fun assistantLeadersOf(manager: String?) = json(url("api", "v1", "assistant", "leaders").pinned(manager))
+    // The default manager's alone (docs/protocol/protocol.md): `?manager=` stays empty for it.
+    override suspend fun directionsTreeOf(manager: String?) =
+        json(url("api", "v1", "assistant", "directions", "tree").pinned(manager))
     override suspend fun createConversationOf(manager: String?, main: Boolean, launcher: String?) =
         json(url("api", "v1", "assistant", "conversations").pinned(manager), buildJsonObject {
             put("prompt", ""); put("main", main); launcher?.let { put("launcher", it) }

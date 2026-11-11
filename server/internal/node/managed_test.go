@@ -51,6 +51,41 @@ func TestClaudeExecutableFallsBackToInstallLocations(t *testing.T) {
 	}
 }
 
+func TestClaudeExecutableFallsBackToNVMAndActionableError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+
+	// 1. Missing claude returns actionable message noting service environment and remediation
+	_, err := claudeExecutable()
+	if err == nil {
+		t.Fatal("expected error when claude is missing")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "not found in PATH or the usual install locations") {
+		t.Fatalf("error missing base phrase: %q", msg)
+	}
+	if !strings.Contains(msg, "node service environment") {
+		t.Fatalf("error missing service environment notice: %q", msg)
+	}
+	if !strings.Contains(msg, "symlink into ~/.local/bin") {
+		t.Fatalf("error missing symlink advice: %q", msg)
+	}
+
+	// 2. Claude installed under an nvm version is found
+	nvmClaude := filepath.Join(home, ".nvm", "versions", "node", "v22.1.0", "bin", "claude")
+	if err := os.MkdirAll(filepath.Dir(nvmClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nvmClaude, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := claudeExecutable()
+	if err != nil || got != nvmClaude {
+		t.Fatalf("got %q %v, want %q", got, err, nvmClaude)
+	}
+}
+
 func TestManagedLauncherBearerAuth(t *testing.T) {
 	n := &Node{bin: "personad"}
 	n.setManaged([]proto.ManagedLauncher{{Name: "gw", BaseURL: "http://gw.example.com", Model: "m1", APIKey: "k", Auth: "bearer"}})

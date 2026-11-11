@@ -89,11 +89,12 @@ func (svc *Service) retireArchived(ctx context.Context, row proto.Session) agent
 	var out struct {
 		Closed bool `json:"closed"`
 	}
-	err := svc.call(ctx, row.MachineID, deviceSessionRetire, map[string]any{"session_id": row.SessionID}, &out)
+	// close_terminal: the user asked to close it (a node before #4754 closes it anyway).
+	err := svc.call(ctx, row.MachineID, deviceSessionRetire, map[string]any{"session_id": row.SessionID, "close_terminal": true}, &out)
 	var re *rpc.Error
 	switch {
 	case err == nil && out.Closed:
-		svc.logf("agent archive %s/%s: closed its agent (resumes on the next message)", row.MachineID, row.SessionID)
+		svc.logf("agent archive %s/%s: closed its agent and its terminal", row.MachineID, row.SessionID)
 		return agentArchiveCloseResult{Closed: true, Outcome: archiveCloseClosed}
 	case err == nil:
 		return agentArchiveCloseResult{Outcome: archiveCloseNotRunning}

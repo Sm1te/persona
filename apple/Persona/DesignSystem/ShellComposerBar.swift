@@ -32,7 +32,7 @@ struct ShellComposerBar<Attach: View, Modes: View>: View {
     /// The main conversation cannot answer yet: send says what to do first and goes there, the draft stays.
     var gate: SendGate? = nil
     /// The iPhone's 「+」 opens the composer's panel (`AttachSheet`, Telegram's attachment menu) from where the button is,
-    /// in the window; nil: the menu of `attach`.
+    /// in the window, and touched and held, the menu of `attach` (#3225); nil: a tap opens the menu of `attach`.
     var openAttach: ((CGRect) -> Void)? = nil
     /// Glow While Replying (`ComposerGlow`): the band around the bar while the assistant's reply is being written. Drawn
     /// inside the bar's animations so it follows the surface when the line grows into the card.
@@ -365,7 +365,9 @@ struct ShellComposerBar<Attach: View, Modes: View>: View {
     @ViewBuilder private var plus: some View {
         #if os(iOS)
         if let openAttach {
-            Button { openAttach(plusFrame) } label: { plusFace }
+            // A tap opens the panel; touch and hold opens the menu (Safari's tabs button, Mail's compose button).
+            Menu { attach() } label: { plusFace } primaryAction: { openAttach(plusFrame) }
+                .menuStyle(.button)
                 .buttonStyle(.plain)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { plusFrame = $0 }
                 .accessibilityLabel("Add photo or file")

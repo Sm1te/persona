@@ -1,5 +1,6 @@
 import { api, enc } from "./api";
 import { t } from "../i18n";
+import { MANAGER_HEADER } from "./manager-choice";
 
 /** Download preferences belong to one extension manager, not the hub's global settings. */
 export interface ExtensionMarketSettings {
@@ -22,14 +23,28 @@ function settingsOf(value: ExtensionMarketSettings): ExtensionMarketSettings {
 // including failures (the manager may have committed before the connection failed).
 const writes = new Map<string, Promise<void>>();
 
-export async function getExtensionMarketSettings(manager: string): Promise<ExtensionMarketSettings> {
+export type MirrorRequestContext = {
+  token: string;
+  tokenOwner: string;
+  isAuthContextCurrent: () => boolean;
+  signal?: AbortSignal;
+};
+
+function requireCurrent(context: MirrorRequestContext) {
+  if (context.signal?.aborted || !context.isAuthContextCurrent()) throw new DOMException("Retired mirror editor", "AbortError");
+}
+
+export async function getExtensionMarketSettings(manager: string, context: MirrorRequestContext): Promise<ExtensionMarketSettings> {
   while (writes.has(manager)) await writes.get(manager);
-  return settingsOf(await api<ExtensionMarketSettings>(settingsPath(manager)));
+  // A read can wait for an older write; never start it with the replacement editor's identity.
+  requireCurrent(context);
+  return settingsOf(await api<ExtensionMarketSettings>(settingsPath(manager), { ...context, headers: { [MANAGER_HEADER]: manager } }));
 }
 
 /** Both fields are sent; an empty string explicitly removes that mirror. */
-export function setExtensionMarketSettings(manager: string, settings: ExtensionMarketSettings): Promise<ExtensionMarketSettings> {
-  const result = api<ExtensionMarketSettings>(settingsPath(manager), { method: "PUT", json: settings }).then(settingsOf);
+export function setExtensionMarketSettings(manager: string, settings: ExtensionMarketSettings, context: MirrorRequestContext): Promise<ExtensionMarketSettings> {
+  requireCurrent(context);
+  const result = api<ExtensionMarketSettings>(settingsPath(manager), { ...context, headers: { [MANAGER_HEADER]: manager }, method: "PUT", json: settings }).then(settingsOf);
   const settled = Promise.all([writes.get(manager), result.then(() => {}, () => {})]).then(() => {
     if (writes.get(manager) === settled) writes.delete(manager);
   });

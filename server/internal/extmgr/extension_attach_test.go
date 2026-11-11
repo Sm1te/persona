@@ -468,6 +468,45 @@ func TestHubAuditTakesRefusedPermissionModes(t *testing.T) {
 	}
 }
 
+// A refused approval of a hand-off card is recorded on the provider, with who tried as the actor the hub names; an
+// actor that is none of the kinds the records use is "unknown". An extension that is no provider here gets none.
+func TestHubAuditTakesRefusedHandoffApprovals(t *testing.T) {
+	h, store := extensionTestHub(t)
+	ctx := t.Context()
+	record := func(ext, actor string) error {
+		params, _ := json.Marshal(extwire.Audit{Extension: ext, Action: extwire.AuditSecretHandoffRefused, Actor: actor,
+			Detail: map[string]any{"interaction_id": "ix_1", "reason": "client"}})
+		_, err := h.hubCall(ctx, extwire.HubAudit, params)
+		return err
+	}
+	if err := record("example-vault", "device:d1"); err == nil {
+		t.Fatal("recorded on an extension that is not installed")
+	}
+	mux := h.routes()
+	master := h.cfg.Token
+	_, pv := call(t, mux, "POST", "/api/v1/plugins/-/preview", master,
+		`{"source": "dir:`+secretProviderPackage(t, "example-vault", "exv", filepath.Join(t.TempDir(), "calls.jsonl"))+`"}`)
+	if c, body := call(t, mux, "POST", "/api/v1/plugins/-/install", master, fmt.Sprintf(`{"preview_id": %q, "permissions_digest": %q}`, pv["preview_id"], pv["permissions_digest"])); c != 200 {
+		t.Fatalf("install: %d %v", c, body)
+	}
+	store.mu.Lock()
+	store.audit = nil // the install's own records
+	store.mu.Unlock()
+	for _, actor := range []string{"device:d1", "extension:other", "hub token", "admin", "device:x\nforged", ""} {
+		if err := record("example-vault", actor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	want := []string{"example-vault secret_handoff_approve_refused device:d1", "example-vault secret_handoff_approve_refused extension:other",
+		"example-vault secret_handoff_approve_refused hub token", "example-vault secret_handoff_approve_refused unknown",
+		"example-vault secret_handoff_approve_refused unknown", "example-vault secret_handoff_approve_refused unknown"}
+	if !slices.Equal(store.audit, want) {
+		t.Fatalf("audit: %q", store.audit)
+	}
+}
+
 // An attached extension reads the assistant's conversations by its own grant only, as one the manager runs does: its
 // token's scopes and agents.control do not open them.
 func TestAttachedExtensionReadsConversationsByItsOwnGrant(t *testing.T) {

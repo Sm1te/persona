@@ -275,7 +275,9 @@ func (s *Service) inboxListAt(all bool) ([]InboxItem, time.Time) {
 		it.arrived(now)
 		out = append(out, it.listed())
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		return inboxListOrder(out[i].UpdatedAt, out[i].ID, out[j].UpdatedAt, out[j].ID) < 0
+	})
 	return out, now
 }
 

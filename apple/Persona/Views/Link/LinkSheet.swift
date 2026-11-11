@@ -113,7 +113,11 @@ struct LinkSheet: View {
     @Environment(\.dismiss) private var dismiss
     let target: LinkTarget
     var key: SessionKey? = nil
+    /// Opens another of the session's dev servers in the card (ChatView): a forwarded page's subtitle lists them (#150).
+    var choosePreview: ((PreviewOption) -> Void)? = nil
     @State private var title = ""
+    @State private var choosing = false
+    @State private var chosen: PreviewOption?
     @State private var editing: ContextRef?
     @State private var instruction = ""
     /// Opens full screen (2026-10-28: half a screen was too little to read); pull down to 0.6 to see the chat again.
@@ -135,8 +139,16 @@ struct LinkSheet: View {
                         .environment(\.docPick) { text, kind in pick(text, kind: kind) }
                 }
             } else {
-                PooledWebView(url: target.url, title: $title) { selected, kind in pick(selected, kind: kind) }
-                    .ignoresSafeArea(.container, edges: .bottom) // full screen: the page runs under the home indicator
+                #if os(iOS)
+                if let key, target.forwarded != nil {
+                    // A machine's dev server from a chat: the preview's bar under it (#150).
+                    PreviewPage(url: target.url, key: key, title: $title) { selected, kind in pick(selected, kind: kind) }
+                } else {
+                    page
+                }
+                #else
+                page
+                #endif
             }
         }
         .presentationDetents([.fraction(0.6), .large], selection: $detent)
@@ -144,6 +156,15 @@ struct LinkSheet: View {
         .presentationBackground(Theme.pageBackground) // pages with a clear background let the chat show through
         .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.6))) // the chat stays usable behind
         .presentationContentInteraction(.resizes) // a swipe up grows the sheet before it scrolls the page
+        #if os(iOS)
+        .sheet(isPresented: $choosing, onDismiss: {
+            if let o = chosen { chosen = nil; choosePreview?(o) }
+        }) {
+            if let key, let cwd = model.session(key)?.cwd {
+                PreviewChooser(key: key, cwd: cwd) { o in chosen = o; choosing = false }
+            }
+        }
+        #endif
         .alert("Have an Agent Edit This", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
             TextField(String(localized: "How should it change?"), text: $instruction)
             Button("Cancel", role: .cancel) { instruction = "" }
@@ -153,12 +174,41 @@ struct LinkSheet: View {
         }
     }
 
+    private var page: some View {
+        PooledWebView(url: target.url, title: $title) { selected, kind in pick(selected, kind: kind) }
+            .ignoresSafeArea(.container, edges: .bottom) // full screen: the page runs under the home indicator
+    }
+
+    /// A forwarded page whose chat's hub has previews: its subtitle lists the session's other servers.
+    private var canChoose: Bool {
+        #if os(iOS)
+        guard let key, target.forwarded != nil, choosePreview != nil else { return false }
+        return model.features(key.group).contains(PreviewLogic.feature)
+        #else
+        false
+        #endif
+    }
+
     private var header: some View {
         HStack(spacing: Theme.Space.m) {
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text(title.isEmpty ? (isFeishuDoc ? String(localized: "Lark Doc") : feishuRoute != nil ? String(localized: "Moments") : (target.forwarded != nil ? nil : target.url.host) ?? String(localized: "Web Pages")) : title)
                     .font(Theme.Font.secondaryStrong).lineLimit(1)
-                Text(target.forwarded ?? target.url.host ?? target.url.absoluteString).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
+                if canChoose {
+                    Button { Haptics.tap(); choosing = true } label: {
+                        HStack(spacing: Theme.Space.xxs) {
+                            Text(target.forwarded ?? "").lineLimit(1)
+                            ThemedIcon(Theme.Icon.expand).font(Theme.Font.labelStrong)
+                        }
+                        .font(Theme.Font.label)
+                        .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(String(localized: "Lists this session's dev servers"))
+                    .accessibilityIdentifier("link-servers")
+                } else {
+                    Text(target.forwarded ?? target.url.host ?? target.url.absoluteString).font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             Spacer(minLength: 6)
             if isFeishuDoc, key != nil {
@@ -340,6 +390,8 @@ final class SelectableWebView: WKWebView {
 struct PooledWebView: UIViewRepresentable {
     var url: URL
     @Binding var title: String
+    /// Told where the page is (the preview's bar, #150).
+    var nav: WebNav? = nil
     var onPick: (String, String) -> Void
 
     func makeUIView(context: Context) -> SelectableWebView {
@@ -348,6 +400,7 @@ struct PooledWebView: UIViewRepresentable {
         v.onPick = onPick
         context.coordinator.url = url
         context.coordinator.observe(v) { title = $0 }
+        nav?.attach(v)
         return v
     }
 

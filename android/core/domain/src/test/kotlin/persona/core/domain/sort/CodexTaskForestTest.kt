@@ -215,6 +215,25 @@ class CodexTaskForestTest {
         assertEquals(listOf(gone), codexTaskForest(listOf(gone, working)).roots)
     }
 
+    @Test fun aFlatListLeavesOutTheSubtasksItDrawsUnderARowItDraws() {
+        val lead = runtime("lead")
+        val review = runtime("review", "lead")
+        val probe = thread("probe", "lead")
+        val asks = runtime("asks", "lead", state = "needs_you")
+        val quiet = runtime("quiet", "lead", state = "idle")
+        val rows = listOf(lead, review, probe, asks, quiet)
+        val going = { row: AgentSession -> row.state == AgentState.Working || row.state == AgentState.NeedsYou }
+        // The one that needs you is never left out; one the list does not draw is not its to leave out.
+        assertEquals(setOf(review.id, probe.id), foldedSubtasks(rows, going))
+        // With its creator not drawn, each is an entry of its own, however many sessions lie above it.
+        assertTrue(foldedSubtasks(rows) { going(it) && it != lead }.isEmpty())
+        val leaf = runtime("leaf", "quiet")
+        assertEquals(setOf(review.id, probe.id, leaf.id), foldedSubtasks(rows + leaf, going))
+        assertTrue(foldedSubtasks(listOf(lead.copy(session = lead.session.copy(state = "offline")), quiet, leaf), going).isEmpty())
+        // Without subtasks nothing is left out.
+        assertTrue(foldedSubtasks(listOf(lead, runtime("other"), row("thread"), row("pane", source = null))) { true }.isEmpty())
+    }
+
     @Test fun repositoriesUseFullPathAndMachineAndKeepNestedWorktrees() {
         val rows = listOf("/code/app", "/code/app/.claude/worktrees/fix-a/src", "/elsewhere/fix-b").mapIndexed { i, path ->
             row("$i").let { it.copy(session = it.session.copy(cwd = path, repoRoot = "/code/app")) }

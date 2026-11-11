@@ -32,7 +32,7 @@ type Minutes struct {
 	Revision    int64           `json:"revision"` // the recording revision they were made from
 	GeneratedAt time.Time       `json:"generated_at"`
 	Title       string          `json:"title"`
-	When        string          `json:"when"`
+	When        string          `json:"when"` // Start–End in one fixed format, for older clients and the Markdown
 	Where       string          `json:"where,omitempty"`
 	Attendees   []string        `json:"attendees,omitempty"`
 	Points      []MinutesPoint  `json:"points,omitempty"`
@@ -41,6 +41,10 @@ type Minutes struct {
 	Open        []MinutesItem   `json:"open,omitempty"`
 	Partial     bool            `json:"partial,omitempty"` // the transcript's end was not read
 	Markdown    string          `json:"markdown"`
+	// Start and End are the recording's span When says, in the user's zone (#4713). Clients format them with their own
+	// localized dates and show When only without them (minutes from an older hub).
+	Start time.Time `json:"start,omitzero"`
+	End   time.Time `json:"end,omitzero"`
 }
 
 // MinutesItem is a decision or an open question; At is seconds from the recording's start (a segment's start).
@@ -714,6 +718,7 @@ func (e *Engine) buildMinutes(r *Recording, a minutesAnswer, read []minutesLine,
 		return sec, ok
 	}
 	m := &Minutes{Title: cmp.Or(r.Title, calendarTitle(r), oneLine(a.Title), r.Name), When: minutesWhen(r, zone)}
+	m.Start, m.End = minutesSpan(r, zone)
 	if r.Calendar != nil && r.Calendar.Location != "" {
 		m.Where = r.Calendar.Location
 	} else if w := oneLine(a.Where); w != "" && strings.Contains(said, strings.ToLower(w)) {
@@ -836,6 +841,41 @@ func wordByte(text string, i int) bool {
 	}
 	c := text[i]
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// minutesSpan is the recording's start and end in the user's zone, to the second: the span minutes are about.
+func minutesSpan(r *Recording, zone *time.Location) (time.Time, time.Time) {
+	return r.StartedAt.In(zone).Truncate(time.Second), recordingEnd(r).In(zone).Truncate(time.Second)
+}
+
+// spanOf fills Start and End of minutes written before they were (#4713) from their recording.
+func (m *Minutes) spanOf(r *Recording, zone *time.Location) {
+	if m.Start.IsZero() && r != nil && !r.StartedAt.IsZero() {
+		m.Start, m.End = minutesSpan(r, zone)
+	}
+}
+
+// minutesWithSpan is minutes.json as a recording's detail sends it: minutes written before Start and End were get them
+// from the recording (spanOf), every other field as stored.
+func minutesWithSpan(raw []byte, r *Recording, zone *time.Location) []byte {
+	var stored struct {
+		Start time.Time `json:"start"`
+	}
+	if json.Unmarshal(raw, &stored) != nil || !stored.Start.IsZero() || r == nil || r.StartedAt.IsZero() {
+		return raw
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw
+	}
+	start, end := minutesSpan(r, zone)
+	fields["start"], _ = json.Marshal(start)
+	fields["end"], _ = json.Marshal(end)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // minutesWhen is "2006-01-02 15:04–16:10" in the user's zone (the end's date too when it is another day).

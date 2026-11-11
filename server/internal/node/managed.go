@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -260,20 +262,77 @@ func managedSettingsEnv(l proto.ManagedLauncher) map[string]string {
 	return pinnedEnv(providerEnv(l, "", "", false))
 }
 
+var (
+	agentExecutableMu    sync.Mutex
+	agentExecutableCache = map[string]string{}
+)
+
 // claudeExecutable finds claude: PATH first, then the usual install spots. A node started by launchd (macOS) has a
 // minimal PATH that misses /opt/homebrew/bin, and nothing in `personad launch`'s own path adds it.
 func agentExecutable(bin string) (string, error) {
 	if p, err := exec.LookPath(bin); err == nil {
 		return p, nil
 	}
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, ".local", "bin", bin), "/opt/homebrew/bin/" + bin,
-		"/usr/local/bin/" + bin, filepath.Join(home, ".claude", "local", bin)} {
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+	home := userHome()
+	var candidates []string
+	if jsEnv := strings.TrimSpace(os.Getenv("PERSONA_NODEJS")); jsEnv != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(jsEnv), bin))
+	}
+	candidates = append(candidates,
+		filepath.Join(home, ".local", "bin", bin),
+		"/opt/homebrew/bin/"+bin,
+		"/usr/local/bin/"+bin,
+		filepath.Join(home, ".claude", "local", bin),
+		filepath.Join(home, ".volta", "bin", bin),
+	)
+	nvmDirs, _ := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin", bin))
+	sort.Sort(sort.Reverse(sort.StringSlice(nvmDirs)))
+	candidates = append(candidates, nvmDirs...)
+	for _, np := range commonNodePaths() {
+		candidates = append(candidates, filepath.Join(filepath.Dir(np), bin))
+	}
+	seen := map[string]bool{}
+	for _, p := range candidates {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && (st.Mode().Perm()&0111 != 0 || runtime.GOOS == "windows") {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("%s not found in PATH or the usual install locations", bin)
+
+	agentExecutableMu.Lock()
+	cached := agentExecutableCache[bin]
+	agentExecutableMu.Unlock()
+	if cached != "" {
+		if st, err := os.Stat(cached); err == nil && !st.IsDir() && (st.Mode().Perm()&0111 != 0 || runtime.GOOS == "windows") {
+			return cached, nil
+		}
+		agentExecutableMu.Lock()
+		delete(agentExecutableCache, bin)
+		agentExecutableMu.Unlock()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := loginShell(ctx, "command -v "+shellQuote(bin))
+	if out, err := cmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(terminalEscapes.ReplaceAllString(string(out), "")), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if filepath.IsAbs(line) {
+				if st, err := os.Stat(line); err == nil && !st.IsDir() && (st.Mode().Perm()&0111 != 0 || runtime.GOOS == "windows") {
+					agentExecutableMu.Lock()
+					agentExecutableCache[bin] = line
+					agentExecutableMu.Unlock()
+					return line, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("%s not found in PATH or the usual install locations (node service environment; add its bin directory to PATH and restart the node, or symlink into ~/.local/bin)", bin)
 }
 
 func claudeExecutable() (string, error) { return agentExecutable("claude") }

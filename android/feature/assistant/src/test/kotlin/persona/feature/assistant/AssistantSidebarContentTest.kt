@@ -57,14 +57,16 @@ class AssistantSidebarContentTest {
         rule.setContent {
             PersonaTheme(style = AppStyle.Brief, reduceMotion = true) {
                 Box(Modifier.width(400.dp).height(1200.dp)) {
-                    AssistantSidebarContent(snapshot, repository, emptySet(), null, operations, demo = true,
+                    AssistantSidebarContent(snapshot, repository, null, operations, demo = true,
                         onOpen = { opened = it }, onAction = {}, onSettings = { settings = true },
                         onInbox = {}, onKnowledge = {}, onTodos = {}, todoCount = 2, showTodos = true,
                         inboxCount = 3, settingsCount = 0, settingsDot = false, settingsBadge = null,
-                        pages = emptyList(), onPage = {}, onTogglePin = {}, onRetired = {})
+                        pages = emptyList(), onPage = {}, onRetired = {})
                 }
             }
         }
+        // Every chat but the main one and the leaders waits under one All chats row (#4331).
+        rule.onNodeWithText("全部对话（1）").performClick()
         rule.onNodeWithText("Saved conversation").assertExists()
         rule.onNodeWithContentDescription("设置").performClick()
         assertTrue(settings)

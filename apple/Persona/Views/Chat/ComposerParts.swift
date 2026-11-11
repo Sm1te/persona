@@ -155,6 +155,37 @@ final class StarterDraft {
         held.videos.sent()
         generation += 1
     }
+
+    /// The first message as it goes, from what was typed (`typed`, trimmed) and the box: the quoted sessions as
+    /// <persona-context> tags first, as in a chat; with nothing typed, a line saying what to look at; then the videos.
+    func message(_ typed: String, files: [AttachedFile]) -> String {
+        let said = typed.isEmpty
+            ? (held.images.isEmpty ? (files.isEmpty ? String(localized: "See the context above.") : String(localized: "Please look at the image [Assistant View a3e0a0]"))
+                                   : String(localized: "Please look at the image [Assistant View 5ad878]"))
+            : typed
+        let body = AttachedFile.message(said, files: files)
+        return quotes.isEmpty ? body : quotes.map(\.xml).joined(separator: "\n") + "\n\n" + body
+    }
+}
+
+/// The composer's Take Photo and Glasses Photo, in a conversation and a new one alike: the system camera over the page,
+/// the glasses' viewfinder in a sheet (iOS); each picture taken goes to `add`.
+struct ComposerCaptureSheets: ViewModifier {
+    @Binding var camera: Bool
+    @Binding var glasses: Bool
+    var add: (UIImage) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $camera) {
+                CameraPicker { img in add(img) }.ignoresSafeArea()
+            }
+            #if os(iOS)
+            .sheet(isPresented: $glasses) {
+                GlassesCaptureSheet { img in add(img) }
+            }
+            #endif
+    }
 }
 
 /// Photos picked for the next message, above the composer: × takes one out; with `edit`, a tap marks it up first.

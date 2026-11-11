@@ -33,7 +33,8 @@ class ToolVerbTest {
         names.forEach { (name, words) ->
             assertEquals(name, words, verb(name))
             assertEquals(name, words, verb("mcp__persona__$name"))
-            assertEquals(name, words, verb("mcp__other__$name"))
+            // Another server's tool of the same name is that server's (#4339 C1, iOS `ToolNaming.tableName`).
+            assertEquals(name, "Other · ${ToolNaming.humanize(name)}", verb("mcp__other__$name"))
         }
     }
 
@@ -86,10 +87,11 @@ class ToolVerbTest {
         assertEquals("调用 Persona · some new tool", verb("mcp__persona__some_new_tool"))
     }
 
-    @Test fun unknownToolsKeepTheirBareName() {
-        assertEquals("create_issue", verb("mcp__github__create_issue"))
-        assertEquals("agent_read", verb("mcp__github__agent_read"))
-        assertEquals("SomethingNew", verb("SomethingNew"))
+    // In words, as iOS (#4339 C1): another server's MCP tool as "<Server> · <Tool>", any other name humanized.
+    @Test fun unknownToolsReadInWords() {
+        assertEquals("GitHub · Create issue", verb("mcp__github__create_issue"))
+        assertEquals("GitHub · Agent read", verb("mcp__github__agent_read"))
+        assertEquals("Something new", verb("SomethingNew"))
         assertNull(namedToolVerb("mcp__github__create_issue"))
         assertNull(namedToolVerb("SomethingNew"))
     }

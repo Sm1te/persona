@@ -7,6 +7,8 @@ import SwiftUI
 struct ExtensionOperationSection: View {
     var operation: ExtensionOperation
     var name: String
+    /// A pack partly uninstalled (#4072): what that means and each group of members, said instead of the hub's sentence.
+    var partial: [String]? = nil
     var retry: () -> Void
     var review: () -> Void
     var dismiss: () -> Void
@@ -95,11 +97,17 @@ struct ExtensionOperationSection: View {
 
     @ViewBuilder private var failure: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-            if let step = operation.failedStep {
+            if let partial {
+                Text(ExtensionPartialRemoval.title).font(Theme.Font.labelStrong).foregroundStyle(Theme.cautionText)
+                // Each line is a different sentence (what it means, then one per group).
+                ForEach(partial, id: \.self) { line in
+                    Text(line).font(Theme.Font.label).textSelection(.enabled)
+                }
+            } else if let step = operation.failedStep {
                 Text("Stopped at “\(ExtensionOperationText.step(step.id, kind: operation.kind))”")
                     .font(Theme.Font.labelStrong).foregroundStyle(Theme.danger)
             }
-            if let e = operation.error, !e.isEmpty {
+            if partial == nil, let e = operation.error, !e.isEmpty {
                 Text(e).font(Theme.Font.label).foregroundStyle(Theme.danger).textSelection(.enabled)
             }
         }

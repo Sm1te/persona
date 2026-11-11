@@ -1,7 +1,4 @@
 {
-  "pin": "ピン留め",
-  "unpin": "ピン留めを外す",
-  "unpin_all": "すべてのピン留めを外す",
   "rename": "名前を変更…",
   "title_placeholder": "チャットのタイトル",
   "renamed": "名前を変更しました",
@@ -16,5 +13,10 @@
   "end_confirm": "終了を確認",
   "ended": "チャットを終了しました。履歴は残ります",
   "end_failed": "チャットを終了できませんでした：{error}",
-  "actions": "チャットの操作"
+  "actions": "チャットの操作",
+  "make_leader": "常駐にする",
+  "end_leader": "常駐をやめる",
+  "leader_made": "「{title}」を常駐にしました",
+  "leader_ended": "「{title}」の常駐をやめました。任せた仕事はそのままです",
+  "leader_failed": "変更できませんでした：{error}"
 }

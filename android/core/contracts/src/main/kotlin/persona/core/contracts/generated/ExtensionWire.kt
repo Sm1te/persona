@@ -83,6 +83,20 @@ data class ExtensionManifest(
      */
     val tools: List<ExtensionToolSpec>? = null,
     val auth: ExtensionAuthSpec? = null,
+    /**
+     * Configured host CLI integrations the program may use through a bounded, read-only typed RPC. IDs never name an
+     * executable; writes and arbitrary command lines are not part of this contract.
+     */
+    @SerialName("host_integrations") val hostIntegrations: List<ExtensionHostIntegrationSpec>? = null,
+)
+
+/**
+ * A configured CLI integration, selected by a closed ID rather than by an extension-provided executable.
+ */
+@Serializable
+data class ExtensionHostIntegrationSpec(
+    val id: String = "",
+    val version: String = "",
 )
 
 /**

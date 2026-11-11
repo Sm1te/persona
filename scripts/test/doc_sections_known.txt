@@ -33,7 +33,6 @@ docs/operations/testing.md	docs/protocol/protocol.md	Sending video
 docs/protocol/protocol.md	channels.md	6. Endpoints
 docs/protocol/protocol.md	computer-use.md	Approving per app
 docs/protocol/protocol.md	docs/apple/ios.md	Reasoning effort and permission mode
-docs/protocol/protocol.md	docs/assistant/todos.md	Close the Agent of a finished task
 docs/protocol/protocol.md	docs/assistant/todos.md	Record the conclusion when done
 docs/protocol/protocol.md	docs/extensions/extensions.md	Programs that run on computers
 docs/protocol/protocol.md	docs/extensions/extensions.md	Shared Inbox rules

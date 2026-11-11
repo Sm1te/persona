@@ -221,11 +221,13 @@ class PinnedPublicJSTests(unittest.TestCase):
     filename = "mermaid.min.js"
     fixture = b'const label = "remarkable";\n'
 
-    def scan(self, data, words=("mark",), filename=None, pin=None, extra=None):
+    def scan(self, data, words=("mark",), filename=None, pin=None, extra=None, hermes=None):
         with tempfile.TemporaryDirectory(prefix="bundle-privacy-js-") as directory:
             (Path(directory) / (filename or self.filename)).write_bytes(data)
             if extra is not None:
                 (Path(directory) / "private.js").write_bytes(extra)
+            if hermes is not None:
+                (Path(directory) / "Persona").write_bytes(hermes)
             output = io.StringIO()
             pins = {self.filename: pin or hashlib.sha256(self.fixture).hexdigest()}
             with patch.object(sys, "argv", ["check_bundle_privacy.py", directory]), \
@@ -289,6 +291,24 @@ class PinnedPublicJSTests(unittest.TestCase):
         self.assertIn("private IP", output)
         self.assertNotIn(EMAIL, output)
         self.assertNotIn(address, output)
+
+    def test_hermes_tokens_share_the_pinned_resource_boundary(self):
+        # A longer JavaScript token contains the short fragment, but a complete short word still fails.
+        code, output = self.scan(self.fixture, hermes=b'["remarkable", (e) => { call(e); }]')
+        self.assertEqual(code, 0, output)
+        code, output = self.scan(self.fixture, hermes=b'["mark", "remarkable"]')
+        self.assertNotEqual(code, 0)
+        self.assertIn("Persona: private value (4 chars)", output)
+
+    def test_hermes_boundary_requires_the_unmodified_resource(self):
+        for data in (self.fixture + b" ", self.fixture[:-1], b"unrelated"):
+            with self.subTest(bytes=len(data)):
+                code, output = self.scan(data, hermes=b'["remarkable"]')
+                self.assertNotEqual(code, 0)
+                self.assertIn("Persona: private value (4 chars)", output)
+        code, output = self.scan(self.fixture, pin="0" * 64, hermes=b'["remarkable"]')
+        self.assertNotEqual(code, 0)
+        self.assertIn("Persona: private value (4 chars)", output)
 
     def test_other_files_remain_strict_even_next_to_a_pinned_resource(self):
         code, output = self.scan(self.fixture, extra=self.fixture)

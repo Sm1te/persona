@@ -11,6 +11,7 @@ import { conversationPage } from "../../lib/conversation-page";
 import { href, navigate, onLinkClick, type Route } from "../../lib/router";
 import { refreshAssistant, useStore } from "../../lib/store";
 import type { AssistantInfo, Session } from "../../lib/types";
+import { leaderItem } from "../ConversationMenu";
 import { Button, Collapse, copyText, cx, Dialog, IconButton, Loading, Menu, StatePill, toast, useMenu, useNow, type MenuItem } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { arrange, conversationTitle, filterConversations, mergeConversations, splitTitle, type Conversation } from "./conversations";
@@ -248,7 +249,10 @@ function ConvRow({ s, main, now, onRename, onArchive }: { s: Conversation; main?
   const st = stateOf(s);
   const flagged = st === "needs_you" || st === "working" || st === "unread";
   const last = plainMarkdown(s.last_text);
+  // the chats outside the sidebar live here: 设为常驻 puts one in its 常驻 group (#4331)
+  const leader = useStore((x) => !!x.assistant?.leaders?.includes(s.session_id));
   const items: MenuItem[] = [
+    ...(!main && !s.archived ? [leaderItem(s, leader)] : []),
     ...(!main ? [{ key: "rename", label: t("assistant-history.rename_ellipsis"), icon: "pencil" as const, onSelect: () => onRename(s) }] : []),
     { key: "copy", label: t("assistant-history.copy_session_id"), icon: "copy", onSelect: () => void copyText(s.session_id) },
     ...(!main

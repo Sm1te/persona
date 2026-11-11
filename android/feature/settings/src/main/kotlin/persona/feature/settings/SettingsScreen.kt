@@ -81,6 +81,7 @@ private fun SettingsContent(
     var manager by rememberSaveable(initialPage) { mutableStateOf<String?>(null) }
     /** `ssh:<hub id>` or `proxy:<hub id>`: a hub's tunnel page under Settings › Hubs. */
     var tunnelPage by rememberSaveable(initialPage) { mutableStateOf<String?>(null) }
+    var pairingDiagnostics by rememberSaveable(initialPage) { mutableStateOf(false) }
     // Model providers's own steps when they open in place: one provider, adding one, importing from ~/.zshrc.
     var provider by rememberSaveable(initialPage) { mutableStateOf<String?>(null) }
     var providerStep by rememberSaveable(initialPage) { mutableStateOf<String?>(null) }
@@ -285,7 +286,7 @@ private fun SettingsContent(
     if (assistant.offline != null && isAssistantSettingsPage(page)) AssistantOfflinePage(page, assistant, back) else when (page) {
         "connectors" -> JListPage(title = stringResource(R.string.settings_section_connectors), onBack = back, content = connectorItems)
         "pair" -> PairingScreen(services.pairing, services.sessions, onReady = back,
-            onDiagnostics = { open(SettingsPage.Diagnostics) }, diagnostics = services.diagnostics, onBack = back,
+            onDiagnostics = { pairingDiagnostics = true }, diagnostics = services.diagnostics, onBack = back,
             footer = { onDemo?.let { Action(stringResource(R.string.settings_try_demo), onClick = it) }; deviceFeedback() },
             machines = services.machines.takeUnless { services.demo }, attempts = services.pairingAttempts,
             mainReadiness = services.readiness.takeUnless { services.demo }, skipWelcome = true)
@@ -359,7 +360,7 @@ private fun SettingsContent(
             onAccess = { hubId -> tunnelPage = "access:$hubId" })
         // Adding a hub is the pairing page with an adding service; it returns to the hub list.
         "hubs-add" -> PairingScreen(services.addHub ?: services.pairing, services.sessions,
-            onReady = { page = "hubs" }, onDiagnostics = { open(SettingsPage.Diagnostics) }, diagnostics = services.diagnostics,
+            onReady = { page = "hubs" }, onDiagnostics = { pairingDiagnostics = true }, diagnostics = services.diagnostics,
             onBack = { page = "hubs" }, skipWelcome = true, attempts = services.pairingAttempts)
         "diag" -> DiagnosticsScreen(services, onBack = back, footer = deviceFeedback)
         "style" -> JListPage(title = stringResource(R.string.settings_style_title), onBack = back) {
@@ -594,17 +595,19 @@ private fun SettingsContent(
             item { deviceFeedback() }
         }
     }
-    // Registered after the child pages, so routed back leaves a page in one step. Not on the pairing page: it steps back
-    // through its own pages first and calls onBack itself when none is left (PairingScreen's `back`).
-    if (onBack != null) BackHandler(page != "settings" && page != "pair", onBack = onBack)
+    // Routed Back leaves a page in one step. Pairing handles its own steps before returning to Settings or Hubs.
+    if (onBack != null) BackHandler(page != "settings" && page != "pair" && page != "hubs-add", onBack = onBack)
     // An AI use opened inside "Model configuration" (no navigation host) closes before the page does.
     BackHandler(page == "models" && purpose != null) { purpose = null }
     BackHandler(page == "plugins" && extension != null) { extension = null }
     BackHandler(page == "channels" && channel != null) { channel = null }
     BackHandler(page == "managers" && manager != null) { manager = null }
     BackHandler(page == "providers" && (provider != null || providerStep != null)) { if (providerStep != null) providerStep = null else provider = null }
-    BackHandler(page == "hubs-add") { page = "hubs" }
     BackHandler(page == "hubs" && tunnelPage != null) { tunnelPage = null }
+    if (pairingDiagnostics && (page == "pair" || page == "hubs-add")) {
+        val close = { pairingDiagnostics = false }
+        JFullScreen(onDismiss = close) { DiagnosticsScreen(services, onBack = close, footer = deviceFeedback) }
+    }
     if (confirmDisconnect) JDialog(
         onDismiss = { confirmDisconnect = false }, title = stringResource(R.string.settings_disconnect_title),
         text = stringResource(R.string.settings_disconnect_text),
@@ -628,6 +631,7 @@ fun ReadinessScreen(
     readiness: AssistantReadinessSource? = null,
     /** Opens a step's page ("Model providers", "Machines"); null during the first checklist, whose buttons then open help only. */
     onNavigate: ((androidx.navigation3.runtime.NavKey) -> Unit)? = null,
+    onLater: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -697,7 +701,8 @@ fun ReadinessScreen(
         }
         onDone()
     }
-    JListPage(title = stringResource(if (notificationsOnly) R.string.settings_ready_notifications else R.string.settings_ready_title), onBack = onBack, largeTitle = showTitle && onBack == null) {
+    val title = stringResource(if (notificationsOnly) R.string.settings_ready_notifications else R.string.settings_ready_title)
+    val checklist: LazyListScope.() -> Unit = {
         header()
         val mainSteps = main?.takeIf { readinessOn && !notificationsOnly }
         if (mainSteps != null) {
@@ -809,6 +814,15 @@ fun ReadinessScreen(
             }
         }
     }
+    if (onLater == null) {
+        JListPage(title, onBack = onBack, largeTitle = showTitle && onBack == null,
+            scrollUnderBottom = notificationsOnly, content = checklist)
+    } else CompositionLocalProvider(
+        LocalRootBack provides null, LocalRootLeading provides pairingTitleInset, LocalHomeChrome provides null,
+    ) {
+        JListPage(title, largeTitle = false, actions = { JTextButton(stringResource(R.string.settings_ready_set_up_later), onLater) },
+            scrollUnderBottom = false, content = checklist)
+    }
     mainHelp?.let { help ->
         ReadinessHelpDialog(help, main?.machine?.name, onDismiss = { mainHelp = null }, onAction = { action ->
             main?.steps?.firstOrNull { it.primaryAction() == action }?.let { mainAction(action, it) }
@@ -836,11 +850,14 @@ private fun OnboardingContent(services: SettingsServices, onDone: () -> Unit) {
         return
     }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
-    BackHandler { if (diagnostics) diagnostics = false else onDone() }
+    BackHandler(onBack = onDone)
+    ReadinessScreen(services.sessions, services.diagnostics, notificationsOnly = false, showTitle = false,
+        onDiagnostics = { diagnostics = true }, onDone = onDone, onBack = null, onLater = onDone,
+        readiness = services.readiness.takeUnless { services.demo })
     if (diagnostics) {
-        DiagnosticsScreen(services, onBack = { diagnostics = false })
-    } else ReadinessScreen(services.sessions, services.diagnostics, notificationsOnly = false, showTitle = false,
-        onDiagnostics = { diagnostics = true }, onDone = onDone, onBack = onDone, readiness = services.readiness.takeUnless { services.demo })
+        val close = { diagnostics = false }
+        JFullScreen(onDismiss = close) { DiagnosticsScreen(services, onBack = close) }
+    }
 }
 
 /** One of the first group's pages ([page]) while [assistant] is offline: its title and [JAssistantOffline]. */
