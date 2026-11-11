@@ -139,7 +139,8 @@ struct ModelLaunchersView: View {
         #if DEBUG
         // `-openLauncherEditor YES` opens the form Other Connection Types leads to, `-openLauncherEditor preset` on From Extension;
         // `-openProviderWizard pick|connect|models|import` the provider sheet at that step; `-openProviderComputers
-        // all|selected|none|legacy|keys|api` a made-up provider's Computers page (`new` goes with `-openProviderWizard models`).
+        // all|selected|none|legacy|keys|api` a made-up provider's Computers page (`new` goes with `-openProviderWizard models`);
+        // `via` an API connection sending through a computer, at Connect.
         .onAppear {
             if UserDefaults.standard.string(forKey: "openLauncherEditor") != nil { adding = .pick }
             if let s = UserDefaults.standard.string(forKey: "openProviderWizard") { adding = ProviderWizardStep(rawValue: s) ?? .pick }
@@ -154,7 +155,7 @@ struct ModelLaunchersView: View {
             }
             computersDemo = ProviderComputersDemo.launcher(s, machines: model.hubMachines)
         }
-        .sheet(item: $computersDemo) { l in ProviderWizard(existing: l, start: .models, showComputers: true) }
+        .sheet(item: $computersDemo) { l in ProviderWizard(existing: l, start: ProviderComputersDemo.state == "via" ? .connect : .models, showComputers: ProviderComputersDemo.state != "via") }
         #endif
         .confirmationDialog("Delete Launcher “\(pendingDelete?.name ?? "")”?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
                             titleVisibility: .visible, presenting: pendingDelete) { l in

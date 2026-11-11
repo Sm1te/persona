@@ -608,6 +608,18 @@ struct ProviderWizard: View {
             Text(wizard.kind == .anthropic ? String(localized: "The key is stored encrypted on the hub, handed to the computer only at launch, and never sent back to apps.")
                  : String(localized: "Choose Bearer if the gateway only accepts Authorization: Bearer (ANTHROPIC_AUTH_TOKEN). The key is stored encrypted on the hub and never sent back to apps."))
         }
+        if wizard.isAPI {
+            Section {
+                Picker("Send Through", selection: $wizard.viaMachine) {
+                    Text("The Hub Itself").tag("")
+                    ForEach(wizard.viaChoices, id: \.id) { m in Text(m.name).tag(m.id) }
+                }
+                .lineLimit(1)
+                .accessibilityIdentifier("wizard.via")
+            } footer: {
+                Text("Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out.")
+            }
+        }
         Section {
             Button { Task { await wizard.runTest() } } label: {
                 HStack {

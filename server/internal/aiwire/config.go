@@ -18,6 +18,9 @@ type Config struct {
 	// Bearer sends the key to the Messages API as Authorization: Bearer instead of x-api-key, for gateways that take
 	// only that (what Claude Code does with ANTHROPIC_AUTH_TOKEN). Responses and Chat Completions always use Bearer.
 	Bearer bool `json:"bearer,omitempty"`
+	// ViaMachine is the computer whose node sends the requests (an API connection's "Send through"); empty: the
+	// manager sends them itself. The manager's client is built for it (assistant/models_via.go).
+	ViaMachine string `json:"-"`
 }
 
 // Over is c with its empty fields taken from base: a task that uses another model names only what differs.

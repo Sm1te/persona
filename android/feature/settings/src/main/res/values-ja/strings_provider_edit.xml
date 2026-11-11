@@ -113,4 +113,7 @@
     <plurals name="settings_pscope_machine_keys_count">
         <item quantity="other">%1$d 台に設定</item>
     </plurals>
+    <string name="settings_pedit_via">送信経由</string>
+    <string name="settings_pedit_via_hub">ハブ自身</string>
+    <string name="settings_pedit_via_note">この接続のリクエストをどのマシンから送るかを選びます。ハブからプロバイダーに届かず、お使いのコンピューターからは届く場合はそのコンピューターを選んでください。リクエストを送るときはオンラインである必要があります。</string>
 </resources>

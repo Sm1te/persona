@@ -123,6 +123,8 @@ enum LauncherName {
     var timeoutMS = ""
     var compactWindow = ""
     var maxContext = ""
+    /// Send Through (an existing direct API connection, #4775): the computer whose node sends its requests, "" the hub.
+    var viaMachine = ""
     /// Where it runs and when its key travels (#2333, `ProviderComputersPage`): a stored provider's as it opened, else
     /// the hub's defaults. Only fields that differ from what it opened with are sent (`ProviderScopeForm.fields`).
     var scope = ProviderScopeForm()
@@ -200,6 +202,7 @@ enum LauncherName {
         self.deps = deps
         guard let e = existing else { return }
         name = e.name
+        viaMachine = e.viaMachine ?? ""
         let url = e.baseURL ?? ""
         kind = url.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) == Self.anthropicURL ? .anthropic : .custom
         baseURL = kind == .custom ? url : ""
@@ -307,9 +310,17 @@ enum LauncherName {
 
     func model(_ id: String) -> ProviderModel? { models.first { $0.id == id } ?? discovered.first { $0.id == id } }
 
+    /// A direct API connection: what the hub calls itself, so it can send through a computer.
+    var isAPI: Bool { existing?.kind == "api" }
+    /// Send Through's choices: the hub's computers, and the stored one even when the hub no longer lists it.
+    var viaChoices: [(id: String, name: String)] {
+        let list = deps.machines().map { (id: $0.id, name: $0.name) }
+        return viaMachine.isEmpty || list.contains(where: { $0.id == viaMachine }) ? list : list + [(id: viaMachine, name: viaMachine)]
+    }
+
     private var probe: LauncherProbe {
         LauncherProbe(name: existing?.name, baseURL: address, auth: authMode, apiKey: key.isEmpty ? nil : key,
-                      headers: headersValue, model: testModel.isEmpty ? nil : testModel)
+                      headers: headersValue, model: testModel.isEmpty ? nil : testModel, viaMachine: isAPI ? viaMachine : nil)
     }
 
     func runTest() async {
@@ -402,6 +413,7 @@ enum LauncherName {
                              noProxy: noProxyValue, timeoutMS: Int(t(timeoutMS)) ?? 0, compactWindow: Int(t(compactWindow)) ?? 0,
                              maxContext: Int(t(maxContext)) ?? 0, effort: t(effort))
         if scopeShown { scope.apply(to: &input, old: e, machines: deps.machines(), kind: input.kind ?? "launcher") }
+        if isAPI, viaMachine != (e?.viaMachine ?? "") { input.viaMachine = viaMachine }
         return input
     }
 

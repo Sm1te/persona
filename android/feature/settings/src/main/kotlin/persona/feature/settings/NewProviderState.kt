@@ -61,6 +61,8 @@ internal data class NewProviderDraft(
     val compactWindow: String = "",
     val maxContext: String = "",
     val proxyMode: ProxyMode = ProxyMode.Follow,
+    /** "Send through" (an existing direct API connection, #4775): a computer's id, "" the hub itself. */
+    val viaMachine: String = "",
     val proxy: String = "",
     val noProxy: String = "",
     /** Typed headers, "Name: value" a line; never the stored ones. Empty keeps them unless [clearHeaders]. */
@@ -174,7 +176,7 @@ internal data class NewProviderState(
         // Editing: by name, so the hub uses the stored key and headers for what is not typed over them.
         return ProviderProbe(baseUrl = d.baseUrl.trim(), apiKey = d.apiKey.trim().takeIf { it.isNotEmpty() }, auth = d.auth,
             model = d.model.trim().takeIf { it.isNotEmpty() }, name = existing?.name, headers = d.headersValue().takeIf { !d.chat },
-            api = d.api.takeIf { d.kind == "api" })
+            api = d.api.takeIf { d.kind == "api" }, viaMachine = d.viaMachine.takeIf { d.kind == "api" && existing != null })
     }
 
     val usesPreset: Boolean get() = draft.fromPreset && selected != null

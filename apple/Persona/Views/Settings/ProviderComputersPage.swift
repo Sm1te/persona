@@ -258,7 +258,7 @@ enum ProviderComputersDemo {
     static func launcher(_ state: String, machines: [Machine]) -> LauncherView {
         let ids = machines.filter { !$0.isPending }.prefix(2).map(\.id)
         var l = LauncherView(name: "demo_scope", source: "persona", baseURL: "https://gateway.example.com", model: "glm-5", hasKey: true,
-                             kind: state == "api" ? "api" : "launcher", api: "messages", auth: "bearer")
+                             kind: state == "api" || state == "via" ? "api" : "launcher", api: "messages", auth: "bearer")
         l.share = "all"
         l.delivery = "on_demand"
         l.ownService = "skip"
@@ -274,6 +274,9 @@ enum ProviderComputersDemo {
             l.ownService = "use"
             l.legacyScope = true
         case "api": l.ownService = "use"
+        case "via": // Send Through on the first computer, the wizard at Connect (#4775)
+            l.ownService = "use"
+            l.viaMachine = ids.first
         default: break
         }
         return l

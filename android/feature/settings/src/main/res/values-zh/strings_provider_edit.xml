@@ -113,4 +113,7 @@
     <plurals name="settings_pscope_machine_keys_count">
         <item quantity="other">已设 %1$d 台</item>
     </plurals>
+    <string name="settings_pedit_via">通过…发送</string>
+    <string name="settings_pedit_via_hub">hub 自己</string>
+    <string name="settings_pedit_via_note">由哪台机器把这个接入的请求发给供应商。hub 连不上供应商、而你的某台电脑能连上时，选那台电脑；发请求时它得在线。</string>
 </resources>

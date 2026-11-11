@@ -1,6 +1,75 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Send Through": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Through"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过…发送"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信経由"
+          }
+        }
+      }
+    },
+    "The Hub Itself": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Hub Itself"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hub 自己"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハブ自身"
+          }
+        }
+      }
+    },
+    "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由哪台机器把这个接入的请求发给供应商。hub 连不上供应商、而你的某台电脑能连上时，选那台电脑；发请求时它得在线。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続のリクエストをどのマシンから送るかを選びます。ハブからプロバイダーに届かず、お使いのコンピューターからは届く場合はそのコンピューターを選んでください。リクエストを送るときはオンラインである必要があります。"
+          }
+        }
+      }
+    },
     "Connection method": {
       "extractionState": "manual",
       "localizations": {

@@ -132,5 +132,8 @@
   "assign_checking": "Checking whether the main conversation already works…",
   "done_no_claude_kept": "The key is saved. Claude Code still needs to be installed on {machine} before anything can run on it.",
   "done_no_claude_kept_any": "The key is saved. Claude Code still needs to be installed on the computer before anything can run on it.",
-  "step_devices": "Devices"
+  "step_devices": "Devices",
+  "via": "Send through",
+  "via_hub": "The hub itself",
+  "via_hint": "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out."
 }

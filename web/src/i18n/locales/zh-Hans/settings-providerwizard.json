@@ -131,5 +131,8 @@
   "assign_checking": "正在看主对话现在能不能用…",
   "done_no_claude_kept": "Key 存好了；要用它，还得先在 {machine} 上装 Claude Code。",
   "done_no_claude_kept_any": "Key 存好了；要用它，还得先在电脑上装 Claude Code。",
-  "step_devices": "电脑"
+  "step_devices": "电脑",
+  "via": "通过…发送",
+  "via_hub": "hub 自己",
+  "via_hint": "由哪台机器把这个接入的请求发给供应商。hub 连不上供应商、而你的某台电脑能连上时，选那台电脑；发请求时它得在线。"
 }

@@ -47,7 +47,12 @@ func NewResolved(resolve func(context.Context) (*Client, error)) *Client {
 func (c *Client) Config() Config { return c.cfg }
 
 func New(cfg Config) *Client {
-	return &Client{cfg: cfg, http: &http.Client{Timeout: 60 * time.Second}}
+	return NewWith(cfg, nil)
+}
+
+// NewWith is New sending its requests through transport (nil: this machine's network).
+func NewWith(cfg Config, transport http.RoundTripper) *Client {
+	return &Client{cfg: cfg, http: &http.Client{Timeout: 60 * time.Second, Transport: transport}}
 }
 
 func (c *Client) key() (string, error) {
