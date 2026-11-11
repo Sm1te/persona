@@ -215,6 +215,11 @@ type Session struct {
 	// those told only there (#1731): set by the hub, also once the task is done. Clients leave it out of task
 	// notifications and global badges; the Agents page shows it as always.
 	Quiet bool `json:"quiet,omitempty"`
+	// AwaitingFirstMessage: a Codex Persona opened with no first message (node/codex_waiting.go): Codex runs in its
+	// terminal but has no thread until it gets one, so this row is keyed by an id of the node's, not the thread's.
+	// It takes the first message (text only) and opens its terminal; once the thread exists the row goes and the
+	// thread's comes, in the same pane (docs/integrations/codex.md "Starting without a first message").
+	AwaitingFirstMessage bool `json:"awaiting_first_message,omitempty"`
 	// QueuedRelayed: the last this many of Queued are messages from other conversations that an assistant
 	// conversation's manager holds until its turn ends (docs/assistant/assistant.md "Queue while running"); the apps
 	// show them but take back, delete, move and send now only the others (#4342). A uint16 here sits in the padding

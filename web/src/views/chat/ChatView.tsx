@@ -18,7 +18,8 @@ import { acknowledgeLaunch } from "../../lib/new-agent";
 import { useRuntimeSession } from "../../lib/runtime-session";
 import { ArchivedNotice, SessionDetailNotice } from "../../ui/SessionDetailNotice";
 import { REVIEW_FEATURE } from "../../lib/session-review";
-import { getSession, getState, hubHas, listenSession, refresh, refreshTodos, saveMutes, useStore, viewSession } from "../../lib/store";
+import { getSession, getState, hubHas, listenSession, refresh, refreshTodos, saveMutes, upsertSession, useStore, viewSession } from "../../lib/store";
+import { codexThreadOf, waitsForFirstMessage } from "../../lib/codex-waiting";
 import { PREVIEW_FEATURE } from "../../lib/preview";
 import { agentsWorking, buildTaskIndex, stableSubagents, STOP_LOOP_MESSAGE, subagentParent, terminalCalls, type TaskIndex } from "../../lib/tasks";
 import { stabilizeLines, stableValue } from "../../lib/stable-lines";
@@ -240,6 +241,17 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   const subagents = stableSubagents(lastSubagents.current, listed);
   lastSubagents.current = subagents;
   const machineName = useStore((s) => machineWithHub(mid, s.machines));
+  // A Codex opened with no first message (lib/codex-waiting.ts): once its thread comes (the message went in from here
+  // or its terminal) the row goes and the thread's comes in the same pane, and this page follows it there.
+  const waitsFirst = waitsForFirstMessage(session);
+  const [waitingRow, setWaitingRow] = useState<Session>();
+  useEffect(() => {
+    if (waitsFirst && session) setWaitingRow(session);
+  }, [waitsFirst, session]);
+  const becameThread = useStore((s) => (waitingRow && waitingRow.session_id === sid ? codexThreadOf(s.sessions[mid] ?? [], waitingRow)?.session_id : undefined));
+  useEffect(() => {
+    if (becameThread && inPage) navigate({ name: "session", mid, sid: becameThread }, true);
+  }, [becameThread, inPage, mid]);
   // only the tab's own rows (the same objects, the same array): a push for another agent on the machine leaves the chat be
   const panes = useStore((s) => (session && !assistant && !readOnly ? tabSessions(s.sessions[mid] ?? [], session) : NO_PANES));
   const siblings = useStore((s) => (session?.space_id ? (s.sessions[mid] ?? []).filter((x) => x.space_id === session.space_id && stateOf(x) !== "offline") : []));
@@ -827,7 +839,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       keepOutgoing(key, { id, text: out.text, images: out.images, at: p.at, launcher, model });
       try {
         // the bubble stays as sending while a gap (a hub restart) is waited out; the id is the op id too
-        await inSendOrder(key, () => apiOp(`${sessionPath(mid, sid)}/messages`, {
+        const reply = await inSendOrder(key, () => apiOp<{ session?: Session } | undefined>(`${sessionPath(mid, sid)}/messages`, {
           method: "POST",
           opId: id,
           json: { text: out.text, images: out.images.length ? out.images : undefined, client_msg_id: id, clear_draft: clearDraft, launcher, model },
@@ -835,6 +847,12 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         const acceptedAt = Date.now();
         acceptOutgoing(key, id, acceptedAt);
         setPending((ps) => ps.map((x) => (x.id === id ? { ...x, posting: false, acceptedAt } : x)));
+        // a Codex's first message: the answer is the thread it began, where the conversation goes on (lib/codex-waiting.ts)
+        const began = reply?.session;
+        if (began?.session_id && began.session_id !== sid) {
+          upsertSession({ ...began, machine_id: mid });
+          if (inPage) navigate({ name: "session", mid, sid: began.session_id }, true);
+        }
         return true;
       } catch (e) {
         // An ultracode change waits for the turn (docs/protocol/protocol.md "Claude Code ultracode"): the node holds messages back
@@ -864,7 +882,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `failed` reads only stable setters and these
-    [mid, sid, session, assistant, follow],
+    [mid, sid, session, assistant, follow, inPage],
   );
 
   /** Keeps a message that did not go as a failed bubble where it was sent, with why, "Retry" and "Delete", the box empty
@@ -1433,6 +1451,12 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
                 not under a notice that the chat's details are missing */}
             {((!tr.hasMore && !tr.loading && (tr.items.length > 0 || (!tr.error && !starting && !session?.start_error && !noDetails))) || opening) && <div className="text-center text-[11.5px] text-ink-3">{session?.cwd && !assistant ? t("chat-chatview.started_in", { path: shortPath(session.cwd) }) : t("chat-chatview.chat_start")}</div>}
             {opening && <DayLine date={startOfDay(Date.now())} />}
+            {waitsFirst && !tr.items.length && (
+              // a Codex opened with no first message (lib/codex-waiting.ts): it waits for one, from here or its terminal
+              <p data-testid="codex-waiting" className="rounded-control bg-inset px-3 py-2 text-[13px] leading-relaxed text-ink-2">
+                {t("chat-chatview.codex_waiting", { computer: machineName })}
+              </p>
+            )}
             {tr.loading && !tr.items.length && !opening && (
               <div className="flex justify-center py-16">
                 <Loading label={starting ? t("chat-chatview.preparing") : t("chat-chatview.loading_chat")} />
@@ -1591,7 +1615,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         <div ref={composerBox} className="shrink-0" hidden={voiceState === "live"}>
         <Composer
           draftKey={draftKey}
-          placeholder={offlineLine ? offlineLine : refusedNoRow ? t(gone ? "chat-chatview.session_gone_placeholder" : "chat-chatview.connecting_placeholder") : !sessionCan(session, "send") && session?.source_kind ? t("chat-chatview.view_only") : state === "working" || state === "needs_you" ? t("chat-chatview.queue_placeholder") : assistant ? t("chat-chatview.ask_placeholder", { name: persona.name }) : state === "offline" ? t("chat-chatview.resume_placeholder") : t("chat-chatview.agent_placeholder")}
+          placeholder={offlineLine ? offlineLine : waitsFirst ? t("chat-chatview.codex_first_placeholder") : refusedNoRow ? t(gone ? "chat-chatview.session_gone_placeholder" : "chat-chatview.connecting_placeholder") : !sessionCan(session, "send") && session?.source_kind ? t("chat-chatview.view_only") : state === "working" || state === "needs_you" ? t("chat-chatview.queue_placeholder") : assistant ? t("chat-chatview.ask_placeholder", { name: persona.name }) : state === "offline" ? t("chat-chatview.resume_placeholder") : t("chat-chatview.agent_placeholder")}
           machineId={mid}
           uploadDest={session?.space === "health" ? "health" : undefined}
           working={state === "working" || awaiting}

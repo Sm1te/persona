@@ -203,6 +203,10 @@ export interface Session {
   cwd: string;
   status: string;
   starting?: boolean;
+  /** A Codex opened with no first message: it runs in its terminal but has no thread yet, so this row's id is the
+   *  computer's, not the thread's. Its first message (text only) goes in here or in the terminal; then the row goes and
+   *  the thread's comes, in the same pane (docs/integrations/codex.md "Starting without a first message"). */
+  awaiting_first_message?: boolean;
   start_error?: string;
   /** The failed start's coded refusal (launcher_missing, claude_missing…) and its details; start_error is the hub's sentence for it. */
   start_error_code?: string;
@@ -715,6 +719,9 @@ export interface Launcher {
   /** What it starts when not Claude Code ("codex"); agent_type: what the hub's machine config says it runs. */
   agent?: string;
   agent_type?: string;
+  /** A Codex launcher the computer starts with no first message too; absent from an older computer, whose Codex
+   *  starts need one. */
+  prompt_optional?: boolean;
   /** How its last check or start went on the computer the list is for (GET /machines/{mid}/launchers,
    *  docs/server/launcher-health.md); absent: never checked, a failure too old to count, or an older hub. */
   health?: LauncherHealth;

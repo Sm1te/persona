@@ -455,6 +455,9 @@ func (n *Node) setAgentsAt(agents []host.Agent, epoch uint64, heard map[string]b
 			n.mu.Lock()
 			id = n.panes[a.PaneID]
 			n.mu.Unlock()
+			if isCodexWaitID(id) {
+				id = "" // a Codex that waited for its first message ran here (codex_waiting.go); this agent is another
+			}
 		}
 		if id == "" || liveTaken(m, id) {
 			if n.freshPane(a.PaneID) {
@@ -472,6 +475,19 @@ func (n *Node) setAgentsAt(agents []host.Agent, epoch uint64, heard map[string]b
 	// thread, the newest rollout in the directory nobody else has.
 	var unnamed []host.Agent
 	for _, a := range codex {
+		if w := n.codexWaitOf(a.PaneID); w != nil {
+			// Opened with no first message (codex_waiting.go): its row until its thread is attached, which only the look
+			// does. What herdr's integration names is noted for it, never taken as is.
+			if sid := a.SessionID(); sid != "" {
+				home := n.codexPaneHome(a.PaneID)
+				named := n.codexPublicID(home, mainThread(home, sid))
+				n.mu.Lock()
+				w.herdr = named
+				n.mu.Unlock()
+			}
+			m[w.id] = a
+			continue
+		}
 		home := n.codexPaneHome(a.PaneID)
 		id := a.SessionID()
 		if id != "" {

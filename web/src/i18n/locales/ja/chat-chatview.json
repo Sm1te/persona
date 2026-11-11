@@ -107,5 +107,7 @@
   "closeout_found_merged_yes": "ハブの確認ではマージ済み",
   "closeout_found_merged_no": "ハブの確認では未マージ",
   "closeout_found_deployed_yes": "ハブの確認ではデプロイ済み",
-  "closeout_found_deployed_no": "ハブの確認では未デプロイ"
+  "closeout_found_deployed_no": "ハブの確認では未デプロイ",
+  "codex_waiting": "Codex は {computer} で開いています。下で最初のメッセージを送るか、ターミナルに直接入力してください。",
+  "codex_first_placeholder": "Codex への最初のメッセージ"
 }

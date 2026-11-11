@@ -166,10 +166,10 @@ type Node struct {
 	forked    map[string]bool // sessions "Branch to new chat" made (fork.go): listed however short they are
 	// freshForks: branches nothing has started yet, which a message may start (stopped.go); a stopped agent may not.
 	freshForks map[string]bool
-	starts    startLog        // sessions starting in the background (starting.go)
-	ups       uploads         // files arriving from the phone (upload.go)
-	sysOnce   sync.Once       // system: read once (metrics.go)
-	sys       proto.System
+	starts     startLog  // sessions starting in the background (starting.go)
+	ups        uploads   // files arriving from the phone (upload.go)
+	sysOnce    sync.Once // system: read once (metrics.go)
+	sys        proto.System
 
 	// usageRetried: when a conversation's message was last sent again after its transcript's usage was repaired
 	// (assistant_usage.go): once in a while at most. Under mu; nil until the first.
@@ -206,6 +206,11 @@ type Node struct {
 
 	// codexStarting: panes a Codex start is opening (codex_start.go): no thread is guessed for them meanwhile.
 	codexStarting map[string]bool
+	// codexWaiting: Codex panes opened with no first message, by pane, until their thread is known (codex_waiting.go);
+	// codexAttached: such a row's id → the thread it became; codexWaitLooking: the look for their threads runs.
+	codexWaiting     map[string]*codexWait
+	codexAttached    map[string]string
+	codexWaitLooking bool
 	// codexAbandoned: failed starts whose pane could not be closed; a retry must close it before opening another.
 	codexAbandoned map[string][]codexAbandonedStart
 	// keptStarts: the tabs of failed starts kept open for a while, by pane (shellsettle.go keepStartTab); n.mu.
@@ -644,6 +649,20 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, fmt.Errorf("bad params: %w", err)
+		}
+	}
+	if isCodexWaitID(p.SessionID) && (strings.HasPrefix(method, "session.") || strings.HasPrefix(method, "terminal.")) {
+		// A Codex opened with no first message (codex_waiting.go): the thread it became since the client looked, or
+		// what its row answers while it waits.
+		if t := n.codexAttachedThread(p.SessionID); t != "" {
+			p.SessionID, params = t, withSessionID(params, t)
+		} else if w := n.codexWaitByID(p.SessionID); w != nil {
+			if method == "session.send" {
+				return n.sendFirstCodexCall(ctx, w, params, p.Text, p.Images)
+			}
+			if r, err, handled := n.codexWaitCalls(method, p.SessionID); handled {
+				return r, err
+			}
 		}
 	}
 	if n.codexBlocked(p.SessionID) && (strings.HasPrefix(method, "session.") || strings.HasPrefix(method, "terminal.") || method == "assistant.send" || method == "assistant.permissions.reset") {

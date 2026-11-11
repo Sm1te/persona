@@ -238,6 +238,15 @@ struct ChatView: View {
         ComputerActivity.latest(in: store.items, chat: shownKey.machineRef, machines: model.namedMachines)
     }
     private var session: Session? { model.session(key) }
+    /// The pane of a Codex opened with no first message (Session.awaitingFirstMessage): once its first message goes in,
+    /// from here or its terminal, its row goes and the thread's comes in that pane, and the page follows it there.
+    @State private var codexWaitingPane: String?
+    private var codexThread: SessionKey? {
+        guard let pane = codexWaitingPane else { return nil }
+        return model.sessionsByMachine[key.machineRef]?.first {
+            $0.paneID == pane && $0.sessionID != key.sessionID && $0.isCodex && $0.awaitingFirstMessage != true && $0.state.isLive
+        }?.key
+    }
     /// The manager the links tapped here read through: the session's, else (a conversation not listed yet) the inbox
     /// item's it was opened from or the one the Persona page shows it for; nil for the default's.
     private var linkManager: String? {
@@ -1993,6 +2002,14 @@ struct ChatView: View {
             footerRoom.listFloor = Theme.Size.line + Theme.Space.s // and a gap over 「N 个待处理」
             footerRoom.fixedHeader = h
             footerRoom.chrome = style == .dev && !sideBars ? chrome : nil
+        }
+        .onChange(of: session?.awaitingFirstMessage == true ? session?.paneID : nil, initial: true) { _, pane in
+            if let pane { codexWaitingPane = pane }
+        }
+        .onChange(of: codexThread) { _, next in
+            guard let next else { return }
+            codexWaitingPane = nil
+            switchTo(next)
         }
         .environment(\.chatLayout, layout)
         .environment(\.openSubagent, actions.openSubagent)
@@ -4108,6 +4125,26 @@ struct StartingNote: View {
     }
 }
 
+/// A Codex opened with no first message (Session.awaitingFirstMessage): it waits for one, sent here or typed in its
+/// terminal (docs/integrations/codex.md「Starting without a first message」).
+struct CodexWaitingNote: View {
+    var computer: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+            ThemedIcon(Theme.Icon.terminal).font(Theme.Font.labelStrong).foregroundStyle(.secondary)
+            Text("Codex is open on \(computer). Send its first message here, or type it in its terminal.")
+                .font(Theme.Font.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .surface(in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chat.codexWaiting")
+    }
+}
+
 /// Why a session waits for the user, in its host's words (a botmux attention), with its Feishu topic one tap away.
 struct AttentionNote: View {
     var reason: String
@@ -4586,6 +4623,9 @@ struct Composer: View, Equatable {
         return VStack(spacing: Theme.Space.s) {
             if let m = offlineManager {
                 ManagerOfflineNote(manager: m)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let s = model.session(key), s.awaitingFirstMessage == true {
+                CodexWaitingNote(computer: model.machine(key.machineRef)?.title ?? key.machineID)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if let s = model.session(key), s.starting == true || s.startError != nil {
                 StartingNote(error: s.startError, agent: s.agentLabel, coded: s.startErrorCode?.isEmpty == false)

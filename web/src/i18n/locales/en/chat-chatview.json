@@ -107,5 +107,7 @@
   "closeout_found_merged_yes": "Hub found it merged",
   "closeout_found_merged_no": "Hub found it isn't merged",
   "closeout_found_deployed_yes": "Hub found it deployed",
-  "closeout_found_deployed_no": "Hub found it isn't deployed"
+  "closeout_found_deployed_no": "Hub found it isn't deployed",
+  "codex_waiting": "Codex is open on {computer}. Send its first message below, or type it in its terminal.",
+  "codex_first_placeholder": "First message to Codex"
 }

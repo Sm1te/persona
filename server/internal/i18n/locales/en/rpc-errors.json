@@ -39,5 +39,7 @@
   "agent_stopped": "This agent has stopped. Its conversation and terminal stay; it doesn’t take messages, and nothing was sent. To run it again, use Resume on its terminal page.",
   "shell_waiting": "The new terminal tab stopped on a question before the agent could start. Nothing ran; the tab stays open for a few minutes so it can be answered.",
   "start_line_rejected": "The new terminal tab didn't take the start command, twice. Nothing ran; check what that shell does when it starts, then try again.",
-  "directory_untypable": "This directory’s name contains a control character, such as a tab or a line break, so the agent can’t be started in it from here. Rename the directory or choose another one."
+  "directory_untypable": "This directory’s name contains a control character, such as a tab or a line break, so the agent can’t be started in it from here. Rename the directory or choose another one.",
+  "codex_not_ready": "Codex on the computer isn’t at its input box yet (still loading, or another screen is open). Nothing was sent; try again in a moment.",
+  "codex_first_text": "Codex’s first message can only be text. Remove the photos or files, then send it again."
 }

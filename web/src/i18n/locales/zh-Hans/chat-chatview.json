@@ -107,5 +107,7 @@
   "closeout_found_merged_yes": "hub 查到已合并",
   "closeout_found_merged_no": "hub 查到没有合并",
   "closeout_found_deployed_yes": "hub 查到已部署",
-  "closeout_found_deployed_no": "hub 查到没有部署"
+  "closeout_found_deployed_no": "hub 查到没有部署",
+  "codex_waiting": "Codex 已在 {computer} 上打开。在下面发第一条消息，或直接在它的终端里输入。",
+  "codex_first_placeholder": "给 Codex 的第一条消息"
 }
