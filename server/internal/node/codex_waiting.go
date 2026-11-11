@@ -74,6 +74,10 @@ var (
 	codexFirstWait = 45 * time.Second
 	// codexWaitGone is how many looks in a row may find no codex in a waiting row's pane before the row goes.
 	codexWaitGone = 10
+	// codexStartPoll is how often a start or a first message looks at Codex's screen and threads again.
+	codexStartPoll = 500 * time.Millisecond
+	// codexDialogPause lets a dialog answered at the start go before the next look, which would otherwise answer it again.
+	codexDialogPause = time.Second
 )
 
 // errCodexBoxLate: codex runs in the new tab but its input box did not come up within codexStartWait.
@@ -96,7 +100,7 @@ func (n *Node) waitCodexBox(ctx context.Context, pane string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(codexStartPoll):
 		}
 		text, err := n.readPane(ctx, pane, "visible", screen.DialogLines)
 		if err != nil {
@@ -124,12 +128,12 @@ func (n *Node) waitCodexBox(ctx context.Context, pane string) error {
 func (n *Node) answerCodexStartDialog(ctx context.Context, pane, text string) bool {
 	if keys := codexTrustKeys(text); keys != nil {
 		_ = n.sendKeys(ctx, pane, keys...)
-		_ = sleepCtx(ctx, time.Second) // the dialog goes before the next look, which would otherwise answer it again
+		_ = sleepCtx(ctx, codexDialogPause)
 		return true
 	}
 	if keys := codexSkipUpdateKeys(text); keys != nil {
 		_ = n.sendKeys(ctx, pane, keys...)
-		_ = sleepCtx(ctx, time.Second)
+		_ = sleepCtx(ctx, codexDialogPause)
 		return true
 	}
 	return false
@@ -717,7 +721,7 @@ func (n *Node) waitFirstThread(ctx context.Context, w *codexWait, text string, s
 		select {
 		case <-ctx.Done():
 			return "", "", uncertain(ctx.Err())
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(codexStartPoll):
 		}
 		if n.codexWaitByID(w.id) != w { // attached meanwhile (the look found it first)
 			if t := n.codexAttachedThread(w.id); t != "" {
@@ -784,7 +788,7 @@ func (n *Node) codexBoxFor(ctx context.Context, pane string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(codexStartPoll):
 		}
 	}
 }

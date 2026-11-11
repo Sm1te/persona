@@ -72,10 +72,12 @@ func codexWaitHerdr(t *testing.T) (*Node, *fakeHerdr, string, *[]string) {
 
 func withCodexWaits(t *testing.T) {
 	t.Helper()
-	oldTick, oldBox, oldFirst, oldGone := codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone
+	oldTick, oldBox, oldFirst, oldGone, oldStartPoll, oldPause := codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone, codexStartPoll, codexDialogPause
 	codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone = time.Hour, 5*time.Second, 5*time.Second, 2
+	codexStartPoll, codexDialogPause = 20*time.Millisecond, 20*time.Millisecond
 	t.Cleanup(func() {
 		codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone = oldTick, oldBox, oldFirst, oldGone
+		codexStartPoll, codexDialogPause = oldStartPoll, oldPause
 	})
 }
 
