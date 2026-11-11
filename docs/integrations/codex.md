@@ -236,10 +236,12 @@ and answers with a **waiting row** for the pane (`node/codex_waiting.go`).
   `agent: codex`, the pane and tab, `status: idle` whatever herdr says (Codex starting its MCP servers reads as working, then done), or `blocked` while a dialog holds the pane.
   Its capabilities are read, send and terminal. Its conversation is empty. Modes, the queue and forking are refused until the thread exists, and it has no history, archive or resume.
   The node binds the pane to the row's id. The hub stores and returns that binding, so a restarted node knows the row again from the id's shape and its record.
-- **Attaching the thread, never by directory**: the node looks every second while a row waits. It scans the Codex processes only when a new thread appeared in the row's directory or herdr named one, and every 15 seconds otherwise.
+- **Attaching the thread, never by directory**: the node looks every second while a row waits. It scans the Codex processes only when a new thread appeared in the row's directory or herdr or the title named one, and every 15 seconds otherwise.
+  A new thread that no rule attached in three looks (one from a Codex outside herdr in the same repository) no longer triggers scans; only the 15-second scan looks at it again.
   1. The rollout the pane's own `codex` process holds open: `HERDR_PANE_ID` in its environment, `lsof` or `/proc` for its files. App-server processes are left out: a daemon a pane started inherits that pane's `HERDR_PANE_ID` and holds every thread it serves.
      This covers 0.153 and launchers whose thread runs in its own process.
-  2. The thread herdr's Codex integration names for the pane, unless another pane's process writes it.
+  2. The thread herdr's Codex integration names for the pane, unless another pane's process writes it. Then the thread the pane's title names ("<name> | <directory>"), when exactly one thread has that whole name
+     (not one cut short with "…") and no other pane's process writes it. This is what a `/resume` in that Codex shows, which rules 1, 3 and 4 can't see on the shared app-server.
   3. A first message sent from the Apps: the one thread begun in the directory since it was typed whose first user message is that text, which no other pane runs.
   4. The shared app-server daemon (0.163 and later), whose TUI holds no rollout. A row takes a thread only when all of these hold:
      - it is the only new thread in the row's directory since the row began;
@@ -255,7 +257,10 @@ and answers with a **waiting row** for the pane (`node/codex_waiting.go`).
   It types nothing, and refuses with the usual codes, when the box holds a draft (`input_draft`), when an approval, question or dialog that isn't ours is open (`dialog_open`), or when the box doesn't come (`codex_not_ready`).
   The message goes in as one bracketed paste, unchanged, and Enter is pressed only once the box shows it (or Codex's `[Pasted Content N chars]`).
   The send then waits up to 45 seconds for the thread (rules 1–3) and answers `{ok, session}` with the thread's session. Rule 3 finding two threads answers `{ok}` alone, and the row stays until rule 1 or 2 knows it.
-  No thread in time is `delivered: unknown`: the message went in, so it is not sent again.
+  No thread in time is `codex_first_unconfirmed` with `delivered: unknown`: the message went in, so it is not sent again.
+  First messages to one row go one at a time: a second one (another phone, a quick second tap) waits for the first, then goes to the thread it began as any message does.
+  `/exit` or `/quit` quits Codex as for any agent, with nothing typed.
+  Modes, the queue and forking on a waiting row refuse with `codex_waiting`. A start whose Codex never shows its box and isn't running fails with `codex_no_box`.
   The message's echo (`client_msg_id`) is the thread's. The hub links a to-do to the thread the answer names (`hub/send.go`).
 - **The user may type the first message in the terminal instead**: rule 1, 2 or 4 attaches the thread.
 - **Codex quits before a first message** (or the tab closes): after 10 looks with no `codex` in the pane, the row and the pane's binding go. The terminal stays.

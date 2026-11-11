@@ -241,8 +241,11 @@ struct ChatView: View {
     /// The pane of a Codex opened with no first message (Session.awaitingFirstMessage): once its first message goes in,
     /// from here or its terminal, its row goes and the thread's comes in that pane, and the page follows it there.
     @State private var codexWaitingPane: String?
+    /// The waiting row the pane was noted for: the page follows only while it still shows that row (not after moving to
+    /// another session, whose page a thread in that pane must not take over).
+    @State private var codexWaitingID: String?
     private var codexThread: SessionKey? {
-        guard let pane = codexWaitingPane else { return nil }
+        guard let pane = codexWaitingPane, codexWaitingID == key.sessionID else { return nil }
         return model.sessionsByMachine[key.machineRef]?.first {
             $0.paneID == pane && $0.sessionID != key.sessionID && $0.isCodex && $0.awaitingFirstMessage != true && $0.state.isLive
         }?.key
@@ -2004,7 +2007,7 @@ struct ChatView: View {
             footerRoom.chrome = style == .dev && !sideBars ? chrome : nil
         }
         .onChange(of: session?.awaitingFirstMessage == true ? session?.paneID : nil, initial: true) { _, pane in
-            if let pane { codexWaitingPane = pane }
+            if let pane { codexWaitingPane = pane; codexWaitingID = key.sessionID }
         }
         .onChange(of: codexThread) { _, next in
             guard let next else { return }

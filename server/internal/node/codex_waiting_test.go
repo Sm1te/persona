@@ -74,7 +74,9 @@ func withCodexWaits(t *testing.T) {
 	t.Helper()
 	oldTick, oldBox, oldFirst, oldGone := codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone
 	codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone = time.Hour, 5*time.Second, 5*time.Second, 2
-	t.Cleanup(func() { codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone = oldTick, oldBox, oldFirst, oldGone })
+	t.Cleanup(func() {
+		codexWaitTick, codexBoxWait, codexFirstWait, codexWaitGone = oldTick, oldBox, oldFirst, oldGone
+	})
 }
 
 func startWaiting(t *testing.T, n *Node) proto.Session {
@@ -289,6 +291,9 @@ func TestCodexWaitingRowsInOneDirectory(t *testing.T) {
 	if got := n.codexAttachedThread(w3.id); got != threadB {
 		t.Fatalf("p3 has %q", got)
 	}
+	if again := n.codexWaitOf("w1:p3"); again != nil { // the pane is the thread's now: no row made again from its record
+		t.Fatalf("p3 waits again as %s", again.id)
+	}
 	if n.codexWaitByID(w2.id) == nil {
 		t.Fatal("p2 took a thread its screen does not show")
 	}
@@ -399,6 +404,98 @@ func TestCodexWaitingRowGoesWithCodex(t *testing.T) {
 	n.mu.Unlock()
 	if bound != "" {
 		t.Errorf("pane still bound to %q", bound)
+	}
+}
+
+// A waiting pane whose Codex resumed a thread (/resume on the shared app-server: no process of the pane holds it, no
+// new thread begins) is attached by its title, only when exactly one thread has that whole name.
+func TestCodexWaitingRowTakesTheThreadItsTitleNames(t *testing.T) {
+	n, f, home := herdrNode(t)
+	withCodexWaits(t)
+	n.codices = newCodexRegistry()
+	n.configureCodex(proto.CodexConfig{Homes: []string{filepath.Join(home, ".codex")}})
+	n.codices.checked = nil
+	n.codices.scan = func() []codexProcess { return nil }
+	cwd := mkdir(t, filepath.Join(home, "proj"))
+	const old, twin = "01a19a00-0000-7000-8000-0000000000c1", "01a19a00-0000-7000-8000-0000000000c2"
+	writeWaitRollout(t, home, cwd, old, time.Now().Add(-48*time.Hour), "yesterday's work")
+	writeWaitRollout(t, home, cwd, twin, time.Now().Add(-72*time.Hour), "older work")
+	index := `{"id":"` + old + `","thread_name":"Fix the scheduler"}` + "\n" + `{"id":"` + twin + `","thread_name":"Same name"}` + "\n" +
+		`{"id":"01a19a00-0000-7000-8000-0000000000c3","thread_name":"Same name"}` + "\n"
+	if err := os.WriteFile(filepath.Join(home, ".codex", "session_index.jsonl"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.reply("workspace.list", map[string]any{"workspaces": []any{map[string]any{"workspace_id": "w1", "label": "proj"}}})
+	list := func(title string) {
+		f.reply("session.snapshot", snapshot(nil, nil, []any{agentOf("codex", "", proto.StatusWorking, "w1:p2", "w1:t2", "w1", cwd, title)}, nil))
+		_ = n.refreshHosts(context.Background())
+	}
+	n.openCodexWait(context.Background(), "w1:p2", cwd, "codex", "", time.Now())
+	w := n.codexWaitOf("w1:p2")
+	list("Same name | proj") // two threads have that name: none is taken
+	n.lookForCodexThreadsOnce(context.Background(), []*codexWait{w}, false)
+	if n.codexWaitByID(w.id) == nil {
+		t.Fatal("attached a name two threads share")
+	}
+	list("Fix the sched... | proj") // cut short
+	n.lookForCodexThreadsOnce(context.Background(), []*codexWait{w}, false)
+	if n.codexWaitByID(w.id) == nil {
+		t.Fatal("attached a name cut short")
+	}
+	list("Fix the scheduler | proj")
+	n.lookForCodexThreadsOnce(context.Background(), []*codexWait{w}, false)
+	if got := n.codexAttachedThread(w.id); got != old {
+		t.Fatalf("attached %q", got)
+	}
+}
+
+// A new thread no rule attaches (a Codex outside herdr in the same repository) makes the look scan the processes a
+// few times, then only with the periodic full scan.
+func TestCodexWaitingRowStopsScanningForAThreadNotItsOwn(t *testing.T) {
+	n, f, home := herdrNode(t)
+	withCodexWaits(t)
+	n.codices = newCodexRegistry()
+	n.configureCodex(proto.CodexConfig{Homes: []string{filepath.Join(home, ".codex")}})
+	n.codices.checked = nil
+	scans := 0
+	n.codices.scan = func() []codexProcess { scans++; return nil }
+	cwd := mkdir(t, filepath.Join(home, "proj"))
+	f.reply("workspace.list", map[string]any{"workspaces": []any{map[string]any{"workspace_id": "w1", "label": "proj"}}})
+	f.reply("session.snapshot", snapshot(nil, nil, []any{agentOf("codex", "", proto.StatusIdle, "w1:p2", "w1:t2", "w1", cwd, "")}, nil))
+	f.setScreen("w1:p2", cxReady)
+	n.openCodexWait(context.Background(), "w1:p2", cwd, "codex", "", time.Now().Add(-time.Minute))
+	w := n.codexWaitOf("w1:p2")
+	writeWaitRollout(t, home, cwd, "01a19a00-0000-7000-8000-0000000000d1", time.Now().Add(-10*time.Second), "someone else's")
+	for range codexJudgeLooks + 3 {
+		n.lookForCodexThreadsOnce(context.Background(), []*codexWait{w}, false)
+	}
+	if scans != codexJudgeLooks || n.codexWaitByID(w.id) == nil {
+		t.Fatalf("%d scans (want %d), row waits %v", scans, codexJudgeLooks, n.codexWaitByID(w.id) != nil)
+	}
+	n.lookForCodexThreadsOnce(context.Background(), []*codexWait{w}, true) // the periodic one still looks
+	if scans != codexJudgeLooks+1 {
+		t.Fatalf("%d scans after a full look", scans)
+	}
+}
+
+// "/exit" as the first message quits Codex as for any agent: nothing is pasted into its box.
+func TestCodexFirstMessageExit(t *testing.T) {
+	n, f, _, _ := codexWaitHerdr(t)
+	s := startWaiting(t, n)
+	f.reset()
+	f.after(func(c herdrCall) {
+		if c.Method == "pane.send_keys" && slices.Equal(keysOf(c), []string{"ctrl+c"}) {
+			f.reply("session.snapshot", snapshot(nil, nil, nil, nil))
+		}
+	})
+	if _, err := request(t, n, "session.send", map[string]any{"session_id": s.SessionID, "text": "/exit"}); err != nil {
+		t.Fatal(err)
+	}
+	if pasted := f.trace("pane.send_text"); len(pasted) != 0 {
+		t.Errorf("pasted %q", pasted)
+	}
+	if keys := f.trace("pane.send_keys"); len(keys) == 0 || !strings.Contains(keys[0], "ctrl+c") {
+		t.Errorf("keys %q", keys)
 	}
 }
 

@@ -477,14 +477,15 @@ func (n *Node) setAgentsAt(agents []host.Agent, epoch uint64, heard map[string]b
 	for _, a := range codex {
 		if w := n.codexWaitOf(a.PaneID); w != nil {
 			// Opened with no first message (codex_waiting.go): its row until its thread is attached, which only the look
-			// does. What herdr's integration names is noted for it, never taken as is.
+			// does. What herdr's integration and the pane's title name are noted for it, never taken as is.
+			named, titled := "", n.codexTitleThread(a)
 			if sid := a.SessionID(); sid != "" {
 				home := n.codexPaneHome(a.PaneID)
-				named := n.codexPublicID(home, mainThread(home, sid))
-				n.mu.Lock()
-				w.herdr = named
-				n.mu.Unlock()
+				named = n.codexPublicID(home, mainThread(home, sid))
 			}
+			n.mu.Lock()
+			w.herdr, w.titled = named, titled
+			n.mu.Unlock()
 			m[w.id] = a
 			continue
 		}

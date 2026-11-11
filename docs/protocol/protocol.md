@@ -1951,6 +1951,8 @@ Typing into someone else's terminal is the riskiest thing this App does. Before 
 | `runtime_away` | The session belongs to an Agent runtime (DSH…) that isn't connected to the node right now ("Runtime ↔ node") | `delivered: "none"` |
 | `codex_not_ready` | The first message to a Codex waiting for one (`awaiting_first_message`): its input box didn't come up within 20 seconds (a model still loading, another screen open) | `delivered: "none"` |
 | `codex_first_text` | The first message to a Codex waiting for one carries photos or files, or no text: Codex's first message is text only | `delivered: "none"` |
+| `codex_first_unconfirmed` | The first message to a Codex waiting for one was typed, but its thread didn't appear within 45 seconds: it may still come, don't send it again | `delivered: "unknown"` |
+| `codex_waiting` | Modes, the queue or forking on a Codex still waiting for its first message: they need its thread | `delivered: "none"` |
 
 - Gray suggested input (Claude's predicted next line, a new session's `Try "…"`) doesn't count as a draft: telling them apart needs a colored screen read (`pane.read` with `format: ansi`) to see SGR 2 (dim);
   in plain text the two look identical. When colors can't be read, it's always treated as a draft. The rules are ported from Ovis's `claude-input.ts` (MIT). Fixtures: `server/internal/screen/testdata`.

@@ -41,5 +41,8 @@
   "start_line_rejected": "The new terminal tab didn't take the start command, twice. Nothing ran; check what that shell does when it starts, then try again.",
   "directory_untypable": "This directory’s name contains a control character, such as a tab or a line break, so the agent can’t be started in it from here. Rename the directory or choose another one.",
   "codex_not_ready": "Codex on the computer isn’t at its input box yet (still loading, or another screen is open). Nothing was sent; try again in a moment.",
-  "codex_first_text": "Codex’s first message can only be text. Remove the photos or files, then send it again."
+  "codex_first_text": "Codex’s first message can only be text. Remove the photos or files, then send it again.",
+  "codex_first_unconfirmed": "The message went into Codex, but its session didn’t appear in time. Check the computer before sending it again.",
+  "codex_waiting": "Codex hasn’t had its first message yet. This works once it has its session.",
+  "codex_no_box": "Codex opened in a new tab on the computer, but its input box didn’t appear within a minute."
 }

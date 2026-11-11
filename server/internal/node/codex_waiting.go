@@ -12,6 +12,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/host"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/screen"
 )
 
@@ -51,8 +52,13 @@ type codexWait struct {
 	id, pane, cwd string
 	// began is when codex was run in the pane: rules 3 and 4 take only threads begun after it.
 	began time.Time
-	// herdr is the thread herdr's codex integration names for the pane (setAgentsAt), "" for none.
-	herdr string
+	// herdr is the thread herdr's codex integration names for the pane, titled the one its title names (setAgentsAt,
+	// codexTitleThread); "" for none.
+	herdr, titled string
+	// judged counts the looks each new thread in the directory went through without being attached: after
+	// codexJudgeLooks it no longer makes every look scan the processes (one Codex outside herdr in the same repository
+	// would have it scan every second for as long as the row waits).
+	judged map[string]int
 	// note is why the last look attached nothing; logged when it changes.
 	note string
 	// missing counts the looks in a row that found no codex in the pane.
@@ -109,7 +115,7 @@ func (n *Node) waitCodexBox(ctx context.Context, pane string) error {
 	if agent, err := n.paneAgent(ctx, pane); err == nil && agent != nil && agent.Agent == "codex" {
 		return errCodexBoxLate
 	}
-	return fmt.Errorf("Codex 已经在电脑上的新标签里打开了，但 %d 秒内没看到它的输入框", int(codexStartWait.Seconds()))
+	return &rpc.Error{Code: "codex_no_box", Message: fmt.Sprintf("Codex 已经在电脑上的新标签里打开了，但 %d 秒内没看到它的输入框", int(codexStartWait.Seconds()))}
 }
 
 // answerCodexStartDialog answers what Codex shows before its input box as the user would for a start they asked for:
@@ -231,8 +237,18 @@ func (n *Node) codexAttachedThread(id string) string {
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return n.codexAttached[id]
+	return n.codexAttached[id].thread
 }
+
+// codexAttach is the thread a waiting row became, and when.
+type codexAttach struct {
+	thread string
+	at     time.Time
+}
+
+// codexAttachedFor is how long requests that still name a row reach its thread: a page open on the row follows the
+// pane to the thread within seconds (the apps), a node restart forgets them all.
+const codexAttachedFor = time.Hour
 
 // codexWaitRow makes a listed row the waiting row it is: Codex is open but no turn has run, whatever herdr says of
 // the pane (Codex starting its MCP servers reads as working, then done), unless a dialog holds it.
@@ -363,7 +379,7 @@ func (n *Node) newCodexThreads(w *codexWait, held codexHeld) []newThread {
 // codexWaitThread is the thread rules 1 and 2 give a waiting row, and which rule; "" for none.
 func (n *Node) codexWaitThread(w *codexWait, held codexHeld) (string, string) {
 	n.mu.Lock()
-	named := w.herdr
+	named, titled := w.herdr, w.titled
 	n.mu.Unlock()
 	if ts := held.byPane[w.pane]; len(ts) == 1 {
 		return ts[0].id, "its codex process holds the rollout"
@@ -376,7 +392,42 @@ func (n *Node) codexWaitThread(w *codexWait, held codexHeld) (string, string) {
 		}
 		return "", "herdr names thread " + named + ", which another pane's codex writes"
 	}
+	if titled != "" {
+		if owner, ok := held.owner[titled]; !ok || owner == w.pane {
+			return titled, "its title names the thread"
+		}
+		return "", "its title names thread " + titled + ", which another pane's codex writes"
+	}
 	return "", ""
+}
+
+// codexTitleThread is the thread a waiting pane's title names ("<name> | <directory>"), when exactly one thread of
+// the pane's Codex home has that whole name: what a /resume in that Codex shows, which on the shared app-server no
+// process of the pane's holds (rule 1) and no new thread begins (rules 3, 4). A name cut short ("…") or shared by two
+// threads names none.
+func (n *Node) codexTitleThread(a host.Agent) string {
+	i := strings.LastIndex(a.Title, " | ")
+	if i <= 0 {
+		return ""
+	}
+	name := strings.TrimSpace(a.Title[:i])
+	name = strings.TrimPrefix(name, "[ . ] Action Required | ")
+	name = strings.TrimPrefix(name, "[ ! ] Action Required | ")
+	if name == "" || strings.HasSuffix(name, "...") || strings.HasSuffix(name, "…") {
+		return ""
+	}
+	home := n.codexPaneHome(a.PaneID)
+	var found []string
+	for _, id := range threadsNamed(home, func(t string) bool { return t == name }) {
+		if p := rolloutPath(home, id); p != "" && metaOf(home, p).sub {
+			continue
+		}
+		found = append(found, id)
+	}
+	if len(found) != 1 {
+		return ""
+	}
+	return n.codexPublicID(home, found[0])
 }
 
 // lookForCodexThreads looks for the waiting rows' threads every codexWaitTick until none waits.
@@ -416,10 +467,15 @@ func (n *Node) lookForCodexThreadsOnce(ctx context.Context, waits []*codexWait, 
 		}
 		live = append(live, w)
 		n.mu.Lock()
-		named := w.herdr != ""
+		named := w.herdr != "" || w.titled != ""
 		n.mu.Unlock()
-		if named || len(n.newCodexThreads(w, codexHeld{})) > 0 {
+		if named {
 			full = true
+		}
+		for _, t := range n.newCodexThreads(w, codexHeld{}) {
+			if w.judged[t.id] < codexJudgeLooks {
+				full = true
+			}
 		}
 	}
 	if !full {
@@ -438,7 +494,22 @@ func (n *Node) lookForCodexThreadsOnce(ctx context.Context, waits []*codexWait, 
 		rest = append(rest, w)
 	}
 	n.attachCodexByScreen(ctx, rest, held)
+	for _, w := range rest {
+		if n.codexWaitByID(w.id) != w {
+			continue
+		}
+		if w.judged == nil {
+			w.judged = map[string]int{}
+		}
+		for _, t := range n.newCodexThreads(w, held) {
+			w.judged[t.id]++
+		}
+	}
 }
+
+// codexJudgeLooks: a new thread that no rule attached in this many looks is looked at again only with the periodic
+// full scan (codexWaitScanEvery).
+const codexJudgeLooks = 3
 
 // codexWaitGone drops a waiting row whose pane runs no codex any more (codexWaitGone looks in a row): the user quit
 // Codex before it had a thread, or closed the tab. Its terminal is left as it is.
@@ -561,21 +632,34 @@ func (n *Node) codexWaitNote(w *codexWait, note string) {
 // creation receipt) moves to the thread, the pane is bound to it, and requests that still name the row go to it.
 func (n *Node) attachCodexWait(ctx context.Context, w *codexWait, thread, how string) bool {
 	n.mu.Lock()
+	waits := n.codexWaiting[w.pane] == w
+	n.mu.Unlock()
+	if !waits {
+		return false
+	}
+	// The thread's record first, then the pane moves to it in the same step that ends the wait: a list built in between
+	// would find the pane still bound to the row's id and make the row again (codexWaitOf).
+	st, _ := n.state.get(w.id)
+	n.state.put(thread, sessionState{Pane: w.pane, Launcher: st.Launcher, Cwd: st.Cwd, StartedAt: st.StartedAt, AppMode: st.AppMode,
+		CreationID: st.CreationID, Incarnation: st.Incarnation})
+	n.mu.Lock()
 	if n.codexWaiting[w.pane] != w {
 		n.mu.Unlock()
 		return false
 	}
 	delete(n.codexWaiting, w.pane)
+	n.panes[w.pane] = thread
 	if n.codexAttached == nil {
-		n.codexAttached = map[string]string{}
+		n.codexAttached = map[string]codexAttach{}
 	}
-	n.codexAttached[w.id] = thread
+	for id, a := range n.codexAttached { // a client that still names a row asks within minutes, not hours
+		if time.Since(a.at) > codexAttachedFor {
+			delete(n.codexAttached, id)
+		}
+	}
+	n.codexAttached[w.id] = codexAttach{thread: thread, at: time.Now()}
 	n.mu.Unlock()
-	st, _ := n.state.get(w.id)
 	n.state.setPane(w.id, "")
-	n.state.put(thread, sessionState{Pane: w.pane, Launcher: st.Launcher, Cwd: st.Cwd, StartedAt: st.StartedAt, AppMode: st.AppMode,
-		CreationID: st.CreationID, Incarnation: st.Incarnation})
-	n.bindPane(w.pane, thread)
 	n.logf("codex %s: thread %s attached to row %s (%s)", w.pane, thread, w.id, how)
 	_ = n.refreshHosts(ctx)
 	n.notifySessions()
@@ -610,13 +694,18 @@ func (n *Node) sendFirstCodex(ctx context.Context, w *codexWait, text string, im
 		return nil, nil
 	}
 	n.attachCodexWait(ctx, w, thread, how)
+	return n.codexWaitSession(w, thread), nil
+}
+
+// codexWaitSession is the session of the thread w became, as listed, else as its pane runs it.
+func (n *Node) codexWaitSession(w *codexWait, thread string) *proto.Session {
 	a, ok := n.agent(thread)
 	if !ok {
 		a = host.Agent{Agent: "codex", PaneID: w.pane, Cwd: w.cwd, AgentStatus: proto.StatusWorking}
 	}
 	s := n.sessionFor(thread, a)
 	s.Agent = "codex"
-	return s, nil
+	return s
 }
 
 // waitFirstThread waits for the thread a first message typed at sent began: rule 1 or 2, else rule 3. "" with the
@@ -634,7 +723,7 @@ func (n *Node) waitFirstThread(ctx context.Context, w *codexWait, text string, s
 			if t := n.codexAttachedThread(w.id); t != "" {
 				return t, "attached by the look", nil
 			}
-			return "", "", uncertain(errors.New("Codex 离开了这个标签"))
+			return "", "", codexFirstUnconfirmed("Codex 在会话出现前离开了这个标签")
 		}
 		held := n.codexHeldThreads()
 		if thread, how := n.codexWaitThread(w, held); thread != "" {
@@ -653,7 +742,14 @@ func (n *Node) waitFirstThread(ctx context.Context, w *codexWait, text string, s
 			return "", fmt.Sprintf("%d new threads begin with the message sent", len(match)), nil
 		}
 	}
-	return "", "", uncertain(fmt.Errorf("消息已经输入 Codex，但 %d 秒内没等到它的会话出现：在电脑上看看", int(codexFirstWait.Seconds())))
+	return "", "", codexFirstUnconfirmed(fmt.Sprintf("消息已经输入 Codex，但 %d 秒内没等到它的会话出现：在电脑上看看", int(codexFirstWait.Seconds())))
+}
+
+// codexFirstUnconfirmed: the first message was typed, its thread did not show: it may still come, so the message is
+// not to be sent again (delivered unknown).
+func codexFirstUnconfirmed(message string) error {
+	b, _ := json.Marshal(map[string]any{"delivered": deliveredUnknown})
+	return &rpc.Error{Code: "codex_first_unconfirmed", Message: message, Data: b}
 }
 
 // codexBoxFor brings a waiting row's Codex to its empty input box for the first message (codexBoxWait at most): the
@@ -704,7 +800,7 @@ func (n *Node) codexWaitCalls(method, id string) (any, error, bool) {
 	case "session.watch", "session.unwatch":
 		return okResult(nil), nil, true
 	case "session.modes", "session.queue.edit", "session.queue.send_now", "session.fork":
-		return nil, refusal("unsupported", "Codex 还没收到第一条消息：这个操作要等它有了会话", nil), true
+		return nil, refusal("codex_waiting", "Codex 还没收到第一条消息：这个操作要等它有了会话", nil), true
 	}
 	return nil, nil, false
 }
@@ -730,13 +826,17 @@ func (n *Node) sendFirstCodexCall(ctx context.Context, w *codexWait, params json
 			if thread == "" {
 				return n.stoppedRefusal(w.id) // Codex left its tab before a first message
 			}
-			if err := n.send(ctx, thread, text, images, opts); err != nil {
+			// as session.send to the thread: its echo counted from where its transcript is now (node.go)
+			if err := n.sendEchoed(thread, opts.ClientMsgID, text, len(images), n.echoBase(thread), func() error {
+				return n.send(ctx, thread, text, images, opts)
+			}); err != nil {
 				return err
 			}
-			if a, ok := n.agent(thread); ok {
-				s = n.sessionFor(thread, a)
-			}
+			s = n.codexWaitSession(w, thread)
 			return nil
+		}
+		if exitCommand(text) && len(images) == 0 { // "/exit": Codex quits as any agent's would, nothing typed (control.go)
+			return n.exitAgent(ctx, w.id)
 		}
 		s, err = n.sendFirstCodex(ctx, w, text, images)
 		return err
@@ -745,7 +845,7 @@ func (n *Node) sendFirstCodexCall(ctx context.Context, w *codexWait, params json
 		return nil, err
 	}
 	out := map[string]any{"ok": true}
-	if s != nil {
+	if s != nil && s.SessionID != w.id {
 		out["session"] = s
 		if opts.ClientMsgID != "" && n.echoes.expect(echoRecord{SessionID: s.SessionID, ClientMsgID: opts.ClientMsgID, Text: text, SentAt: sent}) {
 			if cur, ok := n.echoes.record(s.SessionID, opts.ClientMsgID); ok {

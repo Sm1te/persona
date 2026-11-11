@@ -209,6 +209,9 @@ var rpcFailureKeys = map[string]string{
 	// the first message to a Codex opened with no first message (node/codex_waiting.go, #4961)
 	"codex_not_ready":          "rpc-errors.codex_not_ready",
 	"codex_first_text":         "rpc-errors.codex_first_text",
+	"codex_first_unconfirmed":  "rpc-errors.codex_first_unconfirmed",
+	"codex_waiting":            "rpc-errors.codex_waiting",
+	"codex_no_box":             "rpc-errors.codex_no_box",
 	"prompt_changed":           "rpc-errors.prompt_changed",
 	"attach_busy":              "rpc-errors.attach_busy",
 	proto.CodeTerminalNotReady: "rpc-errors.terminal_not_ready",
