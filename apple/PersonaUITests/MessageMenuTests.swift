@@ -96,15 +96,15 @@ final class MessageMenuTests: XCTestCase {
         shot("fork-ios-new")
     }
 
-    /// At the largest text the bar keeps its words whole (#5019): items stay as at `MessageActionBar.largestTypeSize`, a word
-    /// too long even there leaves its icon alone, and every item keeps its spoken name. Your own message's bar (five
-    /// actions) and a reply's, in Chinese, English and Japanese, light and dark; the default size beside it for comparison.
+    /// Every action by its whole name, never "…" (#5019): the bar at the default size, and at the largest text a list,
+    /// one action a row with its icon and name. Your own message's actions (six) and a reply's, in Chinese, English and
+    /// Japanese, light and dark; the default size in Chinese, English and Japanese (「文字選択」, short enough for its item).
     /// `TEST_RUNNER_PERSONA_SHOTS=<dir>` keeps `message-bar-<size>-<language>-<look>-<whose>.png`.
     @MainActor func testBarAtTheLargestText() throws {
         let names: [String: [String]] = ["zh-Hans": ["复制", "选择文本", "引用", "编辑"], "en": ["Copy", "Select Text", "Quote", "Edit"],
-                                         "ja": ["コピー", "テキストを選択", "引用", "編集"]]
+                                         "ja": ["コピー", "文字選択", "引用", "編集"]]
         let runs: [(String, String, String, Bool)] = [("zh-Hans", "zh_CN", "light", false), ("zh-Hans", "zh_CN", "dark", false),
-                                                      ("ja", "ja_JP", "light", false)]
+                                                      ("en", "en_US", "light", false), ("ja", "ja_JP", "light", false)]
             + ["zh-Hans", "en", "ja"].flatMap { language in
                 ["light", "dark"].map { (language, ["zh-Hans": "zh_CN", "en": "en_US", "ja": "ja_JP"][language]!, $0, true) }
             }
@@ -128,11 +128,10 @@ final class MessageMenuTests: XCTestCase {
                     XCTAssertTrue(app.frame.contains(item.frame), "\(label) \(whose): \(name) off the screen at \(item.frame)")
                 }
                 shot(named: "message-bar-\(label)-\(whose)")
-                // A tap on the list away from the bar closes it (Select Text, on the bar, would not); at the largest text a
-                // drag does, since a tap there can land on the away recap, which is a button.
+                // A tap on the dimmed chat away from the bar closes it (Select Text, on the bar, would not). The list at the
+                // largest text is tall: tap in the strip under the safe area, where nothing of the lifted message is placed.
                 if large {
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-                        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)).tap()
                 } else {
                     let away = copy.frame.midY > app.frame.midY ? 0.15 : 0.6
                     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: away)).tap()

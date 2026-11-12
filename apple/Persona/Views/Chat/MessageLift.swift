@@ -492,7 +492,11 @@ private struct LiftedMessage: View {
     @State private var fade = Fade()
     /// The drawn copy's height (the same as the message's where it was, unless something it reads differs).
     @State private var height: CGFloat = 0
+    /// The actions' size as a list (`MessageActionBar.stacks`, the accessibility text sizes), measured: it follows its
+    /// words. Until then the list is placed by a guess and not shown.
+    @State private var list: CGSize?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private struct Fade: Equatable {
         var top = false
@@ -527,7 +531,10 @@ private struct LiftedMessage: View {
         let count = MessageActionBar.count(id: lift.bar.id, isUser: lift.bar.isUser, menu: menu, pending: lift.bar.pending,
                                            deletes: lift.bar.delete != nil)
         let barWidth = min(MessageActionBar.width(count: count), bounds.width - 2 * Theme.Space.s)
-        let p = LiftLayout.place(message: message, press: lift.press.y + pad.top, bar: CGSize(width: barWidth, height: MessageActionBar.height),
+        let stacked = MessageActionBar.stacks(typeSize)
+        let bar = stacked ? list ?? CGSize(width: barWidth, height: MessageActionBar.height * CGFloat(count))
+            : CGSize(width: barWidth, height: MessageActionBar.height)
+        let p = LiftLayout.place(message: message, press: lift.press.y + pad.top, bar: bar,
                                  bounds: bounds, margin: Theme.Space.s, gap: Theme.Space.s, trailing: lift.bar.isUser)
         ZStack(alignment: .topLeading) {
             #if DEBUG
@@ -546,6 +553,11 @@ private struct LiftedMessage: View {
                 MessageActionBar(id: lift.bar.id, text: lift.bar.text, isUser: lift.bar.isUser, date: lift.bar.date, menu: menu,
                                  pending: lift.bar.pending, from: lift.bar.from, delete: lift.bar.delete,
                                  itemWidth: MessageActionBar.itemWidth(barWidth, count: count))
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                        guard stacked, size != list else { return }
+                        withAnimation(Theme.Motion.state) { list = size }
+                    }
+                    .opacity(stacked && list == nil ? 0 : 1)
                     .position(x: p.bar.midX, y: p.bar.midY)
                     .transition(.scale(scale: 0.85, anchor: p.below ? .top : .bottom).combined(with: .opacity))
             }

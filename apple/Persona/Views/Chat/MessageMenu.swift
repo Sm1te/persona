@@ -474,10 +474,15 @@ struct MessageActionBar: View {
 
     static let height: CGFloat = 62
     static let item: CGFloat = 58
-    /// The largest text size an item grows with, as the system's tab bars and toolbars do: past it a word could not fit
-    /// its fixed item, so the item stays as at this size and a long press shows its name large (Large Content Viewer,
-    /// #5019). A word too long even here leaves its icon alone (DESIGN_SYSTEM.md 1.2 rule 3), never "…".
-    static let largestTypeSize: DynamicTypeSize = .xxLarge
+    /// The bar's items stay at the default text size, as the system's tab bars and toolbars do, so every word that fits
+    /// there fits at every size up to the accessibility ones; a long press shows an item's name large (Large Content
+    /// Viewer, #5019).
+    static let barTypeSize: DynamicTypeSize = .large
+    /// At the accessibility sizes the actions are a list instead, one a row with its icon and whole name
+    /// (DESIGN_SYSTEM.md 1.2 rule 3), whose words grow up to this.
+    static let listTypeSize: DynamicTypeSize = .xxxLarge
+    /// The actions as a list (`listTypeSize`) rather than a bar; the page places it by its measured size.
+    static func stacks(_ size: DynamicTypeSize) -> Bool { size.isAccessibilitySize }
     static func width(isUser: Bool, more: Bool = false) -> CGFloat { width(count: (isUser ? 5 : 4) + (more ? 1 : 0)) }
     static func width(count: Int) -> CGFloat { item * CGFloat(count) + 12 }
     /// Each action's width when the bar is `width` wide.
@@ -508,96 +513,118 @@ struct MessageActionBar: View {
         return UUID(uuidString: String(line)) != nil
     }
 
+    /// One action: its word, its icon, and whether the bar closes after it. tint: the danger color for Delete; nil, the
+    /// primary ink.
+    private struct Item: Identifiable {
+        var title: String
+        var symbol: String
+        var closes = true
+        var tint: Color? = nil
+        var perform: () -> Void
+        var id: String { title }
+    }
+
+    private var items: [Item] {
+        var all = [Item(title: String(localized: "Copy [Message Menu 63d90d]"), symbol: Theme.Icon.copy) {
+            UIPasteboard.general.string = text
+            Haptics.success()
+        }]
+        // "Select Text", not "Select": next to Copy a bare Select reads as picking messages (WeChat's multi-select); the
+        // Japanese name keeps "text" too (#5019). On iOS it selects all of the lifted message's words where they are
+        // (#603); the Mac opens its window.
+        #if os(macOS)
+        all.append(Item(title: String(localized: "Select Text [Message Menu 4d8efc]"), symbol: Theme.Icon.select) {
+            menu.selecting = SelectableText(text: text, plain: isUser, msg: id, quotable: !pending)
+        })
+        #else
+        all.append(Item(title: String(localized: "Select Text [Message Menu 4d8efc]"), symbol: Theme.Icon.select, closes: false) {
+            menu.selectInPlace(at: nil)
+        })
+        #endif
+        if !pending {
+            all.append(Item(title: String(localized: "Quote"), symbol: "quote.opening") { menu.quote?(text, id, isUser, nil) })
+        }
+        if Self.forwards(menu: menu, pending: pending) {
+            all.append(Item(title: String(localized: "Forward [Message Menu]"), symbol: Theme.Icon.forwardMessage) {
+                menu.forward?(MessageBarInfo(id: id, text: text, isUser: isUser, date: date, pending: pending, from: from))
+            })
+        } else {
+            all.append(Item(title: String(localized: "Share"), symbol: Theme.Icon.share) {
+                menu.sharing = ShareMessage(text: text, isUser: isUser, source: menu.source(), date: date, agent: menu.agent())
+            })
+        }
+        if isUser && !pending {
+            all.append(Item(title: String(localized: "Edit [Message Menu 051836]"), symbol: "pencil") { menu.edit?(text) })
+        }
+        if Self.rewinds(id: id, isUser: isUser, menu: menu) {
+            all.append(Item(title: String(localized: "Rewind"), symbol: Theme.Icon.rewindChat) { menu.rewinding = RewindAsk(id: id, text: text) })
+        }
+        if Self.forks(id: id, isUser: isUser, menu: menu) {
+            all.append(Item(title: String(localized: "More"), symbol: Theme.Icon.more) { menu.more = id })
+        }
+        if let delete { // last, as a menu's destructive item is
+            all.append(Item(title: delete.title, symbol: Theme.Icon.delete, tint: Theme.danger, perform: delete.run))
+        }
+        return all
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            action(String(localized: "Copy [Message Menu 63d90d]"), Theme.Icon.copy) {
-                UIPasteboard.general.string = text
-                Haptics.success()
-            }
-            // "Select Text", not "Select": next to Copy a bare Select reads as picking messages (WeChat's multi-select).
-            // On iOS it selects all of the lifted message's words where they are (#603); the Mac opens its window.
-            #if os(macOS)
-            action(String(localized: "Select Text [Message Menu 4d8efc]"), Theme.Icon.select) {
-                menu.selecting = SelectableText(text: text, plain: isUser, msg: id, quotable: !pending)
-            }
-            #else
-            action(String(localized: "Select Text [Message Menu 4d8efc]"), Theme.Icon.select, closes: false) {
-                menu.selectInPlace(at: nil)
-            }
-            #endif
-            if !pending {
-                action(String(localized: "Quote"), "quote.opening") { menu.quote?(text, id, isUser, nil) }
-            }
-            if Self.forwards(menu: menu, pending: pending) {
-                action(String(localized: "Forward [Message Menu]"), Theme.Icon.forwardMessage) {
-                    menu.forward?(MessageBarInfo(id: id, text: text, isUser: isUser, date: date, pending: pending, from: from))
+        Group {
+            if Self.stacks(typeSize) {
+                // As wide as its longest row, every row that wide.
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                        if i > 0 { Divider() }
+                        action(item)
+                    }
                 }
+                .fixedSize()
+                .dynamicTypeSize(...Self.listTypeSize)
             } else {
-                action(String(localized: "Share"), Theme.Icon.share) {
-                    menu.sharing = ShareMessage(text: text, isUser: isUser, source: menu.source(), date: date, agent: menu.agent())
-                }
-            }
-            if isUser && !pending {
-                action(String(localized: "Edit [Message Menu 051836]"), "pencil") { menu.edit?(text) }
-            }
-            if Self.rewinds(id: id, isUser: isUser, menu: menu) {
-                action(String(localized: "Rewind"), Theme.Icon.rewindChat) { menu.rewinding = RewindAsk(id: id, text: text) }
-            }
-            if Self.forks(id: id, isUser: isUser, menu: menu) {
-                action(String(localized: "More"), Theme.Icon.more) { menu.more = id }
-            }
-            if let delete { // last, as a menu's destructive item is
-                action(delete.title, Theme.Icon.delete, tint: Theme.danger, perform: delete.run)
+                HStack(spacing: 0) { ForEach(items) { action($0) } }
+                    .padding(.horizontal, Theme.Space.sm)
+                    .frame(height: Self.height)
+                    .dynamicTypeSize(...Self.barTypeSize)
             }
         }
-        .padding(.horizontal, Theme.Space.sm)
-        .frame(height: Self.height)
         .background(Theme.Lift.bar, in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
         // Its edge over the dimmed chat.
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).stroke(Theme.cardStroke, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
     }
 
-    /// tint: the danger color for Delete; nil, the primary ink.
-    private func action(_ title: String, _ symbol: String, closes: Bool = true, tint: Color? = nil,
-                        perform: @escaping () -> Void) -> some View {
+    private func action(_ item: Item) -> some View {
         Button {
-            perform()
-            if closes { menu.close() }
-        } label: { label(title, symbol, tint: tint) }
+            item.perform()
+            if item.closes { menu.close() }
+        } label: { label(item) }
         .buttonStyle(.plain)
-        .accessibilityLabel(title) // its word only, not the symbol's own name too
-        .accessibilityShowsLargeContentViewer { ThemedIcon(symbol); Text(title) }
+        .accessibilityLabel(item.title) // its word only, not the symbol's own name too
+        .accessibilityShowsLargeContentViewer { ThemedIcon(item.symbol); Text(item.title) }
     }
 
-    @ViewBuilder private func label(_ title: String, _ symbol: String, tint: Color?) -> some View {
+    @ViewBuilder private func label(_ item: Item) -> some View {
         Group {
-            if typeSize > Self.largestTypeSize {
-                // Past the cap: the word when it fits its item whole, else the icon alone.
-                ViewThatFits(in: .horizontal) {
-                    stack(title, symbol, scales: false)
-                    stack(nil, symbol, scales: false)
+            if Self.stacks(typeSize) {
+                // A row: the icon in a fixed box, so the names line up, then the whole name.
+                HStack(spacing: Theme.Space.m) {
+                    ThemedIcon(item.symbol).font(Theme.Font.heading).scaledFrame(width: Theme.Size.iconS, height: Theme.Size.iconS)
+                    Text(item.title).font(Theme.Font.body).lineLimit(1)
                 }
+                .padding(.horizontal, Theme.Space.l)
+                .scaledFrame(minHeight: Theme.Size.tapTarget)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                stack(title, symbol, scales: true)
+                VStack(spacing: Theme.Space.xs) {
+                    // Symbols differ in height: a fixed box keeps every label on one line.
+                    ThemedIcon(item.symbol).font(Theme.Font.heading).scaledFrame(height: Theme.Size.iconS)
+                    Text(item.title).font(Theme.Font.label).lineLimit(1).minimumScaleFactor(0.8) // Select Text on a narrow bar
+                }
+                .frame(width: itemWidth, height: Self.height)
             }
         }
-        .dynamicTypeSize(...Self.largestTypeSize)
-        .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(HierarchicalShapeStyle.primary))
-        .frame(width: itemWidth, height: Self.height)
+        .foregroundStyle(item.tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(HierarchicalShapeStyle.primary))
         .contentShape(.rect)
-    }
-
-    /// An item's icon over its word (none: the icon alone, in the same place). `scales`: up to the cap a word a little too
-    /// long for a narrow bar shrinks to fit (Select Text); past it, one that does not fit is left out instead.
-    private func stack(_ title: String?, _ symbol: String, scales: Bool) -> some View {
-        VStack(spacing: Theme.Space.xs) {
-            // Symbols differ in height: a fixed box keeps every label on one line.
-            ThemedIcon(symbol).font(Theme.Font.heading).scaledFrame(height: Theme.Size.iconS)
-            Text(title ?? " ").font(Theme.Font.label).lineLimit(1).minimumScaleFactor(scales ? 0.8 : 1)
-                .opacity(title == nil ? 0 : 1)
-                .accessibilityHidden(title == nil)
-        }
     }
 }
 
