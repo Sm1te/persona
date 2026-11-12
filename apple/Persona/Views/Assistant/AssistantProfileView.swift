@@ -116,6 +116,16 @@ struct AssistantProfileView: View {
                     Text(Self.foldFooter)
                 }
             }
+            if let own = ownTasks {
+                Section {
+                    Toggle(isOn: own) {
+                        Label(Self.ownTasksTitle, systemImage: Theme.Icon.supervised).lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                    .accessibilityIdentifier("assistant-main-supervises-own-tasks")
+                } footer: {
+                    Text(Self.ownTasksFooter)
+                }
+            }
             Section {
                 NavigationLink { SkillsPage() } label: { row("Skills", Theme.Icon.skills, detail: nil) }
                 LabeledContent("Runs On", value: machineName)
@@ -187,6 +197,14 @@ struct AssistantProfileView: View {
                         BUIListRow(Self.foldTitle) { IconTile(Theme.Icon.collapseAll, tint: Theme.accent) } trailing: {
                             Toggle(Self.foldTitle, isOn: folded).labelsHidden()
                                 .accessibilityIdentifier("assistant-main-background-folded")
+                        }
+                    }
+                }
+                if let own = ownTasks {
+                    BUIListSection(footer: Self.ownTasksFooter) {
+                        BUIListRow(Self.ownTasksTitle) { IconTile(Theme.Icon.supervised, tint: Theme.accent) } trailing: {
+                            Toggle(Self.ownTasksTitle, isOn: own).labelsHidden()
+                                .accessibilityIdentifier("assistant-main-supervises-own-tasks")
                         }
                     }
                 }
@@ -266,6 +284,15 @@ struct AssistantProfileView: View {
     private static let foldTitle = String(localized: "Fold background rounds")
     private static let foldFooter = String(localized: "Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown.")
 
+    /// The main conversation follows up its own tasks instead of the background supervisor (#5083,
+    /// docs/assistant/unified-entry.md "Background supervisor"); nil (no switch) from a hub without the setting.
+    private var ownTasks: Binding<Bool>? {
+        guard let on = model.assistantConfig?.mainSupervisesOwnTasks else { return nil }
+        return Binding(get: { on }, set: { v in Task { await model.setMainSupervisesOwnTasks(v) } })
+    }
+    private static let ownTasksTitle = String(localized: "Main Chat Supervises Its Own Tasks")
+    private static let ownTasksFooter = String(localized: "While this is off, the background supervisor follows up the tasks Persona hands out, so the main chat answers you first.")
+
     // Where Persona asks before acting on your behalf: the Mac app asks in the app, iOS asks on the phone (#4068).
     // The push itself still goes to the iPhone, so "notify you" stays in both.
     #if os(macOS)
@@ -306,7 +333,8 @@ struct AssistantProfileView: View {
         async let m = try? api.assistantMemory()
         async let p = try? api.savedPlaces()
         // The switch shows once the hub says it has the setting (#1731): a hub updated since the app read it, too.
-        if model.assistantConfig?.mainTasksQuiet == nil || model.assistantConfig?.mainBackgroundFolded == nil { await model.refreshAssistant() }
+        let held = model.assistantConfig
+        if held?.mainTasksQuiet == nil || held?.mainBackgroundFolded == nil || held?.mainSupervisesOwnTasks == nil { await model.refreshAssistant() }
         tasks = await r
         runs = await h
         if let files = await m { memoryCount = files.filter { $0.name != AssistantMemoryEntry.index }.count }

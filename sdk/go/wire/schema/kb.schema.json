@@ -159,6 +159,7 @@
         "moments": {"type": "array", "items": {"$ref": "#/$defs/KBMomentRef"}},
         "segments": {"type": "array", "items": {"$ref": "#/$defs/KBRecordingSegment"}},
         "minutes": {"description": "A recording's meeting minutes, once written (docs/assistant/meeting-minutes.md); kept as the hub sends them."},
+        "recap": {"description": "An all-day recording's day recap, once written (docs/assistant/day-recap.md); kept as the hub sends them."},
         "points": {"type": "array", "items": {"$ref": "#/$defs/KBTopicPoint"}, "description": "A topic's knowledge points (docs/assistant/knowledge.md \"Topics\")."}
       },
       "required": ["kind", "id", "path", "meta"]
@@ -206,7 +207,8 @@
       "properties": {
         "start": {"type": "number"},
         "end": {"type": "number"},
-        "text": {"type": "string"}
+        "text": {"type": "string"},
+        "n": {"type": "integer", "description": "An all-day recording's line number: the segment's 1-based position in its uploads (docs/assistant/day-recap.md); absent on other recordings."}
       },
       "required": ["start", "end", "text"]
     },

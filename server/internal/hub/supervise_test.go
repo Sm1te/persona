@@ -65,7 +65,11 @@ func TestSupervisedTaskOverTheBus(t *testing.T) {
 	})
 	n.known["main-1"] = true
 	box := connectTaskNode(t, h, "box")
-	if err := store.PutSetting(ctx, "assistant", assistant.Settings{MachineID: "server", Main: "main-1", Timezone: "Asia/Shanghai"}); err != nil {
+	// The main conversation supervises its own tasks here: the background supervisor that takes them by default (#4927)
+	// is internal/assistant/supervise_background_test.go's.
+	mainSupervises := true
+	if err := store.PutSetting(ctx, "assistant", assistant.Settings{MachineID: "server", Main: "main-1", Timezone: "Asia/Shanghai",
+		MainSupervisesOwnTasks: &mainSupervises}); err != nil {
 		t.Fatal(err)
 	}
 	dialAssistant(t, h, srv.URL, true)

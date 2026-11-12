@@ -2,6 +2,7 @@
 // (feature machines_add) adds one from here, and a computer waiting to be confirmed (trust pending) says so on its card.
 import { memo, useCallback, useEffect, useId, useState } from "react";
 import { t as tr } from "../i18n";
+import { foldRows } from "../lib/folded-rows";
 import { canAddComputer, isPending, machineErrorText, neverConnected } from "../lib/add-computer";
 import { api, enc, errorText } from "../lib/api";
 import { readinessChanged } from "../lib/readiness";
@@ -170,7 +171,8 @@ type CardProps = {
 // another computer leaves its props and its counts as they were, so it (and its Stat, Spark, MachineDeploy) does not
 // render again. Nor does a machines push that only moved last_seen on (sameCard).
 const MachineCard = memo(function MachineCard({ m, index, metrics: mm, hub, route, canAdd, answering, onReconnect, onAnswer, onAddAgain, managerOffline }: CardProps) {
-  const [agents, working] = useStore((s) => (m.online ? agentCounts(s.sessions[m.id]) : NO_AGENTS));
+  // each parent once, in its folded state: its child sessions are not agents of their own here either (#5120)
+  const [agents, working] = useStore((s) => (m.online ? agentCounts(s.sessions[m.id] && foldRows(s.sessions[m.id])) : NO_AGENTS));
   const l = mm?.latest;
   const memPct = l?.mem_used && l.mem_total ? (l.mem_used / l.mem_total) * 100 : undefined;
   const diskPct = l?.disk_used && l.disk_total ? (l.disk_used / l.disk_total) * 100 : undefined;

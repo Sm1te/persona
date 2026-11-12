@@ -47,6 +47,11 @@ export function quotePath(path: string) {
   return /[\s'"\\$`]/.test(path) ? `'${path.replace(/'/g, `'\\''`)}'` : path;
 }
 
-export function releaseAttachments(attachments: { url?: string }[]) {
-  attachments.forEach((a) => { if (a.url) URL.revokeObjectURL(a.url); });
+/** Frees the pictures' object URLs, an edited one's source too (lib/image-edit.ts EditedImage): the composer made
+ *  every `blob:` source it holds (a picture in the chat edited from the viewer keeps its own URL, never a blob). */
+export function releaseAttachments(attachments: { url?: string; edited?: { source: string } }[]) {
+  attachments.forEach((a) => {
+    if (a.url) URL.revokeObjectURL(a.url);
+    if (a.edited?.source.startsWith("blob:") && a.edited.source !== a.url) URL.revokeObjectURL(a.edited.source);
+  });
 }

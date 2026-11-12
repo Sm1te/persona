@@ -18,6 +18,9 @@ struct AssistantRichMarkdown: View {
         var block: AssistantViewBlocks.Block?
     }
     var body: some View {
+        #if DEBUG || PERF_SIGNPOST
+        let _ = PerfTrace.body("AssistantRichMarkdown")
+        #endif
         let parts = pieces
         if conversation == nil || parts.isEmpty {
             LinkedMarkdown(plain: memo.markdown, paths: memo.paths, key: memoKey)

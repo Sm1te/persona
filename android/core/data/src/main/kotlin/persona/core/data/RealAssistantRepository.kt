@@ -65,6 +65,7 @@ class RealAssistantRepository(
             if (machine.isNotEmpty() && main.isNotEmpty()) SessionKey(machine, main) else null,
             conversations, request.manager, request.owner,
             leaders = leadersOf(data),
+            backgroundSupervisor = backgroundSupervisorOf(data),
         )
     }
 
@@ -169,19 +170,34 @@ class RealAssistantRepository(
         }
         scope.launch {
             sessions.sessions.collect { updates ->
-                lock.withLock {
-                    val transport = connection.current.value ?: return@withLock
+                val reread = lock.withLock {
+                    val transport = connection.current.value ?: return@withLock null
                     val choice = AssistantManagerChoice.current.value
                     val request = Request(transport, choice)
-                    if (restoredScope != request.key || current.value.managerId != request.owner) return@withLock
+                    if (restoredScope != request.key || current.value.managerId != request.owner) return@withLock null
                     // A health chat is the health space's (docs/assistant/health.md): never on the assistant's own list.
                     val owned = updates.filter { choice.owns(it.manager) && !it.isHealth }
                     val byKey = owned.associateBy { it.key }
+                    val before = current.value
                     current.update { snapshot ->
                         snapshot.copy(conversations = (snapshot.conversations.map { byKey[it.key] ?: it } +
                             owned.filter { it.assistant == true }).distinctBy { it.key })
                     }
                     cached[request.key] = current.value
+                    request.takeIf { mayBeNewBackgroundSupervisor(before, owned) }
+                }
+                // The hub makes the background supervisor on first use (#4927), long after the page was read: which
+                // conversation it is comes from `GET /api/v1/assistant` alone, so a new one that may be it is asked about.
+                if (reread != null) launch {
+                    try {
+                        refresh(reread)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Logger.getLogger(RealAssistantRepository::class.java.name).log(
+                            Level.WARNING, "Assistant refresh for a new conversation failed; the list stands", e,
+                        )
+                    }
                 }
             }
         }
@@ -309,6 +325,7 @@ class RealAssistantRepository(
                 put("machine_id", snapshot.mainSession?.machineId ?: session.machineId)
                 put("main", snapshot.mainSession?.sessionId.orEmpty())
                 put("conversations", JsonArray(snapshot.conversations.map { JsonCodec.encodeToJsonElement(it) }))
+                snapshot.backgroundSupervisor?.let { put("background_supervisor", it) }
             })
         }
         return session.key
@@ -331,6 +348,29 @@ internal fun spaceConversationsOf(data: JsonObject, space: String): List<Session
 internal fun leadersOf(data: JsonObject): List<String> {
     val main = data.string("main")
     return data.array("leaders").mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { id -> id.isNotEmpty() && id != main } }
+}
+
+/**
+ * `background_supervisor` of `GET /api/v1/assistant` (#4927): the built-in background supervisor's conversation id, null
+ * until the hub has made it and from a hub without it. Never the main conversation's.
+ */
+internal fun backgroundSupervisorOf(data: JsonObject): String? =
+    data.string("background_supervisor").takeIf { it.isNotEmpty() && it != data.string("main") }
+
+/**
+ * Whether [updates] bring a conversation that may be the hub's background supervisor and that [before] does not name as
+ * it: an assistant conversation the hub opened itself with no task behind it (`origin: "task"`, no `origin_ref`,
+ * docs/assistant/unified-entry.md "Background supervisor"), either new to the list or just retitled. The hub starts the
+ * conversation first, then records it as the background supervisor, then titles it, so the retitling is the update
+ * after which `GET /api/v1/assistant` is sure to name it.
+ */
+internal fun mayBeNewBackgroundSupervisor(before: AssistantSnapshot, updates: List<Session>): Boolean {
+    val listed = before.conversations.associateBy { it.key }
+    return updates.any {
+        it.assistant == true && it.sessionId != before.backgroundSupervisor &&
+            it.origin == "task" && it.originRef.isNullOrBlank() &&
+            listed[it.key].let { known -> known == null || known.title != it.title }
+    }
 }
 
 /** `GET /api/v1/assistant/leaders`'s names by leader conversation id: current directions with a name only. */

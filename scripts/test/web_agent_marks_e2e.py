@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end check of the agent marks (#3391): the mark of each agent's program before its state dot in the sidebar's
-rows, the session header, the /terminal tree, the palette's results and the launcher picker; a lettered tile for an
-agent with no mark of its own; a </> badge on the mark of one run from the command line, none on the desktop app's
-(#6390). Light / dark x wide / 390 px.
+rows, the session header, the /terminal tree, the palette's results and New agent's model panel (#5104: each launcher's
+rows and the pill); a lettered tile for an agent with no mark of its own; a </> badge on the mark of one run from the
+command line, none on the desktop app's (#6390). Light / dark x wide / 390 px.
 
 Needs the fake hub with one agent of each kind, a web page against it and Playwright for Python:
 
@@ -147,12 +147,20 @@ def run(browser, base, token, shots, channel_note):
                     dialog.screenshot(path=os.path.join(shots, f"palette-{where}-{theme}.png"))
                 page.keyboard.press("Escape")
 
-                # the launcher picker
+                # the launcher picker: New agent's model panel (#5104; it was a row of launcher chips), one group per
+                # launcher whose rows carry the mark of the agent it starts, and the pill the one that runs
                 page.locator('aside button[aria-label="新建 Agent"]').first.click()
-                page.wait_for_timeout(1000)
-                picker = page.locator('[role="dialog"]').last
-                expect(picker.locator("button[aria-pressed] [data-agent-mark]").first).to_be_visible()
-                kinds = picker.locator("button[aria-pressed] [data-agent-mark]").evaluate_all("els => els.map(e => e.dataset.agentMark)")
+                dialog = page.get_by_role("dialog", name="新建 Agent", exact=True)
+                pill = dialog.locator('[data-testid="new-agent-model"] [data-model-pill]')
+                expect(pill).to_have_attribute("data-model-pill", "ready")
+                expect(pill).to_be_enabled()
+                expect(pill.locator('[data-pill-engine] [data-agent-mark="claude"]')).to_have_count(1)
+                pill.click()
+                picker = page.locator("[data-model-panel]")
+                expect(picker).to_be_visible()
+                expect(picker.locator('[role="status"]')).to_have_count(0)  # every launcher's list read
+                kinds = picker.locator('[data-panel-section="provider"]').evaluate_all(
+                    "els => els.map(s => s.querySelector('[data-panel-row] [data-row-setup] [data-agent-mark]')?.dataset.agentMark)")
                 assert kinds == ["claude", "claude", "codex"], kinds
                 ok(f"{where} {theme}: the launcher picker shows the agent each launcher starts: {kinds}")
                 if shots:

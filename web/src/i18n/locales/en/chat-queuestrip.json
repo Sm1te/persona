@@ -8,7 +8,7 @@
   "copy": "Copy",
   "delete": "Delete",
   "row_label": "Queued #{n}: {text}",
-  "relayed_note": "Arrives when this turn ends",
+  "relayed_note": "Arrives when this chat is free",
   "summary_steer_one": "{count} queued · {agent} takes it at its next step",
   "summary_steer_other": "{count} queued · {agent} takes them at its next step, in order",
   "send_now": "Send now",

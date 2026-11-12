@@ -1,4 +1,4 @@
-Hand part of your own task to workers: each task you give this starts a new coding agent on a computer, beneath the task you lead, at once, with no card for the user to start it. You get this tool only because your task was handed out as a leader task. Workers belong to this task only: you cannot pick another to-do (todo_id and role are refused), a worker cannot hand work on, and at most 8 workers of this task run at a time. A task that changes files (readonly false) must set permission "bypassPermissions", since nobody is there to answer a permission prompt; a task that only reads sets readonly true. Leave machine and cwd out to start the worker where you run. What a worker reports, and when it stops, stalls or waits for review, reaches you as a message that starts with "Persona · supervision"; your own reports still go to whoever handed your task to you. You supervise each worker: give it done_when, and review it with task_review when its supervision message comes. Returns at once, with each worker's to-do; it does not confirm the agent started.
+Hand part of your own task to workers: each task you give this starts a new coding agent on a computer, beneath the task you lead, at once, with no card for the user to start it. You get this tool only because your task was handed out as a leader task. Workers belong to this task only: you cannot pick another to-do (todo_id and role are refused), a worker cannot hand work on, and at most 8 workers of this task run at a time. A worker that changes files takes the default permission mode unless you set one; a task that only reads sets readonly true. Leave machine and cwd out to start the worker where you run. What a worker reports, and when it stops, stalls or waits for review, reaches you as a message that starts with "Persona · supervision"; your own reports still go to whoever handed your task to you. You supervise each worker: give it done_when, and review it with task_review when its supervision message comes. Returns at once, with each worker's to-do; it does not confirm the agent started.
 
 ```json
 {
@@ -64,7 +64,7 @@ Hand part of your own task to workers: each task you give this starts a new codi
               "bypassPermissions",
               "plan"
             ],
-            "description": "bypassPermissions is required when readonly is false; readonly true always runs in plan mode"
+            "description": "empty: the default mode for a writable task; readonly true always runs in plan mode"
           },
           "readonly": {
             "type": "boolean",

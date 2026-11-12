@@ -1,7 +1,8 @@
-// Start an agent on one of your computers: machine, folder (recent ones first), a preset (a tier of the model profile in use,
-// #2225) or launcher, model and effort for this start, Claude Code's ultracode switch (#3428: off each time, never
-// remembered), the first message. On top, the recent setups (#2134): a tap fills every field with one that started an agent
-// before, and never starts.
+// Start an agent on one of your computers: machine, folder (recent ones first), the first message, and at the right of its
+// box the model pill (#5104, as Cindy's new task: the user picks a model in the unified model panel, the launcher and its
+// engine come with it; views/NewAgentModel.tsx), where the profile's presets (#2225), the thinking effort and Claude Code's
+// ultracode switch (#3428: off each time, never remembered) also are. On top, the recent setups (#2134): a tap fills every
+// field with one that started an agent before, and never starts.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { hubLabel } from "../lib/mesh";
 import { api, ApiError, credentialOwner, enc, errorText, getToken, isAbort, subscribeCredentialOwner } from "../lib/api";
@@ -16,10 +17,11 @@ import type { WorkspaceTarget } from "../lib/workspace-target";
 import { AttachmentTray } from "../ui/AttachmentTray";
 import { modelPurpose, modelSummary, type ModelBinding } from "../lib/model-config";
 import {
-  defaultLabel, effortChoices, fitEffort, followedBinding, launcherAgent, launcherModels, machineLaunchers, modelName, oneOff, pickerLauncher, startPicks,
-  takesEffort, takesTypedModel, tierLeftOut, forgetCustomModel, typedModelOffered, withoutCustom, type LauncherDefault, type PickerTier,
+  effortChoices, fitEffort, followedBinding, launcherAgent, machineLaunchers, pickerLauncher, startPicks, takesEffort, tierLeftOut, type LauncherDefault, type PickerTier,
 } from "../lib/launcher-models";
-import { BYPASS_MODE, BYPASS_WARNING, EFFORTS, effortTitle, modeTitle, PERMISSION_MODES } from "../lib/session-actions";
+import { choiceCarries, modelTitle, type ModelChoice } from "../lib/new-agent-panel";
+import { readModels } from "../lib/session-models";
+import { BYPASS_MODE, BYPASS_WARNING, effortTitle, modeTitle, PERMISSION_MODES } from "../lib/session-actions";
 import {
   clearRecentSetups, forgetSetup, formHolds, loadRecentSetups, machineModel, recentCards, rememberSetup, setupKey, setupTime, type RecentCard, type RecentSetup,
 } from "../lib/recent-setups";
@@ -27,13 +29,12 @@ import { baseName, shortPath } from "../lib/format";
 import { addAgentWorktree, agentBranch, agentNameHint, suggestedPath, worktreeStatus, type WorktreeStatus } from "../lib/worktree";
 import { getState, useStore } from "../lib/store";
 import type { Launcher, Machine } from "../lib/types";
-import { AgentMark } from "../ui/AgentMark";
 import { Button, cx, Dialog, IconButton, Menu, Spinner, Switch, toast, useMenu } from "../ui/atoms";
 import { Pill } from "./settings/SettingsParts";
 import { startBlocked, ultracodeStartOffered } from "../lib/ultracode";
 import { UltracodeStartRow } from "./chat/Ultracode";
 import { Icon } from "../ui/icons";
-import { ModelPicker, type ModelList } from "../ui/ModelPicker";
+import { ProviderName } from "../ui/ProviderName";
 import { t } from "../i18n";
 import { useAddComputer } from "./machines/AddComputerEntry";
 import { useScopedMachines } from "../lib/current-assistant";
@@ -42,7 +43,9 @@ import { initialLauncher, launcherBlock } from "../lib/launcher-health";
 import { navigate } from "../lib/router";
 import { settingsHref } from "./settings/nav";
 import { LauncherBlockedHelp } from "./LauncherBlockedHelp";
+import { launcherTitle, namedLauncher, namesFromProviders, providerIdNote, providerLabel, providerTitle, type Named } from "../lib/provider-names";
 import { WorkSessionForm } from "./WorkSessionForm";
+import { NewAgentModel, useModelList } from "./NewAgentModel";
 
 /** A forwarded picture (lib/drafts.ts DraftImage, base64) as a file for the first message's tray. */
 function draftImageFile(img: DraftImage): File {
@@ -79,6 +82,9 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   const [workspace, setWorkspace] = useState<WorkspaceTarget | null>(null);
   const [launcher, setLauncher] = useState("");
   const [launchers, setLaunchers] = useState<Launcher[]>([]);
+  // the model configuration's providers' names (#5029): titles for a launcher ID this computer's list doesn't have (a
+  // preset's, a recent setup's, the default's)
+  const [providerNames, setProviderNames] = useState<Named[]>([]);
   const [unified, setUnified] = useState(true);
   const [modelDefault, setModelDefault] = useState("");
   // the hub's "Default: …" for "New agent" (#2455); undefined from an older hub
@@ -90,25 +96,22 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   // the grayed-out launcher whose "how to fix" is open (#1643); "": none
   const [helpFor, setHelpFor] = useState("");
   // this start's model (an id from the list; "": the default) and effort ("": the launcher's), never saved
-  const [models, setModels] = useState<ModelList>({ status: "idle" });
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  // the presets this computer offers (tiers of the profile in use, from `tiersProfile`), and the one picked: it fills the
-  // launcher, model and effort as picking them by hand would; a pick by hand after it unmarks it. Never saved.
+  // the presets this computer offers (tiers of the profile in use), and the one picked: it fills the launcher, model and
+  // effort as picking them by hand would; a pick by hand after it unmarks it. Never saved.
   const [tiers, setTiers] = useState<PickerTier[]>([]);
-  const [tiersProfile, setTiersProfile] = useState("");
   const [tier, setTier] = useState<PickerTier | null>(null);
+  // a launcher picked on the computer chosen before that this one can't run (#5104): the form went back to the default
+  const [dropped, setDropped] = useState<{ name: string; computer: string } | null>(null);
+  // the lists read again in this opening (once each: a list read since stays as it is)
+  const readThisTime = useRef(new Set<string>());
   // ultracode for this start: off whenever the sheet opens, never saved (the server's rule: no choice carries over)
   const [ultracode, setUltracode] = useState(false);
   const features = useStore((s) => s.features);
   // Claude Code's permission mode for this start ("": the launcher's), remembered per computer like iOS's mode.<machine>
   const [mode, setMode] = useState("");
   const [host, setHost] = useState(""); // the engine host to open in (#2576); "": the machine's default
-  const [picking, setPicking] = useState(false);
-  const [query, setQuery] = useState("");
-  const [reload, setReload] = useState(0);
-  const refreshModels = useRef(false);
-  const search = useRef<HTMLInputElement>(null);
   const [dirs, setDirs] = useState<Dirs | null>(null);
   const [browse, setBrowse] = useState("");
   const [loadingDirs, setLoadingDirs] = useState(false);
@@ -148,8 +151,16 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   // a card for another computer (or one whose launchers are still being read): its folder and mode go in with the
   // computer, its launcher and model once that computer's launchers are read
   const pendingSetup = useRef<RecentSetup | null>(null);
-  // the model that goes with the launcher a computer's pick put in: the card's, or that computer's latest one for it
-  const restoredModel = useRef<{ mid: string; launcher: string; model: string } | null>(null);
+  // the computer the open sheet shows, and the model choice as it stands: a pick made on one computer goes to the next
+  // one picked when that one can run it (Cindy keeps a choice the target can run and falls back to its default otherwise)
+  const shownMid = useRef("");
+  const choiceNow = useRef<ModelChoice>({ launcher: "", model: "", effort: "" });
+  choiceNow.current = { launcher, model, effort };
+  // the choice was made by hand in this opening (a model, a preset, the follow row): only that one goes along; one a
+  // computer's pick merely restored gives way to the next computer's own (#2134)
+  const touched = useRef(false);
+  // that choice on its way to the computer picked next, until its launchers are read (another pick before then passes it on)
+  const carrying = useRef<ModelChoice | null>(null);
   const firstMessage = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
@@ -157,11 +168,16 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   useEffect(() => {
     if (!open) {
       setForward(null); // a forward goes with the sheet it came in, not into the next one
+      shownMid.current = "";
+      touched.current = false;
+      carrying.current = null;
+      readThisTime.current.clear();
       return;
     }
     submitted.current = false;
     setEffort("");
     setTier(null);
+    setDropped(null);
     setRecents(loadRecentSetups());
     setPickedSetup("");
     setUltracode(false);
@@ -253,15 +269,27 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   }, [open, online, mid, workspace, preset]);
 
   // The launcher a computer's pick puts in once its launchers are read, and the model that goes with it (#2134): a card's own
-  // when its launcher is still there; else the model configuration (`effective`; null: not followed) or the last one used
-  // here, unless this computer can't run it now (#1643: then the first that can), with this computer's latest model for it
-  // in the recent setups. No model list for it (the configuration runs no launcher): no model.
-  const restoreLauncher = (machine: string, card: RecentSetup | null, ls: Launcher[], effective: ModelBinding | null) => {
+  // when its launcher is still there; else the choice made on the computer shown before when this one can run it (#5104);
+  // else the model configuration (`effective`; null: not followed) or the last one used here, unless this computer can't
+  // run it now (#1643: then the first that can), with this computer's latest model for it in the recent setups. No model
+  // list for it (the configuration runs no launcher): no model.
+  const restoreLauncher = (machine: string, card: RecentSetup | null, ls: Launcher[], effective: ModelBinding | null, carry: ModelChoice | null = null) => {
+    if (!card && carry && (carry.launcher || effective !== null) && choiceCarries(carry, ls)) {
+      touched.current = true; // still the user's: it goes on to the computer after this one too
+      setLauncher(carry.launcher);
+      setModel(carry.model);
+      setEffort(carry.effort);
+      return;
+    }
+    if (!card && carry?.launcher) {
+      // what was picked can't run here: this computer's default, said under the box
+      setDropped({ name: launcherTitle(carry.launcher, [...ls, ...providerNames]), computer: machines.find((m) => m.id === machine)?.name ?? machine });
+      setEffort("");
+    }
     const own = card && (card.launcher ? ls.some((l) => l.name === card.launcher) : effective !== null);
     const chosen = own ? card.launcher : effective !== null ? "" : initialLauncher(localStorage.getItem(`new.launcher.${machine}`), ls);
     const runs = pickerLauncher(chosen, followedBinding(chosen, effective));
     const picked = !runs ? "" : own ? card.model : machineModel(loadRecentSetups(), machine, chosen);
-    restoredModel.current = { mid: machine, launcher: chosen, model: picked };
     setLauncher(chosen);
     setModel(picked);
   };
@@ -269,10 +297,20 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   useEffect(() => {
     if (!open || !mid) return;
     localStorage.setItem("new.machine", mid);
+    // another computer picked while the sheet is open: the choice made on the one before goes along if this one can run it
+    const before = shownMid.current;
+    shownMid.current = mid;
+    const carry = before && before !== mid ? (carrying.current ?? (touched.current ? choiceNow.current : null)) : null;
+    carrying.current = carry;
+    touched.current = false;
     setLaunchers([]);
+    setProviderNames([]);
     setHelpFor("");
+    setDropped(null);
     const controller = new AbortController();
+    // nothing of the computer before goes to this one unless restoreLauncher puts it back (a read that fails leaves none)
     setLauncher("");
+    setModel("");
     setTiers([]);
     setTier(null);
     setModelDefault("");
@@ -292,16 +330,17 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
         setLaunchers(ls);
         setHubDefault(r.default);
         setTiers(r.tiers ?? []);
-        setTiersProfile(r.tiers_profile?.name ?? "");
         setLaunchersOf(mid);
         setUnified(config !== null);
         if (config) {
           setModelDefault(modelSummary(config.purpose, config.providers));
           setConfigured(config.purpose.effective ?? {});
+          setProviderNames(namesFromProviders(config.providers));
         }
         const card = pendingSetup.current?.machine === mid ? pendingSetup.current : null;
         if (card) pendingSetup.current = null;
-        restoreLauncher(mid, card, ls, config ? (config.purpose.effective ?? {}) : null);
+        carrying.current = null;
+        restoreLauncher(mid, card, ls, config ? (config.purpose.effective ?? {}) : null, carry);
       })
       .catch((e) => { if (!controller.signal.aborted) toast(errorText(e), "error"); })
       .finally(() => { if (!controller.signal.aborted) setLoadingModels(false); });
@@ -328,73 +367,37 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
     return () => controller.abort();
   }, [open, mid, browse, workspace, manager, credential]);
 
-  // The model list of the launcher that will run (the chosen one, or the model configuration's); a launcher picked by hand starts
-  // over from the default, the one a computer's pick put in has its model (restoreLauncher). Starting never waits for it.
+  // The model list of the launcher that will run (the chosen one, or the model configuration's), read on each opening and
+  // kept for the page's life with the chat's (lib/session-models.ts): the pill names its model, a start sends what it
+  // takes. Starting never waits for it.
   const followed = followedBinding(launcher, unified ? configured : null);
   const listLauncher = launchersOf === mid ? pickerLauncher(launcher, followed) : "";
   useEffect(() => {
-    // a new launcher starts from its default; a computer's pick or a card (restoreLauncher) brings its model, and a preset
-    // picked for it keeps its own (every pick by hand unmarks it)
-    const restored = restoredModel.current;
-    if (listLauncher) restoredModel.current = null;
-    setModel(restored && listLauncher && restored.mid === mid && restored.launcher === launcher ? restored.model
-      : tier?.launcher === listLauncher ? (tier.model ?? "") : "");
-    setPicking(false);
-    setQuery("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `launcher` is read as it is when the list's launcher changes
+    if (!open || !mid || !listLauncher) return;
+    const key = `${mid}/${listLauncher}`;
+    void readModels(mid, listLauncher, { again: !readThisTime.current.has(key), first: true });
+    readThisTime.current.add(key);
   }, [open, mid, listLauncher]);
-  const pickTier = (x: PickerTier) => {
-    setHelpFor("");
-    if (tier?.name === x.name) {
-      // picked again: back to the defaults (the model settings' launcher where there is one)
-      setTier(null);
-      if (unified) setLauncher("");
-      setModel("");
-      setEffort("");
-      return;
-    }
-    // the list of another launcher is not this one's: until it is in, nothing is judged by it (the preset's effort stays)
-    if (x.launcher !== listLauncher) setModels({ status: "loading" });
-    setTier(x);
-    setLauncher(x.launcher);
-    setModel(x.model ?? "");
-    setEffort(x.effort ?? "");
-  };
+  const models = useModelList(open ? mid : "", listLauncher);
+  // an older hub has no list (null): no model is picked
   useEffect(() => {
-    if (!open || !mid || !listLauncher) {
-      setModels({ status: "idle" });
-      return;
-    }
-    const controller = new AbortController();
-    const refresh = refreshModels.current;
-    refreshModels.current = false;
-    setModels((m) => ({ status: "loading", list: refresh ? m.list : undefined }));
-    launcherModels(mid, listLauncher, { refresh, signal: controller.signal })
-      .then((list) => {
-        if (controller.signal.aborted) return;
-        setModels({ status: "ready", list });
-        // a typed ID the list doesn't have stays picked (#1644); an older hub's null has no picker
-        setModel((id) => (list ? id : ""));
-      })
-      .catch((e) => { if (!controller.signal.aborted) setModels({ status: "error", error: errorText(e) }); });
-    return () => controller.abort();
-  }, [open, mid, listLauncher, reload]);
-  const reloadModels = () => {
-    refreshModels.current = true;
-    setReload((n) => n + 1);
+    if (models.list === null) setModel("");
+  }, [models.list]);
+  // A choice made by hand (a model or the follow row picked in the panel, a preset, Try anyway): the launcher, model and
+  // effort it runs on. A preset is marked until something else is picked (picking its own setup again keeps it).
+  const pickModel = (c: ModelChoice, preset: PickerTier | null = null) => {
+    touched.current = true;
+    carrying.current = null;
+    setHelpFor("");
+    setDropped(null);
+    if (preset || c.launcher !== launcher || c.model !== model || c.effort !== effort) setTier(preset);
+    setLauncher(c.launcher);
+    setModel(c.model);
+    setEffort(c.effort);
   };
-  // Forget an ID typed before (#1644): off the list at once, back where it was when the hub says no.
-  const forgetModel = (id: string) => {
-    const list = models.list;
-    if (!list || !mid || !listLauncher) return;
-    const { list: without, restore } = withoutCustom(list, id);
-    setModels((m) => ({ ...m, list: without }));
-    forgetCustomModel(mid, listLauncher, id).catch((e) => {
-      setModels((m) => (m.list ? { ...m, list: restore(m.list) } : m));
-      toast(t("newagent.forget_failed", { id, error: errorText(e) }), "error");
-    });
-  };
-  useEffect(() => { if (picking) search.current?.focus(); }, [picking]);
+  // a preset: the launcher, model and effort it fills in (the model is checked once the list is in)
+  const pickTier = (x: PickerTier) => pickModel({ launcher: x.launcher, model: x.model ?? "", effort: x.effort ?? "" }, x);
+  const followDefault = () => pickModel({ launcher: "", model: "", effort: "" });
 
   // Where it opens, when the machine enables more than one engine (#2576).
   const picked = online.find((m) => m.id === mid);
@@ -402,30 +405,28 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   const hostDefault = picked ? currentHosts(picked).default : "";
   useEffect(() => { setHost(""); }, [open, mid]);
   const agent = launcherAgent(listLauncher, launchers, models.list);
-  // the launchers this computer can't start now (#1643), each said under the choices with a way to see how to fix it; the
-  // one this start runs (the chosen one, or the one Model settings' default runs) first, said so: Start stays enabled
+  // the launcher this start runs (the chosen one, or the one Model settings' default runs) when this computer can't start
+  // it now (#1643): said under the box with a way to see how to fix it; Start stays enabled
   const runs = launchersOf === mid ? listLauncher : "";
+  const runsBlock = runs ? launcherBlock(launchers.find((l) => l.name === runs)) : null;
   const defaultRuns = unified && launchersOf === mid ? pickerLauncher("", followedBinding("", configured)) : "";
   const defaultBlock = defaultRuns ? launcherBlock(launchers.find((l) => l.name === defaultRuns)) : null;
-  const blocked = launchers
-    .flatMap((l) => {
-      const block = launcherBlock(l);
-      return block ? [{ l, block }] : [];
-    })
-    .sort((a, b) => Number(b.l.name === runs) - Number(a.l.name === runs));
-  const help = blocked.find((b) => b.l.name === helpFor);
-  // a model ID can be typed (#1644): Claude Code or Codex whose launcher passes the pick on, also with an empty list or none read
-  const typing = typedModelOffered(agent, models.list) && models.list !== null;
-  // a launcher that passes its own --model keeps its locked row where an ID could otherwise be typed, empty list or not
-  const lockedTyping = takesTypedModel(agent) && Boolean(models.list?.locked);
-  const pickedModel = models.list?.models.find((m) => m.id === model);
+  const helpLauncher = helpFor ? launchers.find((l) => l.name === helpFor) : undefined;
+  const helpBlock = helpLauncher ? launcherBlock(helpLauncher) : null;
+  // what a launcher ID is called (#5029): this computer's launchers first, then the model configuration's providers
+  const names: Named[] = [...launchers, ...providerNames];
   const efforts = effortChoices(models.list, model, followed);
   const effortsKey = efforts.join(" ");
   useEffect(() => { setEffort((e) => fitEffort(e, effortsKey ? effortsKey.split(" ") : [])); }, [effortsKey]);
   // offered with Claude Code whose effort can be set here; grayed when this computer's Claude Code is known to be too old
   const ultracodeShown = !loadingModels && efforts.length > 0 && ultracodeStartOffered(features, agent);
   // what of the picked preset this launcher can't take, said once its list is in
-  const tierMissed = tier && listLauncher === tier.launcher && models.status === "ready" ? tierLeftOut(tier, { agent, list: models.list, followed }) : [];
+  const tierMissed = tier && listLauncher === tier.launcher && models.list !== undefined ? tierLeftOut(tier, { agent, list: models.list, followed }) : [];
+  // the follow row's second line: what Model settings › New agent runs (the hub's default, by display names)
+  const defaultList = useModelList(open ? mid : "", defaultRuns).list;
+  const followDetail = hubDefault
+    ? [hubDefault.provider && launcherTitle(hubDefault.provider, names), hubDefault.model && modelTitle(defaultList, hubDefault.model), hubDefault.effort && effortTitle(hubDefault.effort)].filter(Boolean).join(" · ")
+    : modelDefault;
   const ultracodeBlocked = ultracodeShown ? startBlocked(picked?.claude_version) : "";
 
   // The recent setups' cards (#2134): not when another page opened the sheet on a folder of its own (a space's or a
@@ -440,6 +441,8 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
     if (!up || !online.some((m) => m.id === setup.machine)) return;
     setPickedSetup(setupKey(setup));
     setTier(null);
+    touched.current = false;
+    carrying.current = null;
     setEffort(setup.agent_type === "claude" ? setup.effort : "");
     pendingSetup.current = null;
     if (setup.machine !== mid) {
@@ -452,6 +455,8 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
       if (launchersOf === mid) restoreLauncher(mid, setup, launchers, unified ? configured : null);
       else pendingSetup.current = setup; // the launchers being read put it in
     }
+    setDropped(null);
+    setHelpFor("");
     firstMessage.current?.focus();
   };
 
@@ -586,6 +591,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
         <div className="flex flex-col gap-4">
           {cards.length > 0 && !presetFolder && (
             <RecentSetups
+              names={names}
               cards={cards}
               machines={machines}
               picked={pickedShown}
@@ -712,166 +718,6 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
             </Field>
           )}
 
-          {tiers.length > 0 && (
-            <Field label={t("newagent.preset")}>
-              <div role="radiogroup" aria-label={t("newagent.preset")} className="flex flex-wrap gap-1.5">
-                {tiers.map((x) => {
-                  // its launcher failed its check here (#1643): still a choice, marked; the list below says why
-                  const block = launcherBlock(launchers.find((l) => l.name === x.launcher));
-                  return (
-                    <Choice key={x.name} radio mono selected={tier?.name === x.name} onClick={() => pickTier(x)}
-                      title={[x.description, tierRuns(x), block?.reason].filter(Boolean).join("\n")}>
-                      <span className="flex items-center gap-1.5">
-                        {block && <Icon name="warning" size={12} className="text-orange" />}
-                        {x.name}
-                      </span>
-                    </Choice>
-                  );
-                })}
-              </div>
-              <p data-testid="new-agent-preset-hint" aria-live="polite" className={cx("mt-1.5 flex min-w-0 items-start gap-1.5 text-[11.5px]", tierMissed.length ? "text-orange" : "text-ink-3")}>
-                {tierMissed.length > 0 && <Icon name="warning" size={12} className="mt-px shrink-0" />}
-                <span className="min-w-0 [overflow-wrap:anywhere]">
-                  {tierMissed.length
-                    ? t("newagent.preset_left_out", { what: tierMissed.map((v) => (v === tier?.effort ? effortTitle(v) : v)).join(" · ") })
-                    : tier
-                      ? tier.description || tierRuns(tier)
-                      : t("newagent.preset_hint", { profile: tiersProfile })}
-                </span>
-              </p>
-            </Field>
-          )}
-
-          {(unified || launchers.length > 1 || blocked.length > 0) && (
-            <Field label={unified ? t("newagent.launcher_override") : t("newagent.launcher")}>
-              <div className="flex flex-wrap gap-1.5">
-                {unified && (
-                  <Choice selected={launcher === ""} onClick={() => { setTier(null); setLauncher(""); }} title={defaultBlock ? `${modelDefault} · ${defaultBlock.reason}` : modelDefault}>
-                    {defaultBlock ? (
-                      // what the default runs can't start here (#1643): marked, still the default, said in the list below
-                      <span data-testid="new-agent-default-blocked" className="flex items-center gap-1.5">
-                        <Icon name="warning" size={12} className="text-orange" />
-                        {hubDefault ? defaultLabel(hubDefault) : t("newagent.follow_model_settings")}
-                      </span>
-                    ) : hubDefault ? (
-                      defaultLabel(hubDefault)
-                    ) : (
-                      t("newagent.follow_model_settings")
-                    )}
-                  </Choice>
-                )}
-                {launchers.map((l) => {
-                  const block = launcherBlock(l);
-                  return (
-                    <Choice
-                      key={l.name}
-                      mono
-                      selected={launcher === l.name}
-                      // grayed out with why, never hidden (#1643): choosing it shows how to fix it instead of picking it
-                      blocked={Boolean(block)}
-                      onClick={() => (block ? setHelpFor((open) => (open === l.name ? "" : l.name)) : (setTier(null), setLauncher(l.name)))}
-                      title={block ? block.reason : l.model}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        {block ? <Icon name="warning" size={12} className="text-orange" /> : <AgentMark agent={l.agent_type || l.agent} size={13} className="text-current" />}
-                        {l.name}
-                      </span>
-                    </Choice>
-                  );
-                })}
-              </div>
-              {blocked.length > 0 && (
-                <ul data-testid="new-agent-blocked" className="mt-1.5 flex flex-col gap-1">
-                  {blocked.map(({ l, block }) => (
-                    // one flow of words that wraps (never cut off: a phone has no hover for a tooltip), the link a unit
-                    <li key={l.name} data-runs={l.name === runs || undefined} className="flex min-w-0 items-start gap-1.5 text-[11.5px] leading-snug text-ink-3">
-                      <Icon name="warning" size={12} className="mt-px shrink-0 text-orange" />
-                      <p className="min-w-0 [overflow-wrap:anywhere]">
-                        {l.name === runs && (
-                          <>
-                            <Pill tone="orange">{t("newagent.runs_this_time")}</Pill>{" "}
-                          </>
-                        )}
-                        <span className="font-mono text-ink-2">{l.name}</span>{" "}
-                        <span>{block.reason}</span>{" "}
-                        <button
-                          type="button"
-                          aria-expanded={helpFor === l.name}
-                          aria-controls={helpFor === l.name ? "new-agent-blocked-help" : undefined}
-                          aria-label={t("newagent.how_to_fix_named", { name: l.name })}
-                          onClick={() => setHelpFor((open) => (open === l.name ? "" : l.name))}
-                          className="whitespace-nowrap text-accent-ink hover:underline"
-                        >
-                          {t("newagent.how_to_fix")}
-                        </button>
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {help && (
-                <LauncherBlockedHelp
-                  name={help.l.name}
-                  block={help.block}
-                  onTryAnyway={() => {
-                    setTier(null);
-                    setLauncher(help.l.name);
-                    setHelpFor("");
-                  }}
-                  onAddProvider={() => {
-                    onClose();
-                    navigate("/settings?tab=models&add=1"); // the provider wizard, as readiness's connect_model
-                  }}
-                  onClose={() => setHelpFor("")}
-                />
-              )}
-              {unified && (
-                <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-3">
-                  {launcher && <Pill tone="accent">{oneOff()}</Pill>}
-                  <span className="min-w-0 truncate">{launcher ? t("newagent.override_hint") : modelDefault || t("newagent.default_hint")}</span>
-                </p>
-              )}
-              {/* add, hide or restore launchers (#4384): Settings › Model providers */}
-              <button
-                type="button"
-                data-testid="new-agent-manage-launchers"
-                onClick={() => {
-                  onClose();
-                  navigate(settingsHref("models", null, false, null, "providers"));
-                }}
-                className="mt-1.5 inline-flex items-center gap-1 text-[11.5px] font-medium whitespace-nowrap text-accent-ink hover:underline"
-              >
-                <Icon name="gear" size={11} />
-                {t("newagent.manage_launchers")}
-              </button>
-            </Field>
-          )}
-
-          {listLauncher && models.status !== "idle" && !(models.status === "ready" && !models.list?.models.length && !typing && !lockedTyping) && (
-            <Field label={t("newagent.model")}><ModelPicker
-              models={models}
-              model={model}
-              followed={followed}
-              ownModel={launchers.find((l) => l.name === listLauncher)?.model}
-              open={picking}
-              onToggle={() => setPicking((o) => !o)}
-              query={query}
-              onQuery={setQuery}
-              search={search}
-              onPick={(id) => {
-                setTier(null);
-                setModel(id);
-                setPicking(false);
-                setQuery("");
-              }}
-              onReload={reloadModels}
-              custom={typing}
-              typing={typing}
-              onForget={forgetModel}
-              failedNote={t("newagent.models_failed")}
-            /></Field>
-          )}
-
           {takesEffort(agent) && (
             <Field label={t("newagent.permission_mode")}>
               <div role="radiogroup" aria-label={t("newagent.permission_mode")} className="flex flex-wrap gap-1.5">
@@ -885,26 +731,6 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
               <p className={cx("mt-1.5 text-[11.5px]", mode === BYPASS_MODE ? "text-red" : "text-ink-3")}>
                 {mode === BYPASS_MODE ? BYPASS_WARNING : PERMISSION_MODES.find((m) => m.id === mode)?.detail ?? t("newagent.permission_mode_hint")}
               </p>
-            </Field>
-          )}
-
-          {!loadingModels && takesEffort(agent) && (
-            <Field label={t("newagent.effort")}>
-              {efforts.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  <Choice selected={effort === ""} onClick={() => { setTier(null); setEffort(""); }}>{followed.effort ? t("newagent.follow_model_settings") : t("newagent.follow_launcher")}</Choice>
-                  {efforts.map((id) => (
-                    <Choice key={id} selected={effort === id} onClick={() => { setTier(null); setEffort(id); }} title={EFFORTS.find((e) => e.id === id)?.detail}>
-                      {effortTitle(id)}
-                    </Choice>
-                  ))}
-                </div>
-              ) : (
-                <p className="flex h-7 items-center text-[11.5px] text-ink-3">
-                  {pickedModel ? t("newagent.effort_unsupported", { model: modelName(pickedModel) }) : t("newagent.effort_unsupported_default")}
-                </p>
-              )}
-              {ultracodeShown && <div data-testid="new-agent-ultracode" className="mt-2"><UltracodeStartRow on={ultracode} onChange={setUltracode} blocked={ultracodeBlocked} /></div>}
             </Field>
           )}
 
@@ -935,14 +761,102 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
               <div className="flex items-center gap-2 px-2 pb-2">
                 <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.currentTarget.files) addFiles(e.currentTarget.files); e.currentTarget.value = ""; }} />
                 <button type="button" aria-label={t("newagent.add_files")} title={t("newagent.add_files")} onClick={() => fileInput.current?.click()} className="flex size-7 shrink-0 items-center justify-center rounded-control text-ink-3 hover:bg-hover hover:text-ink"><Icon name="plus" size={16} stroke={2} /></button>
-                <span className="min-w-0 text-[11.5px] text-ink-3">{t("newagent.attach_hint")}</span>
+                {/* the hint gives way to the model pill (on a phone it is only the + button's tooltip) */}
+                <span title={t("newagent.attach_hint")} className="min-w-0 flex-1 truncate text-[11.5px] text-ink-3 max-sm:hidden">{t("newagent.attach_hint")}</span>
+                <span className="ml-auto flex min-w-0 shrink justify-end" data-testid="new-agent-model">
+                  <NewAgentModel
+                    mid={mid}
+                    launchers={launchers}
+                    ready={settled}
+                    choice={{ launcher, model, effort }}
+                    runs={runs}
+                    configured={unified ? configured : null}
+                    tiers={tiers}
+                    follow={unified ? { label: t("newagent.follow_row"), active: launcher === "", detail: followDetail, warning: defaultBlock?.reason } : undefined}
+                    fallback={modelDefault || t("chat-modelpill.default_model")}
+                    ultracode={ultracodeShown ? <div data-testid="new-agent-ultracode"><UltracodeStartRow on={ultracode} onChange={setUltracode} blocked={ultracodeBlocked} /></div> : undefined}
+                    ultracodeOn={ultracodeShown && !ultracodeBlocked && ultracode}
+                    onChoice={pickModel}
+                    onPreset={(name) => {
+                      const x = tiers.find((v) => v.name === name);
+                      if (x) pickTier(x);
+                    }}
+                    onFollow={followDefault}
+                    onHelp={setHelpFor}
+                    onConfigure={() => {
+                      onClose();
+                      navigate(settingsHref("models", null, false, null, "providers"));
+                    }}
+                  />
+                </span>
               </div>
             </div>
+            <ModelNotes>
+              {dropped && (
+                <Note data-testid="new-agent-dropped" icon="info">{t("newagent.carry_dropped", { name: dropped.name, computer: dropped.computer })}</Note>
+              )}
+              {runs && models.list === undefined && models.error && !models.loading && (
+                <Note data-testid="new-agent-models-failed" icon="warning" tone="orange">{t("newagent.models_failed")}</Note>
+              )}
+              {runsBlock && (
+                // what runs this time can't start here (#1643): one flow of words that wraps (a phone has no hover), the link a unit
+                <Note data-testid="new-agent-blocked" icon="warning" tone="orange">
+                  <Pill tone="orange">{t("newagent.runs_this_time")}</Pill>{" "}
+                  <ProviderName of={namedLauncher(runs, names)} className="text-ink-2" idClassName="text-[11px]" /> <span className="text-ink-3">{runsBlock.reason}</span>{" "}
+                  <button
+                    type="button"
+                    aria-expanded={helpFor === runs}
+                    aria-controls={helpFor === runs ? "new-agent-blocked-help" : undefined}
+                    aria-label={t("newagent.how_to_fix_named", { name: launcherTitle(runs, names) })}
+                    onClick={() => setHelpFor((open) => (open === runs ? "" : runs))}
+                    className="whitespace-nowrap text-accent-ink hover:underline"
+                  >
+                    {t("newagent.how_to_fix")}
+                  </button>
+                </Note>
+              )}
+              {tier && (
+                <Note data-testid="new-agent-preset-hint" icon={tierMissed.length ? "warning" : "layers"} tone={tierMissed.length ? "orange" : undefined}>
+                  {tierMissed.length
+                    ? t("newagent.preset_left_out", { what: tierMissed.map((v) => (v === tier.effort ? effortTitle(v) : v)).join(" · ") })
+                    : t("newagent.preset_picked", { name: tier.name, what: tier.description || tierRuns(tier, names) })}
+                </Note>
+              )}
+            </ModelNotes>
+            {helpLauncher && helpBlock && (
+              <LauncherBlockedHelp
+                launcher={helpLauncher}
+                block={helpBlock}
+                onTryAnyway={() => pickModel({ launcher: helpLauncher.name, model: "", effort: "" })}
+                onAddProvider={() => {
+                  onClose();
+                  navigate("/settings?tab=models&add=1"); // the provider wizard, as readiness's connect_model
+                }}
+                onClose={() => setHelpFor("")}
+              />
+            )}
           </Field>
         </div>
       </Dialog>
       {adding.dialog}
     </>
+  );
+}
+
+/** The lines under the first message box about the model choice (what was dropped, what can't start here, the preset);
+ *  nothing when there are none. */
+function ModelNotes({ children }: { children: React.ReactNode }) {
+  const lines = (Array.isArray(children) ? children : [children]).filter(Boolean);
+  if (!lines.length) return null;
+  return <div aria-live="polite" className="mt-1.5 flex flex-col gap-1">{lines}</div>;
+}
+
+function Note({ icon, tone, children, ...rest }: { icon: "info" | "warning" | "layers"; tone?: "orange"; children: React.ReactNode; "data-testid"?: string }) {
+  return (
+    <p {...rest} className={cx("flex min-w-0 items-start gap-1.5 text-[11.5px] leading-snug", tone === "orange" ? "text-orange" : "text-ink-3")}>
+      <Icon name={icon} size={12} className={cx("mt-px shrink-0", tone === "orange" && "text-orange")} />
+      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+    </p>
   );
 }
 
@@ -957,7 +871,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // The recent setups (#2134): up to three cards in a row, each a setup that started an agent (folder · computer, then launcher
 // · model · mode · effort); an offline computer's is dimmed and can't be picked. The ⋯ removes one or clears them all.
-function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { cards: RecentCard[]; machines: Machine[]; /** The card the form holds (setupKey); "": none. */ picked: string; onPick: (card: RecentCard) => void; onForget: (setup: RecentSetup) => void; onClear: () => void }) {
+function RecentSetups({ cards, machines, names, picked, onPick, onForget, onClear }: { cards: RecentCard[]; machines: Machine[]; /** What a launcher ID is called (#5029). */ names: Named[]; /** The card the form holds (setupKey); "": none. */ picked: string; onPick: (card: RecentCard) => void; onForget: (setup: RecentSetup) => void; onClear: () => void }) {
   const menu = useMenu();
   const title = (s: RecentSetup) => `${baseName(shortPath(s.cwd))} · ${machines.find((m) => m.id === s.machine)?.name ?? s.machine}`;
   return (
@@ -983,8 +897,11 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
           const s = c.setup;
           const on = picked === setupKey(s);
           const claude = s.agent_type === "claude";
+          // the launcher by its display name (#5029), its startup ID in the card's tooltip; an rc alias keeps its ID in mono
+          const runsOn = s.launcher ? namedLauncher(s.launcher, names) : null;
+          const runsId = runsOn ? providerIdNote(runsOn) : "";
           const parts: React.ReactNode[] = [
-            s.launcher ? <span key="l" className="font-mono">{s.launcher}</span> : t("newagent.follow_model_settings"),
+            runsOn ? <span key="l" className={cx(!runsId && "font-mono")}>{providerTitle(runsOn)}</span> : t("newagent.follow_model_settings"),
             s.model && <span key="m" className="font-mono">{s.model}</span>,
             // "Allow everything" said with the warning it has in the form
             claude && s.mode && (s.mode === BYPASS_MODE
@@ -1001,7 +918,7 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
               data-bypass={(claude && s.mode === BYPASS_MODE) || undefined}
               aria-pressed={on}
               disabled={!c.online}
-              title={shortPath(s.cwd)}
+              title={[shortPath(s.cwd), runsId].filter(Boolean).join("\n")}
               onClick={() => onPick(c)}
               className={cx(
                 "flex min-w-0 flex-col gap-0.5 rounded-control px-2.5 py-2 text-left transition-[background-color,box-shadow,opacity] disabled:opacity-45",
@@ -1029,27 +946,23 @@ function RecentSetups({ cards, machines, picked, onPick, onForget, onClear }: { 
   );
 }
 
-/** What a preset runs on, in a line: its launcher, model and effort (its name). */
-function tierRuns(x: PickerTier): string {
-  return [x.launcher, x.model, x.effort && effortTitle(x.effort)].filter(Boolean).join(" · ");
+/** What a preset runs on, in a line: its launcher ("Title (id)", #5029), model and effort (its name). */
+function tierRuns(x: PickerTier, names: Named[]): string {
+  return [providerLabel(namedLauncher(x.launcher, names)), x.model, x.effort && effortTitle(x.effort)].filter(Boolean).join(" · ");
 }
 
-function Choice({ selected, onClick, title, mono, radio, blocked, children }: { selected: boolean; onClick: () => void; title?: string; mono?: boolean; /** One of a radiogroup. */ radio?: boolean; /** Grayed out: this computer can't start it now (#1643); a click explains instead of picking. */ blocked?: boolean; children: React.ReactNode }) {
+function Choice({ selected, onClick, title, radio, children }: { selected: boolean; onClick: () => void; title?: string; /** One of a radiogroup. */ radio?: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
       role={radio ? "radio" : undefined}
       aria-checked={radio ? selected : undefined}
       aria-pressed={radio ? undefined : selected}
-      aria-disabled={blocked || undefined}
       onClick={onClick}
       title={title}
       className={cx(
         "h-7 rounded-control px-2.5 text-[12px] whitespace-nowrap transition-colors",
-        mono && "font-mono",
         selected ? "bg-ink text-surface" : "bg-surface text-ink-2 shadow-btn hover:bg-hover hover:text-ink",
-        // dimmed like an offline computer's chip, and a little less so under the pointer: it still explains itself
-        blocked && (selected ? "opacity-60" : "opacity-45 hover:opacity-70"),
       )}
     >
       {children}
@@ -1057,7 +970,7 @@ function Choice({ selected, onClick, title, mono, radio, blocked, children }: { 
   );
 }
 
-// The model for this start: a row showing the pick, opening into a searchable list (80–110 models through a gateway).
+// A folder to start in: picked with a click, opened with a double click or its chevron.
 function DirRow({ name, path, sub, git, selected, onPick, onOpen }: { name: string; path: string; sub?: string; git?: boolean; selected: boolean; onPick: () => void; onOpen?: () => void }) {
   return (
     <div className={cx("group/dir flex h-8 items-center gap-2 rounded-[6px] px-2 transition-colors pointer-coarse:min-h-11", selected ? "bg-accent-tint" : "hover:bg-hover")}>

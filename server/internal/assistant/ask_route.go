@@ -24,7 +24,8 @@ import (
 // recommendation, and a leader's escalation is an escalated entry in the main conversation, so the layers above know.
 // Approvals stay the user's: no conversation can allow a tool or approve a plan (interaction_answer refuses them), so
 // they reach the user through ask_escalate or the timeout. A card nobody handles within askHoldFor moves one rung up
-// (leader, main conversation, the user), so nothing waits on a supervisor for ever.
+// (leader, main conversation, the user; or the background supervisor, then the user, for a task no leader supervises),
+// so nothing waits on a supervisor for ever.
 //
 // The route lives on the pending card, not in the store: after a manager restart the card is back on the apps without
 // a push (as every card is), and its route is made again from the task's supervisor (restoreRoute) so that the
@@ -94,9 +95,14 @@ func routable(ix proto.Interaction) bool {
 // task, and the machine those conversations are on (the assistant's: its leaders and its main conversation). None when
 // no leader is configured (everything stays as it was), the agent is no supervised task's, the task already waits for
 // the user, or the agent is a supervising conversation itself.
+//
+// A task no leader supervises has one rung: the background supervisor, then the user, as a leader's card goes to the
+// leader, then the main conversation; the main conversation while the background supervisor is off or not made yet
+// (ownSupervisor, supervise_background.go). The background supervisor does not change when cards are routed at all:
+// that still takes leader conversations, so with none configured a card is the user's as it comes, as before.
 func (s *Service) askLadder(ctx context.Context, machine, sid string) (ladder []string, todo, home string, ok bool) {
 	cfg := s.settings(ctx)
-	if len(cfg.Leaders) == 0 || cfg.Main == "" || sid == cfg.Main || slices.Contains(cfg.Leaders, sid) {
+	if len(cfg.Leaders) == 0 || cfg.Main == "" || sid == cfg.Main || sid == cfg.BackgroundSupervisor || slices.Contains(cfg.Leaders, sid) {
 		return nil, "", "", false
 	}
 	home = cfg.MachineID
@@ -115,7 +121,7 @@ func (s *Service) askLadder(ctx context.Context, machine, sid string) (ladder []
 	if lead := t.Supervision.Supervisor; lead != cfg.Main && slices.Contains(cfg.Leaders, lead) {
 		return []string{lead, cfg.Main}, t.ID, home, true
 	}
-	return []string{cfg.Main}, t.ID, home, true
+	return []string{s.ownSupervisor(cfg)}, t.ID, home, true
 }
 
 // routeAsk sends new card ix to its supervisor instead of the user (announce); false when it is not one to route.
@@ -193,12 +199,13 @@ func (s *Service) routedSessions() map[[2]string]bool {
 }
 
 // routedTo: pending card id is on its way up and with conversation self now, or with one below it (the main
-// conversation answering what its leader still holds); its task.
-func (s *Service) routedTo(id, self string) (string, bool) {
+// conversation answering what its leader still holds); its task. main: self is the main conversation, which may
+// answer any card still on its way up, the background supervisor's too (its ladder does not pass the main conversation).
+func (s *Service) routedTo(id, self string, main bool) (string, bool) {
 	s.fleet.mu.Lock()
 	defer s.fleet.mu.Unlock()
 	p := s.fleet.interactions[id]
-	if p == nil || p.route == nil || p.claimed || p.route.step >= len(p.route.ladder) || !slices.Contains(p.route.ladder[p.route.step:], self) {
+	if p == nil || p.route == nil || p.claimed || p.route.step >= len(p.route.ladder) || !main && !slices.Contains(p.route.ladder[p.route.step:], self) {
 		return "", false
 	}
 	return p.route.todo, true
@@ -302,6 +309,9 @@ func (s *Service) ringAsks(todo string, ids []string, d *proto.Delegate) []proto
 	sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.Before(list[j].CreatedAt) })
 	pushed := false
 	for _, ix := range list {
+		if d != nil {
+			ix = s.suggestOnCard(ix) // a card a supervisor passed up may offer a standing rule (rule_suggest.go)
+		}
 		ix = s.tellApps(ix)
 		if d == nil && (maybeTold[ix.ID] || s.quietSession(ix.MachineID, ix.SessionID)) {
 			continue // a question that may have rung before, or a quiet task's: the apps, no second push
@@ -367,7 +377,7 @@ func (s *Service) toolAskEscalate(ctx context.Context, self string, args json.Ra
 		return "", errors.New("cards go to their supervisor first only with leader conversations (assistant.leaders): without them a task's cards are the user's already")
 	}
 	main := s.isMain(ctx, self)
-	if !main && t.Supervision.Supervisor != self {
+	if !main && t.Supervision.Supervisor != self && !s.backgroundSupervises(ctx, self, t) {
 		return "", fmt.Errorf("task %s is not yours to supervise: its supervisor or the main conversation escalates its cards", t.ID)
 	}
 	ids := s.waitingCards(t)
@@ -384,7 +394,8 @@ func (s *Service) toolAskEscalate(ctx context.Context, self string, args json.Ra
 			Session: short(ix.SessionID), Text: noticeAsk(ix)})
 	}
 	for _, ix := range rung {
-		s.workEvent(ix.MachineID, ix.SessionID, "ask_escalated", map[string]any{"by": self, "todo": t.ID})
+		// card, kind and recommend: what a suggested rule counts the owner's answer against (rule_suggest.go).
+		s.workEvent(ix.MachineID, ix.SessionID, "ask_escalated", map[string]any{"by": self, "todo": t.ID, "card": ix.ID, "kind": ix.Kind, "recommend": recommend})
 	}
 	if !main {
 		// The main conversation knows the user was asked, and what this leader recommends: it does not ask again.

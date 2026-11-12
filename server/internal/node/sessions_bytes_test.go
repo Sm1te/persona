@@ -22,7 +22,7 @@ func sentRows(rows int) []proto.Session {
 		list[i] = proto.Session{SessionID: listID(i), Agent: "claude", Launcher: "claude", Host: "herdr", Status: proto.StatusIdle,
 			PaneID: fmt.Sprintf("w%d:p%d", i/8, i), Title: fmt.Sprintf("Fix the flaky upload test %d", i), Cwd: fmt.Sprintf("/work/repo%d", i%6),
 			RepoRoot: fmt.Sprintf("/work/repo%d", i%6), Worktree: fmt.Sprintf("/work/repo%d", i%6), Branch: "main", Model: "claude-sonnet-4-5",
-			LastText: reply, AsksRead: true, ContextTokens: 41000 + i, ContextWindow: 200000, UpdatedAt: listT0.Add(time.Duration(i) * time.Second),
+			LastText: reply, AsksRead: true, ContextTokens: int32(41000 + i), ContextWindow: 200000, UpdatedAt: listT0.Add(time.Duration(i) * time.Second),
 			Rev: int64(20000 + 37*i)}
 	}
 	return list

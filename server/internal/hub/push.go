@@ -36,7 +36,8 @@ type Pusher struct {
 	traffic func(trafficKey, int64, time.Duration)
 	// direct: the hub's own APNs key. Set, every push goes straight to APNs as before; nil, through the relay.
 	direct *apns.Client
-	relay  *http.Client
+	// relay posts to the devices' relays over connections kept between pushes (apns.NewTransport, #4800).
+	relay *http.Client
 	// retryWaits: how long a push the relay did not take for a reason that may pass waits before each further try
 	// (postRelayRetrying); tests shorten them.
 	retryWaits []time.Duration
@@ -83,7 +84,7 @@ type Pusher struct {
 const deviceStoreTimeout = 5 * time.Second
 
 func newPusher(dir string, store Store, logf func(string, ...any)) *Pusher {
-	p := &Pusher{dir: dir, store: store, logf: logf, devices: map[string]Device{}, replaced: map[string]string{}, failed: map[string]pushFailure{}, withdrawals: newWithdrawals(), relay: &http.Client{Timeout: 20 * time.Second},
+	p := &Pusher{dir: dir, store: store, logf: logf, devices: map[string]Device{}, replaced: map[string]string{}, failed: map[string]pushFailure{}, withdrawals: newWithdrawals(), relay: &http.Client{Timeout: 20 * time.Second, Transport: apns.NewTransport()},
 		retryWaits: []time.Duration{time.Second, 4 * time.Second}, now: time.Now, storeTimeout: deviceStoreTimeout}
 	if store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), deviceStoreTimeout)

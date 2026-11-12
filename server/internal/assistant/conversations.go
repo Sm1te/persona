@@ -93,10 +93,16 @@ func (s *Service) isArchived(id string) bool {
 
 var errArchiveMain = i18n.Err("assistant-conversations.archive_main")
 
+// errArchiveBackground: the background supervisor is built in and stays listed (supervise_background.go).
+var errArchiveBackground = i18n.Err("assistant-conversations.archive_background_supervisor")
+
 // setArchived archives (on) or brings back a conversation; by is who did it. It reports whether anything changed.
 func (s *Service) setArchived(ctx context.Context, machine, id string, on bool, by string) (bool, error) {
 	if on && s.settings(ctx).Main == id {
 		return false, errArchiveMain
+	}
+	if on && s.isBackground(ctx, id) {
+		return false, errArchiveBackground
 	}
 	st := s.store()
 	if st == nil {
@@ -164,7 +170,7 @@ func (s *Service) archiveRoutes() {
 			machine := s.settings(r.Context()).MachineID
 			if _, err := s.setArchived(r.Context(), machine, id, op.on, titleByUser); err != nil {
 				status := http.StatusInternalServerError
-				if errors.Is(err, errArchiveMain) {
+				if errors.Is(err, errArchiveMain) || errors.Is(err, errArchiveBackground) {
 					status = http.StatusBadRequest
 				}
 				apierr.Write(w, status, err)
@@ -190,6 +196,20 @@ type relayMsg struct {
 	At        time.Time `json:"at"`
 	// State is a task notice's state (quiet.go: done | needs | interrupted | failed); "" for other relays.
 	State string `json:"state,omitempty"`
+	// Urgent: a supervision message with a signal that waits on a decision (relay_presence.go). A version that does
+	// not know it drops it on its next save: the message then ranks and waits as any other supervision message.
+	Urgent bool `json:"urgent,omitempty"`
+	// QueuedAt and Depth are when it was first queued and how long the queue was with it then (the queue wait,
+	// availability.go): kept by a message that takes its place (queuedAs).
+	QueuedAt time.Time `json:"queued_at,omitzero"`
+	Depth    int       `json:"depth,omitempty"`
+	// DecisionAt is when it began to wait on a decision, where that is later than QueuedAt: it took the place of a
+	// queued message that waited on none (replacing, relay_presence.go).
+	DecisionAt time.Time `json:"decision_at,omitzero"`
+	// Owner: what the owner themselves just did, their answer on the card of a question asked without waiting
+	// (ask_later.go). It is not held for their presence (holdLocked): it is what they are waiting to see taken up. A
+	// version that does not know it drops it on its next save: the answer is then held as any late answer is.
+	Owner bool `json:"owner,omitempty"`
 }
 
 type relayHop struct {
@@ -204,6 +224,8 @@ type relayState struct {
 	// Spawned: the conversations conversation_new opened, by id, until they report back or their parent is told
 	// (spawned.go, #4669).
 	Spawned map[string]spawnedConv `json:"spawned,omitempty"`
+	// Spoke: when the owner last sent each conversation a message, kept for ownerPresentFor (relay_presence.go).
+	Spoke map[string]time.Time `json:"spoke,omitempty"`
 }
 
 type relayBook struct {
@@ -212,6 +234,8 @@ type relayBook struct {
 	st       relayState
 	sent     map[[2]string][]time.Time // (from, to) -> when; in memory: a restart only resets the rate
 	draining map[string]bool
+	holds    map[string]*time.Timer // by conversation: drains its queue again when the hold for the owner ends
+	stuck    map[string]relayMsg    // by conversation: the message that could not go in at the last drain (pickLocked)
 }
 
 func (s *Service) relayLocked(ctx context.Context) bool {
@@ -236,7 +260,8 @@ func (s *Service) relayLocked(ctx context.Context) bool {
 		rs.Spawned = map[string]spawnedConv{}
 	}
 	b.st, b.loaded = rs, true
-	b.sent, b.draining = map[[2]string][]time.Time{}, map[string]bool{}
+	b.sent, b.draining, b.holds = map[[2]string][]time.Time{}, map[string]bool{}, map[string]*time.Timer{}
+	b.stuck = map[string]relayMsg{}
 	return true
 }
 
@@ -248,6 +273,12 @@ func (s *Service) saveRelayLocked() {
 	for id, hp := range s.relays.st.Hops {
 		if time.Since(hp.At) > relayHopMemory {
 			delete(s.relays.st.Hops, id)
+		}
+	}
+	for id, at := range s.relays.st.Spoke {
+		// One with messages still queued is drainHeldRelays' to forget, after it handed them on.
+		if time.Since(at) >= ownerPresentFor && len(s.relays.st.Queue[id]) == 0 {
+			delete(s.relays.st.Spoke, id)
 		}
 	}
 	for id, c := range s.relays.st.Spawned {
@@ -276,7 +307,8 @@ func (s *Service) hopOf(id string) int {
 	return 0
 }
 
-// userSpoke: the user sent a message to the conversation, which works for them again (hop 0).
+// userSpoke: the user sent a message to the conversation, which works for them again (hop 0); what the system has
+// for it waits while they talk (relay_presence.go).
 func (s *Service) userSpoke(id string) {
 	b := &s.relays
 	b.mu.Lock()
@@ -284,10 +316,9 @@ func (s *Service) userSpoke(id string) {
 	if !s.relayLocked(context.Background()) {
 		return
 	}
-	if _, ok := b.st.Hops[id]; ok {
-		delete(b.st.Hops, id)
-		s.saveRelayLocked()
-	}
+	b.ownerSpokeLocked(id, time.Now())
+	delete(b.st.Hops, id)
+	s.saveRelayLocked()
 }
 
 // relayAllowed checks the hop and rate limits for a message from → to and counts it when allowed.
@@ -333,7 +364,8 @@ func relayText(msg relayMsg) string {
 		MaxHops: relayMaxHops, Text: msg.Text})
 }
 
-// queueRelay keeps a message for a running conversation until its turn ends.
+// queueRelay keeps a message for a conversation until it may go in: its turn ended and the owner is not talking in it
+// (relay_presence.go). The queue is kept in the order the messages came; drainRelays picks by rank.
 func (s *Service) queueRelay(to string, msg relayMsg) int {
 	b := &s.relays
 	b.mu.Lock()
@@ -341,6 +373,7 @@ func (s *Service) queueRelay(to string, msg relayMsg) int {
 	if !s.relayLocked(context.Background()) {
 		return 0
 	}
+	msg.QueuedAt, msg.Depth = time.Now().UTC(), len(b.st.Queue[to])+1
 	b.st.Queue[to] = append(b.st.Queue[to], msg)
 	s.saveRelayLocked()
 	return len(b.st.Queue[to])
@@ -393,11 +426,16 @@ func (s *Service) deliverRelay(ctx context.Context, machine, to string, msg rela
 	if msg.Tool == noticeTool || msg.Tool == superviseTool || msg.Tool == askAnswerTool || msg.Tool == spawnNoticeTool || msg.Tool == taskEndTool {
 		text = msg.Text
 	}
+	s.availInput(machine, to, relayKind(msg), time.Now()) // a notice has no message source of its own
 	if msg.Tool == superviseTool {
 		// Register before dispatch: a fast MCP call can arrive before assistant.send returns.
 		s.holdPushes(ctx, to)
 	}
-	if err := s.call(ctx, machine, DeviceAssistantSend, map[string]any{"session_id": to, "text": text, "message_source": msg.source(), "resume_only": true, holdPushesParam: msg.Tool == superviseTool}, nil); err != nil {
+	params := map[string]any{"session_id": to, "text": text, "message_source": msg.source(), "resume_only": true, holdPushesParam: msg.Tool == superviseTool}
+	if s.isBackground(ctx, to) {
+		s.backgroundModel(ctx, params) // its own model purpose, on every message as the main chat's is (supervise_background.go)
+	}
+	if err := s.call(ctx, machine, DeviceAssistantSend, params, nil); err != nil {
 		if msg.Tool == superviseTool {
 			s.releasePushes(ctx, to)
 		}
@@ -424,7 +462,10 @@ func (s *Service) deliverRelay(ctx context.Context, machine, to string, msg rela
 }
 
 // drainRelays delivers the next queued message to every conversation of the machine that is not running (called
-// whenever its list changes: a turn that just ended, or the hub starting with messages still queued).
+// whenever its list changes: a turn that just ended, or the hub starting with messages still queued). Next is the
+// best-ranked message the owner's presence does not hold (relay_presence.go); it is moved to the head of the queue,
+// where the message going in is. A conversation whose messages are all held is drained again when the first hold
+// ends.
 func (s *Service) drainRelays(machine string, list []proto.Session) {
 	b := &s.relays
 	b.mu.Lock()
@@ -433,13 +474,24 @@ func (s *Service) drainRelays(machine string, list []proto.Session) {
 		return
 	}
 	var due []string
+	held := map[string]time.Duration{}
+	now := time.Now()
 	for _, c := range list {
 		if len(b.st.Queue[c.SessionID]) > 0 && c.Status != proto.StatusWorking && !c.Starting && !b.draining[c.SessionID] {
+			i, wait := b.pickLocked(c.SessionID, now)
+			if i < 0 {
+				held[c.SessionID] = wait
+				continue
+			}
+			b.frontLocked(c.SessionID, i)
 			b.draining[c.SessionID] = true
 			due = append(due, c.SessionID)
 		}
 	}
 	b.mu.Unlock()
+	for id, wait := range held {
+		s.drainAfter(machine, id, wait)
+	}
 	for _, id := range due {
 		go func(id string) {
 			b.mu.Lock()
@@ -474,6 +526,7 @@ func (s *Service) drainRelays(machine string, list []proto.Session) {
 			cancel()
 			b.mu.Lock()
 			delete(b.draining, id)
+			delete(b.stuck, id)
 			// Delivered, answered just in time, or the conversation is gone for good: off the queue. An unreachable
 			// node or another delivery failure keeps it.
 			taken := false
@@ -486,8 +539,13 @@ func (s *Service) drainRelays(machine string, list []proto.Session) {
 				}
 				s.saveRelayLocked()
 				taken = true
+			} else {
+				b.stuck[id] = msg // the next drain takes another one first (pickLocked)
 			}
 			b.mu.Unlock()
+			if taken && !stale && err == nil {
+				s.availQueueDelivered(machine, id, msg, time.Now())
+			}
 			if taken {
 				s.publish(context.Background()) // it no longer shows waiting
 			}
@@ -814,13 +872,17 @@ func (s *Service) toolConversationSend(ctx context.Context, self string, args js
 	if s.unarchiveOnSend(c.MachineID, c.SessionID) {
 		back = " It was archived; it is back in the list."
 	}
-	if c.Status == proto.StatusWorking || c.Starting || s.queuedFor(c.SessionID) > 0 {
+	if running := c.Status == proto.StatusWorking || c.Starting; running || s.relayWaits(c.SessionID, msg) {
 		n := s.queueRelay(c.SessionID, msg)
 		if n > 0 {
 			s.spawnReported(self, c.SessionID) // a conversation conversation_new opened reports back (spawned.go)
 		}
 		s.publish(ctx) // the receiver shows it waiting above its composer
-		return fmt.Sprintf("「%s」 is running: the message is queued (%d waiting) and goes in when its current turn ends.%s", name, n, back), nil
+		if running {
+			return fmt.Sprintf("%q is running: the message is queued (%d waiting) and goes in when its current turn ends.%s", name, n, back), nil
+		}
+		s.drainRelays(c.MachineID, []proto.Session{c}) // what may go goes; the rest when the hold for the user ends
+		return fmt.Sprintf("%q has messages waiting, or the user is talking in it: the message is queued (%d waiting) and goes in after them.%s", name, n, back), nil
 	}
 	if err := s.deliverRelay(ctx, c.MachineID, c.SessionID, msg); err != nil {
 		return "", err

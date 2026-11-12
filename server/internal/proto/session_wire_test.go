@@ -18,11 +18,11 @@ import (
 type reflectSession Session
 
 func (s reflectSession) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&sessionWire{(*sessionJSON)(&s), s.StartedByPersona})
+	return json.Marshal(wireOf((*sessionJSON)(&s)))
 }
 
 func (s *reflectSession) MarshalJSONTo(enc *jsontext.Encoder) error {
-	return jsonv2.MarshalEncode(enc, &sessionWire{(*sessionJSON)(s), s.StartedByPersona}, json.DefaultOptionsV1())
+	return jsonv2.MarshalEncode(enc, wireOf((*sessionJSON)(s)), json.DefaultOptionsV1())
 }
 
 // wireStrings are the strings every string field is tried with: escapes, HTML, unicode, line separators, bad UTF-8.
@@ -43,6 +43,10 @@ func wireSamples(t *testing.T, ty reflect.Type) []reflect.Value {
 	var out []reflect.Value
 	add := func(v any) { out = append(out, reflect.ValueOf(v).Convert(ty)) }
 	switch {
+	case ty == reflect.TypeFor[TitleSource]():
+		for _, source := range []TitleSource{TitleSourceUnknown, TitleSourceManual, TitleSourceAuto, TitleSourcePrompt, TitleSourceRuntime, 255} {
+			add(source)
+		}
 	case ty == timeType:
 		for _, tm := range wireTimes {
 			add(tm)
@@ -56,6 +60,10 @@ func wireSamples(t *testing.T, ty reflect.Type) []reflect.Value {
 		add(true)
 	case ty.Kind() == reflect.Int || ty.Kind() == reflect.Int64:
 		for _, n := range []int64{-7, 1 << 40, math.MaxInt64, math.MinInt64} {
+			add(n)
+		}
+	case ty.Kind() == reflect.Int32:
+		for _, n := range []int32{-7, 1 << 20, math.MaxInt32, math.MinInt32} {
 			add(n)
 		}
 	case ty.Kind() == reflect.Uint16:
@@ -182,6 +190,10 @@ func TestSessionWireMatchesReflect(t *testing.T) {
 	if got := sessionLayout(); got != sessionWireLayout {
 		t.Fatalf("Session's fields changed: give each new one its line in appendSession, then set sessionWireLayout to %#x", got)
 	}
+	if got := hierarchyLayout(); got != hierarchyWireLayout {
+		t.Fatalf("SessionHierarchy's or SessionChildren's fields changed: give each new one its line in appendSession, "+
+			"then set hierarchyWireLayout to %#x", got)
+	}
 	checkWire(t, "an empty session", Session{})
 	ty := reflect.TypeFor[Session]()
 	for i := range ty.NumField() {
@@ -234,6 +246,29 @@ func TestSessionWireMatchesReflect(t *testing.T) {
 	}
 	for _, s := range p.Sessions {
 		checkWire(t, "the listed "+s.SessionID, s)
+	}
+}
+
+// A subagent's model and tokens (#5030) go out after its latest tool, each only when set, as the reflect encoder writes
+// them (TestSessionWireMatchesReflect tries every value).
+func TestSubagentWireModelAndTokens(t *testing.T) {
+	s := Session{SessionID: "s1", Subagents: []Subagent{
+		{ID: "a1", SessionID: "s1@a1", Steps: 12, LastTool: &WorkflowTool{Name: "Read", Summary: "Reading a.go"},
+			Model: "claude-haiku-4-5", Tokens: 23456},
+		{ID: "a2", SessionID: "s1@a2"},
+	}}
+	checkWire(t, "a subagent with its model and tokens", s)
+	b, ok := appendSession(nil, &s)
+	if !ok {
+		t.Fatal("not written by hand")
+	}
+	for _, want := range []string{
+		`"last_tool":{"name":"Read","summary":"Reading a.go"},"model":"claude-haiku-4-5","tokens":23456}`,
+		`{"id":"a2","session_id":"s1@a2","running":false,"started_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}]`,
+	} {
+		if !bytes.Contains(b, []byte(want)) {
+			t.Fatalf("%s\nhas no %s", b, want)
+		}
 	}
 }
 

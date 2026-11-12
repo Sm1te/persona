@@ -1,4 +1,4 @@
-// One tool call in a work group (cindy's AgentActionRow): [status][verb][what it worked on][+N −N][›]. A command and
+// One tool call in a work group (cindy's AgentActionRow): [status][verb][what it worked on][+N -N][›]. A command and
 // the like open in place (what went in, what came out, in full); an edit opens its diff over the page; a read opens
 // the file in the side panel.
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -25,9 +25,11 @@ import { edgeMask, useEdgeFade } from "./edge-fade";
 import { Thumb } from "./Steps";
 import { t } from "../../i18n";
 
-/** The row's chrome, shared with the thinking rows so a mixed list reads as one (cindy's activityRowChrome). */
-/** On a touch screen a row is a finger tall (40). */
-const ROW = "group flex w-full min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-[3px] [@media(pointer:coarse)]:min-h-10 text-left select-none transition-colors duration-150 hover:bg-tool-hover motion-reduce:transition-none";
+/** The row's chrome, shared with the thought rows (ThinkingRow.tsx) so a mixed list reads as one (cindy's
+ *  activityRowChrome): radius, padding, the hover lift. On a touch screen a row is a finger tall (40). */
+export const ROW_CHROME = "flex w-full min-w-0 gap-1.5 rounded-[8px] px-2 py-[3px] [@media(pointer:coarse)]:min-h-10 text-left";
+export const ROW_HOVER = "group select-none transition-colors duration-150 hover:bg-tool-hover motion-reduce:transition-none";
+const ROW = `${ROW_CHROME} items-center ${ROW_HOVER}`;
 export const CHEVRON_SLOT = "ml-auto flex size-[18px] shrink-0 items-center justify-center rounded-[8px] text-tool-ink transition-colors duration-150 group-hover:bg-hover-2 motion-reduce:transition-none";
 export const STATUS_SLOT = "inline-flex h-[18px] w-4 shrink-0 items-center justify-center text-tool-ink";
 
@@ -246,7 +248,7 @@ export const ActionRow = memo(function ActionRow({ step, running, mid, sid, trac
     <div className="flex min-w-0 flex-col" data-action-row={name} data-tool-use={call} data-items={ids.join(" ")}>
       <button type="button" onClick={activate} aria-expanded={inPlace ? open : undefined} aria-label={label || name} title={p.param?.title} className={ROW}>
         <span role="img" aria-label={running ? t("chat-actionrow.status_running") : error ? t("chat-actionrow.status_error") : t("chat-actionrow.status_done")} className={cx(STATUS_SLOT, error && "text-red")}>
-          {running ? <Spinner size={12} /> : <Icon name={error ? "x" : "check"} size={13} />}
+          {running ? <Spinner size={13} /> : <Icon name={error ? "x" : "check"} size={13} />}
         </span>
         {p.verb && <span className="shrink-0 text-[length:var(--chat-secondary)] whitespace-nowrap text-tool-ink">{p.verb}</span>}
         {p.param &&
@@ -262,7 +264,7 @@ export const ActionRow = memo(function ActionRow({ step, running, mid, sid, trac
         {stats && (stats.add > 0 || stats.del > 0) && (
           <span className="flex shrink-0 gap-1 font-mono text-[13px] font-medium tabular-nums">
             <span className="text-diff-add-fg">+{stats.add}</span>
-            <span className="text-diff-del-fg">−{stats.del}</span>
+            <span className="text-diff-del-fg">-{stats.del}</span>
           </span>
         )}
         {bg && <span className={cx("shrink-0 rounded-[4px] px-1 text-[11px] font-medium whitespace-nowrap", bg.failed ? "bg-red-tint text-red" : "bg-field text-ink-2")}>{bg.text}</span>}
@@ -292,7 +294,7 @@ export const ActionRow = memo(function ActionRow({ step, running, mid, sid, trac
           {input && <pre className="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{input}</pre>}
           {output && (
             <>
-              {(input || detail) && <div className="my-2 h-px bg-line" />}
+              {(input || detail) && <div className="my-2 h-px bg-tool-ink/20" />}
               <pre className={cx("m-0 whitespace-pre-wrap [overflow-wrap:anywhere]", error ? "text-red" : "text-tool-ink")}>{output}</pre>
               {full.more}
             </>
@@ -326,7 +328,7 @@ function DiffStats({ diffs }: { diffs: Op[][] }) {
   const s = diffStats(diffs);
   return (
     <span className="shrink-0 font-mono text-[12px] font-medium tabular-nums">
-      <span className="text-diff-add-fg">+{s.add}</span> <span className="text-diff-del-fg">−{s.del}</span>
+      <span className="text-diff-add-fg">+{s.add}</span> <span className="text-diff-del-fg">-{s.del}</span>
     </span>
   );
 }

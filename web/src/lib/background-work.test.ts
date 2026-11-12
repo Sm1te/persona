@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backgroundWork, taskBackgroundWork } from "./background-work";
+import { backgroundWork, taskBackgroundWork, waitingOnSubagents } from "./background-work";
 import type { Session } from "./types";
 import type { Todo } from "./todos";
 
@@ -28,5 +28,20 @@ describe("background work projections", () => {
     const lookup = () => ({ ...session, waiting: true, background_tasks_count: 2 });
     expect(taskBackgroundWork(todo, lookup)?.tasks).toBe(2);
     expect(taskBackgroundWork({ ...todo, done_at: "2026-11-10T08:00:00Z" }, lookup)).toBeUndefined();
+  });
+});
+
+describe("waitingOnSubagents (#5030)", () => {
+  const sub = { id: "a", session_id: "worker@a", running: true, background: true };
+  it("the turn is over and a background subagent still runs", () => {
+    expect(waitingOnSubagents({ ...session, background_working: true, subagents: [sub] })).toBe(true);
+    expect(waitingOnSubagents({ ...session, background_working: true }, [sub])).toBe(true);
+  });
+  it("not while the turn runs, not for a foreground or finished one, not when a workflow says it first", () => {
+    expect(waitingOnSubagents({ ...session, subagents: [sub] })).toBe(false);
+    expect(waitingOnSubagents({ ...session, background_working: true, subagents: [{ ...sub, background: false }] })).toBe(false);
+    expect(waitingOnSubagents({ ...session, background_working: true, subagents: [{ ...sub, running: false }] })).toBe(false);
+    expect(waitingOnSubagents({ ...session, background_working: true, subagents: [sub], workflows: [flow] })).toBe(false);
+    expect(waitingOnSubagents(undefined)).toBe(false);
   });
 });

@@ -26,5 +26,6 @@
   "copy_field": "Copy {label}",
   "fix_it": "Fix it",
   "background_done": "Background round",
-  "background_running": "Running in the background"
+  "background_running": "Running in the background",
+  "model_changed": "Model changed from {from} to {to}"
 }

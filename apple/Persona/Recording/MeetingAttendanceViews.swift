@@ -106,7 +106,7 @@ struct MeetingAttendeePicker: View {
     static func text(_ entry: RecordingEntry, live: MeetingLive, sync: RecordingSync) -> String? {
         let attendance = entry.attendance ?? RecordingAttendance(role: .off)
         if attendance.stopped == .unsupported { return String(localized: "This hub can't follow meetings, so Persona stopped attending this one.") }
-        guard attendance.role.attends else { return nil }
+        guard attendance.sentRole.attends else { return nil }
         if attendance.stopped == .liveFull { return String(localized: "The hub takes no more of this meeting's lines. Questions still work.") }
         if sync.attendanceProblem[entry.id] != nil { return String(localized: "The hub didn't take Persona's part in this meeting. Choose the role again.") }
         switch live.state(entry.id).problem {
@@ -180,6 +180,17 @@ struct MeetingExchangeRow: View {
     private var speaking: some View {
         Label("Speaking", systemImage: Theme.Icon.voiceSpeaking)
             .font(Theme.Font.secondary).foregroundStyle(Theme.ai).lineLimit(1)
+            .accessibilityIdentifier(Self.speakingID(speaker.voice))
+    }
+
+    /// Which voice says it, for UI tests (an identifier, never read out): the realtime voice, the on-device one, or
+    /// neither yet (the realtime voice is being asked for).
+    static func speakingID(_ voice: MeetingSpeaker.Voice?) -> String {
+        switch voice {
+        case .realtime?: "meeting-speaking-realtime"
+        case .onDevice?: "meeting-speaking-device"
+        case nil: "meeting-speaking"
+        }
     }
 
     private var stopSpeaking: some View {

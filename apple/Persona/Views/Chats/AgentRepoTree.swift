@@ -85,7 +85,9 @@ nonisolated struct RepoTree {
     struct Worktree: Identifiable, Sendable {
         /// Its fold id.
         var id: String
-        /// Its branch when the node says (#1805), else its folder's name (the main checkout: the repository's).
+        /// Its branch when the node says (#1805), else its folder's name (the main checkout: the repository's). A linked
+        /// tree goes by the name its host gave the place instead, when its sessions agree on one (#4768, `hostPlaceName`);
+        /// its id does not change with the name.
         var name: String
         var path: String
         var main: Bool
@@ -308,6 +310,14 @@ nonisolated struct RepoTree {
         }
         var hosts: [MachineRef: [Repo]] = [:]
         for var repo in repos.values {
+            // A linked tree takes the name its host gave it (#4768, as the web's and Android's By Repository), its branch
+            // staying on it and its id its path. The main checkout keeps its name: several workspaces can share it. So
+            // does a tree with an Orca agent in it (every tree Orca places has one), which Orca names.
+            for i in repo.worktrees.indices {
+                let w = repo.worktrees[i]
+                guard !w.main, !w.sessions.contains(where: { $0.spaceKind == "orca" }), let name = hostPlaceName(w.sessions) else { continue }
+                repo.worktrees[i].name = name
+            }
             repo.worktrees.sort { a, b in
                 if a.catalog && b.catalog, let ai = a.workspace?.index, let bi = b.workspace?.index, ai != bi { return ai < bi }
                 return a.main != b.main ? a.main : before(a.name, a.path, b.name, b.path)
@@ -317,6 +327,30 @@ nonisolated struct RepoTree {
         return hostOrder(Set(hosts.keys), machines: machines).map { ref in
             Host(ref: ref, repos: hosts[ref, default: []].sorted { before($0.name, $0.id, $1.name, $1.id) })
         }
+    }
+
+    /// The name the host gave the place `sessions` run in (the web's `hostPlaceName`, Android's `AgentRepos.kt`: Paseo sends
+    /// its workspace's title as `slot_name`, with no `slot_id`), when every session that gives one gives the same; two
+    /// different names name nothing, and a session without one neither votes nor blocks. A `slot_name` beside a
+    /// `slot_id` is a tab's label (herdr), which names no working tree.
+    static func hostPlaceName(_ sessions: [Session]) -> String? {
+        var name: Substring?
+        for i in sessions.indices {
+            guard let own = trimmedOrNil(sessions[i].slotName), trimmedOrNil(sessions[i].slotID) == nil else { continue }
+            if let name, name != own { return nil }
+            name = own
+        }
+        return name.map(String.init)
+    }
+
+    /// The text without the white space around it (as the web's `trim()`), nil when nothing is left. Cheap for the usual
+    /// text with none around it: the list builds the tree for every change.
+    private static func trimmedOrNil(_ text: String?) -> Substring? {
+        guard let text else { return nil }
+        var t = Substring(text)
+        while t.first?.isWhitespace == true { t.removeFirst() }
+        while t.last?.isWhitespace == true { t.removeLast() }
+        return t.isEmpty ? nil : t
     }
 
     /// `refs` in `machines`' order (the hub's); one it does not list goes last, by its path.

@@ -20,8 +20,22 @@ import (
 func (s *Service) feishuPush(machine, session, title, body string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // as feishuMirror: a push may be several cards
 	defer cancel()
-	if f, ready := s.feishuFeatures(ctx); !ready || !f.Pushes {
-		return
+	_ = s.feishuPushKeyed(ctx, machine, session, title, body, "")
+}
+
+// feishuPushKeyed is feishuPush within ctx, for a push that may be sent again when key is set (card i goes with key
+// and i, so one that landed lands once): an error when it may yet get out and did not (the bot's status not read
+// while the hub is away, a card Feishu did not take for now), nil when it went or has nowhere to go (no bot, the
+// pushes switch off, a card Feishu refuses however often it is sent).
+func (s *Service) feishuPushKeyed(ctx context.Context, machine, session, title, body, key string) error {
+	st, err := s.feishuStatus(ctx)
+	ready := err == nil && st.Ready
+	s.workbenchOn(st.Features, ready) // as feishuFeatures
+	if err != nil && !answered(err) {
+		return err
+	}
+	if !ready || !st.Features.Pushes {
+		return nil
 	}
 	// The body laid out like the bot's answers (answerCards: sections, tables, link buttons, more cards when long, at
 	// most botAnswerCards); the push's title heads the first card, the open button goes under the last.
@@ -40,15 +54,23 @@ func (s *Service) feishuPush(machine, session, title, body string) {
 	}
 	if s.divertAnswer(ctx, "push", cards) { // a notifications companion takes it (feishu_companions.go)
 		s.markPushed(channel.Feishu, machine, session)
-		return
+		return nil
 	}
 	var missing []int // the pieces that did not get out (1-based): said at the end
+	var again error   // the first that may get out when sent again
 	for i, ac := range cards {
-		mid, err := s.botPost(ctx, "", ac.card, ac.fallback)
+		k := ""
+		if key != "" {
+			k = key + strconv.Itoa(i)
+		}
+		mid, err := s.botPostKeyed(ctx, "", ac.card, ac.fallback, k)
 		if err != nil {
 			s.logf("bots: push: %v", err)
+			if again == nil && !feishubot.Refused(err) {
+				again = err
+			}
 			if i == 0 {
-				return // nothing went out: do not mark pushed, so the turn-end mirror delivers the turn
+				return again // nothing went out: do not mark pushed, so the turn-end mirror delivers the turn
 			}
 			missing = append(missing, i+1)
 			continue
@@ -60,9 +82,10 @@ func (s *Service) feishuPush(machine, session, title, body string) {
 			s.rememberBotThread(mid, botTarget{Kind: targetPersona, MachineID: machine, SessionID: session}, title)
 		}
 	}
-	if len(missing) > 0 {
+	if len(missing) > 0 && (key == "" || again == nil) { // one sent again says nothing of the pieces it will send
 		s.botSay(ctx, missingPiecesNote(l, missing))
 	}
+	return again
 }
 
 // feishuMirror sends a turn that ended without being asked for in Feishu: the main conversation's when sync is on

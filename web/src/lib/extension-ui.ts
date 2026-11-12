@@ -609,13 +609,16 @@ function drawable(it: unknown): it is UIItem {
  * The view as the web draws it: items it does not know left out, a section they emptied gone (one with a footer
  * stays), like the hub does for an older app. Only a view that does not read at all is an error.
  */
-export function readView(raw: unknown): UIView {
+/** `html`: keep html components (an assistant card that runs them, #4215); an extension's view never draws one. */
+export function readView(raw: unknown, opts: { html?: boolean } = {}): UIView {
   if (!isObject(raw) || !Array.isArray(raw.sections)) throw new Error(t("lib-extension-ui.unreadable_view"));
   const sections: UISection[] = [];
+  // an html component's own checks are the card's (ui/HtmlCard.tsx)
+  const keeps = (it: unknown): it is UIItem => drawable(it) || (!!opts.html && (it as UIItem)?.type === "html");
   for (const s of raw.sections) {
     if (!isObject(s)) continue;
     const items = Array.isArray(s.items) ? s.items : [];
-    const kept = items.filter(drawable).map(readItem);
+    const kept = items.filter(keeps).map(readItem);
     const footer = typeof s.footer === "string" ? s.footer : undefined;
     const more = isObject(s.more) && readAction(s.more.action) ? { ...(typeof s.more.title === "string" && s.more.title ? { title: s.more.title } : {}), action: readAction(s.more.action)! } : undefined;
     if (items.length > 0 && kept.length === 0 && !footer && !more) continue;

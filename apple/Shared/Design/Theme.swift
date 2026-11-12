@@ -269,6 +269,10 @@ nonisolated enum Theme {
         static let scrim = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.black.withAlphaComponent(0.3) : UIColor.black.withAlphaComponent(0.08) })
         /// The bar of actions next to it: light in light mode, the dark bar it always was in dark mode.
         static let bar = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.17, alpha: 1) : UIColor.white })
+        /// A selection handle dragged this close to a long lifted message's top or bottom edge, or past it, scrolls the
+        /// message on that way, faster the closer it gets: up to `edgeScrollSpeed` points a second (#3188).
+        static let edgeScroll: CGFloat = 44
+        static let edgeScrollSpeed: CGFloat = 900
     }
     #endif
 
@@ -663,8 +667,8 @@ nonisolated enum Theme {
         /// A compositor request, not a guaranteed upper bound on rendering frequency.
         static let breathMinimumFPS: Float = 10
         static let breathPreferredFPS: Float = 30
-        /// What opens in the chat shows itself (a mask growing down from its header, and a fade); its height does not
-        /// animate (`unfolding`). Closing folds it away first, quicker, then removes it.
+        /// What opens in the chat fades in over the space it takes; its height does not animate (`unfolding`). What
+        /// closes there goes at once (#3005); `conceal` is for what fades away elsewhere (a menu, an inbox event).
         static let revealTime = 0.28
         static let concealTime = 0.2
         static let reveal = Animation.easeOut(duration: revealTime)
@@ -811,6 +815,35 @@ nonisolated enum Theme {
         static let thumbnailScale: CGFloat = 3
         /// How many photos a page of the grid asks the library for at a time.
         static let fetchLimit = 600
+    }
+
+    /// The image editor (`ImageEditor`, `ImageEdits`): Box, Pen and Crop over a picture on black, as Photos edits.
+    nonisolated enum ImageEdit {
+        /// A mark's line on screen: thin, medium, thick. Medium is the 3.5 pt Box and Pen drew with before there was a
+        /// choice, and the default; the line is burned in at the same width relative to the picture as it is seen.
+        static let lineWidths: [CGFloat] = [2, 3.5, 7]
+        static let defaultLineWidth = 1
+        /// Six inks, Apple's dark-mode system colors as fixed values (red, yellow, green, blue, white, black): a mark keeps
+        /// its color in the picture whatever the appearance it is later seen in.
+        static let inks: [(red: CGFloat, green: CGFloat, blue: CGFloat)] = [
+            (1, 0.271, 0.227), (1, 0.839, 0.039), (0.188, 0.820, 0.345), (0.039, 0.518, 1), (1, 1, 1), (0, 0, 0),
+        ]
+        /// The ink swatch's ring: the one picked, the others.
+        static let swatchRing: CGFloat = 3
+        static let swatchRingIdle: CGFloat = 1
+        static let swatchRingIdleOpacity = 0.4
+        /// Room left round the picture while cropping, so the handles on its edges can be taken.
+        static let cropInset: CGFloat = 28
+        /// The crop frame's line, its corner marks (length and thickness), and how far round an edge a finger takes it.
+        static let cropLine: CGFloat = 1
+        static let cropCorner: CGFloat = 20
+        static let cropCornerWidth: CGFloat = 3
+        static let cropGrab: CGFloat = 22
+        /// The smallest crop, a side on screen.
+        static let cropMinimum: CGFloat = 64
+        /// Outside the crop, dimmed; the thirds drawn inside it while it is dragged.
+        static let cropDim = 0.6
+        static let cropThirdsOpacity = 0.45
     }
 
     /// Hold the mic to dictate, slide left to drop it, slide up to keep it going hands-free: Telegram's thresholds

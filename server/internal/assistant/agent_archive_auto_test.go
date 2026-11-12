@@ -44,7 +44,7 @@ func TestAutoArchivable(t *testing.T) {
 		{"switched off", func(*proto.Session) {}, none, 0, false},
 		{"active two days ago", func(s *proto.Session) { s.UpdatedAt = now.Add(-2 * 24 * time.Hour) }, none, idle, false},
 		{"its to-do done two days ago", func(*proto.Session) {}, link{onTodo: true, lastDone: now.Add(-2 * 24 * time.Hour)}, idle, false},
-		{"restored by the user yesterday", func(s *proto.Session) { s.ArchiveChangedAt = now.Add(-24 * time.Hour) }, none, idle, false},
+		{"restored by the user yesterday", func(s *proto.Session) { s.ArchiveChangedAt = archiveChangedAt(now.Add(-24 * time.Hour)) }, none, idle, false},
 		{"no last step known", func(s *proto.Session) { s.UpdatedAt = time.Time{} }, none, idle, false},
 		{"archived already", func(s *proto.Session) { s.Archived = true }, none, idle, false},
 		{"linked to an open to-do", func(*proto.Session) {}, link{open: true, onTodo: true}, idle, false},

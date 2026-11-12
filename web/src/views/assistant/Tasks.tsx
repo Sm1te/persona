@@ -43,7 +43,7 @@ import { dockAgents, type DockAgent, interruption, isRemovable, mostUrgentAgent,
 import { TodoAskLine } from "../TodoAsk";
 import { usageLimitContinues, usageLimitLabel } from "../../lib/usage-limit";
 import { parseAPIError } from "../../lib/api-errors";
-import { openPanel } from "../../lib/panel";
+import { openAgent, openTask } from "../../lib/handoff";
 import { navigate } from "../../lib/router";
 import { plainMarkdown } from "../../lib/plain-markdown";
 import { Markdown } from "../../ui/Markdown";
@@ -56,6 +56,7 @@ import { StatusMark } from "../../ui/StatusMark";
 import { useClamped } from "../../ui/use-clamped";
 import { Icon, type IconName } from "../../ui/icons";
 import { ReportLine, ReviewBadge, ReviewLine } from "./Supervision";
+import { reviewedInBackground } from "../../lib/background-supervisor";
 import { AcceptRow, BriefCard } from "./Brief";
 
 // A plan task's brief (#3822) comes with the first plan card that has one, as the decision row does.
@@ -64,8 +65,11 @@ const PlanBrief = lazy(() => import("./TaskBrief").then((m) => ({ default: m.Pla
 // A decision's row comes with the tray's first decision, not with the first screen (startup-preload's budget).
 const TaskDecision = lazy(() => import("./TaskDecision").then((m) => ({ default: m.TaskDecision })));
 import { SentLine, TaskSentList } from "./Sent";
+import { feedWake, HandoffCard, HandoffCards, taskHandoffs, whyNotStarted } from "./Handoff";
 import { latestReview, parkedLine, progressLine } from "../../lib/supervision";
 import { planLabel, planLine, planShown } from "../../lib/plan";
+import { namedLauncher, providerIdNote, providerTitle, useProviderNames } from "../../lib/provider-names";
+import { useChosenManager, useLinkManager } from "../../lib/manager-choice";
 import { AnsweredCard, InteractionCard } from "../chat/Interactions";
 import { cardLine } from "../chat/dock";
 import { interactionKicker } from "../../lib/row-line";
@@ -84,6 +88,7 @@ import type { TaskWorkspace } from "../../lib/feed";
 import { machineStartBlocked, todoUltracode, ULTRACODE_FEATURE } from "../../lib/ultracode";
 import { UltraMark, UltracodeChip } from "../chat/Ultracode";
 import { byTime } from "../../lib/times";
+import { requestHome } from "../../lib/child-sessions";
 import { stateName } from "../../lib/state-labels";
 
 // ── what a task is now ──
@@ -258,8 +263,10 @@ export function progressOf(lead: Session | undefined) {
 
 /** The card a task's agents wait on: its lead agent's first, else any of its other active agents'. */
 export function taskInteraction(todo: Todo, interactions: Interaction[], lead?: Session): Interaction | undefined {
-  const mine = (ix: Interaction) => (todo.agents ?? []).some((a) => !a.released_at && a.machine_id === ix.machine_id && a.session_id === ix.session_id);
-  return (lead && interactions.find((ix) => ix.machine_id === lead.machine_id && ix.session_id === lead.session_id)) ?? interactions.find(mine);
+  // a card of a child session one of its agents started is that agent's (#5120)
+  const mine = (ix: Interaction) => (todo.agents ?? []).some((a) => !a.released_at && a.machine_id === ix.machine_id && a.session_id === requestHome(ix));
+  return (lead && (interactions.find((ix) => ix.machine_id === lead.machine_id && ix.session_id === lead.session_id)
+    ?? interactions.find((ix) => ix.machine_id === lead.machine_id && requestHome(ix) === lead.session_id))) ?? interactions.find(mine);
 }
 
 /** What a waiting task needs, in a line (#3301): "Has a question: which framework?", "Waiting for your approval: swift test", "Plan awaiting approval", the words
@@ -272,16 +279,6 @@ export function taskAsk(ix: Interaction | undefined): string | undefined {
   return ask ? `${t("todos.kicker_line", { kicker })}${ask}` : kicker;
 }
 
-/** Opens a task's detail beside the conversation: its agent's own chat (the side panel). */
-export function openTask(id: string) {
-  openPanel({ kind: "task", todo: id });
-}
-
-// Dev only: `?task=<todo id>` opens that task's panel (screenshots, docs/operations/testing.md).
-if (import.meta.env.DEV && typeof location !== "undefined") {
-  const id = new URLSearchParams(location.search).get("task");
-  if (id) setTimeout(() => openTask(id), 0);
-}
 
 /** "Retry" on a task that did not start, or "Continue" on one the model service cut off (lib/feed retryTask), saying why when the
  *  hub refused (the machine offline…). */
@@ -411,12 +408,18 @@ export function PlanCard({ plan }: { plan: TaskPlan }) {
 function PlanTaskRow({ n, task, numbered, ultra, busy, onUltra }: { n: number; task: PlanTask; numbered: boolean; ultra?: { on: boolean; blocked: string }; busy?: boolean; onUltra: (on: boolean) => void }) {
   const machines = useStore((s) => s.machines);
   const machine = machines.find((m) => m.id === task.machine)?.name ?? task.machine;
-  const chips: { icon: IconName; text: string }[] = [
+  // its launcher by the provider's display name, the startup ID in the chip's tooltip (#5029): the providers of the
+  // assistant the chat belongs to, else the current one's
+  const chatManager = useLinkManager();
+  const chosen = useChosenManager();
+  const names = useProviderNames(chatManager ?? chosen ?? "");
+  const launcher = task.launcher && !task.model ? namedLauncher(task.launcher, names) : null;
+  const chips: { icon: IconName; text: string; title?: string }[] = [
     { icon: "machine", text: machine },
     { icon: "folder", text: task.cwd.split("/").filter(Boolean).at(-1) ?? task.cwd },
     // an explicit model wins over the preset's (resolved at the start, with the profile in use then); a launcher of its own
     // is said with it: a different one runs instead of the preset's
-    { icon: "agent", text: task.model || [task.launcher, task.tier && t("assistant-tasks.preset", { tier: task.tier })].filter(Boolean).join(" · ") || t("assistant-tasks.default_model") },
+    { icon: "agent", text: task.model || [launcher && providerTitle(launcher), task.tier && t("assistant-tasks.preset", { tier: task.tier })].filter(Boolean).join(" · ") || t("assistant-tasks.default_model"), title: (launcher && providerIdNote(launcher)) || undefined },
   ];
   return (
     <div className={cx("flex flex-col gap-1.5", n > 1 && "border-t border-line pt-3")}>
@@ -426,7 +429,7 @@ function PlanTaskRow({ n, task, numbered, ultra, busy, onUltra }: { n: number; t
       </div>
       <div className="flex flex-wrap gap-1.5">
         {chips.map((c) => (
-          <span key={c.icon} className="inline-flex h-6 items-center gap-1 rounded-full bg-field px-2 text-[12px] text-ink-2">
+          <span key={c.icon} title={c.title} className="inline-flex h-6 items-center gap-1 rounded-full bg-field px-2 text-[12px] text-ink-2">
             <Icon name={c.icon} size={12} />
             {c.text}
           </span>
@@ -665,6 +668,19 @@ export function TaskLine({ todoId }: { todoId: string }) {
 
 // ── the hub's lines ──
 
+/** A review the background supervisor made (#5082, lib/background-supervisor.ts), in one line: who, the task (which it
+ *  opens), the verdict. A task the page no longer lists keeps the title the entry was written with. */
+function BackgroundReviewLine({ item, title, known }: { item: FeedItem; title: string; known: boolean }) {
+  return (
+    <ReviewLine
+      item={item}
+      title={known ? title : field(item, "title") || title}
+      by={t("assistant-conversations.background_supervisor")}
+      onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined}
+    />
+  );
+}
+
 // Memoized: the chat re-renders on every streamed item and session push, while an item keeps its identity until its body
 // changes (mergeInto); the plan, todo and "Later" it shows come through its own selectors.
 export const FeedLineView = memo(function FeedLineView({ item, simplified = false }: { item: FeedItem; simplified?: boolean }) {
@@ -673,12 +689,18 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
   const title = useStore((s) => s.todos.find((todo) => todo.id === item.ref)?.title) ?? t("assistant-tasks.task_fallback");
   const known = useStore((s) => s.todos.some((t) => t.id === item.ref));
   const planned = useFeed((s) => item.kind === "task" && Object.values(s.plans).some((p) => p.conversation === item.conversation && p.tasks.some((task) => task.todo_id === item.ref)));
+  // the computer of the Agent a message started for its task (#4754): from the hub's line, else (a hub before it said) the to-do's
+  const newAgent = item.kind === "routed" ? field(item, "new_agent") : undefined;
+  const newAgentMachine = useStore((s) => (newAgent ? s.todos.find((x) => x.id === item.ref)?.agents?.find((a) => a.session_id === newAgent)?.machine_id : undefined));
   if (simplified) {
-    // the dispatched tasks themselves, each opening its own task (its Agent's chat), never the whole In progress tray (#3700)
-    if (item.kind === "plan") return plan?.state === "started" ? <DispatchHint tasks={plan.tasks.map((task) => ({ todo: task.todo_id, title: task.title }))} /> : null;
-    if (item.kind === "task") return planned ? null : <DispatchHint tasks={[{ todo: item.ref, title }]} />;
+    // the Agents a dispatch handed work to, a card each that opens its page (#5096, cindy's hand-off card); never the
+    // whole In progress tray (#3700)
+    if (item.kind === "plan") return plan?.state === "started" ? <PlanHandoffs plan={plan} /> : null;
+    if (item.kind === "task") return planned ? null : <TaskHandoffs item={item} />;
     // an interrupted receipt the hub worked out stays as its record (#3834): one card for a batch, a grey line once handled
     if (item.kind === "receipt" && interruptLook(item)) return <ReceiptCard item={item} />;
+    // a review the background supervisor made took no turn of this chat, so its line is what says it happened (#5082)
+    if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
     if (item.kind === "review" || item.kind === "receipt" || item.kind === "report") return null;
     if (item.kind === "message" && !cardSent(item) && !cardFiled(item)) return null;
   }
@@ -692,6 +714,7 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
     case "receipt":
       return <ReceiptCard item={item} />;
     case "review":
+      if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
       return <ReviewLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;
     case "report":
       return <ReportLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;
@@ -700,14 +723,16 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
       if (sentByPersona(item)) return <SentLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;
       // what the user said straight to the task (its card's Message); interrupted: from a hub before #1542
       return (
-        <div className="flex flex-col items-end gap-1 pl-10">
-          <span className="inline-flex items-center gap-1 text-[12px] font-medium text-accent">
-            <Icon name={item.body?.interrupted === true ? "stop" : "send"} size={11} />
-            {item.body?.interrupted === true ? t("assistant-tasks.said_to_interrupting", { title }) : t("assistant-tasks.say_to", { title })}
-          </span>
-          <div className="rounded-[18px] bg-field px-3.5 py-2 text-[14.5px]">{field(item, "text")}</div>
-          {/* every Agent of the task had stopped, so the message started a new one for it (#4754) */}
-          {field(item, "new_agent") && <NewAgentLine sid={field(item, "new_agent")!} mid={field(item, "new_agent_machine")} />}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col items-end gap-1 pl-10">
+            <span className="inline-flex items-center gap-1 text-[12px] font-medium text-accent">
+              <Icon name={item.body?.interrupted === true ? "stop" : "send"} size={11} />
+              {item.body?.interrupted === true ? t("assistant-tasks.said_to_interrupting", { title }) : t("assistant-tasks.say_to", { title })}
+            </span>
+            <div className="rounded-[18px] bg-field px-3.5 py-2 text-[14.5px]">{field(item, "text")}</div>
+          </div>
+          {/* every Agent of the task had stopped, so the message started a new one for it (#4754): its hand-off card */}
+          {newAgent && <NewAgentHandoff sid={newAgent} mid={field(item, "new_agent_machine") || newAgentMachine} title={title} todo={known ? item.ref : undefined} />}
         </div>
       );
     case "today":
@@ -733,16 +758,10 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
   }
 });
 
-/** Under a message to a task whose Agents had all stopped: it went to a new Agent (#4754), which the line opens. */
-function NewAgentLine({ mid, sid }: { mid?: string; sid: string }) {
-  const text = t("assistant-tasks.new_agent_started");
-  if (!mid) return <span className="text-[12px] text-ink-3">{text}</span>;
-  return (
-    <button type="button" onClick={() => navigate({ name: "session", mid, sid })} className="touch-hit inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink hover:underline">
-      <Icon name="agent" size={11} />
-      {text}
-    </button>
-  );
+/** Under a message to a task whose Agents had all stopped: the hand-off card of the new Agent it started (#4754, #5096).
+ *  Without its computer (an older hub, a to-do not refreshed yet) the card opens the task, which leads to the same Agent. */
+function NewAgentHandoff({ sid, mid, title, todo }: { sid: string; mid?: string; title: string; todo?: string }) {
+  return <HandoffCard handoff={{ key: sid, title, wake: "created", mid, sid: mid ? sid : undefined, todo }} />;
 }
 
 /** A card of a task's agent the user dealt with, kept as a line "✓ task · answer". Click it for every question with its
@@ -1248,48 +1267,23 @@ const TRAY_DOT: Record<AssistantTray, string> = { needs: "bg-attention", running
 const EMPTY_FEED: FeedItem[] = [];
 const EMPTY_CARDS: TaskCardMetadata[] = [];
 
-/** What a reply dispatched, under it (#3700): one task reads "Dispatched: <title> · Open", several list their titles; each
- *  opens that task's detail beside the conversation, its Agent's chat or, before the Agent starts, the task card (openTask).
- *  A task the hub could not start has no to-do yet and is shown without a link (its plan card says why). */
-function DispatchHint({ tasks }: { tasks: { todo?: string; title: string }[] }) {
-  if (tasks.length === 1) {
-    const [task] = tasks;
-    return (
-      <DispatchedTask todo={task!.todo} title={task!.title} hint className="max-w-full">
-        {(title) => (
-          <>
-            <span className="truncate">{t("assistant-tasks.dispatch_single", { title })}</span>
-            {task!.todo && <span className="shrink-0 font-semibold text-accent">· {t("assistant-tasks.dispatch_open")}</span>}
-          </>
-        )}
-      </DispatchedTask>
-    );
-  }
-  return (
-    <div data-dispatch-hint={tasks.length} className="flex max-w-full flex-col items-start gap-1.5 self-start">
-      <span className="px-1 text-[12px] text-ink-2">{t("assistant-tasks.dispatch_many", { count: tasks.length })}</span>
-      <div className="flex max-w-full flex-wrap gap-1.5">
-        {tasks.map((task, i) => (
-          <DispatchedTask key={task.todo ?? `unstarted-${i}`} todo={task.todo} title={task.title} className="max-w-[280px]">
-            {(title) => <span className="truncate">{title}</span>}
-          </DispatchedTask>
-        ))}
-      </div>
-    </div>
+/** A started plan's tasks in the conversation (#3700, #5096): a hand-off card for each Agent they started (one per task
+ *  while its Agent is starting, or says why it did not start), in plan order; live to-do titles over the plan's. */
+function PlanHandoffs({ plan }: { plan: TaskPlan }) {
+  const plans = useFeed((s) => s.plans);
+  const handoffs = useStoreRows((s) =>
+    plan.tasks.flatMap((task, i) => taskHandoffs(task.todo_id ? s.todos.find((x) => x.id === task.todo_id) : undefined, { key: `${plan.id}/${i}`, title: task.title, error: task.error, todoId: task.todo_id }, "created", plans, s.todosLoaded)),
   );
+  return <HandoffCards handoffs={handoffs} />;
 }
 
-/** One dispatched task's link: the to-do's current title (the plan's until the to-do arrives). */
-function DispatchedTask({ todo, title, hint, className, children }: { todo?: string; title: string; hint?: boolean; className: string; children: (title: string) => ReactNode }) {
-  const current = useStore((s) => (todo ? s.todos.find((x) => x.id === todo)?.title : undefined)) ?? title;
-  const pill = cx("inline-flex min-w-0 items-center gap-2 self-start rounded-full bg-field px-3 py-1.5 text-sm text-ink-2", className);
-  if (!todo) return <span data-dispatch-hint={hint ? 1 : undefined} data-dispatched-task="" className={pill}>{children(current)}</span>;
-  return (
-    <button type="button" data-dispatch-hint={hint ? 1 : undefined} data-dispatched-task={todo} title={current} onClick={() => openTask(todo)} className={cx(pill, "hover:bg-hover")}>
-      {children(current)}
-      <Icon name="chevronRight" className="shrink-0" />
-    </button>
-  );
+/** A task the conversation dispatched on its own (agent_start), or one made of an Agent already running
+ *  (`body.wake` "active": agent_supervise, agent_send with a task): its Agents' hand-off cards. */
+function TaskHandoffs({ item }: { item: FeedItem }) {
+  const plans = useFeed((s) => s.plans);
+  const wake = feedWake(field(item, "wake"));
+  const handoffs = useStoreRows((s) => (item.ref ? taskHandoffs(s.todos.find((x) => x.id === item.ref), { key: item.id, title: "", todoId: item.ref }, wake, plans, s.todosLoaded) : []));
+  return <HandoffCards handoffs={handoffs} />;
 }
 
 /** One slot, one row: live task/session state wins over historical feed metadata. */
@@ -1385,7 +1379,7 @@ function NeedsYouRow({ item }: { item: NeedsYouItem }) {
   if (item.kind === "message") return <MessageCard item={item.item} />;
   if (item.kind === "agent") {
     const { session, asks } = item;
-    const open = () => openPanel({ kind: "agent", mid: session.machine_id, sid: session.session_id });
+    const open = () => openAgent(session.machine_id, session.session_id);
     if (!asks.length) return <button type="button" data-needs-row={item.key} onClick={open} className="flex items-center gap-2 rounded-control bg-field px-3 py-2 text-left text-sm"><StatusMark state="needs_you" /><span className="min-w-0 flex-1 truncate">{sessionTitle(session)}</span><span className="shrink-0 text-xs text-ink-2">{stateName("needs_you")}</span></button>;
     return <div data-needs-row={item.key}><button type="button" onClick={open} className="block max-w-full truncate px-1 text-left text-sm font-semibold hover:underline">{sessionTitle(session)}</button>{asks.map((ix) => <InteractionCard key={ix.id} ix={ix} />)}</div>;
   }
@@ -1400,14 +1394,42 @@ function NeedsYouRow({ item }: { item: NeedsYouItem }) {
       </Suspense>
     );
   if (ask) return <div data-needs-row={item.key}><AcceptRow stacked key={todo.id + ask.asked_at} row={{ id: todo.id, title: todo.title, waited_s: Math.max(0, (Date.now() - Date.parse(ask.asked_at)) / 1000), outcome: ask.outcome, verdict: ask.verdict, recommend: ask.recommend, asked_at: ask.asked_at }} /></div>;
+  if (status === "failed") return <FailedTaskRow rowKey={item.key} todo={todo} />;
   return <button type="button" data-needs-row={item.key} onClick={() => openTask(todo.id)} className="flex items-center gap-2 rounded-control bg-field px-3 py-2 text-left text-sm"><Icon name="hand" className="shrink-0 text-attention" /><span className="min-w-0 flex-1 truncate">{todo.title}</span><span className="shrink-0 text-xs text-ink-2">{waitsLabel(todo, status)}</span></button>;
 }
 
-/** An Agent that belongs to no task, working: one row of In progress that opens its chat. */
+/** A task whose Agent did not start, in Needs you: why, and Retry / Remove where it is (#5096: no panel to open for them;
+ *  the title opens the to-do's page). */
+function FailedTaskRow({ rowKey, todo }: { rowKey: string; todo: Todo }) {
+  const retrying = useRetrying(todo.id);
+  const why = useFeed((s) => whyNotStarted(todo, s.plans));
+  return (
+    <div data-needs-row={rowKey} data-failed-task={todo.id} className="flex flex-col gap-1.5 rounded-control bg-field px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon name="info" className="shrink-0 text-red" />
+        <button type="button" onClick={() => openTask(todo.id)} className="min-w-0 flex-1 truncate text-left hover:underline">{todo.title}</button>
+        <span className="shrink-0 text-xs text-ink-2">{waitsLabel(todo, "failed")}</span>
+      </div>
+      {why && <div className="truncate pl-6 text-xs text-red" title={why}>{why}</div>}
+      <div className="flex items-center gap-4 pl-6 text-[12.5px]">
+        <button type="button" disabled={retrying} onClick={() => retryTaskNow(todo)} className="touch-hit inline-flex items-center gap-1 whitespace-nowrap font-semibold text-accent hover:underline disabled:opacity-50 disabled:hover:no-underline">
+          <Icon name="retry" size={12} />
+          {retrying ? t("assistant-tasks.retrying") : t("assistant-tasks.retry")}
+        </button>
+        <button type="button" onClick={() => removeTaskNow(todo)} className="touch-hit inline-flex items-center gap-1 whitespace-nowrap font-semibold text-red hover:underline">
+          <Icon name="trash" size={12} />
+          {t("assistant-tasks.remove")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** An Agent that belongs to no task, working: one row of In progress that opens its page. */
 function RunningAgentRow({ session, activity }: { session: Session; activity?: BackgroundWork }) {
   const detail = backgroundWorkLine(activity) ?? session.activity?.trim();
   return (
-    <button type="button" data-running-agent={`${session.machine_id}/${session.session_id}`} onClick={() => openPanel({ kind: "agent", mid: session.machine_id, sid: session.session_id })} className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-hover">
+    <button type="button" data-running-agent={`${session.machine_id}/${session.session_id}`} onClick={() => openAgent(session.machine_id, session.session_id)} className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-hover">
       <span className="flex w-4 shrink-0 justify-center"><StatusMark state="working" /></span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-semibold">{sessionTitle(session)}</span><span className="shrink-0 text-xs text-ink-2">{stateName("working")}</span></div>
@@ -1620,7 +1642,7 @@ export const TaskDock = memo(function TaskDock({ conversation }: { conversation:
               key={`${s.machine_id}/${s.session_id}`}
               type="button"
               aria-label={t("assistant-tasks.dock_agent", { title: sessionTitle(s), state: stateName(state === "needs_you" ? "needs_you" : "working") })}
-              onClick={() => openPanel({ kind: "agent", mid: s.machine_id, sid: s.session_id })}
+              onClick={() => openAgent(s.machine_id, s.session_id)}
               className={cx(pill, state === "needs_you" ? "bg-field text-attention" : "bg-field text-ink hover:bg-hover")}
             >
               <StatusMark state={state} />

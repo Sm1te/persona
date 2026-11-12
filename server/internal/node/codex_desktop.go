@@ -476,6 +476,9 @@ type codexOrigin struct {
 	sub    bool
 	root   string // session_id identifies the shared root on newer Codex versions
 	parent string // the thread that spawned this subagent
+	// started holds when the thread began, the session_meta line's time (Session.StartedAt), made once for every row
+	// of the thread: a hierarchy is never written once set, so the rows share it. Nil when the line has no time.
+	started *proto.SessionHierarchy
 }
 
 var codexOrigins sync.Map // path → codexOrigin (the first line never changes)
@@ -494,8 +497,9 @@ func readCodexOrigin(path string) codexOrigin {
 		return codexOrigin{}
 	}
 	var m struct {
-		Type    string `json:"type"`
-		Payload struct {
+		Timestamp string `json:"timestamp"`
+		Type      string `json:"type"`
+		Payload   struct {
 			Originator   string          `json:"originator"`
 			Parent       string          `json:"parent_thread_id"`
 			SessionID    string          `json:"session_id"`
@@ -507,6 +511,9 @@ func readCodexOrigin(path string) codexOrigin {
 		return codexOrigin{} // not written yet: read again next time
 	}
 	o := codexOrigin{desktop: m.Payload.Originator == "Codex Desktop" || m.Payload.Originator == "codex_work_desktop", cli: m.Payload.Originator == "codex-tui" || m.Payload.Originator == "codex_cli_rs"}
+	if at, err := time.Parse(time.RFC3339Nano, m.Timestamp); err == nil && !at.IsZero() {
+		o.started = &proto.SessionHierarchy{StartedAt: at.UTC()}
+	}
 	var source string
 	if json.Unmarshal(m.Payload.Source, &source) != nil {
 		source = "" // an object: a subagent

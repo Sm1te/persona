@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTokens, hitRate, hitRuns, nearestStep, offlineRuns, perMinute, stackLayers, totalTokens, type MachineUsage } from "./tokens";
+import { compactTokens, formatTokens, hitRate, hitRuns, nearestStep, offlineRuns, perMinute, stackLayers, totalTokens, type MachineUsage } from "./tokens";
 
 describe("formatTokens", () => {
   // The same table as the apps' TokenUsageTests (#4973).
@@ -44,5 +44,13 @@ describe("usage charts", () => {
     expect(hitRuns(u).map((r) => r.map((p) => p.t))).toEqual([[0], [240]]);
     expect(nearestStep(u, 130)).toBeUndefined(); // over the offline time
     expect(nearestStep(u, 250)?.t).toBe(240);
+  });
+});
+
+describe("compactTokens (#5030, a subagent card's tokens)", () => {
+  it.each([
+    [0, "0"], [999, "999"], [1_000, "1.0k"], [23_456, "23.5k"], [999_949, "999.9k"], [999_960, "1.0M"], [2_500_000, "2.5M"], [3_210_000_000, "3.2B"],
+  ])("%d → %s", (n, want) => {
+    expect(compactTokens(n)).toBe(want);
   });
 });

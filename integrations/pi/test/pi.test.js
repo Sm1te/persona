@@ -588,3 +588,45 @@ test('the herdr pane comes with its named session', () => {
   assert.equal(herdrPaneOf({ HERDR_PANE_ID: 'w4:p1', HERDR_SOCKET_PATH: '/h/.config/herdr/sessions/a b/herdr.sock' }), 'w4:p1')
   assert.equal(herdrPaneOf({ HERDR_PANE_ID: 'w4:p1', HERDR_SOCKET_PATH: '/h/.config/herdr/sessions/../herdr.sock' }), 'w4:p1')
 })
+
+test('a host given no identity options is the pi it always was', async (t) => {
+  const { n, host } = await setup(t, { approve: ['bash'], answerFirst: 'phone' })
+  const a = piSession('s-id')
+  host.register(a.pi)
+  await a.fire('session_start')
+  await n.ready
+  await until('listed', () => n.last('runtime.sessions'))
+  assert.equal(n.hello.runtime, 'pi-4242')
+  assert.equal(n.hello.name, 'pi')
+  assert.equal(n.hello.agent, 'pi')
+  assert.equal(typeof n.hello.instance, 'string')
+  assert.notEqual(n.hello.instance, 'pi-4242', 'no instancePrefix: the instance stays this process\'s own')
+  n.resolve = () => ({ allow: true })
+  await a.fire('tool_call', { toolName: 'bash', toolCallId: 'c1', input: { command: 'ls' } })
+  assert.match(n.asked.at(-1).id, /^pi-/, 'cards keep the pi id prefix')
+})
+
+test('a host can serve another agent of the same extension API (omp)', async (t) => {
+  const { Type } = await import('./typebox-stub.js')
+  const n = await startFakeNode(t)
+  const host = createPiHost({
+    SessionManager: { listAll: async () => [], open: () => sessionManager('x', '/', []) },
+    pid: 4343,
+    log: () => {},
+  }, { socketPath: n.path, retryMs: 20, pushDelayMs: 5, approve: ['bash'], answerFirst: 'phone',
+    agent: 'omp', name: 'omp', instancePrefix: 'omp', interactionPrefix: 'omp' })
+  t.after(() => host.stop())
+  const a = piSession('s-omp')
+  host.register(a.pi, { Type })
+  await a.fire('session_start')
+  await n.ready
+  await until('listed', () => n.last('runtime.sessions'))
+  assert.equal(n.hello.runtime, 'omp-4343')
+  assert.equal(n.hello.agent, 'omp')
+  assert.equal(n.hello.name, 'omp')
+  assert.equal(n.hello.instance, 'omp-4343')
+  assert.equal(n.hello.launcher, undefined, 'a terminal omp starts no sessions')
+  n.resolve = () => ({ allow: true })
+  await a.fire('tool_call', { toolName: 'bash', toolCallId: 'c1', input: { command: 'ls' } })
+  assert.match(n.asked.at(-1).id, /^omp-/, 'its cards carry its own id prefix')
+})

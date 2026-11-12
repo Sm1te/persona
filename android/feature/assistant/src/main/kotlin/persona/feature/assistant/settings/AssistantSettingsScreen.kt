@@ -20,8 +20,10 @@ import persona.core.contracts.Machine
 import persona.core.contracts.SessionKey
 import persona.core.contracts.api.AssistantConfig
 import persona.core.contracts.api.AssistantManagement
+import persona.core.contracts.api.BackgroundSupervisor
 import persona.core.designsystem.*
 import persona.core.designsystem.icons.PhIcon
+import persona.core.designsystem.icons.PersonaIcons
 import persona.core.designsystem.icons.PhIcons
 import persona.feature.assistant.LocalAssistantHost
 import persona.feature.assistant.R
@@ -138,6 +140,8 @@ private fun AssistantSettingsDetails(
             open = { part = it }, sheet = { sheet = it }, follow = { scope.launch { controller.setFollowPhone(it) } },
             quietTasks = { scope.launch { controller.setMainTasksQuiet(it) } },
             foldBackground = { scope.launch { controller.setMainBackgroundFolded(it) } },
+            superviseOwn = { scope.launch { controller.setMainSupervisesOwnTasks(it) } },
+            supervisorModel = onModelConfiguration?.let { open -> { open(BackgroundSupervisor.PURPOSE, owner) } },
             owner = owner, permission = { scope.launch { controller.setDefaultPermission(it) } })
         SettingsPart.Notes -> NotesPart(shown, onBack = { part = SettingsPart.Home }) { text -> controller.saveNotes(text) }
         SettingsPart.Memory -> MemoryPart(shown, machine, machineName, onBack = { part = SettingsPart.Home },
@@ -209,6 +213,9 @@ private fun SettingsHome(
     follow: (Boolean) -> Unit,
     quietTasks: (Boolean) -> Unit = {},
     foldBackground: (Boolean) -> Unit = {},
+    superviseOwn: (Boolean) -> Unit = {},
+    /** Opens the background supervisor's model (Settings › Models); null leaves the row out. */
+    supervisorModel: (() -> Unit)? = null,
     owner: String = persona.core.contracts.api.ManagerRoster.ASSISTANT_MANAGER,
     permission: (String) -> Unit = {},
 ) {
@@ -297,6 +304,23 @@ private fun SettingsHome(
                         leadingIcon = PhIcons.Stack, enabled = !state.busy) },
                 ))
                 item("background-caption") { Caption(stringResource(R.string.assistant_settings_background_folded_caption)) }
+            }
+
+            // #4927 / #5084: the background supervisor's off switch and its model, shown only by a hub that has it.
+            // The model row is there whichever way the switch is, as Settings › Model configuration lists the use: one
+            // rule for both pages. Its current value is on the page it opens.
+            config.mainSupervisesOwnTasks?.let { own ->
+                item("supervise") { JSectionHeader(stringResource(R.string.assistant_settings_supervise_header)) }
+                val superviseRows = mutableListOf<@Composable () -> Unit>({
+                    JSwitchRow(stringResource(R.string.assistant_settings_supervise_own), own, superviseOwn,
+                        leadingIcon = PersonaIcons.todo, enabled = !state.busy)
+                })
+                if (supervisorModel != null) superviseRows += {
+                    JRow(stringResource(R.string.assistant_settings_supervise_model),
+                        leadingIcon = PersonaIcons.model, enabled = ready, onClick = supervisorModel)
+                }
+                rows("supervise", superviseRows)
+                item("supervise-caption") { Caption(stringResource(R.string.assistant_settings_supervise_caption)) }
             }
 
             item("zone") { JSectionHeader(stringResource(R.string.assistant_settings_zone)) }

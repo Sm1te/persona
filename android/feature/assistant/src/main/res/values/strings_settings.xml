@@ -132,6 +132,10 @@
     <string name="assistant_settings_quiet_caption">Tasks the main chat sends out stay out of the Live Activity, pushes and the badge; when one finishes, waits for your answer or fails, Persona tells you in the main chat. Only affects tasks sent from now on.</string>
     <string name="assistant_settings_background_folded">Fold background rounds</string>
     <string name="assistant_settings_background_folded_caption">Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown.</string>
+    <string name="assistant_settings_supervise_header">Task follow-up</string>
+    <string name="assistant_settings_supervise_own">Main chat supervises its own tasks</string>
+    <string name="assistant_settings_supervise_caption">When off, a background supervisor follows up the tasks the main chat hands out, so the main chat answers you first; turn it on to have the main chat follow them up itself.</string>
+    <string name="assistant_settings_supervise_model">Background supervisor model</string>
     <string name="assistant_settings_unavailable">Assistant settings aren\'t available</string>
     <string name="assistant_settings_unavailable_detail">Pair with a hub first, or leave the demo.</string>
 </resources>

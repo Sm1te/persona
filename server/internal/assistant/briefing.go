@@ -79,6 +79,9 @@ type briefFacts struct {
 	// Briefs, BriefsDone: the pieces of work handed out that need the owner or changed since the last briefing, and
 	// those that ended since, from their briefs (task_brief_digest.go), for the model only.
 	Briefs, BriefsDone []prompts.BriefTask
+	// Day: the evening routine's today's all-day recording (briefing_day.go), for the model only; nil for any other
+	// run, or without one today.
+	Day *prompts.BriefDay
 }
 
 // briefFactsAt works out the facts for a run that starts at now. self is the routine that is running: its own earlier
@@ -129,6 +132,9 @@ func (s *Service) briefFactsAt(ctx context.Context, now time.Time, self string) 
 	f.Confirmations = s.briefConfirmationsAt(ctx, now, loc)
 	f.ConfirmationLines = s.confirmationLines(l, f.Confirmations)
 	f.Leaders = s.briefLeaders(ctx, now)
+	if self == "evening" { // the day's recap was written for it, 30 minutes before (kb_day.go)
+		f.Day = s.briefDay(ctx, now, loc)
+	}
 	return f
 }
 
@@ -211,7 +217,11 @@ func (s *Service) briefStart(ctx context.Context, t Task, now time.Time) string 
 // retry of a run that failed (retried) adds no item: the conversation has the first one, and the retry's facts are the
 // card's and the model's.
 func (s *Service) briefSent(id, session string, retried bool) {
-	if run := s.briefAttach(id, session); run != nil && !retried {
+	run := s.briefAttach(id, session)
+	if run == nil {
+		return
+	}
+	if !retried {
 		s.briefFeed(session, id, run.label, run.facts)
 	}
 }
@@ -298,6 +308,7 @@ func (s *Service) briefAsked(f *briefFacts, shown []string) {
 	for _, id := range shown {
 		if a := b.asks[id]; a != nil && a.AskedAt.Equal(asked[id]) {
 			a.RemindedAt = time.Now().UTC()
+			a.ForBriefing = false // one that waited for a briefing is put to the owner on this card (decision_wait.go)
 		}
 	}
 	s.saveAcceptLocked(ctx)
@@ -371,7 +382,7 @@ func (f *briefFacts) modelText() string {
 	b.ConfirmationSummary = f.Confirmations.summary(f.l)
 	b.Confirmations = f.ConfirmationLines
 	b.ProgressTotal, b.Leaders = f.ProgressTotal, f.Leaders
-	b.Briefs, b.BriefsDone = f.Briefs, f.BriefsDone
+	b.Briefs, b.BriefsDone, b.Day = f.Briefs, f.BriefsDone, f.Day
 	for _, p := range f.Progress {
 		b.Progress = append(b.Progress, prompts.BriefProgress{Title: clip(oneLine(p.Title), 60), Stage: p.Stage})
 	}
@@ -385,15 +396,18 @@ func (f *briefFacts) modelText() string {
 
 // briefPush is the text of the finished push of the routine run that conversation session is on: the counts Persona
 // worked out, "" when it is on none or its counts were said already. report: the turn is the one a scheduled run started
-// (reportTurn), not a message the owner sent into the conversation later.
+// (reportTurn), not a message the owner sent into the conversation later. With that push the briefing has reached the
+// owner: the decisions that waited for one are no longer held (briefListed).
 func (s *Service) briefPush(session string, l i18n.Lang, report bool) string {
 	run := s.briefOf(session)
 	b := &s.brief
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if !report || run == nil || run.pushed {
+		b.mu.Unlock()
 		return ""
 	}
 	run.pushed = true
+	b.mu.Unlock()
+	s.briefListed(run.facts)
 	return run.facts.countsIn(l)
 }

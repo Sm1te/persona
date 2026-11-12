@@ -94,6 +94,15 @@ describe("splitting and running an agent", () => {
     expect(d.openSession).toHaveBeenCalledWith("m1", "s9");
   });
 
+  it("names a provider by its display name, its ID before the model at the row's end; an rc alias by its ID (#5029)", async () => {
+    const d = deps({ launchers: vi.fn(async () => [{ name: "relay-example-com", display_name: "我的中转 站", model: "glm-5" }, { name: "cc_glm" }]) });
+    const list = await (by(nodeActions(tab, d), "node-agent").children as () => Promise<MenuItem[]>)();
+    expect(list.map((i) => [i.label, i.hint])).toEqual([["我的中转 站", "relay-example-com · glm-5"], ["cc_glm", undefined]]);
+    await list[0].onSelect();
+    expect(d.post).toHaveBeenCalledWith("m1", "panes/agent", { pane: "w1:p2", launcher: "relay-example-com" });
+    expect(d.notify).toHaveBeenCalledWith("已在窗格里启动 我的中转 站", "ok");
+  });
+
   it("stays where it is when the answer names no session", async () => {
     for (const answer of [{}, { session_id: "" }, undefined]) {
       const d = deps({ post: vi.fn(async () => answer) });

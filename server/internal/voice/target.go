@@ -56,7 +56,8 @@ type resumeRun struct {
 }
 
 // The features this extension's protocol 2 has (GET /info, ready): only what is there (docs/assistant/voice.md "Version negotiation").
-var features = []string{"target", "runs", "asks", "resume", "suspend"}
+// speak is POST /speak (speak.go), outside a call.
+var features = []string{"target", "runs", "asks", "resume", "suspend", "speak"}
 
 const (
 	// snapshotWait is how long the snapshot's parts that may be left out are waited for (docs/assistant/voice.md 4.5): it is

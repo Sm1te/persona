@@ -177,6 +177,8 @@ private struct ExtensionStateDot: View {
 struct ExtensionDetailView: View {
     @State private var page: ExtensionModel
     @State private var editingSecret: ExtensionSecret?
+    /// An Always rule the user asked to remove: confirmed first.
+    @State private var removingRule: HandoffRule?
     @State private var declarations = ExtensionTextContributions()
     @State private var connectorInbox: ExtensionConnectorsModel
     /// Its connectors' source subscriptions (#2041): the entry row's counts, nil while it is hidden.
@@ -247,7 +249,16 @@ struct ExtensionDetailView: View {
             // Closed by clearing the item it is shown for, so the page and the sheet cannot disagree about whether it is
             // open (tapping the same secret again must open it).
             ExtensionSecretSheet(secret: secret, save: { await page.setSecret(secret.name, value: $0) },
+                              saveReference: { await page.setSecretReference(secret.name, reference: $0) },
                               clear: { await page.clearSecret(secret.name) }, close: { editingSecret = nil })
+        }
+        .confirmationDialog(String(localized: "Remove this rule?"), isPresented: Binding(get: { removingRule != nil }, set: { if !$0 { removingRule = nil } }),
+                            titleVisibility: .visible, presenting: removingRule) { rule in
+            Button(role: .destructive) { Task { await page.removeHandoffRule(rule.id) } } label: { Text("Remove [Handoff Rule]").lineLimit(1) }
+                .accessibilityIdentifier("handoff-rule-remove-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The next time an Agent asks for it, you approve it again.")
         }
         .task { await page.load() }
         // A launcher field's choices (format launcher): the hub asks every machine for them, so apart from the page.
@@ -348,6 +359,7 @@ struct ExtensionDetailView: View {
         connectorSections(d)
         if !d.readOnly && !d.form.isEmpty { form(d) }
         if !d.readOnly && !d.secrets.isEmpty { secrets(d) }
+        SecretProviderSections(users: d.secretUsers, rules: d.handoffRules, editable: !d.readOnly) { removingRule = $0 }
         if !d.readOnly && !d.form.isEmpty {
             Section {
                 FormAction {
@@ -462,7 +474,16 @@ struct ExtensionDetailView: View {
                             .foregroundStyle(s.set || s.required != true ? Color.secondary : Theme.caution)
                             .lineLimit(1)
                     } label: {
-                        Label { Text(s.title).lineLimit(1) } icon: { ThemedIcon(Theme.Icon.credentials) }
+                        Label {
+                            VStack(alignment: .leading, spacing: Theme.Space.lines) {
+                                Text(s.title).lineLimit(1)
+                                // what a provider's reference names, under the secret's title
+                                if let r = s.reference {
+                                    Text(verbatim: r.title?.isEmpty == false ? r.title! : r.reference)
+                                        .font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                        } icon: { ThemedIcon(Theme.Icon.credentials) }
                     }
                 }
                 .foregroundStyle(Color.primary)
@@ -938,24 +959,60 @@ private struct ExtensionListField: View {
 private struct ExtensionSecretSheet: View {
     var secret: ExtensionSecret
     var save: (String) async -> ExtensionSecretSave
+    /// Saves a provider's reference in its place, where the hub takes one (`extension_secret_references`).
+    var saveReference: (String) async -> ExtensionSecretSave
     var clear: () async -> Void
     var close: () -> Void
+    @Environment(AppModel.self) private var model
     @State private var value = ""
+    /// A provider's reference (op://vault/item/field) in place of the value: on for a secret that holds one.
+    @State private var byReference: Bool
     @State private var busy = false
+
+    init(secret: ExtensionSecret, save: @escaping (String) async -> ExtensionSecretSave,
+         saveReference: @escaping (String) async -> ExtensionSecretSave, clear: @escaping () async -> Void, close: @escaping () -> Void) {
+        self.secret = secret
+        self.save = save
+        self.saveReference = saveReference
+        self.clear = clear
+        self.close = close
+        _byReference = State(initialValue: secret.reference != nil)
+        _value = State(initialValue: secret.reference?.reference ?? "")
+    }
     /// The hub's words when the extension refused what was typed (#5906): shown under the field, which keeps it.
     @State private var refusal: String?
 
     var body: some View {
         NavigationStack {
             List {
+                if model.hubFeatures.hasExtensionFeature("secret_references") {
+                    Section {
+                        Toggle(isOn: $byReference) { Text("Use a Reference").lineLimit(1) }
+                            .onChange(of: byReference) { _, on in value = on ? (secret.reference?.reference ?? "") : "" }
+                            .accessibilityIdentifier("plugin-secret-use-reference")
+                    }
+                }
                 Section {
-                    SecretField(secret.set ? String(localized: "Enter a new value to replace it") : String(localized: "Enter"), filled: String(localized: "Filled in; tap Save [Extension Market Views 94348c]"), text: $value, identifier: "plugin-secret-value")
+                    if byReference {
+                        // The placeholder is a reference's shape, the same in every language.
+                        TextField(String(localized: "Use a Reference"), text: $value, prompt: Text(verbatim: "op://vault/item/field"))
+                            .font(Theme.Font.code)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("plugin-secret-reference")
+                    } else {
+                        SecretField(secret.set ? String(localized: "Enter a new value to replace it") : String(localized: "Enter"), filled: String(localized: "Filled in; tap Save [Extension Market Views 94348c]"), text: $value, identifier: "plugin-secret-value")
+                    }
                     if let refusal {
                         Text(refusal).font(Theme.Font.label).foregroundStyle(Theme.danger).textSelection(.enabled)
                             .accessibilityIdentifier("plugin-secret-refused")
                     }
                 } footer: {
-                    Text(secret.description?.isEmpty == false ? secret.description! : String(localized: "Stored on the hub and given only to this extension."))
+                    if byReference {
+                        Text("Its provider gives the value whenever this extension needs it. Persona keeps only the reference.")
+                    } else {
+                        Text(secret.description?.isEmpty == false ? secret.description! : String(localized: "Stored on the hub and given only to this extension."))
+                    }
                 }
                 if secret.set {
                     Section {
@@ -979,7 +1036,7 @@ private struct ExtensionSecretSheet: View {
                     Button {
                         Task {
                             busy = true
-                            switch await save(value) {
+                            switch await (byReference ? saveReference(value) : save(value)) {
                             case .saved:
                                 value = ""
                                 refusal = nil
@@ -1001,5 +1058,74 @@ private struct ExtensionSecretSheet: View {
         #if os(macOS)
         .macSheet()
         #endif
+    }
+}
+
+/// A secret provider's page (docs/extensions/secret-providers.md): the settings that hold its references, each the
+/// user's standing approval, and its Always rules for hand-offs to Agents, each removable after a confirm (the page's
+/// `removingRule`). Nothing shows for an extension that is no provider.
+private struct SecretProviderSections: View {
+    @Environment(AppModel.self) private var model
+    var users: [ExtensionSecretUser]
+    var rules: [HandoffRule]
+    var editable: Bool
+    var remove: (HandoffRule) -> Void
+
+    var body: some View {
+        if !users.isEmpty {
+            Section {
+                ForEach(users) { u in
+                    VStack(alignment: .leading, spacing: Theme.Space.lines) {
+                        Text(verbatim: label(u)).lineLimit(1)
+                        Text(verbatim: u.reference).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                SettingsHeading(String(localized: "Used By"))
+            } footer: {
+                Text("These settings take their values from this provider. Saving a setting lets it keep taking its value.")
+            }
+        }
+        if !rules.isEmpty {
+            Section {
+                ForEach(rules) { r in
+                    VStack(alignment: .leading, spacing: Theme.Space.lines) {
+                        Text("\(r.launcher) on \(machineName(r.machine)) [Handoff Rule]").lineLimit(1)
+                        Text(verbatim: r.reference).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("handoff-rule")
+                    // Row actions as everywhere (DESIGN_SYSTEM 3.4): a swipe and the same in the context menu, and a
+                    // named action for VoiceOver; the page confirms before anything goes.
+                    .swipeActions(edge: .trailing) {
+                        if editable {
+                            Button(role: .destructive) { remove(r) } label: { Text("Remove [Handoff Rule]") }
+                        }
+                    }
+                    .contextMenu {
+                        if editable {
+                            Button(role: .destructive) { remove(r) } label: { Text("Remove [Handoff Rule]") }
+                        }
+                    }
+                    .accessibilityAction(named: Text("Remove [Handoff Rule]")) { if editable { remove(r) } }
+                }
+            } header: {
+                SettingsHeading(String(localized: "Always for Agents"))
+            } footer: {
+                Text("An Agent with this launcher on this computer gets the value without asking, when you start it yourself. Swipe a rule to remove it.")
+            }
+        }
+    }
+
+    private func machineName(_ id: String) -> String { model.machines.first { $0.id == id }?.name ?? id }
+
+    private func label(_ u: ExtensionSecretUser) -> String {
+        if u.kind == "launcher" {
+            let name = u.launcherName ?? u.launcher ?? ""
+            return u.machine.map { String(localized: "\(name) key on \(machineName($0))") } ?? String(localized: "\(name) key")
+        }
+        return "\(u.extensionName ?? u.extension ?? "") › \(u.secretTitle ?? u.secret ?? "")"
     }
 }

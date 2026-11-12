@@ -13,7 +13,6 @@ import type { TaskBrief } from "./brief";
 import { deleteTodo, type Todo, type TodoAsk } from "./todos";
 import { getInbox, itemPath } from "./inbox";
 import { BUILTIN_MANAGER, conversationManager, defaultManager, itemHeaders, MANAGER_HEADER, managerHeaderFor, routedConversationManager } from "./manager-choice";
-import { closePanel, getPanel } from "./panel";
 import type { ChatLine } from "./turns";
 import type { Item } from "./types";
 import { upsertTaskCards, type TaskCardMetadata } from "./task-cards";
@@ -695,8 +694,6 @@ export async function removeTask(todo: Todo, ask: (message: string) => boolean =
   const routes = { ...st.routes };
   for (const [c, id] of Object.entries(routes)) if (id === todo.id) delete routes[c];
   set({ routes });
-  const panel = getPanel();
-  if (panel?.kind === "task" && panel.todo === todo.id) closePanel();
   await refreshTodos();
   return true;
 }

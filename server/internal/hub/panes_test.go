@@ -152,6 +152,8 @@ var actionBodies = map[string]string{
 	"worktree/add":     `{"cwd":"/tmp/proj","name_hint":"fix the crash"}`,
 	"worktree/status":  `{"cwd":"/tmp/wt/persona-fix-the-crash"}`,
 	"worktree/remove":  `{"path":"/tmp/wt/persona-fix-the-crash","delete_branch":true}`,
+	// #4754 Close finished terminals: the panes the user confirmed
+	"panes/close_finished": `{"panes":"w1:p4,w2:p1"}`,
 }
 
 func postAction(h *Hub, role, path, body string) int {

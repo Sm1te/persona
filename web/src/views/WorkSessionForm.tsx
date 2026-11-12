@@ -9,7 +9,9 @@ import { launcherBlock } from "../lib/launcher-health";
 import { machineLaunchers, modelName, type AgentModel } from "../lib/launcher-models";
 import { hubLabel } from "../lib/mesh";
 import { launchAgent } from "../lib/new-agent";
+import { providerLabel } from "../lib/provider-names";
 import { getState } from "../lib/store";
+import type { Launcher } from "../lib/types";
 import { AttachmentTray } from "../ui/AttachmentTray";
 import { Button, Dialog, Spinner, toast } from "../ui/atoms";
 import { useAddComputer } from "./machines/AddComputerEntry";
@@ -84,15 +86,15 @@ export function WorkSessionForm({ open, onClose }: { open: boolean; onClose: () 
   const dirs = useTarget(target && JSON.stringify([target, browse]), (signal) => api<Dirs>(dirPath + enc(browse), { signal }));
   const project = useTarget(target && cwd && JSON.stringify([target, cwd]), (signal) => api<Dirs>(dirPath + enc(cwd), { signal }));
   const launcherList = useTarget(target, (signal) => machineLaunchers(mid, { signal }));
-  const groups = new Map<string, string[]>();
+  const groups = new Map<string, Launcher[]>();
   for (const l of launcherList?.data?.launchers ?? []) {
     if (launcherBlock(l)) continue;
     const agent = l.agent_type || l.agent || "claude";
     if (!groups.has(agent)) groups.set(agent, []);
-    groups.get(agent)!.push(l.name);
+    groups.get(agent)!.push(l);
   }
   const matching = groups.get(harness) ?? [];
-  const validLauncher = matching.includes(launcher);
+  const validLauncher = matching.some((l) => l.name === launcher);
   const optionsKey = target && project?.data && validLauncher ? JSON.stringify([target, cwd, harness, launcher]) : "";
   const options = useTarget(optionsKey, (signal) => api<StartOptions>(
     `/machines/${enc(mid)}/launchers/${enc(launcher)}/start-options`, { signal, timeout: pastHub(85_000) },
@@ -109,8 +111,8 @@ export function WorkSessionForm({ open, onClose }: { open: boolean; onClose: () 
   const chooseLauncher = (name: string) => { setLauncher(name); setModel(""); };
   const chooseHarness = (agent: string) => {
     setHarness(agent);
-    const names = groups.get(agent) ?? [];
-    chooseLauncher(names.length === 1 ? names[0] : "");
+    const list = groups.get(agent) ?? [];
+    chooseLauncher(list.length === 1 ? list[0].name : "");
   };
   const chooseDevice = (id: string) => {
     setMid(id);
@@ -193,7 +195,7 @@ export function WorkSessionForm({ open, onClose }: { open: boolean; onClose: () 
           <select className={input} value={launcher} disabled={!project?.data || !matching.length} onChange={(e) => chooseLauncher(e.target.value)}>
             <option value="">{t("work-session.choose")}</option>
             {launcher && !validLauncher && <option value={launcher} disabled>{launcher}</option>}
-            {matching.map((name) => <option value={name} key={name}>{name}</option>)}
+            {matching.map((l) => <option value={l.name} key={l.name}>{providerLabel(l)}</option>)}
           </select>
         </label>
         <label className={label}>{t("work-session.model")}

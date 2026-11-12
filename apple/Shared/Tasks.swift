@@ -647,9 +647,16 @@ nonisolated struct DockAgent: Hashable, Identifiable, Sendable {
     }
 
     /// The agents going on in a session list (Persona's own conversations are not agents): waiting for the user
-    /// first, then the newest. Only what a pill shows goes in, so it changes when a pill would.
+    /// first, then the newest. Only what a pill shows goes in, so it changes when a pill would. A subtask (a Codex
+    /// subagent, an agent another agent created) is left out while a session above it is going too, which stands for
+    /// it, as the Agents list folds it under that one (`CodexTasks`); one that waits for the user never is.
     @MainActor static func going(_ sessions: [Session]) -> [DockAgent] {
-        sessions.filter { !$0.assistant && ($0.state == .needsYou || $0.state == .working) }
+        let goes = { (s: Session) in !s.assistant && (s.state == .needsYou || s.state == .working) }
+        var going = sessions.filter(goes)
+        if going.contains(where: \.isNestedSubtask), let parent = CodexTasks.parents(sessions, runs: goes) {
+            going = sessions.indices.filter { parent[$0] < 0 && goes(sessions[$0]) }.map { sessions[$0] }
+        }
+        return going
             .map { DockAgent(key: $0.key, title: $0.displayTitle, state: $0.state, since: $0.stateSince, todoID: $0.todo?.id,
                              activity: AssistantTrayActivity(sessions: [$0]), backgroundWaiting: $0.waitsToBeWoken) }
             .sorted { a, b in

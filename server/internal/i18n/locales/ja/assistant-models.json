@@ -23,6 +23,7 @@
   "name_subscription_recipe": "購読レシピの下書き",
   "name_meeting_answer": "出席した会議での回答",
   "name_schedule": "定期タスク",
+  "name_assistant_supervise": "バックグラウンド監督",
   "group_default": "デフォルトのモデル",
   "group_agents": "Agents",
   "group_triage": "仕分け",

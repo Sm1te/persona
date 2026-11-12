@@ -13,6 +13,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/apierr"
 	"github.com/nwverse/persona/server/internal/db"
+	"github.com/nwverse/persona/server/internal/proto"
 )
 
 // Tasks dispatched from an assistant conversation (docs/assistant/unified-entry.md, #930). The assistant hands the user a plan
@@ -59,6 +60,9 @@ type PlanTask struct {
 	// assistant.start_requested_tasks on it starts without the card's "Start".
 	UserRequested bool   `json:"user_requested,omitempty"`
 	Why           string `json:"why,omitempty"`
+	// OwnerStarted: the owner tapped Start on the plan's card (POST …/start), as against the hub starting it without
+	// asking; the hub's, never what a tool call or an edit says. What a suggested rule counts (rule_suggest.go, #4929).
+	OwnerStarted bool `json:"owner_started,omitempty"`
 	// Reroute is set once a flexible task has been moved to another machine; nil while it runs where it was asked.
 	// Repeated moves keep the original FromMachine and refresh ToMachine and Reason (#2271).
 	Reroute *PlanReroute `json:"reroute,omitempty"`
@@ -135,6 +139,9 @@ type TaskPlan struct {
 	State        string     `json:"state"` // planOpen, planStarted, planDismissed
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
+	// Suggestion: the owner started this kind of task three times; the open plan's card offers to start it directly
+	// from now on (rule_suggest.go, #4929). Filled in where the apps read the plan, never kept with it.
+	Suggestion *proto.RuleSuggestion `json:"suggestion,omitempty"`
 }
 
 const (
@@ -155,7 +162,7 @@ type FeedItem struct {
 
 const (
 	feedPlan     = "plan"     // ref: the plan id
-	feedTask     = "task"     // ref: the todo id
+	feedTask     = "task"     // ref: the todo id; body: taskCardBody, a wake for a task that did not start its Agent (taskCard)
 	feedAnswered = "answered" // ref: the todo id; body: answeredBody (answered.go)
 	feedReceipt  = "receipt"  // ref: the todo id; body: title, state, summary, pr, machine
 	feedRouted   = "routed"   // ref: the todo id; body: text, interrupted (agent_interrupt stopped its turn first), from
@@ -562,7 +569,7 @@ func (s *Service) taskRoutes() {
 			planErr(w, err)
 			return
 		}
-		apierr.WriteJSON(w, map[string]any{"plan": p})
+		apierr.WriteJSON(w, map[string]any{"plan": s.planWithSuggestion(r.Context(), p, s.requestLang(r))})
 	})
 	s.handle("POST /api/v1/task-plans/{id}/start", func(w http.ResponseWriter, r *http.Request) {
 		if !fullRole(r) {
@@ -579,7 +586,7 @@ func (s *Service) taskRoutes() {
 				return
 			}
 		}
-		p, err := s.startPlan(r.Context(), r.PathValue("id"), in.Tasks, in.Remember)
+		p, err := s.startPlan(ownerStart(r.Context()), r.PathValue("id"), in.Tasks, in.Remember)
 		if err != nil {
 			planErr(w, err)
 			return
@@ -648,6 +655,9 @@ func (s *Service) taskRoutes() {
 			return
 		}
 		plans := s.feedPlans(r.Context(), items)
+		for id, p := range plans {
+			plans[id] = s.planWithSuggestion(r.Context(), p, s.requestLang(r))
+		}
 		if items == nil {
 			items = []FeedItem{}
 		}

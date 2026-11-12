@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/assistantwire"
+	"github.com/nwverse/persona/server/internal/compat"
 	"github.com/nwverse/persona/server/internal/osproc"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/runtimepkg"
@@ -380,10 +382,12 @@ var paseoBridgeCommand = func(ctx context.Context, rh *RuntimeHost) (*exec.Cmd, 
 }
 
 // paseoBridgeArgs is the bridge's command line after the JavaScript runtime. The node's mcp.json (beside the runtime
-// socket) is what the bridge gives each new Agent as its Persona tools.
+// socket) is what the bridge gives each new Agent as its Persona tools, and of those the Agent's own run without a card
+// (--allow-tools: agentAllowedTools without the office rule, which the bridge's Agents do not get).
 func paseoBridgeArgs(dir, socket, home string) []string {
 	return []string{filepath.Join(dir, "paseo", "bridge.mjs"), "--socket", socket, "--paseo-home", home,
-		"--mcp-config", filepath.Join(filepath.Dir(socket), "mcp.json")}
+		"--mcp-config", filepath.Join(filepath.Dir(socket), "mcp.json"),
+		"--allow-tools", strings.Join(compat.MCPAllowedToolNames(assistantwire.AgentOwnTools, true), ",")}
 }
 
 // runPaseoBridge runs the bridge once, until it exits or ctx ends (then it is stopped: SIGTERM to its group, SIGKILL

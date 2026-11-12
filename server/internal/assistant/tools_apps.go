@@ -138,6 +138,13 @@ func (s *Service) toolKB(ctx context.Context, name string, args json.RawMessage)
 				b.WriteString(s.minutesActionLines(ctx, d.ID, &m))
 			}
 		}
+		if len(d.Recap) > 0 { // an all-day recording's recap (kb_day.go): a whole day's transcript is far past the cut
+			var rc kb.DayRecap
+			if json.Unmarshal(d.Recap, &rc) == nil && rc.Markdown != "" {
+				fmt.Fprintf(&b, "\nrecap.md:\n%s\n", rc.Markdown)
+				b.WriteString(s.recapActionLines(ctx, d.ID, &rc))
+			}
+		}
 		// A meeting's photos, their words (photos.md): after the minutes' action items, before the transcript.
 		if a.Kind == kb.KindRecording {
 			if photos := e.PhotosMarkdown(d.ID); photos != "" {
@@ -148,9 +155,15 @@ func (s *Service) toolKB(ctx context.Context, name string, args json.RawMessage)
 			b.WriteString(s.recordingsAt(ctx, e, a.Kind, d.ID))
 		}
 		var trimmed struct {
-			At *time.Time `json:"trimmed_at"`
+			At   *time.Time `json:"trimmed_at"`
+			Kind string     `json:"kind"`
 		}
-		if a.Kind == kb.KindRecording && json.Unmarshal(d.Meta, &trimmed) == nil && trimmed.At != nil {
+		switch {
+		case a.Kind != kb.KindRecording || json.Unmarshal(d.Meta, &trimmed) != nil || trimmed.At == nil:
+		case trimmed.Kind == kb.RecordingDay:
+			fmt.Fprintf(&b, "\ntranscript.md: expired %s (assistant.recording_days); only the recap above is kept, until "+
+				"assistant.minutes_days after the day (0 means forever, the default), and it can't be written again.\n", trimmed.At.In(s.location(ctx)).Format("2006-01-02"))
+		default:
 			fmt.Fprintf(&b, "\ntranscript.md: expired %s (assistant.recording_days); only the minutes above are kept, until "+
 				"assistant.minutes_days after the meeting (0 means forever, the default), and they can't be made again.\n", trimmed.At.In(s.location(ctx)).Format("2006-01-02"))
 		}
@@ -247,7 +260,7 @@ func (s *Service) toolInteractionAnswer(ctx context.Context, self string, args j
 		return "", err
 	}
 	// A card handed to this conversation before the user (ask_route.go): its answer is the task's decision.
-	todo, routed := s.routedTo(ix.ID, self)
+	todo, routed := s.routedTo(ix.ID, self, s.isMain(ctx, self))
 	var res struct {
 		OK     bool   `json:"ok"`
 		Status string `json:"status"`
@@ -556,6 +569,12 @@ func (s *Service) recordingLines(ctx context.Context, e *kb.Engine, items []kb.E
 			extra += " minutes-pending"
 		case kb.MinutesFailed:
 			extra += " minutes-failed"
+		}
+		if r.Kind == kb.RecordingDay { // an all-day recording (kb_day.go): its recap, not minutes
+			extra += " all-day"
+			if r.RecapState != "" {
+				extra += " recap-" + r.RecapState
+			}
 		}
 		if r.Trimmed() {
 			extra += " transcript-expired"

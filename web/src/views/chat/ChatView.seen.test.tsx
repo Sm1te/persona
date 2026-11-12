@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// An agent's chat on screen is seen (lib/store.ts viewSession): opened, it registers; closed or switched, it lets go;
-// a subagent's read-only transcript is not an agent of its own and marks nothing.
+// An agent's chat on screen is seen (lib/store.ts viewSession): opened, it registers; closed or switched, it lets go.
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,11 +95,6 @@ describe("an agent's chat on screen", () => {
     captured.session = { ...captured.session, state: "unread", status: "done" };
     act(() => root.render(<ChatView mid="hub" sid="c1" inPage />));
     expect(captured.views).toEqual(["hub/c1"]);
-  });
-
-  it("does not mark a subagent's read-only transcript", () => {
-    act(() => root.render(<ChatView mid="hub" sid="c1@agent-1" readOnly />));
-    expect(captured.views).toEqual([]);
   });
 });
 

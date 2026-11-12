@@ -65,6 +65,12 @@ func (n *Node) inputTurn(ctx context.Context, id string) (unlock func(), err err
 		leave()
 		return nil, err
 	}
+	// A launcher switch under way, maybe on the last connection's Node (switch_share.go): after it, on the agent it
+	// started, or on the one it brought back.
+	if err := n.switches().wait(ctx, id); err != nil {
+		leave()
+		return nil, err
+	}
 	unlock = n.typing.lock(id)
 	leave()
 	return unlock, nil

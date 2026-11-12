@@ -47,7 +47,8 @@ final class AttachCaptionKeyboardTests: XCTestCase {
         }
         let photo = app.descendants(matching: .any)["attach-photo"].firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 15), "no photo in the panel (library empty or not allowed?):\n\(app.debugDescription)")
-        photo.tap()
+        // Its ring picks it; the rest of a photo opens it in the editor (#4963).
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.12)).tap()
         let caption = app.descendants(matching: .any)["attach-caption"].firstMatch
         XCTAssertTrue(caption.waitForExistence(timeout: 5), "picking a photo shows the caption:\n\(app.debugDescription)")
         let keyboard = app.keyboards.firstMatch

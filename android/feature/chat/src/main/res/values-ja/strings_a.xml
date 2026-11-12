@@ -29,6 +29,8 @@
     <string name="chat_delivery_edit">戻して編集</string>
     <string name="chat_delivery_retry">再試行</string>
     <string name="chat_delivery_delete">削除</string>
+    <string name="chat_delivery_deleted">メッセージを削除しました</string>
+    <string name="chat_delivery_undo">元に戻す</string>
     <string name="chat_delivery_discard">破棄</string>
     <string name="chat_delivery_check">メッセージを確認</string>
     <string name="chat_delivery_resend_title">このメッセージを再送しますか？</string>

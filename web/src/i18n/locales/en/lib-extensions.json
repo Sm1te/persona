@@ -86,5 +86,6 @@
   "sandbox_denied_other": "{count} denied",
   "machine_missing": "{name} (no such machine)",
   "launcher_missing": "{name} (no such launcher)",
-  "launchers_loading": "Loading launchers…"
+  "launchers_loading": "Loading launchers…",
+  "from_provider": "From {provider}"
 }

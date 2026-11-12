@@ -97,6 +97,17 @@ export function runtimeChoices(p: ModelPurpose, agent?: string): { id: string; l
 export const modelConfiguration = (manager?: string) => api<ModelConfigurationBody>("/model-config", { headers: manager ? { [MANAGER_HEADER]: manager } : undefined });
 export const modelPurpose = (id: string, manager?: string) => api<ModelPurposeBody>(`/model-config/purposes/${enc(id)}`, { headers: manager ? { [MANAGER_HEADER]: manager } : undefined });
 
+/** The catalog with the background supervisor's purpose in it (#5082, docs/assistant/model-config.md): the hub leaves it
+ *  out of the list it sends every client and answers it by its own id, so the page reads it apart and puts it right after
+ *  Main chat, which it follows. Unchanged when the hub has no such purpose (an older one), lists it itself, or has no
+ *  Main chat row. */
+export function withPurposeAfter(catalog: ModelConfigurationBody, purpose: ModelPurpose | undefined, after: string): ModelConfigurationBody {
+  if (!purpose || catalog.purposes.some((p) => p.id === purpose.id)) return catalog;
+  const at = catalog.purposes.findIndex((p) => p.id === after);
+  if (at < 0) return catalog;
+  return { ...catalog, purposes: [...catalog.purposes.slice(0, at + 1), purpose, ...catalog.purposes.slice(at + 1)] };
+}
+
 export function draftFor(p: ModelPurpose): ModelDraft {
   const runtime = runtimeChoices(p).length ? p.override?.runtime || p.effective?.runtime || "cli" : "";
   return { provider: p.override?.provider ?? "", model: p.override?.model ?? "", effort: p.override?.effort ?? "", runtime };

@@ -45,12 +45,13 @@ class ExtensionSettingsShotsTest {
             ExtensionDependency("future", state = "new-state")),
         extensionPack = listOf(ExtensionPackMember("example-notes", "example", "^1.0.0"), ExtensionPackMember("other")))
 
-    private fun show(detail: ExtensionDetail) {
+    /** [global]: the assistant's automatic extension updates (#4748: off grays each extension's Auto-upgrade). */
+    private fun show(detail: ExtensionDetail, global: Boolean = true) {
         var style by mutableStateOf(AppStyle.Glass)
         var dark by mutableStateOf(false)
         val api = object : ExtensionApiStub() {
             override suspend fun extension(id: String) = detail
-            override suspend fun autoUpgrades() = true
+            override suspend fun autoUpgrades() = global
             // Installed: one of the pack's two members (#4122: named; the other keeps its id).
             override suspend fun extensions() = listOf(HubExtension("example-notes", "示例笔记"))
         }
@@ -91,6 +92,10 @@ class ExtensionSettingsShotsTest {
             rule.onNodeWithText("启用").assertIsNotEnabled()
             rule.onNodeWithText("无需配置").assertExists()
         }
+        if (!global) {
+            rule.onNodeWithText("自动升级").performScrollTo().assertIsOn().assertIsNotEnabled()
+            rule.onNodeWithText("重新打开后恢复", substring = true).assertExists()
+        }
         val dir = File("build/extension-settings-shots").also { it.mkdirs() }
         for (s in AppStyle.entries) {
             var light: IntArray? = null
@@ -102,13 +107,14 @@ class ExtensionSettingsShotsTest {
                 image.getPixels(pixels, 0, image.width, 0, 0, image.width, image.height)
                 assertTrue("Content rendered", pixels.distinct().size > 100)
                 if (!d) light = pixels else assertFalse("Light and dark must differ", pixels.contentEquals(light!!))
-                File(dir, "${detail.extension.id}-${s.key}-${if (d) "dark" else "light"}.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                File(dir, "${detail.extension.id}${if (global) "" else "-updates-off"}-${s.key}-${if (d) "dark" else "light"}.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
         }
     }
 
     @Test fun builtinVoiceInEveryStyle() = show(voice)
     @Test fun marketNotesInEveryStyle() = show(notes)
+    @Test fun marketNotesWithUpdatesOffEverywhere() = show(notes, global = false)
     @Test fun configuredWeatherInEveryStyle() = show(weather)
     @Test fun installedPackInEveryStyle() = show(pack)
 
@@ -166,7 +172,7 @@ class ExtensionSettingsShotsTest {
         var checks = 0
         val api = object : ExtensionApiStub() {
             override suspend fun extension(id: String) = current
-            override suspend fun autoUpgrades() = false
+            override suspend fun autoUpgrades() = true // off grays the switch (#4748)
             override suspend fun setEnabled(id: String, enabled: Boolean, cascade: Boolean): ExtensionDetail {
                 current = current.copy(extension = current.extension.copy(enabled = enabled))
                 return current

@@ -549,7 +549,9 @@ func (s *Service) channelAnsweredElsewhere(ctx context.Context, id string, m cha
 }
 
 // channelAnswerAsk takes the owner's message as the answer to the latest thing asked in the channel; false when
-// nothing waits (or what waited was answered elsewhere): the message is then an ordinary one.
+// nothing waits (or what waited was answered elsewhere): the message is then an ordinary one. A question asked
+// without waiting (channel.Ask.Later) holds no turn and may be up for hours, so it takes only a reply that reads as
+// its answer (an option's number or name); other words answer what was asked before it, else are an ordinary message.
 func (s *Service) channelAnswerAsk(ctx context.Context, id string, m channel.Message, text, action string) bool {
 	if text == "" {
 		return false
@@ -578,8 +580,8 @@ func (s *Service) channelAnswerAsk(ctx context.Context, id string, m channel.Mes
 	})
 	var a *channel.Ask
 	for _, x := range c.st.Asks {
-		if x.Channel == id {
-			a = x // the latest one asked
+		if x.Channel == id && (!x.Later || channel.ReadsAsAnswer(x, text)) {
+			a = x // the latest one asked that this reply may answer
 		}
 	}
 	if len(c.st.Asks) != n {
@@ -677,20 +679,44 @@ func rewindLastAnswer(a *channel.Ask) {
 
 // channelPush sends what notify_user pushed to the phone to the plugin channels with pushes on too.
 func (s *Service) channelPush(machine, session, title, body string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	_, _ = s.channelPushTo(context.Background(), machine, session, title, body, "", nil)
+}
+
+// channelPushTo is channelPush, each channel's send with its own channelSendTimeout from parent, for a push that may
+// be sent again when ref is set: it goes to every channel with ref and the channel's id (ref:id, which that channel
+// takes once: a program of several channels tells their copies apart), and to none that took is true of. It returns
+// each channel's result, by id; the error is the list's when it could not be read while the hub is away (nothing was
+// sent then).
+func (s *Service) channelPushTo(parent context.Context, machine, session, title, body, ref string, took func(id string) bool) (map[string]error, error) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
+	if _, err := s.channelsNow(ctx); err != nil && !answered(err) {
+		return nil, err
+	}
 	var to []string
 	for _, v := range s.textChannels(ctx) {
-		if v.Capabilities.Push && featureOn(v, channel.FeaturePushes) {
+		if v.Capabilities.Push && featureOn(v, channel.FeaturePushes) && (took == nil || !took(v.ID)) {
 			to = append(to, v.ID)
 		}
 	}
 	text := strings.TrimSpace("🔔 " + title + "\n\n" + body)
-	eachChannel(context.Background(), to, func(ctx context.Context, id string) {
-		if err := s.channelTell(ctx, id, "", text, channel.OutPush); err == nil {
+	var mu sync.Mutex
+	out := map[string]error{}
+	eachChannel(parent, to, func(ctx context.Context, id string) {
+		var err error
+		if ref == "" {
+			err = s.channelTell(ctx, id, "", text, channel.OutPush)
+		} else if err = s.channelSend(ctx, id, ref+":"+id, text, channel.OutPush, ""); err != nil {
+			s.logf("channels: %s: send: %v", id, err)
+		}
+		if err == nil {
 			s.markPushed(id, machine, session)
 		}
+		mu.Lock()
+		out[id] = err
+		mu.Unlock()
 	})
+	return out, nil
 }
 
 // extensionMirror sends a turn that ended without being asked for in a channel: the main conversation's to those

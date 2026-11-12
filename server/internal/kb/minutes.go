@@ -106,8 +106,11 @@ const (
 	minutesNoteRunes  = 160
 )
 
-// isMeeting: the recording gets minutes.
+// isMeeting: the recording gets minutes. A day recording never does (it gets a recap, day_recap.go).
 func (r *Recording) isMeeting() bool {
+	if r.Kind == RecordingDay {
+		return false
+	}
 	return r.Kind == RecordingMeeting || r.MinutesAsked || r.Meeting != nil && r.Duration >= minutesMinCalendar
 }
 
@@ -182,7 +185,7 @@ func (s *Store) putMinutes(id string, m *Minutes) (bool, error) {
 // AskMinutes has recording id's minutes made (again) at the next round, whatever its kind: ErrNotFound when there is
 // no such recording, ErrTranscriptExpired once it was trimmed, ErrRecordingIncomplete before its transcript is
 // complete, and also for a complete one with no text (409 as well: there is nothing to make minutes of, and its
-// minutes_state stays absent).
+// minutes_state stays absent). A day recording gets its recap instead (askDayRecap): it never becomes a meeting.
 func (e *Engine) AskMinutes(rawID string) error {
 	if e.Store.ReadOnly() {
 		return ErrReadOnly
@@ -200,6 +203,9 @@ func (e *Engine) AskMinutes(rawID string) error {
 	}
 	if r.Trimmed() {
 		return ErrTranscriptExpired
+	}
+	if r.Kind == RecordingDay {
+		return e.askDayRecap(r)
 	}
 	if !r.Complete || r.Chars == 0 {
 		return ErrRecordingIncomplete
@@ -340,7 +346,7 @@ func (e *Engine) minutesFailed(id string, rev int64) {
 func (e *Engine) matchRecordings(now time.Time) {
 	var due []string
 	for _, r := range e.Store.Recordings() {
-		if r.Complete && r.MatchedRev < r.Revision && !r.Trimmed() {
+		if r.Complete && r.MatchedRev < r.Revision && !r.Trimmed() && r.Kind != RecordingDay {
 			due = append(due, r.ID)
 		}
 	}
@@ -352,7 +358,7 @@ func (e *Engine) matchRecordings(now time.Time) {
 	for _, id := range due {
 		st.recMu.Lock()
 		r, ok := st.Recording(id)
-		if ok && r.Complete && r.MatchedRev < r.Revision && !r.Trimmed() {
+		if ok && r.Complete && r.MatchedRev < r.Revision && !r.Trimmed() && r.Kind != RecordingDay {
 			if old := r.Meeting; old != nil {
 				r.Items = removeStrings(r.Items, []string{old.Kind + "/" + old.ID})
 			}

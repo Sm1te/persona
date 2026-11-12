@@ -388,7 +388,7 @@ func TestAskHoldWaitsForABusySupervisor(t *testing.T) {
 	if got := e.f.noticesTo("conv1"); len(got) != 0 {
 		t.Fatalf("the card climbed while its leader worked: %q", got)
 	}
-	if _, ok := e.s.routedTo("ix1", "lead1"); !ok {
+	if _, ok := e.s.routedTo("ix1", "lead1", false); !ok {
 		t.Fatal("the card left its leader")
 	}
 
@@ -402,7 +402,7 @@ func TestAskHoldWaitsForABusySupervisor(t *testing.T) {
 	if got := e.pushesOf("ix1"); got != 0 {
 		t.Fatalf("the card reached the user while the main conversation worked (%d)", got)
 	}
-	if _, ok := e.s.routedTo("ix1", "conv1"); !ok {
+	if _, ok := e.s.routedTo("ix1", "conv1", true); !ok {
 		t.Fatal("the card left the main conversation")
 	}
 
@@ -448,13 +448,13 @@ func TestRestoredAskFindsItsSupervisorAgain(t *testing.T) {
 		p := s2.fleet.interactions[ask.ID]
 		return p != nil && p.resolved != nil // await made its channel: the wait is on the card
 	})
-	if got, ok := s2.routedTo("ix1", "lead1"); !ok || got != e.todo.ID {
+	if got, ok := s2.routedTo("ix1", "lead1", false); !ok || got != e.todo.ID {
 		t.Fatalf("the card its node claimed before the handshake: route to its leader = %q, %v", got, ok)
 	}
 
 	s2.FleetUp(context.Background())
 	for _, id := range []string{"ix1", "ix2"} {
-		if got, ok := s2.routedTo(id, "lead1"); !ok || got != e.todo.ID {
+		if got, ok := s2.routedTo(id, "lead1", false); !ok || got != e.todo.ID {
 			t.Fatalf("restored card %s: route to its leader = %q, %v", id, got, ok)
 		}
 		if ix, ok := s2.pendingIx(id); !ok || !ix.Delegating {
@@ -510,7 +510,7 @@ func TestRestoredApprovalReachingTheUserRings(t *testing.T) {
 	shortSupervise(t, s2)
 	noDirectionsTimers(s2)
 	s2.FleetUp(context.Background())
-	if _, ok := s2.routedTo("ix1", "lead1"); !ok {
+	if _, ok := s2.routedTo("ix1", "lead1", false); !ok {
 		t.Fatal("the restored card has no route to its leader")
 	}
 	s2.askTick(time.Now().Add(2 * askHoldFor)) // its leader has had its time
@@ -554,7 +554,7 @@ func TestRestoredQuestionReachingTheUserDoesNotRing(t *testing.T) {
 	shortSupervise(t, s2)
 	noDirectionsTimers(s2)
 	s2.FleetUp(context.Background())
-	if _, ok := s2.routedTo("ix1", "lead1"); !ok {
+	if _, ok := s2.routedTo("ix1", "lead1", false); !ok {
 		t.Fatal("the restored card has no route to its leader")
 	}
 	s2.askTick(time.Now().Add(2 * askHoldFor)) // its leader has had its time

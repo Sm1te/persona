@@ -186,7 +186,7 @@ func TestPluginWithoutAnUpstream(t *testing.T) {
 		t.Fatalf("health %d", code)
 	}
 	if code, info := get("/info"); code != http.StatusOK || info["protocol"] != float64(2) || info["setup"] != SetupKey || info["warnings"] != nil ||
-		fmt.Sprint(info["features"]) != "[target runs asks resume suspend]" {
+		fmt.Sprint(info["features"]) != "[target runs asks resume suspend speak]" {
 		t.Fatalf("info %d %v", code, info)
 	}
 	if code, models := get("/models"); code != http.StatusOK || models["models"] == nil || len(models["models"].([]any)) != 0 {

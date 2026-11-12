@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-// "New agent" with a model ID typed by hand (#1644): the typed pick survives the list loading again and goes with the
-// start; the IDs typed before can be forgotten (off at once, back where they were when the hub says no).
+// "New agent" with a model ID typed by hand (#1644), in the model panel (#5104): a search that names no listed model
+// offers "Use “…”", and the pick survives the lists being read again (each opening reads them) and goes with the start;
+// a launcher that fixes its own --model offers its Default row alone and no typed ID; the IDs typed before can be
+// forgotten (off at once, back where they were when the hub says no).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +25,7 @@ vi.mock("../lib/new-agent", async (original) => ({ ...(await original<typeof imp
 
 import { NewAgent } from "./NewAgent";
 import { Toasts } from "../ui/atoms";
+import { resetModelListsForTests } from "../lib/session-models";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,7 +42,12 @@ let listBody: () => unknown = models;
 const requests: { method: string; url: string }[] = [];
 const flush = () => act(async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); });
 const button = (text: string) => [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
-const trigger = () => [...document.body.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find((b) => b.closest("[data-model-id-field]") === null && b.textContent?.match(/默认|acme|Opus|vendor/))!;
+const pill = () => document.body.querySelector<HTMLButtonElement>("[data-testid=new-agent-model] [data-model-pill]")!;
+const panel = () => document.body.querySelector<HTMLElement>("[data-model-panel]");
+const search = () => panel()!.querySelector<HTMLInputElement>("input")!;
+const rows = () => [...document.body.querySelectorAll<HTMLElement>("[data-panel-row]")];
+const row = (key: string) => rows().find((r) => r.dataset.panelRow === key);
+const listReads = () => requests.filter((r) => r.url.includes("/launchers/claude/models")).length;
 
 function type(el: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -50,6 +58,7 @@ function type(el: HTMLInputElement, value: string) {
 }
 
 beforeEach(() => {
+  resetModelListsForTests();
   state.machines = [{ id: "mac", name: "Mac", online: true }];
   launched.length = 0;
   requests.length = 0;
@@ -83,29 +92,45 @@ async function open() {
   await flush();
 }
 
+async function openPanel() {
+  act(() => pill().click());
+  await flush();
+}
+
 describe("New agent: a typed model ID (#1644)", () => {
-  it("keeps the typed pick when the list loads again, and starts with it", async () => {
+  it("keeps the typed pick when the lists are read again, and starts with it", async () => {
     await open();
-    act(() => trigger().click());
-    act(() => button("其他模型…").click());
-    const input = document.body.querySelector<HTMLInputElement>("[data-model-id-field] input")!;
-    type(input, "acme/coder-9");
-    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
-    expect(trigger().textContent).toContain("acme/coder-9");
-    // the list asked again (Reload): the pick isn't in it, and stays
-    act(() => document.body.querySelector<HTMLButtonElement>('button[aria-label="重新读取模型列表"]')!.click());
+    await openPanel();
+    type(search(), "acme/coder-9");
+    const use = row("typed:claude\nacme/coder-9")!;
+    expect(use.textContent).toContain("使用「acme/coder-9」");
+    act(() => use.click());
     await flush();
-    expect(requests.filter((r) => r.url.includes("/launchers/claude/models")).length).toBe(2);
-    expect(trigger().textContent).toContain("acme/coder-9");
+    expect(panel()).toBeNull();
+    expect(pill().title).toContain("coder-9");
+    // the next opening reads the list again: the ID isn't in it, and stays the pick, on a row of its own
+    const reads = listReads();
+    await openPanel();
+    expect(listReads()).toBe(reads + 1);
+    expect(row("model:claude\nacme/coder-9")!.getAttribute("aria-selected")).toBe("true");
+    act(() => pill().click());
+    expect(pill().title).toContain("coder-9");
     act(() => button("启动").click());
     expect(launched[0]).toMatchObject({ machineId: "mac", launcher: "claude", model: "acme/coder-9" });
   });
 
-  it("keeps the locked row of a launcher that passes its own --model, also with an empty list", async () => {
+  it("offers only the Default row, with why, for a launcher that passes its own --model, also with an empty list", async () => {
     listBody = () => ({ agent: "claude", models: [], locked: "启动器固定了模型参数" });
     await open();
-    expect(document.body.textContent).toContain("启动器固定了模型参数");
-    expect(document.body.querySelector("[data-model-id-field]")).toBeNull();
+    await openPanel();
+    expect(rows().map((r) => r.dataset.panelRow)).toEqual(["model:claude\ndefault"]);
+    // the provider's own view describes each row: the Default row says why no model can be picked
+    act(() => document.body.querySelector<HTMLButtonElement>('[data-rail-cell="claude"]')!.click());
+    expect(row("model:claude\ndefault")!.textContent).toContain("启动器固定了模型参数");
+    // and a search for an ID offers no "Use …"
+    type(search(), "acme/coder-9");
+    expect(rows().some((r) => r.dataset.panelRow?.startsWith("typed:"))).toBe(false);
+    act(() => pill().click());
     act(() => button("启动").click());
     expect(launched[0]?.model).toBeUndefined();
   });
@@ -113,7 +138,7 @@ describe("New agent: a typed model ID (#1644)", () => {
   it("forgets an ID typed before at once, and puts it back with why when the hub says no", async () => {
     forgetStatus = 500;
     await open();
-    act(() => trigger().click());
+    await openPanel();
     const forget = () => document.body.querySelector<HTMLButtonElement>('button[aria-label="忘记「vendor/model-x」"]');
     act(() => forget()!.click());
     expect(forget()).toBeNull(); // gone before the hub answers

@@ -2,10 +2,13 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, credentialOwner, enc, errorText, subscribeCredentialOwner } from "../lib/api";
 import { ago, clock, sessionCan, shortPath, stateOf, tabLabel, uuid } from "../lib/format";
+import { foldedState } from "../lib/child-sessions";
+import { sessionCard } from "../lib/folded-rows";
 import { byTime } from "../lib/times";
 import { launchAgent } from "../lib/new-agent";
 import { initialLauncher, launcherBlock, usableFirst } from "../lib/launcher-health";
 import { defaultLabel, machineLaunchers, type LauncherDefault } from "../lib/launcher-models";
+import { providerLabel } from "../lib/provider-names";
 import { navigate } from "../lib/router";
 import { settingsHref } from "./settings/nav";
 import { interactionAsk } from "../lib/inbox";
@@ -1278,8 +1281,9 @@ function agentRowView(todo: Todo, lookup: SessionLookup, interactions: Interacti
     view.urgentText = limit;
     return view;
   }
-  const urgentNow = taskNow(urgent.session, stateOf(urgent.session) === "working");
-  const urgentIx = interactions.find((i) => i.machine_id === urgent.agent.machine_id && i.session_id === urgent.agent.session_id);
+  const urgentNow = taskNow(urgent.session, foldedState(urgent.session) === "working");
+  // its own card, else one of its child sessions' (#5120: their cards wait on its page)
+  const urgentIx = sessionCard(interactions, urgent.agent.machine_id, urgent.agent.session_id);
   // what it waits on, from its card (#4111): the question, the command; not its last words
   const urgentAsk = urgent.status === "needs_you" ? askText(urgentIx) : "";
   if (!urgentAsk && !urgentNow) return view;
@@ -1968,7 +1972,7 @@ function TodoDetail({
           <div className="flex flex-col gap-2">
             {activeAgents.map((agent) => {
               const session = lookup(agent.machine_id, agent.session_id);
-              const st = session ? stateOf(session) : "offline";
+              const st = session ? foldedState(session) : "offline";
               const now = taskNow(session, st === "working");
               const isExpired = !session && !agent.start_error;
               const displayTitle = session?.title || agent.title || t("lib-format.untitled_session");
@@ -1980,7 +1984,7 @@ function TodoDetail({
                 ? `${mName} · ${spaceTab}`
                 : `${mName} · ${shortPath(session?.cwd || agent.cwd)}`;
 
-              const ix = interactions.find((i) => i.machine_id === agent.machine_id && i.session_id === agent.session_id);
+              const ix = sessionCard(interactions, agent.machine_id, agent.session_id);
               const kicker = ix?.kind === "plan" ? t("todos.kicker_plan") : ix?.kind === "permission" ? t("todos.kicker_permission") : ix?.kind === "screen" ? t("todos.kicker_screen") : ix?.kind === "elicitation" ? t("todos.kicker_elicitation") : t("todos.kicker_question");
               const sourceLabel = formatAgentSource(agent, todo.spaces, lookup);
 
@@ -2729,7 +2733,7 @@ export function HandoverDialog({
   }, [todo]);
   // the default is held to what it runs here
   const pickedBlock = launcherBlock(launchers.find((l) => l.name === (launcher || hubDefault?.provider)));
-  const defaultChoice = hubDefault ? defaultLabel(hubDefault) : t("newagent.follow_model_settings");
+  const defaultChoice = hubDefault ? defaultLabel(hubDefault, "", launchers) : t("newagent.follow_model_settings");
 
   const submitNew = async () => {
     if (!mid) return;
@@ -2852,7 +2856,7 @@ export function HandoverDialog({
                     // still a choice (a start that works clears it), with why, after the ones that can start (#1643)
                     return (
                       <option key={l.name} value={l.name}>
-                        {block ? `${l.name} · ${block.reason}` : l.name}
+                        {block ? `${providerLabel(l)} · ${block.reason}` : providerLabel(l)}
                       </option>
                     );
                   })}

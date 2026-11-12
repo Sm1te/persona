@@ -22,5 +22,6 @@
   "copy_field": "{label}をコピー",
   "fix_it": "直す",
   "background_done": "バックグラウンドのラウンド",
-  "background_running": "バックグラウンドで実行中"
+  "background_running": "バックグラウンドで実行中",
+  "model_changed": "モデルが {from} から {to} に変わりました"
 }

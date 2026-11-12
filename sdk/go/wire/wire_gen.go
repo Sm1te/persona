@@ -4462,6 +4462,8 @@ type KBDetail struct {
 	Segments []KBRecordingSegment `json:"segments,omitempty"`
 	// A recording's meeting minutes, once written (docs/assistant/meeting-minutes.md); kept as the hub sends them.
 	Minutes json.RawMessage `json:"minutes,omitempty"`
+	// An all-day recording's day recap, once written (docs/assistant/day-recap.md); kept as the hub sends them.
+	Recap json.RawMessage `json:"recap,omitempty"`
 	// A topic's knowledge points (docs/assistant/knowledge.md "Topics").
 	Points []KBTopicPoint `json:"points,omitempty"`
 }
@@ -4504,6 +4506,9 @@ type KBRecordingSegment struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
 	Text  string  `json:"text"`
+	// An all-day recording's line number: the segment's 1-based position in its uploads (docs/assistant/day-recap.md);
+	// absent on other recordings.
+	N int `json:"n,omitempty"`
 }
 
 // KBDayParams: kb.day: a chat's messages of one day in the knowledge base's time zone.

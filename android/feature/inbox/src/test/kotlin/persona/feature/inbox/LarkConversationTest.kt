@@ -14,6 +14,21 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LarkConversationTest {
+    /** #576 G134: a chat the hub answers as a topic group is read again as its topics (`topic=1`), and says it is one. */
+    @Test fun aTopicGroupIsReadAsItsTopics() = runTest {
+        val transport = FakeLarkTransport()
+        transport.pages += JsonObject(page(1, older = false, newer = false) + ("topic" to JsonPrimitive(true)))
+        transport.pages += page(2, older = false, newer = false)
+        val repository = LarkInboxRepository(FakeInboxRepository(), MutableStateFlow(transport),
+            MutableStateFlow(ConnectionState.Online), MutableSharedFlow(), MemoryLarkCache(page(1, older = false, newer = false)))
+        var state = LarkConversation()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.conversation("feed", null).collect { state = it } }
+        runCurrent()
+        assertEquals("the topics were asked for once, from the newest", listOf<String?>(null), transport.topicRequests)
+        assertTrue(state.isTopic)
+        assertEquals(listOf("m2"), state.messages.map { it.id })
+    }
+
     @Test fun visibleReceiptPublishesSharedReadsOnlyAfterSuccessfulTransport() = runTest {
         val transport = FakeLarkTransport()
         transport.pages += page(1, older = false, newer = false)
@@ -214,6 +229,11 @@ private class FakeLarkTransport : LarkConversationTransport {
     var failRead = false
     override suspend fun messages(feedId: String, around: Long?, before: String?, after: String?): JsonObject {
         requests += Triple(around, before, after)
+        return pages.removeFirst()
+    }
+    val topicRequests = mutableListOf<String?>()
+    override suspend fun topics(feedId: String, before: String?): JsonObject {
+        topicRequests += before
         return pages.removeFirst()
     }
     /** The manager each read named (RequestManager). */

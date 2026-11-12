@@ -188,6 +188,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         }
         #if os(iOS) || os(visionOS)
         PagePerf.runIfAsked()
+        PagePerf.offsetIfAsked()
         FrameProbe.listenIfAsked()
         #endif
         // Every tab a UI test can ask for. One it asks for and this does not know leaves the tab the last run saved

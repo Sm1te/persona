@@ -44,9 +44,12 @@ import OSLog
             return
         }
         let previous = shown?.id == id ? shown?.content : nil
+        // Read here, so the activity follows it: an older manager took the room meeting with Persona off (#3862).
+        let roomMissing = RecordingSync.shared.roomMissing.contains(id)
         let content = Self.content(entry: entry, recording: state == .recording, interrupted: interrupted,
                                    elapsed: capture.timeline, previous: previous, now: .now,
-                                   answer: MeetingAsk.shared.exchanges(for: id).last(where: { $0.answer != nil })?.answer)
+                                   answer: MeetingAsk.shared.exchanges(for: id).last(where: { $0.answer != nil })?.answer,
+                                   roomMissing: roomMissing)
         if let previous {
             guard previous != content else { return }
             shown = (id, content)
@@ -58,16 +61,19 @@ import OSLog
     }
 
     /// What the activity shows for `entry`. Recording on, the time keeps counting from the start it had (`previous`), so
-    /// the many saves of a running recording (each segment, each transcript) change nothing on screen.
+    /// the many saves of a running recording (each segment, each transcript) change nothing on screen. `roomMissing`: a
+    /// room meeting an older manager took with Persona off (`RecordingSync.roomMissing`, #3862) shows as not attended,
+    /// as the meeting page says, with no Ask or Turn Off.
     nonisolated static func content(entry: RecordingEntry, recording: Bool, interrupted: Bool, elapsed: Double,
-                                    previous: Content?, now: Date, answer: String? = nil) -> Content {
+                                    previous: Content?, now: Date, answer: String? = nil, roomMissing: Bool = false) -> Content {
         let phase: Content.Phase = recording ? .recording : interrupted ? .interrupted : .paused
         let keep = recording && previous?.phase == .recording
         let since = recording ? (keep ? previous?.runningSince : nil) ?? now.timeIntervalSince1970 - elapsed : nil
+        let attended = MeetingAsk.canAsk(entry, roomMissing: roomMissing)
         return Content(phase: phase, runningSince: since, elapsed: keep ? previous?.elapsed ?? elapsed : elapsed,
                        title: entry.displayTitle, meeting: entry.isMeeting, marks: entry.marks.count,
-                       persona: entry.attended ? entry.attendance?.role.rawValue : nil,
-                       answer: entry.attended ? answer.map { String($0.prefix(Self.answerLength)) } : nil)
+                       persona: attended ? entry.attendance?.role.rawValue : nil,
+                       answer: attended ? answer.map { String($0.prefix(Self.answerLength)) } : nil)
     }
 
     /// The most of an answer the activity carries (it shows two or three lines of it).

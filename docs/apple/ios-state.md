@@ -315,7 +315,7 @@ The behavior before #1046 (several separate truths), its measurements and the pl
 | 1 | Streaming at latest: drag up about 40 pt and release | Stays within 100 pt and keeps following; nothing withheld, no ↓, the stream keeps arriving |
 | 2 | Flick toward latest | From a screen up, the glide reaches latest and follows, ↓ doesn't flash; a short flick from far up stays in history: reading, ↓, withheld |
 | 3 | At latest, expand the running turn's work row, then collapse it | The heading moves under the top bar (#1173) and stays still while the turn grows below it: holding, never withheld. Collapsed: at latest, following, no ↓ |
-| 4 | Keyboard opens / closes at latest | At latest, following, ↓ doesn't flash |
+| 4 | Keyboard opens, then closes with the composer's Hide Keyboard (a tap on the page could open the row under it, #4813), at latest | At latest, following, ↓ doesn't flash, nothing opened |
 | 5 | Send a message while reading history | At latest, following, nothing withheld |
 | 6 | Pushes while reading history, then tap ↓ | While reading, ↓ stays and new content is withheld; after ↓: at latest, following, no ↓ |
 | 7 | Leave the chat and open it again | At latest, following, ↓ doesn't flash on entry |
@@ -324,6 +324,7 @@ The behavior before #1046 (several separate truths), its measurements and the pl
 | 10 | Several pending cards over the chat (#939) | At rest: no ↓, following; scrolled up, ↓ sits clear of the cards and returns to latest |
 | 11 | Flick up from latest and tap ↓ while the list still glides (#3027) | The glide stops at once; at latest within 0.7 s, following, no ↓, never reading again |
 | 12 | The same in Persona's chat while its turn runs | As 11, then keeps following the steps the turn adds |
+| 13 | A long Agent chat at work (tall messages, screenshots): a work line opened and folded, then read a few screens up, let go at rest, a reply streams meanwhile and is still being written when ↓ is tapped, then written (#4788) | At the newest end and staying there while the reply is written, its newest line on screen, ↓ gone; never put back where the user read |
 
 ### How ↓ gets there (#3027)
 
@@ -341,6 +342,13 @@ rather than asking SwiftUI's `ScrollPosition`:
    at once. A finger on the list ends it where it is, and the release decides as always.
 4. Meanwhile `contentArrived` does not jump (it would cut the glide short; offset 0 stays the newest end whatever streams
    in). Once there: the geometry is read from the list (#1211), and following catches up with what came in.
+5. SwiftUI's stored `ScrollPosition` is forgotten on the tap and set to the newest end once there (#4788). The jump moves
+   the scroll view, not that position. Once any row has been opened or folded (`ChatPin.letGo` replaces the position
+   with one that names rows), the user's own scrolling stores the row it leaves on screen; the next change of content
+   (the rows held back while reading, let in by the tap, a streamed line) made SwiftUI put the list back on that row,
+   during the jump or just after it. By then the chat followed, so ↓ was gone and nothing brought the list back. `ChatPin`
+   forgets the position before it moves the list for the same reason. 0.3 s after landing the list is looked at once more:
+   if anything took it from the newest end while the chat follows, it goes there again (logged as `chat-jump`).
 
 ↓ acts the moment the finger lands, a glide or not: a UIKit view laid over the button takes the touch
 (`JumpArrowTouch`; a tap on the SwiftUI `Button` during a glide did nothing on phones,
@@ -359,12 +367,14 @@ and each write recomputes the whole page). `atBottom`, `followsEnd`, `scratch.la
 | --- | --- | --- |
 | `scrolled(gap:)` | `onScrollGeometryChange` | Updates only `near` (≤ 100 pt from latest); records `draggedAway` if the finger is down and leaves tolerance |
 | `touched()` | Scroll phase enters `tracking` / `interacting` | Records finger on list; no transitions afterward |
-| `released()` | Scroll phase returns to `idle` (previously not `animating`) | Counts only after `touched`: `near` → `following`, otherwise `reading` |
+| `released()` | Scroll phase returns to `idle` from `interacting` / `decelerating` | Counts only after `touched`: `near` → `following`, otherwise `reading` |
+| `tapped()` | Scroll phase returns to `idle` from `tracking` (a tap or a press held still: the list never scrolled, #3005) | Clears `touching` and `draggedAway`; decides nothing, an anchored hold stays |
 | `follow()` | Tap ↓, send, own message enters transcript, switch session / sub-Agent, return to chat, collapsed content fits a screen (#686) | `following` |
 | `read()` | Jump to quoted message, tool call, or debug scroll upward | `reading` |
 | `land()` / `landed()` | Land at saved position or start of latest answer | `landing`, decide by `near` at finish; if user takes over mid-way, release position wins |
 | `hold()` / `endHold()` | Expand / collapse work row (`changeWork`), ends after `ChatPin.holdTime` (1.5 s) | `holding`, then **restore previous state** |
 | `hold(anchored: true)` | Expand work row while following | `holding`, uncapped: heading stays put (at latest, moves below top bar, #1173), running turn keeps growing; user release decides by position, ↓ / send resumes following, collapse resumes following and scrolls to latest |
+| `toggledRow()` | A row opened or closed in place (`toggleInPlace`: a tool call, a thought, a card) or a run of tool chips, while following or about to (#3005) | `holding`, anchored on the tapped row (`ChatPin.anchor`, a kept hold): new steps, the turn's answer and the next turn come in under it without moving it; ↓ / send / the user's own scroll end it. While reading: nothing |
 
 Derived: following `follows = mode == .following && !touching`; withholding `holdsBack = mode == .reading || touching || draggedAway`; ↓ `arrow = !near && (mode != .following || draggedAway)`,
 plus `settled` after entering the chat. `frozen` snapshots are taken and cleared with `holdsBack`.
@@ -379,6 +389,22 @@ Why it works this way:
   - Expanding a step below a persistently pinned heading initially replaced the heading's pin with that step's short 1.5 s pin; afterward neither was pinned. Now rows newer than the heading don't get separate pins (the pinned heading keeps the interval stable);
     older rows pin normally, then resume the heading pin; collapsing or expanding another row converts the persistent pin to 1.5 s from now (`ChatPin.unkeep`).
     (`RunningChatTests.testARunningTurnNeitherBlanksNorJumps`'s reported "56 pt up/down jump" was a probe reading the wrong position; the screen didn't move pixel by pixel, see `docs/lessons/ios.md`.)
+- **A row toggled in place anchors where the chat would follow** (`ChatFollow.toggledRow`, #3005): a tool row opened in the running turn used only the pin's short hold,
+  which ends once the row is back in place, and left following on. The next step, the turn's answer or the next turn then took the list to the newest end, the rows
+  just opened off the top; it looked as if they had closed. Now the tap holds the list anchored on that row (a kept pin hold), as a work line opened at the newest end is,
+  until ↓, sending or the user's own scroll. Reading further up nothing comes in anyway, so nothing changes there.
+  The tap itself is no scroll (`tapped()`): SwiftUI reports a tap in the list as `tracking` → `idle`, and taken for the end of a scroll it ended
+  every anchor and let "near the newest" decide, so after any tap on a row within 100 pt of the newest end the next push took the list there.
+  And the list's bottom edge: drawn upside down from it, everything on the list moves when what sits under it (the queue strip, a card, the
+  mode bar, the plan pill) comes or goes. Taking the queued message as the next turn started moved the open rows 60 pt down. A held row is put
+  back by how far that edge moved on screen (`ChatPin.resized`), a glide under way with it; not for the keyboard, above which the newest stays
+  as before. Folded at the newest end, the list glides to the newest end with the offset set every display frame (`ChatPin.glide`), not UIKit's
+  animated scroll, which ran from wherever SwiftUI had put the offset in the same pass.
+  A work line folded where the chat would follow stays anchored on its header too; going back to the newest end 1.5 s later moved the list
+  by itself. Only a fold the list cannot keep the header for (at the newest end, what is left under it shorter than the screen) glides there
+  and follows again (`ChatPin.landed`, #1173). While a hold is kept, any move of the offset but the user's finger or a glide is put back in the
+  same pass (`ChatPin.keepHeld`, KVO on `contentOffset`): as a step came in under an open row, the list was now and then set back after the pin
+  had moved it, the row 56 pt up while SwiftUI still reported it in place.
 - **Withhold while the finger is down (including inertia after release), then decide by position** (`holdsBack` includes `touching`): in an inverted list, growth at latest pushes content under the finger upward,
   causing 23 pt and 39 pt movement during a light drag while streaming. Release within tolerance resumes following, so a short look upward doesn't stop the stream, bringing held content in together. Leaving tolerance separately records `draggedAway` to control ↓.
 

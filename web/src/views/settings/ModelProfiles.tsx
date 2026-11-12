@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError, credentialOwner, errorText, getToken, subscribeCredentialOwner } from "../../lib/api";
 import { onDefaultManager, onManagerChoice, shownManager } from "../../lib/manager-choice";
+import type { ModelProvider } from "../../lib/model-config";
 import { modelProfiles, rollbackModelProfile, switchModelProfile, type ModelProfiles as Profiles } from "../../lib/model-profiles";
+import { namedLauncher, namesFromProviders, providerIdNote, providerTitle } from "../../lib/provider-names";
 import { onHubEvent } from "../../lib/store";
 import { t } from "../../i18n";
 import { Button, Dialog } from "../../ui/atoms";
@@ -22,14 +24,15 @@ const subscribeProfileContext = (listener: () => void) => {
   return () => stops.forEach((stop) => stop());
 };
 
-export function ModelProfiles({ manager, onChanged }: { manager?: string; onChanged: () => void }) {
+/** `providers`: the model configuration's, to name a tier's launcher by its display name (#5029). */
+export function ModelProfiles({ manager, providers, onChanged }: { manager?: string; providers?: ModelProvider[]; onChanged: () => void }) {
   const context = useSyncExternalStore(subscribeProfileContext, profileContext, profileContext);
   const owner = credentialOwner();
   const target = manager ?? shownManager();
-  return <ModelProfilesForOwner key={JSON.stringify([target, context])} manager={target} owner={owner} context={context} onChanged={onChanged} />;
+  return <ModelProfilesForOwner key={JSON.stringify([target, context])} manager={target} owner={owner} context={context} providers={providers} onChanged={onChanged} />;
 }
 
-function ModelProfilesForOwner({ manager, owner, context, onChanged }: { manager: string; owner: string; context: string; onChanged: () => void }) {
+function ModelProfilesForOwner({ manager, owner, context, providers, onChanged }: { manager: string; owner: string; context: string; providers?: ModelProvider[]; onChanged: () => void }) {
   const [data, setData] = useState<Profiles | null>(null);
   const [readError, setReadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -107,6 +110,7 @@ function ModelProfilesForOwner({ manager, owner, context, onChanged }: { manager
   const error = actionError || readError;
   const profile = data?.profiles.find((p) => p.id === selected);
   const tiers = Object.entries(profile?.tiers ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const names = namesFromProviders(providers);
   if (!data && !error) return null; // old hubs do not expose profiles
   return <>
     <Group title={t("settings-modelprofiles.title")}
@@ -128,15 +132,22 @@ function ModelProfilesForOwner({ manager, owner, context, onChanged }: { manager
       <p className="mb-1.5 text-[12px] font-semibold text-ink-2">{t("settings-modelprofiles.tiers")}</p>
       {tiers.length ? (
         <ul data-testid="model-profile-tiers" className="mb-4 flex flex-col gap-1.5">
-          {tiers.map(([name, x]) => (
-            <li key={name} className="rounded-control bg-field px-3 py-2 text-[12px]">
+          {tiers.map(([name, x]) => {
+            // the launcher by its display name, its startup ID after it in small mono (#5029); an rc alias by its ID
+            const l = namedLauncher(x.launcher, names);
+            const id = providerIdNote(l);
+            return <li key={name} className="rounded-control bg-field px-3 py-2 text-[12px]">
               <div className="flex min-w-0 items-baseline gap-2">
                 <span className="shrink-0 font-mono text-ink">{name}</span>
-                <span className="min-w-0 [overflow-wrap:anywhere] text-ink-3">{[x.launcher, x.model, x.effort].filter(Boolean).join(" · ")}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere] text-ink-3">
+                  {providerTitle(l)}
+                  {id && <> <span className="font-mono text-[11px]">{id}</span></>}
+                  {[x.model, x.effort].filter(Boolean).map((v) => ` · ${v}`).join("")}
+                </span>
               </div>
               {x.description && <p className="mt-0.5 text-ink-2">{x.description}</p>}
-            </li>
-          ))}
+            </li>;
+          })}
         </ul>
       ) : <p className="mb-4 text-[12px] text-ink-3">{t("settings-modelprofiles.no_tiers")}</p>}
       <details>

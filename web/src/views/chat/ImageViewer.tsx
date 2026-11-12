@@ -8,8 +8,8 @@ import { createPortal } from "react-dom";
 import { imageURL } from "../../lib/api";
 import { useCloseOnBack } from "../../lib/back-close";
 import { sendDraft, type DraftImage } from "../../lib/drafts";
-import { fitRect } from "../../lib/image-edit";
-import { clampView, doubleTapView, fingers, IDENTITY, isZoomed, panView, wheelFactor, zoomAt, type Point, type Rect, type Size, type View } from "../../lib/image-zoom";
+import type { EditedImage } from "../../lib/image-edit";
+import { clampView, doubleTapView, fingers, fitRect, IDENTITY, isZoomed, panView, wheelFactor, zoomAt, type Point, type Rect, type Size, type View } from "../../lib/image-zoom";
 import type { Item } from "../../lib/types";
 import { cx, EASE, toast } from "../../ui/atoms";
 import { Icon, type IconName } from "../../ui/icons";
@@ -54,8 +54,8 @@ export function ChatImageViewer({ item, mid, sid, onClose }: { item: Item; mid: 
     return at >= 0 ? { images: all.map((i) => viewerImage(i, mid, sid)), index: at } : { images: [viewerImage(item, mid, sid)], index: 0 };
   });
   const attach = chat?.canCompose
-    ? (img: DraftImage) => {
-        if (!sendDraft(chat.draftKey, { type: "image", image: img })) {
+    ? (img: DraftImage, edited?: EditedImage) => {
+        if (!sendDraft(chat.draftKey, { type: "image", image: img, edited })) {
           toast(t("chat-imageviewer.no_composer"), "error");
           return false;
         }
@@ -78,8 +78,9 @@ export function ImageViewer({
   images: ViewerImage[];
   start: number;
   onClose: () => void;
-  /** Where an edited picture goes (the chat's composer); none hides "Edit". True when it was taken. */
-  attach?: (img: DraftImage) => boolean;
+  /** Where an edited picture goes (the chat's composer), with its source, edits and history to carry on from there;
+   *  none hides "Edit". True when it was taken. */
+  attach?: (img: DraftImage, edited?: EditedImage) => boolean;
   /** More buttons for the picture at `index`, after "Download". */
   actions?: (index: number) => ViewerAction[];
 }) {
@@ -393,9 +394,9 @@ export function ImageViewer({
             src={cur.src}
             doneTitle={t("chat-imageviewer.add_to_composer")}
             onCancel={() => setEditing(false)}
-            onDone={(img) => {
+            onDone={(img, state) => {
               setEditing(false);
-              if (attach(img)) onClose();
+              if (attach(img, { source: cur.src, ...state })) onClose();
             }}
           />
         </Suspense>

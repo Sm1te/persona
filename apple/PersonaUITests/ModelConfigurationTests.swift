@@ -39,7 +39,9 @@ final class ModelConfigurationTests: XCTestCase {
         for id in ["assistant", "agent.new", "kb", "inbox.triage"] {
             XCTAssertTrue(app.descendants(matching: .any)["model-purpose-\(id)"].exists)
         }
-        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "model-purpose-")).count, 4)
+        // The four categories and the background supervisor's use, which the hub answers for by its own id (#5083).
+        XCTAssertTrue(app.descendants(matching: .any)["model-purpose-assistant.supervise"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "model-purpose-")).count, 5)
         XCTAssertFalse(app.searchFields.firstMatch.exists)
         let drafts = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "草拟回复"))
         XCTAssertFalse(drafts.firstMatch.exists)

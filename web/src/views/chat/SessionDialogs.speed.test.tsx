@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initI18n } from "../../i18n";
 import { setToken } from "../../lib/api";
-import { getSession, reset, upsertSession } from "../../lib/store";
+import { reset, upsertSession } from "../../lib/store";
 import type { Session } from "../../lib/types";
 import { ModeChips } from "./SessionDialogs";
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root.render(<ModeChips session={session} effortOnly />));
+  await act(async () => root.render(<ModeChips session={{ ...session, assistant: true }} assistant />));
 });
 
 afterEach(async () => {
@@ -48,31 +48,8 @@ async function openSpeed() {
   await act(async () => vi.dynamicImportSettled());
 }
 
-it("offers native speeds independently of effort and waits for a native session push", async () => {
-  await openSpeed();
-  const fast = [...document.querySelectorAll<HTMLElement>("[role=menuitemradio]")].find((e) => e.textContent?.startsWith("Fast"));
-  expect(fast?.getAttribute("aria-checked")).toBe("false");
-  expect(fast?.textContent).toContain("increased usage or cost");
-  await act(async () => fast!.click());
-  expect(fetcher).toHaveBeenCalledWith(
-    expect.stringContaining("/sessions/m/example/modes"),
-    expect.objectContaining({ method: "POST", body: JSON.stringify({ service_tier: "priority" }) }),
-  );
-  const saved = getSession("m", "example");
-  expect(saved?.service_tier).toBeUndefined();
-  expect(saved?.effort).toBe("high");
-});
-
-it("offers Standard as the reversible choice when Fast is active", async () => {
-  await act(async () => root.render(<ModeChips session={{ ...session, service_tier: "priority" }} effortOnly />));
-  await openSpeed();
-  const choices = [...document.querySelectorAll<HTMLElement>("[role=menuitemradio]")];
-  expect(choices.find((e) => e.textContent?.startsWith("Fast"))?.getAttribute("aria-checked")).toBe("true");
-  await act(async () => choices.find((e) => e.textContent?.startsWith("Standard"))!.click());
-  expect(fetcher).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: JSON.stringify({ service_tier: "default" }) }));
-});
-
-it("offers the same speed submenu in a Persona conversation running Codex", async () => {
+// An Agent's Codex thread sets its speed on the model pill's Fast (ModelPill.test.tsx)
+it("offers native speeds in a Persona conversation running Codex, independently of effort", async () => {
   await act(async () => root.render(<ModeChips session={{ ...session, assistant: true }} assistant />));
   await openSpeed();
   const fast = [...document.querySelectorAll<HTMLElement>("[role=menuitemradio]")].find((element) => element.textContent?.startsWith("Fast"));

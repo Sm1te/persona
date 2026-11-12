@@ -14,7 +14,8 @@
       "ts": "2026-01-01T09:00:03Z",
       "role": "assistant",
       "kind": "text",
-      "text": "Looking at the diff."
+      "text": "Looking at the diff.",
+      "model": "claude-opus-5-5"
     },
     {
       "id": "00000000-0000-4000-8000-000000000003#0",

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HTML card lab (dev only)</title>
+    <!-- Dev only (not in the build's inputs): one assistant html card at a time in the web runtime (#4215), against a fake
+         hub, for web/e2e/html-runtime-security.mjs and screenshots. ?theme=dark|light, ?width=<px>. -->
+    <script>
+      var q = new URLSearchParams(location.search);
+      var dark = q.get("theme") === "dark" || (!q.get("theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/showcase/html-runtime-lab.tsx"></script>
+  </body>
+</html>

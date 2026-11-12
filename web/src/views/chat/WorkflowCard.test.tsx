@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-// A workflow run's card (#3434): in the chat in place of the Workflow call that launched it (and the call's row again
-// when the hub lists no such run), out of the folded work while the hub lists the run, open while it runs and folded in
-// place to its head once it ends; one block per phase with "done/started+", rows in start order folded past 12; a bar in
-// parts moved by transform. Things move only when a value changes: not on the first draw, not with reduced motion.
-// Frames are driven by hand.
+// A workflow run's cards. In the chat, in place of the Workflow call that launched it, inside the folded work summary
+// until the reader opens it (the call's row again when the hub lists no such run): a task card (#5030, after cindy) with the status word, what it used, its progress line and a
+// strip of a square per agent, opening the chat's Background dialog at its run, or in place where the chat has no such
+// dialog. In the dialog (#3434): one block per phase with "done/started+", rows in start order folded past 12, only to
+// read; a bar in parts moved by transform. Things move only when a value changes: not on the first draw, not with
+// reduced motion. Frames are driven by hand.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.hoisted(() => {
   globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
@@ -17,7 +19,8 @@ vi.hoisted(() => {
   })) as unknown as typeof window.matchMedia;
 });
 
-import { reset, upsertSession } from "../../lib/store";
+import { listenBackgroundDialog } from "../../lib/background-dialog";
+import { reset, upsertSession, useStore } from "../../lib/store";
 import { emptyTaskIndex } from "../../lib/tasks";
 import { segments } from "../../lib/turns";
 import type { Item, Session, Workflow, WorkflowAgent } from "../../lib/types";
@@ -129,32 +132,192 @@ function drawCard(runs: Workflow[], step = call()) {
   act(() => root.render(<WorkflowCallCard step={step} mid="m" sid="s" scope={sc} />));
   return sc;
 }
+/** The dialog's card of the session's first run, as the dialog draws it from the store. */
+function DialogCard({ sc }: { sc: string }) {
+  const run = useStore((s) => (s.sessions.m ?? []).find((x) => x.session_id === "s")?.workflows?.[0]);
+  return run ? <WorkflowCard run={run} scope={sc} /> : null;
+}
+function drawDialogCard(runs: Workflow[]) {
+  act(() => upsertSession({ machine_id: "m", session_id: "s", status: "working", state: "working", workflows: runs } as Session));
+  const sc = `d${++scope}:`;
+  act(() => root.render(<DialogCard sc={sc} />));
+  return sc;
+}
 const push = (runs: Workflow[]) => act(() => upsertSession({ machine_id: "m", session_id: "s", workflows: runs } as Session));
 const q = (sel: string) => host.querySelector<HTMLElement>(sel);
 const text = (sel: string) => q(sel)?.textContent ?? null;
+const ended = (over: Partial<Workflow> = {}) =>
+  running({ running: false, status: "completed", ended_at: at(100), agents_running: 0, agents_done: 5, agents: running().agents!.map((a) => ({ ...a, running: false, status: "done", ended_at: a.ended_at ?? at(90) })), ...over });
 
 describe("the card in the chat", () => {
-  it("draws the run in the call's place: head, where it is now, the bar, a block per phase", () => {
-    drawCard([running()]);
+  it("draws the run as a task card: its name, the status word, what it used, how far it got and a square per agent", () => {
+    drawCard([running({ tokens: 12_345, calls: 37 })]);
     const card = q('[data-workflow-call="running"]')!;
     expect(card.dataset.toolUse).toBe("call-wf");
     expect(card.textContent).toContain("parity-audit");
-    expect(text("[data-workflow-status]")).toBe("在跑");
-    expect(text("[data-workflow-counts]")).toBe("4/5+");
-    expect(text("[data-workflow-now]")).toBe("当前 Verify：verify:5");
-    expect(q("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("true"); // open while it runs
+    expect(card.textContent).not.toContain("子 Agent"); // no kind label before a workflow's title
+    expect(q("[data-task-status]")!.dataset.taskStatus).toBe("running");
+    expect(text("[data-task-status]")).toBe("运行中");
+    expect(q("[data-task-status] svg")).toBeNull(); // a spinner, not an outcome's icon
+    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "12.3k tokens", "37 次工具调用", "已运行 1m 55s"]);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(text("[data-task-elapsed]")).toBe("已运行 1m 57s"); // ticks each second
+    expect(text("[data-workflow-progress-line]")).toBe("Verify · 4/5 Agent");
+    expect([...host.querySelectorAll<HTMLElement>("[data-workflow-strip] [data-cell]")].map((c) => c.dataset.cell)).toEqual(["done", "done", "done", "done", "running"]);
+    expect(q("[data-workflow-strip]")!.getAttribute("aria-hidden")).toBe("true");
+    expect(q('[data-workflow-strip] [data-cell="running"]')!.title).toBe("verify:5 · 运行中");
+    expect(q("[data-strip-more]")).toBeNull();
+    // the old head's pieces are the dialog's now
+    expect(q("[data-workflow-status], [data-workflow-counts], [data-workflow-now]")).toBeNull();
+  });
+
+  it("leaves out what the hub does not say, and says the time it took once the run has ended", () => {
+    drawCard([ended()]);
+    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "1m 35s"]);
+    expect(text("[data-workflow-progress-line]")).toBe("5/5 Agent"); // no phase once it ended
+    expect(q("[data-task-elapsed]")).toBeNull();
+  });
+
+  it("says Completed, Failed or Stopped once the run ends; only Failed in red", () => {
+    const cases: [Partial<Workflow>, string, string][] = [
+      [{ status: "completed" }, "completed", "已完成"],
+      [{ status: "failed", error: "Error: agent crashed" }, "failed", "失败"],
+      [{ status: "killed" }, "stopped", "已停止"], // stopped by hand
+      [{ status: "stalled" }, "stopped", "已停止"], // no word from it for 30 minutes: not known to have failed
+    ];
+    for (const [over, status, word] of cases) {
+      drawCard([ended(over)]);
+      const mark = q("[data-task-status]")!;
+      expect(mark.dataset.taskStatus).toBe(status);
+      expect(mark.textContent).toBe(word);
+      expect(mark.className.includes("text-red")).toBe(status === "failed");
+      expect(q("[data-workflow-call]")!.dataset.workflowCall).toBe(over.status); // the run's own word stays for scripts
+    }
+  });
+
+  it("caps the strip at 40 squares with +n, the agents the hub no longer lists drawn from the run's counts", () => {
+    // 185 started, 169 back (2 of them failed), 16 running; the hub lists the newest 60
+    const listed = Array.from({ length: 60 }, (_, i) => agent(126 + i, "Audit", 126 + i > 169 ? { running: true, status: "running", ended_at: undefined } : {}));
+    drawCard([running({ phase: "Audit", agents_started: 185, agents_done: 167, agents_failed: 2, agents_running: 16, agents: listed })]);
+    const cells = [...host.querySelectorAll<HTMLElement>("[data-workflow-strip] [data-cell]")];
+    expect(cells).toHaveLength(40);
+    // the 125 unlisted: 167 - 44 listed done = 123 done, then the 2 failed; the first 40 of them show
+    expect(cells.every((c) => c.dataset.cell === "done")).toBe(true);
+    expect(cells[0].title).toBe("已完成");
+    expect(text("[data-strip-more]")).toBe("+145");
+    expect(text("[data-workflow-progress-line]")).toBe("Audit · 169/185 Agent");
+  });
+
+  it("draws to static markup (no getServerSnapshot error), opening in place there", () => {
+    act(() => upsertSession({ machine_id: "m", session_id: "s", status: "working", state: "working", workflows: [running()] } as Session));
+    const html = renderToStaticMarkup(<WorkflowCallCard step={call()} mid="m" sid="s" scope="static:" />);
+    expect(html).toContain('data-workflow-call="running"');
+    expect(html).toContain('data-workflow-opens="inline"');
+  });
+
+  it("is the call's row again when the hub lists no such run", () => {
+    drawCard([running({ tool_use_id: "another" })]);
+    expect(q("[data-workflow-call]")).toBeNull();
+    expect(q('[data-action-row="Workflow"]')).not.toBeNull();
+  });
+
+  it("with no Background dialog for its chat, opens in place to the run's phases; its rows only read", () => {
+    drawCard([running()]);
+    const head = q("[data-workflow-call] button")!;
+    expect(q("[data-workflow-call]")!.dataset.workflowOpens).toBe("inline");
+    expect(head.getAttribute("aria-expanded")).toBe("false"); // closed at first, running or not
+    expect(head.getAttribute("aria-label")).toBe("展开「parity-audit」");
+    expect(q("[data-workflow-phases]")).toBeNull();
+    act(() => head.click());
+    settle();
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    expect(head.getAttribute("aria-label")).toBe("收起「parity-audit」");
+    expect(text("[data-workflow-inline] [data-workflow-summary]")).toBe("Audit each area, verify each finding");
     expect([...host.querySelectorAll("[data-phase]")].map((s) => [s.getAttribute("data-phase"), s.getAttribute("data-phase-state"), s.querySelector("[data-phase-count]")?.textContent])).toEqual([
       ["Audit", "done", "3/3"],
       ["Verify", "current", "1/2+"],
     ]);
+    const row = q('[data-agent="a5"]')!;
+    expect(row.tagName).toBe("LI");
+    expect(row.querySelector("button, [role=button], a")).toBeNull();
+    expect(row.className).not.toContain("hover:");
+    expect(row.title).toBe("verify:5");
+    // what the reader chose stays as the run ends
+    push([ended({ status: "failed", error: "Error: 2 agents failed: snapshot:dark-large, and a reason long enough to need a second line" })]);
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    expect(q("[data-workflow-inline] [data-workflow-error]")!.className).toContain("break-words"); // whole, not one line
+  });
+
+  it("does not say a nameless run's summary twice", () => {
+    drawCard([ended({ name: undefined })]);
+    act(() => q("[data-workflow-call] button")!.click());
+    expect(text("[data-task-meta]")).not.toContain("Audit each area");
+    expect(q("[data-workflow-call]")!.textContent).toContain("Audit each area, verify each finding"); // the title
+    expect(q("[data-workflow-inline] [data-workflow-summary]")).toBeNull();
+  });
+});
+
+describe("the card and the chat's Background dialog", () => {
+  it("opens the dialog at its run, with the panel mark and no chevron, while the chat's dialog lists the run", () => {
+    const opened = vi.fn();
+    const stop = listenBackgroundDialog("m", "s", ["w1"], opened);
+    drawCard([running()]);
+    const card = q("[data-workflow-call]")!;
+    const head = card.querySelector("button")!;
+    expect(card.dataset.workflowOpens).toBe("dialog");
+    expect(head.hasAttribute("aria-expanded")).toBe(false);
+    expect(head.getAttribute("aria-label")).toBe("在后台任务中打开 parity-audit");
+    act(() => head.click());
+    expect(opened).toHaveBeenCalledWith("w1");
+    expect(q("[data-workflow-inline]")).toBeNull(); // nothing opens in place
+    // the dialog goes (the chat's header closed): the card opens in place again
+    act(() => stop());
+    expect(card.dataset.workflowOpens).toBe("inline");
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens in place when the chat's dialog does not list its run", () => {
+    const opened = vi.fn();
+    const stop = listenBackgroundDialog("m", "s", ["another"], opened);
+    drawCard([running()]);
+    act(() => q("[data-workflow-call] button")!.click());
+    expect(opened).not.toHaveBeenCalled();
+    expect(q("[data-workflow-call] button")!.getAttribute("aria-expanded")).toBe("true");
+    stop();
+  });
+});
+
+describe("the dialog's card", () => {
+  it("draws the head, where it is now, the bar and a block per phase, and says where the run started", () => {
+    const jump = vi.fn();
+    act(() => root.render(<WorkflowCard run={running()} scope="dlg:" onJump={jump} />));
+    const card = q('[data-workflow-card="running"]')!;
+    expect(card.dataset.workflowTask).toBe("w1");
+    expect(text("[data-workflow-status]")).toBe("在跑");
+    expect(text("[data-workflow-counts]")).toBe("4/5+");
+    expect(text("[data-workflow-now]")).toBe("当前 Verify：verify:5");
+    expect(host.querySelectorAll("[data-phase]")).toHaveLength(2);
     // the block with an agent running is open, the finished one folded
     expect(q('[data-phase="Verify"] [data-phase-agents]')).not.toBeNull();
     expect(q('[data-phase="Audit"] [data-phase-agents]')).toBeNull();
     expect(q('[data-phase="Verify"]')!.hasAttribute("data-phase-current")).toBe(true);
+    act(() => q("[data-workflow-jump]")!.click());
+    expect(jump).toHaveBeenCalledWith("call-wf");
+  });
+
+  it("lists its agents as rows to read, not to open", () => {
+    act(() => root.render(<WorkflowCard run={running()} scope="dlg2:" />));
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-agent]")];
+    expect(rows.map((r) => r.dataset.agent)).toEqual(["a4", "a5"]);
+    for (const r of rows) {
+      expect(r.querySelector("button, [role=button], a")).toBeNull();
+      expect(r.className).not.toContain("hover:");
+    }
+    expect(host.querySelector("[aria-label^='打开']")).toBeNull();
   });
 
   it("moves the bar's parts by transform: scaleX, never by width", () => {
-    drawCard([running()]);
+    drawDialogCard([running()]);
     const parts = [...host.querySelectorAll<HTMLElement>("[data-workflow-progress] [data-part]")];
     expect(parts.map((p) => p.dataset.part)).toEqual(["done", "running", "failed", "stopped"]);
     expect(parts[0].style.transform).toBe("translateX(0.000%) scaleX(0.80000)");
@@ -166,27 +329,12 @@ describe("the card in the chat", () => {
     }
   });
 
-  it("is the call's row again when the hub lists no such run", () => {
-    drawCard([running({ tool_use_id: "another" })]);
-    expect(q("[data-workflow-call]")).toBeNull();
-    expect(q('[data-action-row="Workflow"]')).not.toBeNull();
-  });
-
-  it("folds to its head and what it was for once the run ends, unless the reader chose", () => {
-    drawCard([running()]);
-    push([running({ running: false, status: "completed", ended_at: at(100), agents_running: 0, agents_done: 5, phase_stats: [{ title: "Audit", started: 3, done: 3, running: 0 }, { title: "Verify", started: 2, done: 2, running: 0 }] })]);
-    expect(q("[data-workflow-call]")!.dataset.workflowCall).toBe("completed");
-    expect(q("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("false");
-    expect(text("[data-workflow-summary]")).toBe("Audit each area, verify each finding");
-    expect(text("[data-workflow-counts]")).toBe("5/5"); // no + once it ended
-
-    // a reader who opened it keeps it open as the next run ends
-    drawCard([running({ tool_use_id: "call-2" })], call("call-2"));
-    act(() => q("button[aria-expanded]")!.click()); // folded by hand while running…
-    act(() => q("button[aria-expanded]")!.click()); // …and opened again
-    push([running({ tool_use_id: "call-2", running: false, status: "failed", error: "Error: agent crashed", ended_at: at(100) })]);
-    expect(q("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("true");
-    expect(text("[data-workflow-error]")).toBe("Error: agent crashed");
+  it("shows the summary and error whole", () => {
+    const long = "Error: 2 agents failed: snapshot:dark-large, snapshot:ja-small, and a reason long enough to need a second line";
+    drawDialogCard([ended({ status: "failed", error: long })]);
+    expect(text("[data-workflow-error]")).toBe(long);
+    expect(q("[data-workflow-error]")!.className).toContain("break-words");
+    expect(q("[data-workflow-summary]")!.className).not.toContain("truncate");
   });
 
   /** A block's lines in order: an agent's id, "more", "fewer" or "unlisted". */
@@ -198,7 +346,7 @@ describe("the card in the chat", () => {
 
   it("shows at most 12 rows in a phase, in start order, the quiet tail as 还有 n 个 where it is left out, running rows never folded", () => {
     const many = Array.from({ length: 20 }, (_, i) => agent(i + 1, "Audit", i === 16 ? { running: true, status: "running", ended_at: undefined } : {}));
-    drawCard([running({ phase: "Audit", phase_stats: [{ title: "Audit", started: 20, done: 19, running: 1 }], agents: many })]);
+    drawDialogCard([running({ phase: "Audit", phase_stats: [{ title: "Audit", started: 20, done: 19, running: 1 }], agents: many })]);
     expect(lines("Audit")).toEqual([...ids(1, 12), "more", "a17"]);
     expect(text("[data-phase-more]")).toBe("还有 7 个"); // what it opens: a13–a16, a18–a20
     act(() => q("[data-phase-more]")!.click());
@@ -215,7 +363,7 @@ describe("the card in the chat", () => {
         phase_stats: [{ title: "Audit", started: 24, done: 21, running: 3 }],
         agents: Array.from({ length: 21 - from }, (_, i) => agent(from + i, "Audit", from + i >= 18 ? { running: true, status: "running", ended_at: undefined } : {})),
       });
-    drawCard([capped(1)]);
+    drawDialogCard([capped(1)]);
     expect(lines("Audit")).toEqual(["unlisted", "more", ...ids(9, 20)]);
     expect(text("[data-phase-unlisted]")).toBe("更早的 4 个没有列出");
     expect(text("[data-phase-more]")).toBe("还有 8 个");
@@ -229,7 +377,7 @@ describe("the card in the chat", () => {
   });
 
   it("keeps the phase the run is in open between one agent and the next", () => {
-    drawCard([running()]);
+    drawDialogCard([running()]);
     expect(q('[data-phase="Verify"] [data-phase-agents]')).not.toBeNull();
     // a5 is back and the next has not started: none running there, the run still in Verify
     push([running({ agents_running: 0, agents_done: 5, phase_stats: [{ title: "Audit", started: 3, done: 3, running: 0 }, { title: "Verify", started: 2, done: 2, running: 0 }], agents: [...running().agents!.slice(0, 4), agent(5, "Verify")] })]);
@@ -238,8 +386,7 @@ describe("the card in the chat", () => {
   });
 
   it("marks a phase some of whose agents failed with a red ✕, not a green ✓", () => {
-    drawCard([running({ running: false, status: "failed", ended_at: at(100), agents_running: 0, agents_failed: 1, phase_stats: [{ title: "Audit", started: 3, done: 2, running: 0, failed: 1 }, { title: "Verify", started: 2, done: 2, running: 0 }] })]);
-    act(() => q("button[aria-expanded]")!.click()); // ended: folded to its head
+    drawDialogCard([running({ running: false, status: "failed", ended_at: at(100), agents_running: 0, agents_failed: 1, phase_stats: [{ title: "Audit", started: 3, done: 2, running: 0, failed: 1 }, { title: "Verify", started: 2, done: 2, running: 0 }] })]);
     const audit = q('[data-phase="Audit"] [data-phase-mark]')!;
     expect(audit.dataset.phaseMark).toBe("done_failed");
     expect(audit.getAttribute("aria-label")).toBe("完成，有失败");
@@ -247,21 +394,11 @@ describe("the card in the chat", () => {
     expect(audit.querySelector(".text-green")).toBeNull();
     expect(q('[data-phase="Verify"] [data-phase-mark]')!.dataset.phaseMark).toBe("done");
   });
-
-  it("shows the summary and error whole once opened, one line each while folded", () => {
-    const long = "Error: 2 agents failed: snapshot:dark-large, snapshot:ja-small, and a reason long enough to need a second line";
-    drawCard([running({ running: false, status: "failed", error: long, ended_at: at(100) })]);
-    expect(q("[data-workflow-error]")!.className).toContain("truncate");
-    act(() => q("button[aria-expanded]")!.click());
-    expect(q("[data-workflow-error]")!.className).not.toContain("truncate");
-    expect(q("[data-workflow-error]")!.className).toContain("break-words");
-    expect(q("[data-workflow-summary]")!.className).not.toContain("truncate");
-  });
 });
 
 describe("what moves", () => {
   it("rolls the counts when they change, not on the first draw", () => {
-    drawCard([running()]);
+    drawDialogCard([running()]);
     expect(q("[data-rolling], [data-fading]")).toBeNull(); // the first draw does not move
     push([running({ agents_done: 5, agents_started: 9, phase_stats: [{ title: "Audit", started: 3, done: 3, running: 0 }, { title: "Verify", started: 6, done: 2, running: 4 }] })]);
     expect(q("[data-workflow-counts] [data-rolling]")).not.toBeNull();
@@ -275,7 +412,7 @@ describe("what moves", () => {
   });
 
   it("fades a new agent in where it started, and nothing else moves", () => {
-    drawCard([running()]);
+    drawDialogCard([running()]);
     const first = q('[data-agent="a5"]')!;
     expect(first.style.animation).toBe("");
     push([running({ agents: [...running().agents!, agent(6, "Verify", { running: true, status: "running", ended_at: undefined })] })]);
@@ -289,7 +426,7 @@ describe("what moves", () => {
   });
 
   it("lights the next phase and fades in the ✓ of the one before it", () => {
-    drawCard([running({ phase: "Audit", phase_index: 1, phase_stats: [{ title: "Audit", started: 3, done: 2, running: 1 }, { title: "Verify", started: 0, done: 0, running: 0 }] })]);
+    drawDialogCard([running({ phase: "Audit", phase_index: 1, phase_stats: [{ title: "Audit", started: 3, done: 2, running: 1 }, { title: "Verify", started: 0, done: 0, running: 0 }] })]);
     expect(q('[data-phase="Audit"]')!.hasAttribute("data-phase-current")).toBe(true);
     push([running()]);
     expect(q('[data-phase="Audit"]')!.hasAttribute("data-phase-current")).toBe(false);
@@ -298,15 +435,24 @@ describe("what moves", () => {
   });
 
   it("turns the chip with a fade when the run ends", () => {
-    drawCard([running()]);
+    drawDialogCard([running()]);
     push([running({ running: false, status: "completed", ended_at: at(100) })]);
     expect(q("[data-workflow-status]")!.className).toContain("bg-green-tint");
     expect(q("[data-workflow-status] [data-fading]")?.textContent).toBe("完成");
   });
 
+  it("turns the card's status word and strip in place when the run ends", () => {
+    drawCard([running()]);
+    const card = q("[data-workflow-call]")!;
+    push([ended()]);
+    expect(q("[data-workflow-call]")).toBe(card);
+    expect(text("[data-task-status]")).toBe("已完成");
+    expect([...host.querySelectorAll<HTMLElement>("[data-workflow-strip] [data-cell]")].every((c) => c.dataset.cell === "done")).toBe(true);
+  });
+
   it("shows new values at once with reduced motion", () => {
     (globalThis as { __reduce?: boolean }).__reduce = true;
-    drawCard([running()]);
+    drawDialogCard([running()]);
     push([running({ agents_done: 5, agents_started: 9, agents: [...running().agents!, agent(6, "Verify", { running: true })] })]);
     expect(text("[data-workflow-counts]")).toBe("5/9+");
     expect(q("[data-rolling], [data-fading]")).toBeNull();
@@ -341,7 +487,7 @@ describe("in the chat's flow", () => {
     draw([running()]);
     expect(q("[data-workflow-call]")).toBeNull();
     act(() => q("[data-work-group] > button")!.click());
-    const card = q("[data-workflow-call]")!;
+    const card = q('[data-workflow-call="running"]')!;
     expect(card.closest("[data-work-group]")).not.toBeNull();
     expect(q("[data-work-group]")).not.toBeNull(); // the Grep before it folded
   });
@@ -352,12 +498,12 @@ describe("in the chat's flow", () => {
     act(() => q("[data-work-group] > button")!.click());
     const card = q('[data-workflow-call="completed"]')!;
     expect(card.closest("[data-work-group]")).not.toBeNull();
-    expect(card.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("false");
-    expect(text("[data-workflow-summary]")).toBe("Audit each area, verify each finding");
+    expect(card.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("false"); // no dialog here: in place, closed
+    expect(card.querySelector("[data-task-status]")!.textContent).toBe("已完成");
     expect(q("[data-work-group]")!.textContent).toContain("已工作"); // the Grep before it folded
   });
 
-  it("ends in place: the same card turns its chip and folds, nothing leaves the chat", () => {
+  it("ends in place: the same card turns its status word, nothing leaves the chat", () => {
     draw([running()]);
     expect(q("[data-workflow-call]")).toBeNull();
     act(() => q("[data-work-group] > button")!.click());
@@ -365,7 +511,7 @@ describe("in the chat's flow", () => {
     push([running({ running: false, status: "completed", ended_at: at(100), agents_running: 0, agents_done: 5 })]);
     expect(q("[data-workflow-call]")).toBe(card); // not unmounted and drawn again elsewhere
     expect(card.dataset.workflowCall).toBe("completed");
-    expect(q("[data-workflow-status] [data-fading]")?.textContent).toBe("完成");
+    expect(card.querySelector("[data-task-status]")!.textContent).toBe("已完成");
     expect(card.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("false");
   });
 
@@ -431,17 +577,6 @@ describe("in the chat's flow", () => {
     expect(flaky).toHaveBeenCalledTimes(2);
   });
 
-});
-
-describe("the dialog's card", () => {
-  it("shares the phase blocks, and says where the run started", () => {
-    const jump = vi.fn();
-    act(() => root.render(<WorkflowCard run={running()} mid="m" scope="dlg:" onJump={jump} />));
-    expect(q('[data-workflow-card="running"]')).not.toBeNull();
-    expect(host.querySelectorAll("[data-phase]")).toHaveLength(2);
-    act(() => q("[data-workflow-jump]")!.click());
-    expect(jump).toHaveBeenCalledWith("call-wf");
-  });
 });
 
 describe("the running bar while a workflow keeps the agent working", () => {

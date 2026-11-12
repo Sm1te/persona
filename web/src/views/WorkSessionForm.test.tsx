@@ -15,7 +15,8 @@ import { WorkSessionForm } from "./WorkSessionForm";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const machines = [{ id: "a", name: "A", online: true }, { id: "b", name: "B", online: true }];
-const launcher = [{ name: "claude-team", agent_type: "claude" }, { name: "codex-team", agent_type: "codex" }];
+const LAUNCHERS = [{ name: "claude-team", agent_type: "claude" }, { name: "codex-team", agent_type: "codex" }];
+let launcher: { name: string; display_name?: string; agent_type: string }[] = LAUNCHERS;
 const available = (id: string) => ({ agent_type: "claude", model_mode: "selectable", models: [{ id, name: id }], attachments: true });
 const mockResponse = (v: unknown) => new Response(JSON.stringify(v));
 let host: HTMLDivElement, root: Root;
@@ -36,6 +37,7 @@ const fill = (value: string) => act(async () => {
 
 beforeEach(async () => {
   state.machines = machines;
+  launcher = LAUNCHERS;
   state.launch.mockClear();
   pending = [];
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -105,4 +107,13 @@ it("cannot submit offline or before reconnect validation, and does not substitut
   await choose(4, "model-new");
   await act(async () => start().click());
   expect(state.launch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ model: "model-new", text: "draft kept", launcher: "claude-team" }));
+});
+
+it("names a provider by its display name and ID, an rc alias by its ID (#5029)", async () => {
+  launcher = [{ name: "relay-example-com", display_name: "我的中转 站", agent_type: "claude" }, { name: "cc_glm", agent_type: "claude" }];
+  await choose(0, "a");
+  await choose(1, "/projects/a");
+  await choose(2, "claude");
+  const options = [...fields()[3].options].slice(1);
+  expect(options.map((o) => [o.value, o.textContent])).toEqual([["relay-example-com", "我的中转 站 (relay-example-com)"], ["cc_glm", "cc_glm"]]);
 });

@@ -62,6 +62,8 @@ data class ChatAppBindings(
     val agentShares: AgentSharesProvider? = null,
     /** Worktree status and removal by this group's own machine ids (#4532); built per call for the current route. */
     val worktrees: (() -> persona.core.contracts.api.AgentCreationService?)? = null,
+    /** This group's hub's subscription use (`GET /api/v1/usage/windows`), for ultracode's quota line (#582). */
+    val usage: (suspend () -> List<persona.core.contracts.api.UsageAccount>)? = null,
 )
 
 interface ChatWiringSource {
@@ -197,24 +199,26 @@ fun ChatDestination(
     val handToPersona = rememberHandToPersona(wiring?.mainSender?.takeIf { style != ChatRenderStyle.Assistant }, navigator)
     val composer by (editor?.composer ?: remember { MutableStateFlow<ChatComposerState?>(null) }).collectAsStateWithLifecycle()
     val error by (editor?.error ?: remember { MutableStateFlow<Int?>(null) }).collectAsStateWithLifecycle()
-    ChatScreen(session, services.chats(), services.messages(),
-        services.interactions(), services.sessions(), onBack = onHistoryBack ?: navigator::back,
-        onTerminal = onTerminal ?: { navigator.navigate(TerminalRoute(it.machineId, it.sessionId)) },
-        chrome = ChatChromeBindings(actions = wiring?.actions.takeUnless { historyReadOnly }, connection = wiring?.connection,
-            worktrees = wiring?.worktrees.takeUnless { historyReadOnly },
-            onOpenSession = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) },
-            onOpenAssistant = { navigator.navigate(conversationRoute(it, assistant = true)) },
-            onConnectionDetails = { navigator.navigate(SettingsPageRoute(SettingsPage.Diagnostics)) },
-            files = wiring?.files, ports = wiring?.ports, onHandToPersona = handToPersona,
-            tasks = wiring?.tasks?.takeIf { style == ChatRenderStyle.Assistant && !historyReadOnly },
-            assistantManagement = assistantManagement,
-            agentShares = sharing,
-            inboxTrays = services.inboxTrays(), inboxScope = wiring?.scope?.path),
-        renderStyle = style,
-        embedded = embedded, showTopBar = showTopBar,
-        historyReadOnly = historyReadOnly, historyFooter = historyFooter, historySession = historySession,
-        composerState = composer, onDraftChanged = editor?.let { it::changed },
-        composerService = wiring?.composer.takeUnless { historyReadOnly },
-        statusBindings = ChatStatusBindings(recovery = wiring?.recovery.takeUnless { historyReadOnly }, draftSaveError = error?.let { stringResource(it) }),
-        onContextCleared = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) })
+    androidx.compose.runtime.CompositionLocalProvider(LocalUsageRead provides wiring?.usage) {
+        ChatScreen(session, services.chats(), services.messages(),
+            services.interactions(), services.sessions(), onBack = onHistoryBack ?: navigator::back,
+            onTerminal = onTerminal ?: { navigator.navigate(TerminalRoute(it.machineId, it.sessionId)) },
+            chrome = ChatChromeBindings(actions = wiring?.actions.takeUnless { historyReadOnly }, connection = wiring?.connection,
+                worktrees = wiring?.worktrees.takeUnless { historyReadOnly },
+                onOpenSession = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) },
+                onOpenAssistant = { navigator.navigate(conversationRoute(it, assistant = true)) },
+                onConnectionDetails = { navigator.navigate(SettingsPageRoute(SettingsPage.Diagnostics)) },
+                files = wiring?.files, ports = wiring?.ports, onHandToPersona = handToPersona,
+                tasks = wiring?.tasks?.takeIf { style == ChatRenderStyle.Assistant && !historyReadOnly },
+                assistantManagement = assistantManagement,
+                agentShares = sharing,
+                inboxTrays = services.inboxTrays(), inboxScope = wiring?.scope?.path),
+            renderStyle = style,
+            embedded = embedded, showTopBar = showTopBar,
+            historyReadOnly = historyReadOnly, historyFooter = historyFooter, historySession = historySession,
+            composerState = composer, onDraftChanged = editor?.let { it::changed },
+            composerService = wiring?.composer.takeUnless { historyReadOnly },
+            statusBindings = ChatStatusBindings(recovery = wiring?.recovery.takeUnless { historyReadOnly }, draftSaveError = error?.let { stringResource(it) }),
+            onContextCleared = { navigator.navigate(ChatRoute(it.machineId, it.sessionId)) })
+    }
 }

@@ -95,6 +95,8 @@ func searchable(rel string) bool {
 		return false
 	case len(parts) == 3 && parts[0] == KindRecording && (parts[2] == recordingJournal || parts[2] == "minutes.json"):
 		return false // minutes.md has the minutes' text
+	case len(parts) == 3 && parts[0] == KindRecording && (parts[2] == recapFile || parts[2] == recapNotesFile):
+		return false // recap.md has the recap's text; the notes are the model's, unchecked (day_recap.go)
 	case len(parts) >= 3 && parts[0] == KindRecording && strings.HasPrefix(parts[2], liveFile):
 		return false // live.json, and its temporary file while it is replaced
 	case len(parts) >= 3 && parts[0] == KindRecording && strings.HasPrefix(parts[2], meetingFile):
@@ -149,7 +151,7 @@ func shown(kind, rel string) bool {
 		day, ok := strings.CutPrefix(rest, "messages/")
 		return kind == KindChat && ok && strings.HasSuffix(day, ".md") && !strings.Contains(day, "/")
 	case KindRecording:
-		return rest == "summary.md" || rest == "minutes.md" || rest == "transcript.md" || rest == photosText || rest == "meta.json"
+		return rest == "summary.md" || rest == "minutes.md" || rest == recapMarkdown || rest == "transcript.md" || rest == photosText || rest == "meta.json"
 	case KindTopic:
 		return rest == "summary.md" || rest == "meta.json"
 	case KindDoc, KindMeeting, KindEvent:
@@ -397,7 +399,7 @@ func (e *Engine) searchFiles() *searchOrder {
 func sortHits(h []Found) []Found {
 	rank := func(f Found) int {
 		switch {
-		case strings.HasSuffix(f.Path, "/summary.md"), strings.HasSuffix(f.Path, "/minutes.md"):
+		case strings.HasSuffix(f.Path, "/summary.md"), strings.HasSuffix(f.Path, "/minutes.md"), strings.HasSuffix(f.Path, "/"+recapMarkdown):
 			return 0
 		case strings.HasSuffix(f.Path, "/log.md"):
 			return 1

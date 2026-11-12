@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { brotliCopies, FIRST_SCREEN_BUDGET, gzipBytes, IDLE_TIER_BUDGET, idleImports, localeDirs, preloadScript, sentBytes, startupNamespaceGaps } from "./src/startup-preload";
+import { brotliCopies, firstScreenBytes, firstScreenOverBudget, gzipBytes, IDLE_TIER_BUDGET, idleImports, localeDirs, preloadScript, startupNamespaceGaps } from "./src/startup-preload";
 import { textScale } from "./src/lib/text-scale";
 import { classicWorkerProblem } from "./src/sw-entry-check";
 import { catalogFiles, i18nCatalogs, startupNamespacesFile } from "./i18n-catalogs";
@@ -80,7 +80,8 @@ const showcaseImages: Plugin = {
 // The same files, with main and everything it imports statically and the rest of the catalog, are what a cold first
 // screen fetches: once they are written, each of 1 KB or more gets a brotli copy beside it (name.br,
 // src/startup-preload.ts brotliCopies), which the hub sends as stored to a browser that takes br (docs/web/web.md
-// "Precompressed assets"). The build then fails if any language's first screen sends more than FIRST_SCREEN_BUDGET.
+// "Precompressed assets"). The build then fails if any language's first screen sends more than FIRST_SCREEN_BUDGET,
+// counted with the hashes of the files it names as a fixed string (src/startup-preload.ts firstScreenBytes).
 //
 // After start the page also fetches, once the browser is idle, the chunks of each lazyPage(…, { idle: true }) and
 // what they import beyond those files (src/lib/lazy-page.ts): the build fails if they send more than IDLE_TIER_BUDGET.
@@ -106,15 +107,11 @@ function startupPreload(): Plugin {
         idle.add(target.id);
       }
     },
-    async writeBundle({ dir }) {
+    async writeBundle({ dir }, bundle) {
       if (!startup) this.error("startup-preload: index.html was not transformed, so the first screen's files are unknown");
       await brotliCopies(dir!, startup);
-      for (const [lang, files] of screens) {
-        const bytes = await sentBytes(dir!, files);
-        if (bytes > FIRST_SCREEN_BUDGET) {
-          this.error(`startup-preload: the ${lang} first screen sends ${bytes} B, over its budget of ${FIRST_SCREEN_BUDGET} B (src/startup-preload.ts FIRST_SCREEN_BUDGET)`);
-        }
-      }
+      const overBudget = firstScreenOverBudget(await firstScreenBytes(dir!, screens, Object.keys(bundle)));
+      if (overBudget) this.error(overBudget);
       const idleBytes = await gzipBytes(dir!, idleFiles);
       if (idleBytes > IDLE_TIER_BUDGET) {
         this.error(`startup-preload: the pages loaded at idle send ${idleBytes} B, over their budget of ${IDLE_TIER_BUDGET} B (src/startup-preload.ts IDLE_TIER_BUDGET): load one on intent (lazyPage routes) instead`);
@@ -233,7 +230,8 @@ export default defineConfig({
   // it under (docs/web/web.md "Subpath"); at the root that is "/", as before.
   base: "./",
   // The terminal loads xterm only when opened: pre-bundle it, or the first open in dev re-optimizes and reloads the page.
-  optimizeDeps: { include: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-clipboard", "@xterm/addon-web-links", "@xterm/addon-search", "@xterm/addon-webgl"] },
+  // QuickJS too (the html card worker, #4215): found on the first card instead, it reloads the page mid-session.
+  optimizeDeps: { include: ["quickjs-emscripten-core", "@jitl/quickjs-wasmfile-release-sync/ffi", "@jitl/quickjs-wasmfile-release-sync/emscripten-module", "@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-clipboard", "@xterm/addon-web-links", "@xterm/addon-search", "@xterm/addon-webgl"] },
   // Tests run in zh-Hans, the source language, so their expectations read like the interface (src/i18n/test-setup.ts).
   // Node 25+ has its own localStorage, undefined without --localstorage-file, and it hides jsdom's: turn it off.
   // A node_modules that isn't what package-lock.json pins stops the run before any test (scripts/installed-deps.mjs, #4776).

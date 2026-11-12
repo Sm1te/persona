@@ -854,7 +854,7 @@ struct AssistantSidebar: View {
             .scrollContentBackground(.hidden)
             #if os(macOS)
             .modifier(MacListKeys(current: { current }, delete: { key in
-                guard key != model.assistantMain else { return }
+                guard key != model.assistantMain, !model.isBackgroundSupervisor(key.sessionID) else { return }
                 Task { await model.archiveConversation(key, true) }
             }))
             #endif
@@ -1244,12 +1244,18 @@ struct AssistantSidebar: View {
     @ViewBuilder private func conversations(_ all: [Session], archived: Int) -> some View {
         let main = model.assistantMain
         // The leader conversations are the Directions group, in the hub's order, under each direction's name
-        // (docs/assistant/unified-entry.md "Leader conversations"). They are the only Persona chats listed here
-        // besides the main one's own first row: everything else is one tap away in All Chats (#4331).
+        // (docs/assistant/unified-entry.md "Leader conversations"); then Recent, the newest few of the user's other
+        // chats (#4873); everything else is one tap away in All Chats (#4331).
         let directions = AssistantSidebarGroups.directions(all, leaders: model.assistantLeaders, main: main)
         if !directions.isEmpty {
             heading(String(localized: "Directions")) { EmptyView() }
             ForEach(directions) { row($0, named: model.directionNames[$0.sessionID]) }
+        }
+        let recent = AssistantSidebarGroups.recent(all, leaders: model.assistantLeaders, main: main, tasks: taskChats.known(on: model.api),
+                                                   hubSays: model.hubFeatures.contains(AutoConversationSource.feature))
+        if !recent.isEmpty {
+            heading(String(localized: "Recent")) { EmptyView() }
+            ForEach(recent) { row($0) }
         }
         allChatsRow
         archivedRow(archived)
@@ -1373,6 +1379,9 @@ struct AssistantSidebar: View {
     private func row(_ s: Session, named: String? = nil) -> some View {
         let selected = s.key == current
         let isMain = s.key == model.assistantMain
+        // The main conversation and the hub's built-in background supervisor (#5083) stay: no Archive, Pin or End.
+        let builtIn = model.isBackgroundSupervisor(s.sessionID)
+        let kept = isMain || builtIn
         let title = isMain ? Self.mainTitle : named ?? (s.title.isEmpty || s.title == "Claude Code" ? String(localized: "New Chat [Quick Actions ea4b29]") : s.title)
         let preview = s.lastText.map { Fmt.plain($0).replacingOccurrences(of: "\n", with: " ") } ?? ""
         let counts: String? = model.assistantLeaders.contains(s.sessionID)
@@ -1417,7 +1426,7 @@ struct AssistantSidebar: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(isMain ? "sidebar-main" : "sidebar-conversation")
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if !isMain {
+            if !kept {
                 Button { Task { await model.archiveConversation(s.key, true) } } label: {
                     Label("Archive", systemImage: Theme.Icon.archive)
                 }
@@ -1425,11 +1434,11 @@ struct AssistantSidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .background { if !isMain { SwipeRowMark() } } // the drawer leaves a drag to the left on it to the row
+        .background { if !kept { SwipeRowMark() } } // the drawer leaves a drag to the left on it to the row
         #endif
         .contextMenu {
             if isMain { MainConversationMenu(key: s.key) } // Compact context, New Main Chat… (#1762)
-            if !isMain {
+            if !kept {
                 // A direction is the hub's, for every device (#4331): the long press makes a conversation one, or ends
                 // the direction there (#4331, `make` / `end`).
                 let lead = model.assistantLeaders.contains(s.sessionID)
@@ -1442,7 +1451,9 @@ struct AssistantSidebar: View {
             }
             if !isMain {
                 Button { renaming = s } label: { Label("Rename… [Assistant Sidebar ec4cd0]", systemImage: Theme.Icon.edit) }
-                Button { Task { await model.archiveConversation(s.key, true) } } label: { Label("Archive", systemImage: Theme.Icon.archive) }
+                if !builtIn {
+                    Button { Task { await model.archiveConversation(s.key, true) } } label: { Label("Archive", systemImage: Theme.Icon.archive) }
+                }
             }
             Button {
                 UIPasteboard.general.string = s.sessionID
@@ -1452,7 +1463,7 @@ struct AssistantSidebar: View {
                 UIPasteboard.general.string = ChatTrace.shared.text(s.key) // structure only, to paste into a report
                 model.toast = Toast(String(localized: "Diagnostics copied"), style: .success)
             } label: { Label("Copy Diagnostics", systemImage: Theme.Icon.diagnostics) }
-            if s.status.isLive {
+            if s.status.isLive, !builtIn {
                 Button(role: .destructive) { ending = s } label: { Label("End…", systemImage: Theme.Icon.end) }
             }
         } preview: {
@@ -1727,6 +1738,19 @@ nonisolated enum AssistantSidebarGroups {
     /// a leader the list does not hold (archived, another manager's) is left out.
     static func directions(_ sessions: [Session], leaders: [String], main: SessionKey?) -> [Session] {
         leaders.compactMap { id in sessions.first { $0.sessionID == id && $0.key != main } }
+    }
+
+    /// How many conversations the sidebar's Recent lists (#4873); the rest are in All Chats.
+    static let recentLimit = 5
+
+    /// The sidebar's Recent (#4873): the newest `recentLimit` conversations that are not the main one and not a direction
+    /// (those are listed above it), and not ones Persona opened by itself (Auto Chats: the inbox's AI twin, scheduled tasks…,
+    /// left in All Chats as Recent left them out before #4331). `leaders`: the directions' session ids.
+    static func recent(_ sessions: [Session], leaders: [String], main: SessionKey?, tasks: AssistantTaskChats, hubSays: Bool) -> [Session] {
+        let lead = Set(leaders)
+        let rest = sessions.filter { $0.key != main && !lead.contains($0.sessionID) }
+        let mine = AutoConversations(rest, tasks: tasks, current: nil, hubSays: hubSays).mine
+        return Array(newestFirst(mine).prefix(recentLimit))
     }
 
     /// Newest first, a fixed order for equal times (the sidebar's Recent).

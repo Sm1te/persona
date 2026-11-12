@@ -222,9 +222,11 @@ struct RecordingMinutesSections: View {
             if let title = minutes.title, !title.isEmpty, title != entry.displayTitle {
                 Text(title).font(Theme.Font.bodyStrong)
             }
-            let line = [minutes.when, minutes.place].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+            // When in the app's own date style, as the header above it (#4875), and where.
+            let line = [minutes.whenLine, minutes.place].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
             if !line.isEmpty {
                 Label(line, systemImage: Theme.Icon.calendarEvent).font(Theme.Font.secondary).foregroundStyle(.secondary).lineLimit(2)
+                    .accessibilityIdentifier("minutes-when")
             }
             if !minutes.attendees.isEmpty {
                 Label(ListFormatter.localizedString(byJoining: minutes.attendees), systemImage: Theme.Icon.people)

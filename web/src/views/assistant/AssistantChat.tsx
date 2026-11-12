@@ -18,6 +18,7 @@ import { modelIdRule, TYPED_MODELS_FEATURE, typedModelProblem } from "../../lib/
 import { runtimeFallbackText } from "../../lib/model-config";
 import { personaState } from "../../lib/persona";
 import { conversationPage } from "../../lib/conversation-page";
+import { CLEAR_MAIN_FEATURE, clearMainContext } from "../../lib/main-clear";
 import { shownManager } from "../../lib/manager-choice";
 import { navigate } from "../../lib/router";
 import { hubHas, refreshAssistant, useStore } from "../../lib/store";
@@ -274,13 +275,14 @@ export function AssistantFace({ session, last }: { session?: Session; last?: Pic
   return <PersonaDot size={30} state={state} fallback={null} className="-my-1" />;
 }
 
-/** The header menu's Persona part: "Details" (the profile), "Knowledge", "Back to main chat", the main conversation's "Compact context" and
- *  "New main chat" (when the hub can), "Copy info"; `dialogs` goes with them. Empty for an agent. */
+/** The header menu's Persona part: "Details" (the profile), "Knowledge", "Back to main chat", the main conversation's "Compact context",
+ *  "Clear context" and "New main chat" (when the hub can), "Copy info"; `dialogs` goes with them. Empty for an agent. */
 export function useAssistantMenu(session: Session | undefined): { items: MenuItem[]; dialogs: React.ReactNode } {
   const assistant = useStore((s) => s.assistant);
   const machine = useStore((s) => (session ? s.machines.find((m) => m.id === session.machine_id)?.name ?? "" : ""));
   const canCompact = useStore((s) => hubHas(s.features, COMPACT_FEATURE));
   const canNewMain = useStore((s) => hubHas(s.features, NEW_MAIN_FEATURE));
+  const canClear = useStore((s) => hubHas(s.features, CLEAR_MAIN_FEATURE));
   const picked = usePickedLauncher(session ? conversationKey(session.machine_id, session.session_id) : "");
   const [newMain, setNewMain] = useState(false);
   if (!session) return { items: [], dialogs: null };
@@ -296,6 +298,8 @@ export function useAssistantMenu(session: Session | undefined): { items: MenuIte
     ...(isMain && canCompact
       ? [{ key: "compact", label: compacting ? t("assistant-assistantchat.compacting") : t("assistant-assistantchat.compact"), icon: "layers" as const, disabled: compacting, onSelect: () => void startCompaction(session) }]
       : []),
+    // as /clear (#5095): no confirmation, the old conversation is archived, not deleted
+    ...(isMain && canClear ? [{ key: "clear", label: t("assistant-assistantchat.clear"), icon: "retry" as const, onSelect: () => void clearMainContext(session.session_id) }] : []),
     ...(isMain && canNewMain ? [{ key: "newmain", label: t("assistant-assistantchat.new_main_ellipsis"), icon: "compose" as const, onSelect: () => setNewMain(true) }] : []),
     {
       key: "copyinfo",

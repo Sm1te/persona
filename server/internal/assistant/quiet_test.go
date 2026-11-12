@@ -196,9 +196,9 @@ func TestQuietNoticeWaitsForTheTurn(t *testing.T) {
 	}
 }
 
-// Tasks from another conversation are not quiet: the planning conversation gets no notices (the hub pushes as
-// always), and since #4669 the main conversation supervises them. With the setting off a task from the main
-// conversation is not quiet (the hub pushes) but is still supervised.
+// Tasks from another conversation are not quiet: the hub pushes as always, and the planning conversation supervises
+// them itself (a supervision message, not a quiet notice). With the setting off a task from the main conversation is
+// not quiet (the hub pushes) but is still supervised.
 func TestNotQuietTasksAreNotTold(t *testing.T) {
 	for _, c := range []struct {
 		name       string
@@ -206,7 +206,7 @@ func TestNotQuietTasksAreNotTold(t *testing.T) {
 		supervisor string
 		told       bool
 	}{
-		{"side conversation", func(v *Settings) { v.Main = "conv-main" }, "conv-main", false},
+		{"side conversation", func(v *Settings) { v.Main = "conv-main" }, "conv1", true},
 		{"setting off", func(v *Settings) { v.MainTasksQuiet = new(false) }, "conv1", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -221,6 +221,13 @@ func TestNotQuietTasksAreNotTold(t *testing.T) {
 			time.Sleep(4 * quietNoticeDelay)
 			if told := len(f.notices()) > 0; told != c.told {
 				t.Fatalf("told = %v: %q", told, f.notices())
+			}
+			if c.name == "side conversation" {
+				for _, n := range f.notices() {
+					if !strings.Contains(n, "📋 督办") {
+						t.Fatalf("a side conversation's message is not its supervision message:\n%s", n)
+					}
+				}
 			}
 		})
 	}
@@ -258,6 +265,10 @@ func TestAgentStartFromTheMainConversation(t *testing.T) {
 	}
 	if !strings.Contains(res, "a task of this conversation") || feedKinds(s, "conv1") != "task" {
 		t.Fatalf("result %q, feed %q", res, feedKinds(s, "conv1"))
+	}
+	// the task started its agent: its card has no wake (the clients' New, #5096)
+	if got := taskCardWake(s, "conv1", todo.ID); got != "" {
+		t.Fatalf("card wake %q", got)
 	}
 
 	for _, c := range []struct {

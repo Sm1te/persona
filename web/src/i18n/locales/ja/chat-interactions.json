@@ -88,7 +88,7 @@
   "always_scope_named": "常に許可する範囲：{scope}",
   "always_scope_directory": "常に許可すると、この会話でこのディレクトリへの操作を許可します。",
   "always_scope_commands": "常に許可すると、この会話のすべてのコマンドを許可します。",
-  "always_scope_tool": "常に許可すると、この会話のすべての {tool} 呼び出しを許可します。",
+  "always_scope_tool": "常に許可すると、この会話のすべての「{tool}」呼び出しを許可します。",
   "always_scope_saved": "承認した範囲は、この会話で引き続き許可されます。",
   "secret_run_kicker": "パスワードが必要",
   "secret_run_title": "{machine}でパスワードを使って実行",
@@ -96,5 +96,12 @@
   "secret_run_decline": "拒否",
   "secret_run_run": "実行",
   "secret_run_note": "1回だけ使い、保存しません。アシスタントにも見えません。",
-  "secret_run_card_only": "カードで回答してください：パスワードを入力して実行するか、拒否してください"
+  "secret_run_card_only": "カードで回答してください：パスワードを入力して実行するか、拒否してください",
+  "secret_handoff_title": "シークレットを Agent に渡しますか？",
+  "secret_handoff_lead": "{machine} の「{agent}」が今回の実行だけ受け取ります：",
+  "secret_handoff_lead_unnamed": "{machine} の Agent が今回の実行だけ受け取ります：",
+  "secret_handoff_lead_bare": "Agent が今回の実行だけ受け取ります：",
+  "secret_handoff_note": "Persona とアシスタントは値を見ません。",
+  "secret_handoff_always_scope": "常に許可：{scope}。",
+  "secret_handoff_card_only": "チャットのカードで承認してください。"
 }

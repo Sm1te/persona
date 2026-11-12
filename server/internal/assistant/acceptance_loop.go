@@ -91,7 +91,7 @@ func (s *Service) retryAcceptance(now time.Time) {
 			s.boardChanged()
 			continue
 		}
-		late := now.Sub(a.AskedAt) > acceptPostWindow
+		late := now.Sub(maxTime(a.AskedAt, a.PushedAt)) > acceptPostWindow // PushedAt: held for a briefing first (decision_wait.go)
 		if late || stErr == nil && !(st.Ready && st.Features.Reports) {
 			if late {
 				s.logf("task %s: acceptance: its card did not go out within %v: kept without one", id, acceptPostWindow)

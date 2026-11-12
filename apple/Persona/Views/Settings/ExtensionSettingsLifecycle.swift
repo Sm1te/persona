@@ -21,6 +21,18 @@ nonisolated struct ExtensionSettingsPolicy {
     static var rollbackPreviewGap: String {
         String(localized: "This assistant does not provide a rollback preview.")
     }
+    /// The footer while the manager's master switch is off (#4747, as the web's #1828).
+    static var globalAutoOffReason: String {
+        String(localized: "Auto-upgrade is paused because automatic extension updates are off for this assistant. Your setting is kept and applies again once they're turned back on.")
+    }
+
+    /// Whether the extension's Auto-upgrade switch can be flipped. While the manager's master switch is off
+    /// (`globalAuto` false) it can't: it keeps showing the extension's own value (`ExtensionText.autoUpgradeShown`),
+    /// which applies again once the master switch is back on (#4747). An unknown master switch (still loading, or a
+    /// hub without the route) leaves it editable, so a hub that never answers does not lock it.
+    func canFlipAutoUpgrade(globalAuto: Bool?) -> Bool {
+        canAutoUpgrade && globalAuto != false
+    }
 
     init(detail: HubExtensionDetail) {
         let plugin = detail.plugin

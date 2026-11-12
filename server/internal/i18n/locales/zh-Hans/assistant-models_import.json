@@ -4,5 +4,9 @@
   "err_nothing_named": "没有可导入的 {name}",
   "err_machine_required": "需要 machine",
   "err_machine_providers_required": "需要 machine 和 providers",
-  "err_no_machine": "没有这台机器"
+  "err_no_machine": "没有这台机器",
+  "use_task": "定时任务「{name}」",
+  "use_profile": "模型档位「{name}」",
+  "use_tier": "模型档位「{profile}」的 Agent 预设「{tier}」",
+  "err_not_hidden": "供应商已导入，但这些 alias 没能隐藏。可以在列表里逐个隐藏，或再导入一次。"
 }

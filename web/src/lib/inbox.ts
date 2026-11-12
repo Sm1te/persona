@@ -25,6 +25,7 @@ import { onHubEvent } from "./store";
 import type { AssistantInfo, Interaction, Session } from "./types";
 import { toast } from "../ui/atoms";
 import { byTime } from "./times";
+import { homeKey } from "./folded-rows";
 import { inFolderFilter } from "./inbox-folders";
 import { actedText, actOnSuggestion, statusOf, type ChainEntry, type InboxHandling, type InboxRelated, type InboxStatus, type InboxSuggestion, type SuggestionAction } from "./inbox-events";
 
@@ -535,8 +536,11 @@ export function mailAccounts(accounts: MailAccount[], items: InboxItem[]): MailA
 
 // ── agents waiting on the user (they head "Needs you") ────────
 
-/** Muted: the agent itself, or its space unless the agent was turned back on there (the hub's rule). */
+/** Muted: the agent itself, or its space unless the agent was turned back on there (the hub's rule). A child session's
+ *  card goes by its parent's (#5120): the child has no row of its own to mute it from, and the switcher's count
+ *  (lib/manager-attention.ts) mutes it the same way. */
 export function interactionMuted(ix: Interaction, sessions: Record<string, Session[]>, mutes: AgentMutes): boolean {
+  if (ix.folded_under) return interactionMuted({ ...ix, session_id: ix.folded_under, folded_under: undefined }, sessions, mutes);
   const key = `${ix.machine_id}/${ix.session_id}`;
   if (mutes.sessions.includes(key)) return true;
   if (mutes.allowed?.includes(key)) return false;
@@ -578,9 +582,21 @@ export function interactionAgentTitle(ix: Interaction): string {
 
 export function waitingAgents(interactions: Interaction[], sessions: Record<string, Session[]>, mutes: AgentMutes, f: InboxFilter): Interaction[] {
   if (f.source || f.folder || (f.kind && f.kind !== "agent")) return [];
-  return interactions
+  const shown = interactions
     .filter((ix) => !interactionMuted(ix, sessions, mutes) && hasText([ix.session_title, ix.summary, interactionTitle(ix), interactionAsk(ix)], f.query))
     .sort((a, b) => byTime(a.created_at, b.created_at) || a.id.localeCompare(b.id));
+  return withChildCardsUnderParents(shown);
+}
+
+/** A child session's cards come with its parent's (#5120), where the parent's oldest card (or its first child card) is;
+ *  the rest keep their order. The same list when no card is a child's. */
+function withChildCardsUnderParents(cards: Interaction[]): Interaction[] {
+  if (!cards.some((ix) => ix.folded_under)) return cards;
+  const homes = new Set(cards.filter((ix) => ix.folded_under).map(homeKey));
+  const group = (ix: Interaction) => (ix.session_id && homes.has(homeKey(ix)) ? homeKey(ix) : `card:${ix.id}`);
+  const at = new Map<string, number>();
+  for (const ix of cards) if (!at.has(group(ix))) at.set(group(ix), at.size);
+  return [...cards].sort((a, b) => at.get(group(a))! - at.get(group(b))!);
 }
 
 /** A conversation's page: the assistant's are in Persona (/persona/<sid>, naming its computer and manager with several

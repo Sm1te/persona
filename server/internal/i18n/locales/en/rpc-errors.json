@@ -39,5 +39,16 @@
   "agent_stopped": "This agent has stopped. Its conversation and terminal stay; it doesn’t take messages, and nothing was sent. To run it again, use Resume on its terminal page.",
   "shell_waiting": "The new terminal tab stopped on a question before the agent could start. Nothing ran; the tab stays open for a few minutes so it can be answered.",
   "start_line_rejected": "The new terminal tab didn't take the start command, twice. Nothing ran; check what that shell does when it starts, then try again.",
-  "directory_untypable": "This directory’s name contains a control character, such as a tab or a line break, so the agent can’t be started in it from here. Rename the directory or choose another one."
+  "directory_untypable": "This directory’s name contains a control character, such as a tab or a line break, so the agent can’t be started in it from here. Rename the directory or choose another one.",
+  "switch_unsupported": "Only a Claude Code agent running in a terminal, on a model provider Persona can tell, can switch to another model provider. Start a new conversation to use that one.",
+  "switch_launcher_missing": "That model provider isn’t set up on this computer. Pick another one.",
+  "switch_other_agent": "That model provider runs another agent, not Claude Code. Start a new conversation to use it.",
+  "switch_model_locked": "That model provider always runs its own model, so the one you picked wouldn’t be used. Pick it without a model, or pick another provider.",
+  "switch_config_dir": "That model provider keeps Claude Code’s data and sign-in in another folder, where this conversation isn’t saved. Start a new conversation to use it.",
+  "switch_not_stopped": "The agent didn’t quit, so it stays on its current model provider and the switch was dropped. Nothing was sent.",
+  "switch_failed": "The agent couldn’t start on the other model provider, so it went back to the one it was on and the switch was dropped. Your message wasn’t sent.",
+  "switch_failed_stopped": "The agent couldn’t start on the other model provider and has stopped; the switch was dropped. Your message wasn’t sent. Check its terminal, or use Resume on its terminal page.",
+  "switch_stale": "The agent moved to another model provider since you picked this one. Look at the provider it runs on now, then pick again.",
+  "switch_pick_model": "Persona can’t see which model that model provider runs by default, and without one the conversation would keep its current model. Pick a model of that provider.",
+  "switch_under_way": "The agent is moving to another model provider right now. Try again once it runs; nothing was done."
 }

@@ -3,7 +3,7 @@
 exists (jsdom has none): every option shows its name and its whole description, nothing in a row is wider than the
 row or runs past the menu, exactly one option is checked (aria-checked) and its check is not squeezed, and the menu
 stays inside the window and above the chip that opened it. Runs an agent chat and a Persona chat, light and dark, at
-1440, 390 and 320 wide.
+1440, 390 and 320 wide. An agent chat has the permission chip only: its effort is on the composer's model pill (#5032).
 
     PORT=18871 MOCK_HUB_ID=mode-menu python3 scripts/mock/mock_hub.py &
     (cd web && PERSONA_HUB_URL=http://127.0.0.1:18871 npx vite --port 5371 --strictPort &)
@@ -22,8 +22,10 @@ SIZES = {"wide": {"width": 1440, "height": 900}, "narrow": {"width": 390, "heigh
 PAGES = {"agent": "/s/macbook/a1f3c2d4-0000-4000-8000-000000000001", "assistant": "/persona/b2e4d6f8-0000-4000-8000-000000000002"}
 CHIPS = {
     "permission": 'button[title="Permission mode"], button[title^="Never asks"]',
-    "effort": 'button[title="Thinking effort"], button[title="Model and thinking effort"]',
+    "effort": 'button[title="Thinking effort"]',
 }
+# the chips each page has
+PAGE_CHIPS = {"agent": ["permission"], "assistant": ["permission", "effort"]}
 
 # For each option row: its name and description, whether anything inside overflows the row, and the check's width.
 MEASURE = """menu => {
@@ -91,16 +93,14 @@ def case(browser, base, size, theme, where, shots):
     page.wait_for_function("localStorage.getItem('persona.token')")
     page.evaluate(f"localStorage.setItem('persona.theme', '{theme}')")
     page.goto(base + PAGES[where] + "?token=mock")
-    for menu, sel in CHIPS.items():
-        chip = page.locator(sel).first
+    for menu in PAGE_CHIPS[where]:
+        chip = page.locator(CHIPS[menu]).first
         chip.wait_for()
         chip.click()
         page.wait_for_timeout(500)
         is_menu = page.locator('[role="menu"]').count() > 0
         if is_menu:
             check_menu(page, chip, f"{where}/{menu}/{theme}/{size}", SIZES[size])
-        elif chip.get_attribute("title") == "Model and thinking effort":  # an agent chat's effort chip opens its own popover
-            ok(f"{where}/{menu}/{theme}/{size}: opens the model and effort popover (its own layout, not a menu)")
         else:
             fail(f"{where}/{menu}/{theme}/{size}: the chip opened no menu")
         if shots:

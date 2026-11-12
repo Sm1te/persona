@@ -143,7 +143,7 @@
     <string name="chat_request_allow">允许</string>
     <string name="chat_request_deny">拒绝</string>
     <string name="chat_request_always_allows">总是同意会放行：%1$s</string>
-    <string name="chat_request_fields_elsewhere">这个请求要先填写内容才能允许，请到网页或 iPhone 上处理；在这里仍可以拒绝。</string>
+    <string name="chat_request_fill_in_allow">填写并允许</string>
     <string name="chat_request_secret_run_commands">依次运行的命令</string>
     <string name="chat_request_secret_run_password">密码</string>
     <string name="chat_request_secret_run_note">只用这一次，不会保存，助手也看不到。</string>

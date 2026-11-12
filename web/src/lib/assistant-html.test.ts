@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { hasHtml, htmlDecision, htmlRequest, judge, mounted, newBridge, prompted, PROMPTS_MOST, REFUSED_QUIET_MS, unmounted, WEB_HTML_RUNTIME_VERIFIED, type HtmlInstance } from "./assistant-html";
+import { hasHtml, htmlDecision, WEB_HTML_RUNTIME_VERIFIED } from "./assistant-html";
+import { htmlRequest, judge, mounted, newBridge, prompted, PROMPTS_MOST, REFUSED_QUIET_MS, unmounted, type HtmlInstance } from "./html-bridge";
 
 const EXAMPLE = Object.values(import.meta.glob("../../../schema/extension/examples/assistant/html.json", { query: "?raw", import: "default", eager: true }) as Record<string, string>)[0];
 const inst: HtmlInstance = { nonce: "n1", conversation: "c1", key: "view_1", componentKey: "guide", page: "", version: 3 };
 
 describe("网页端的 html 组件", () => {
-  it("never runs on the web: no verified runtime, whatever the hub allows", () => {
-    expect(WEB_HTML_RUNTIME_VERIFIED).toBe(false);
-    expect(htmlDecision({ hubAllows: true, componentKey: "guide" })).toEqual({ run: false, reason: "runtime_unverified" });
-    // the other gates, once a runtime passes
-    expect(htmlDecision({ hubAllows: false, componentKey: "guide", verified: true })).toEqual({ run: false, reason: "disabled" });
-    expect(htmlDecision({ hubAllows: true, verified: true })).toEqual({ run: false, reason: "no_key" });
-    expect(htmlDecision({ hubAllows: true, componentKey: "guide", verified: true })).toEqual({ run: true });
+  it("runs on the web where the hub allows it and the component has a key: the runtime passed its security cases", () => {
+    expect(WEB_HTML_RUNTIME_VERIFIED).toBe(true);
+    expect(htmlDecision({ hubAllows: true, componentKey: "guide" })).toEqual({ run: true });
+    expect(htmlDecision({ hubAllows: false, componentKey: "guide" })).toEqual({ run: false, reason: "disabled" });
+    expect(htmlDecision({ hubAllows: true })).toEqual({ run: false, reason: "no_key" });
+    // a runtime that hasn't passed never runs
+    expect(htmlDecision({ hubAllows: true, componentKey: "guide", verified: false })).toEqual({ run: false, reason: "runtime_unverified" });
   });
 
   it("finds html on the root and on named pages", () => {

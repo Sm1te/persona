@@ -93,7 +93,7 @@ struct ModelConfigurationView: View {
             Text(category.id == "lark.agent" ? String(localized: "Lark /agent") : category.name).font(Theme.Font.body).lineLimit(1)
             Text(page.modelSummary(category))
                 .font(Theme.Font.label).foregroundStyle(.secondary).lineLimit(1)
-            if ModelConfigurationModel.followsAgents(category) {
+            if ModelConfigurationModel.followsCategory(category) {
                 Text(page.inheritanceStatus(category)).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             if let limit = category.limit {
@@ -142,7 +142,7 @@ struct ModelPurposeEditorView: View {
         SettingsForm {
             if let purpose = page.purpose {
                 Section("In Effect") {
-                    if page.isAgentsOverride {
+                    if page.followLabel != nil {
                         LabeledContent("Configuration", value: page.inheritanceStatus(purpose))
                             .accessibilityIdentifier("model-config-inheritance")
                     }
@@ -205,7 +205,9 @@ struct ModelPurposeEditorView: View {
                 } header: {
                     Text("Model Settings [Model Configuration View 082a73]")
                 } footer: {
-                    Text(page.isLarkAgent
+                    Text(page.isMainChatOverride
+                         ? String(localized: "Only applies to the background supervisor, the conversation that follows up tasks for the main chat. Empty fields follow Main Chat. Changing the provider clears the previous model and thinking effort. Choose Follow Main Chat and save to clear the independent settings.")
+                         : page.isLarkAgent
                          ? String(localized: "Only applies to Lark /agent, not other Agents. Empty fields follow Agents. Changing the provider clears the previous model and thinking effort. Choose Follow Agents and save to clear the independent settings.")
                          : page.isAgentsOverride
                          ? String(localized: "Only applies to the Inbox's AI twin, not other Agents. Empty fields follow Agents. Changing the provider clears the previous model and thinking effort. Choose Follow Agents and save to clear the independent settings.")
@@ -216,7 +218,7 @@ struct ModelPurposeEditorView: View {
                     Button {
                         page.restoreInheritance()
                     } label: {
-                        Label(page.isAgentsOverride ? String(localized: "Follow Agents") : String(localized: "Restore Default"), systemImage: Theme.Icon.undo).lineLimit(1)
+                        Label(page.followLabel ?? String(localized: "Restore Default"), systemImage: Theme.Icon.undo).lineLimit(1)
                     }
                     .accessibilityIdentifier("model-config-restore")
                     .disabled(page.saving || page.loading || page.conflict || page.draft.isEmpty)
@@ -355,7 +357,7 @@ struct ModelPurposeEditorView: View {
 
     private var providerPicker: some View {
         Picker("Model Providers", selection: Binding(get: { page.draft.provider ?? "" }, set: { page.chooseProvider($0) })) {
-            Text(page.isAgentsOverride ? String(localized: "Follow Agents") : String(localized: "Default [Model Configuration View a44f9f]")).tag("")
+            Text(page.followLabel ?? String(localized: "Default [Model Configuration View a44f9f]")).tag("")
             ForEach(page.candidates) { provider in
                 Text(provider.name).tag(provider.id)
             }

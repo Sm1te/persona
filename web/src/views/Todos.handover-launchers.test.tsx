@@ -104,6 +104,23 @@ describe("handing a to-do to a new agent", () => {
     expect(document.querySelector('[data-testid="todo-handoff-blocked"]')!.textContent).toBe("这台电脑的终端里用不了");
   });
 
+  it("names a provider by its display name with its ID, an rc alias by its ID (#5029)", async () => {
+    launchers = [
+      { name: "claude" },
+      { name: "relay-example-com", display_name: "我的中转 站" },
+      { name: "team-relay", display_name: "Team relay", health: { state: "blocked", kind: "not_in_terminal" } },
+    ];
+    extra = { default: { provider: "relay-example-com", model: "glm-5" } };
+    await open();
+    expect([...select().options].map((o) => o.textContent)).toEqual([
+      "默认：我的中转 站 · glm-5",
+      "claude",
+      "我的中转 站 (relay-example-com)",
+      "Team relay (team-relay) · 这台电脑的终端里用不了",
+    ]);
+    expect([...select().options].map((o) => o.value)).toEqual(["", "claude", "relay-example-com", "team-relay"]);
+  });
+
   it("names Model settings when they have no launcher default", async () => {
     launchers = [{ name: "claude" }];
     extra = { default: null };

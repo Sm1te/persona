@@ -121,6 +121,7 @@ agents.read          GET /api/v1/agents/sessions/{id}/messages
 -                    GET /api/v1/app/android/apk
 -                    GET /api/v1/app/android/latest
 assistant.ask        GET /api/v1/assistant
+-                    GET /api/v1/assistant/availability
 assistant.ask        GET /api/v1/assistant/capabilities
 -                    GET /api/v1/assistant/conversations/{id}/always
 assistant.ask        GET /api/v1/assistant/conversations/{id}/feed
@@ -204,6 +205,7 @@ kb.read              GET /api/v1/kb/{kind}/{id}
 -                    GET /api/v1/launchers/presets
 -                    GET /api/v1/launchers/{name}
 -                    GET /api/v1/launchers/{name}/quota
+-                    GET /api/v1/launchers/{name}/uses
 -                    GET /api/v1/looks
 machines.read        GET /api/v1/machines
 machines.read        GET /api/v1/machines/{id}/metrics
@@ -358,12 +360,15 @@ assistant.ask        POST /api/v1/assistant/conversations/{id}/stop
 -                    POST /api/v1/assistant/feishu/workbench
 -                    POST /api/v1/assistant/followups/{id}/run
 -                    POST /api/v1/assistant/health/workouts
+-                    POST /api/v1/assistant/main/clear
 -                    POST /api/v1/assistant/main/new
 -                    POST /api/v1/assistant/origins/backfill
 -                    POST /api/v1/assistant/places
 -                    POST /api/v1/assistant/readiness/dismiss
 -                    POST /api/v1/assistant/route/agent
 -                    POST /api/v1/assistant/routines/{id}/run
+-                    POST /api/v1/assistant/rule-suggestions/{id}/always
+-                    POST /api/v1/assistant/rule-suggestions/{id}/not-now
 -                    POST /api/v1/assistant/tasks
 -                    POST /api/v1/assistant/tasks/{id}/fresh
 -                    POST /api/v1/assistant/tasks/{id}/run
@@ -421,6 +426,7 @@ agents.control       POST /api/v1/interactions/{id}/resolve
 -                    POST /api/v1/kb-trash/{id}/restore
 -                    POST /api/v1/later/{id}/handled
 -                    POST /api/v1/launchers
+-                    POST /api/v1/launchers/catalog
 -                    POST /api/v1/launchers/discover
 -                    POST /api/v1/launchers/health/check
 -                    POST /api/v1/launchers/import
@@ -489,6 +495,7 @@ notify               POST /api/v1/notify
 -                    POST /api/v1/recordings/{id}/minutes
 -                    POST /api/v1/recordings/{id}/minutes/todos
 -                    POST /api/v1/recordings/{id}/photos
+-                    POST /api/v1/recordings/{id}/segments
 agents.control       POST /api/v1/sessions
 -                    POST /api/v1/sessions/{mid}/{sid}/archive
 -                    POST /api/v1/sessions/{mid}/{sid}/attach

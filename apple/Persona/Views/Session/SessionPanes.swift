@@ -402,19 +402,34 @@ struct TerminalPanel: View {
                 .tint(Color(hex: side.foreground))
         } else if canResume {
             EmptyStateView(symbol: Theme.Icon.terminal, title: String(localized: "No Terminal"),
-                           message: String(localized: "This session isn't running on its computer. Resume it to open its terminal."),
+                           message: String(localized: "This Agent has stopped. Resume runs it again in a terminal on its computer."),
                            action: (title: String(localized: "Resume Session"), run: resumeSession))
         } else {
             EmptyStateView(symbol: Theme.Icon.terminal, title: String(localized: "No Terminal"),
-                           message: String(localized: "This session isn't running on its computer. Send it a message to resume it."))
+                           message: String(localized: "This session isn't running on its computer."))
         }
     }
 
-    /// A Claude Code session in a terminal engine that isn't being started: one Resume Session can bring back. Others
-    /// (Codex, which resumes with its next message) are resumed by a message.
+    /// A session Resume Session can bring back, the one way a stopped Agent runs again (#4754): a stopped Agent (Claude
+    /// Code, Codex or a compatible CLI), a Codex thread nothing has open, or a Claude Code session of the engine that is
+    /// not being started.
     private var canResume: Bool {
-        guard let s = model.session(key) else { return false }
-        return !s.hasSource && s.isClaude && !s.assistant && s.starting != true
+        guard let s = model.session(key), !s.assistant, s.starting != true else { return false }
+        return s.isStopped || (s.sourceKind == "codex_history" && s.canTerminal) || (!s.hasSource && s.isClaude)
+    }
+
+    /// Over the shell a stopped Agent left (#4754): Resume runs it again in that shell.
+    @ViewBuilder private var stoppedResume: some View {
+        if canResume, model.session(key)?.isStopped == true {
+            Button(action: resumeSession) {
+                Text(resuming ? String(localized: "Resuming…") : String(localized: "Resume Session"))
+                    .font(Theme.Font.captionStrong).lineLimit(1)
+            }
+            .themedButton(prominent: true)
+            .disabled(resuming)
+            .padding(Theme.Space.m)
+            .accessibilityIdentifier("terminal-stopped-resume")
+        }
     }
 
     /// Resumes it with what it ran with (the node fills in what is left out) and connects as soon as it is up.
@@ -443,6 +458,7 @@ struct TerminalPanel: View {
         liveContent
             .clipShape(.rect(cornerRadius: Theme.Radius.card, style: .continuous))
             .overlay(alignment: .bottom) { bottomOverlay }
+            .overlay(alignment: .topTrailing) { stoppedResume }
             .overlay { pinchOverlay }
             .overlay(alignment: .top) {
                 if let error = feed.error {

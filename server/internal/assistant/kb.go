@@ -221,7 +221,13 @@ func (s *Service) kbOpenLocked(ctx context.Context, set assistantwire.KBSettings
 	// Retries: the steps' backoffs carry over to the engine after this one (the hub's settings changed; #4247).
 	e := &kb.Engine{Store: k.store, Retries: &k.retries, Model: kbCounted(s.kbModel("inbox.triage")), ModelFor: func(id string) kb.Model { return kbCounted(s.kbModel(id)) },
 		Owner: s.owner(ctx), Logf: s.logf, TextDays: set.TextDays, AttachmentDays: set.AttachmentDays, AttachmentDaysBySource: set.AttachmentDaysBySource, HandleKey: k.key, Index: s.kbIndexEntity, Unindex: s.kbUnindex, RecordingDaysFunc: s.recordingDaysNow, MinutesDaysFunc: s.minutesDaysNow, MinutesWritten: s.minutesWritten, LiveChanged: s.meetingKick, MeetingChanged: s.meetingLiveChanged, EarlierMeetingsInAnswers: true, Changed: s.kbChanged, MineObserved: s.kbObserveOwner,
-		Selection: s.kbSelectionNow, TopicsOn: s.kbTopicsNow}
+		Selection: s.kbSelectionNow, TopicsOn: s.kbTopicsNow,
+		// All-day recordings (kb_day.go): the recap time from the evening routine's, their names; the day's push below
+		// (it counts the day's parts in e).
+		DayRecapClock: s.eveningClock, DayRecordingName: s.dayRecordingName}
+	e.DayRecapWritten = func(ctx context.Context, r kb.Recording, d kb.DayRecap) ([]string, error) {
+		return s.dayRecapWritten(ctx, e, r, d)
+	}
 	e.ObserveChanges()
 	e.ExtraDirs = kbReadDirs(set.ExtraDirs)
 	if !k.passed {

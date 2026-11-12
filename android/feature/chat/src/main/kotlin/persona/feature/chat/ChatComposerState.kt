@@ -48,7 +48,16 @@ class ChatComposerState(initial: ChatComposerDraft = ChatComposerDraft()) {
     /** What [message] says for photos sent without words; [ChatComposer] keeps it in the app's language. */
     var photosOnlyText: String = ""
     var value by mutableStateOf(TextFieldValue(initial.text, TextRange(initial.text.length)))
-    var attachments by mutableStateOf(initial.attachments)
+    private var attachmentList by mutableStateOf(initial.attachments)
+    /** Edited photos' sources, edits and history by attachment id (#4992): kept in memory beside the draft, never sent. */
+    internal var photoEdits by mutableStateOf<Map<String, PhotoEdits>>(emptyMap())
+    /** The draft's attachments; a photo that leaves it takes its kept edits along. */
+    var attachments: List<ComposerAttachment>
+        get() = attachmentList
+        set(value) {
+            attachmentList = value
+            if (photoEdits.keys.any { id -> value.none { it.id == id } }) photoEdits = photoEdits.filterKeys { id -> value.any { it.id == id } }
+        }
     var sessionVersion by mutableStateOf(initial.sessionVersion)
     var currentSessionVersion by mutableStateOf<DraftSessionVersion?>(null)
     val oldVersion get() = hasContent && (currentSessionVersion?.replaced == true || sessionVersion?.let { origin ->

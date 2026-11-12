@@ -58,5 +58,6 @@
   "reload_discard": "重新加载（丢弃编辑）",
   "save_note_plugin": "保存只是改设置：不会调用模型，也不会打断正在跑的任务。这里的语音模型只是 Persona 的默认值，扩展自己的供应商和凭据不变。",
   "runtime": "运行方式",
-  "runtime_hint": "Agent SDK 需要那台电脑有 Node 22+，缺了会自动用 CLI"
+  "runtime_hint": "Agent SDK 需要那台电脑有 Node 22+，缺了会自动用 CLI",
+  "supervise_description": "跟进并验收 Persona 派出的任务，让主对话随时能回你。可以用比主对话更便宜或更强的模型。"
 }

@@ -258,3 +258,39 @@ func TestTaskPlansByID(t *testing.T) {
 		t.Fatalf("unknown ids: %+v, %v", rows, err)
 	}
 }
+
+// TaskPlansMadeSince is the plans made inside the window that were started or dismissed, oldest first; an open plan
+// is no answer yet.
+func TestTaskPlansMadeSince(t *testing.T) {
+	ctx := context.Background()
+	d := open(t)
+	prefix := fmt.Sprintf("plan_since_%d", time.Now().UnixNano()) // task_plans is not truncated between tests
+	// Far ahead of every other test's plans, so only these are in the window.
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	for i, state := range []string{"started", "started", "open", "dismissed", "started"} {
+		at := base.Add(time.Duration(i-1) * time.Minute) // the first is a minute before the window
+		p := TaskPlanRow{ID: fmt.Sprintf("%s_%d", prefix, i), Conversation: prefix, State: state, CreatedAt: at, UpdatedAt: at.Add(time.Hour),
+			Tasks: json.RawMessage(fmt.Sprintf(`[{"title": "Task %d", "owner_started": true}]`, i))}
+		if err := d.CreateTaskPlan(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := d.TaskPlansMadeSince(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range rows {
+		if r.Conversation == prefix {
+			got = append(got, strings.TrimPrefix(r.ID, prefix+"_")+":"+r.State)
+		}
+	}
+	if strings.Join(got, ",") != "1:started,3:dismissed,4:started" {
+		t.Fatalf("since = %v", got)
+	}
+	for _, r := range rows {
+		if r.ID == prefix+"_1" && (!r.CreatedAt.Equal(base) || !strings.Contains(string(r.Tasks), `"owner_started"`)) {
+			t.Fatalf("row = %+v", r)
+		}
+	}
+}

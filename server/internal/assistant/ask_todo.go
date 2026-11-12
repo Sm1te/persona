@@ -36,7 +36,8 @@ const (
 	askTodoKeep = 30 * 24 * time.Hour
 	// askTodoMax bounds the records; past it the oldest go first.
 	askTodoMax = 200
-	// askAnswerTool marks a queued answer to such a question (relayMsg.Tool); relayMsg.From is then the to-do id.
+	// askAnswerTool marks a queued answer to such a question (relayMsg.Tool); relayMsg.From is then the to-do id (the
+	// card's id for a question asked without waiting, ask_later.go).
 	askAnswerTool = "ask_answer"
 	askTitleRunes = 200
 	// askSnapshotMax bounds the snapshot's line (the newest ones).
@@ -385,13 +386,20 @@ func (s *Service) askTarget(ctx context.Context, a askTodo) (machine, to string,
 // tellAsker puts text into the conversation a came from: now, or queued behind its turn (the queue conversation_send
 // uses, kept across a restart).
 func (s *Service) tellAsker(ctx context.Context, a askTodo, title, text string) error {
+	return s.relayToAsker(ctx, a, "待办「"+title+"」", text, false) // i18n-ignore: a label of the relay queue, as a task notice's
+}
+
+// relayToAsker is tellAsker with the queue's label for the message given (from): a question asked without waiting has
+// no to-do to name (ask_later.go; a.TodoID is then its card's id). owner: text is the answer the owner just gave on
+// that card, which their presence in the conversation does not hold (relayMsg.Owner).
+func (s *Service) relayToAsker(ctx context.Context, a askTodo, from, text string, owner bool) error {
 	machine, to, err := s.askTarget(ctx, a)
 	if err != nil {
 		return err
 	}
-	msg := relayMsg{From: a.TodoID, FromTitle: "待办「" + title + "」", Tool: askAnswerTool, Text: text, At: time.Now().UTC()} // i18n-ignore: a label of the relay queue, as a task notice's
+	msg := relayMsg{From: a.TodoID, FromTitle: from, Tool: askAnswerTool, Text: text, At: time.Now().UTC(), Owner: owner}
 	c, ok := s.session(ctx, machine, to)
-	if !ok || c.Status == proto.StatusWorking || c.Starting || s.queuedFor(to) > 0 {
+	if !ok || c.Status == proto.StatusWorking || c.Starting || s.relayWaits(to, msg) {
 		if s.queueRelay(to, msg) == 0 {
 			return errors.New("the relay queue can't be read")
 		}
@@ -405,7 +413,7 @@ func (s *Service) tellAsker(ctx context.Context, a askTodo, title, text string) 
 		if s.queueRelay(to, msg) == 0 {
 			return fmt.Errorf("%v, and the relay queue can't be read", err)
 		}
-		s.logf("ask_user to-do %s: %v; queued", a.TodoID, err)
+		s.logf("ask_user %s: %v; queued", a.TodoID, err)
 		s.publish(ctx)
 	}
 	return nil

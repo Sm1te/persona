@@ -152,6 +152,11 @@ describe("等你的 Agent", () => {
     expect(interactionMuted(ix("s-free"), sessions, mutes)).toBe(false);
   });
 
+  it("a child session's card goes by its parent's switch alone (#5120), as the switcher counts it", () => {
+    expect(interactionMuted(ix("kid", { folded_under: "s-muted" }), sessions, mutes)).toBe(true);
+    expect(interactionMuted(ix("s-muted", { folded_under: "s-free" }), sessions, mutes)).toBe(false);
+  });
+
   it("只在没选来源时出现，Agent 筛选只看它们，老的在前，能搜", () => {
     const list = [ix("s-new", { created_at: at(1), session_title: "新的" }), ix("s-old", { created_at: at(9), summary: "要不要合并" }), ix("s-muted")];
     expect(ids(waitingAgents(list, sessions, mutes, all))).toEqual(["s-old", "s-new"]);

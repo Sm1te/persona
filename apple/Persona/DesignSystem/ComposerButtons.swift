@@ -11,9 +11,11 @@ struct ComposerMicButton: View {
     let dictation: Dictation
     @Binding var text: String
     var id = "composer-mic"
+    /// What tells dictation the language spoken besides the draft: the owner's recent messages in this chat.
+    var hints: () -> [String] = { [] }
 
     var body: some View {
-        Button { dictation.toggle(into: $text) } label: { ComposerMicFace(listening: dictation.isListening) }
+        Button { dictation.toggle(into: $text, hints: hints) } label: { ComposerMicFace(listening: dictation.isListening) }
             .buttonStyle(.plain)
             .accessibilityLabel(dictation.isListening ? String(localized: "Stop Dictation") : String(localized: "Dictate"))
             .accessibilityIdentifier(id)
@@ -48,13 +50,14 @@ struct FieldMicButton: View {
 
 extension Dictation {
     /// A mic's tap: a second one ends it; otherwise what is heard goes after what `text` holds, and why it could not
-    /// start shows as a toast.
-    func toggle(into text: Binding<String>) {
+    /// start shows as a toast. The draft and `hints` tell it the language spoken (`DictationLanguage`).
+    func toggle(into text: Binding<String>, hints: () -> [String] = { [] }) {
         if isListening { stop(); return }
         let typed = text.wrappedValue
         let base = typed.isEmpty || typed.last?.isWhitespace == true ? typed : typed + " "
+        let told = [typed] + hints()
         Task {
-            if let problem = await start(update: { heard in text.wrappedValue = base + heard }) {
+            if let problem = await start(hints: told, update: { heard in text.wrappedValue = base + heard }) {
                 AppModel.shared.toast = Toast(problem, style: .error)
             }
         }

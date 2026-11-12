@@ -203,6 +203,9 @@ func (n *Node) modesOf(id string) (mode, effort string) {
 // setModes changes a running session's permission mode and / or effort level ("" leaves one as it is).
 func (n *Node) setModes(ctx context.Context, id, mode, effort string) error {
 	if !n.isAssistantSession(id) {
+		if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+			return err
+		}
 		// A Codex thread on its app-server takes Codex's efforts, checked against its model (codex_effort.go).
 		if c, t, ok := n.codexEffortThread(id); ok {
 			if mode != "" {

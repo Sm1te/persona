@@ -107,6 +107,22 @@ func (d *Devices) storedChoice(machine string) (proto.EngineChoice, bool) {
 	return proto.EngineChoice{}, false
 }
 
+// engineChoiceToMove is the machine's stored set for a move to another manager (devicewire.MethodEngineGet): nil when
+// never chosen, an error while settings can't be read (not "never chosen", which would let the move drop it).
+func (d *Devices) engineChoiceToMove(machine string) (*proto.EngineChoice, error) {
+	c, ok := d.storedChoice(machine)
+	d.engines.mu.Lock()
+	loaded := d.engines.loaded
+	d.engines.mu.Unlock()
+	switch {
+	case !loaded:
+		return nil, errors.New("engines: settings not readable")
+	case !ok:
+		return nil, nil
+	}
+	return &c, nil
+}
+
 // errUnknownEngine: not one of proto.EngineNames, or a set that is not valid.
 var errUnknownEngine = errors.New("unknown engine")
 

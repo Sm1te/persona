@@ -105,7 +105,7 @@ func stillDeleted(s proto.Session, at time.Time) bool {
 // sessionHiddenByDeletion applies the same precedence to normal and archived lists.
 func sessionHiddenByDeletion(s proto.Session, deleted map[string]time.Time) bool {
 	at, ok := deleted[s.SessionID]
-	return ok && !s.ArchiveChangedAt.After(at) && stillDeleted(s, at)
+	return ok && (s.ArchiveChangedAt == nil || !s.ArchiveChangedAt.After(at)) && stillDeleted(s, at)
 }
 
 // shown is list (a machine's decorated sessions) without the ones the user deleted: what the apps get. When none is

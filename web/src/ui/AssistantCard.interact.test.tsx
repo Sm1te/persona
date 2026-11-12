@@ -5,7 +5,7 @@
 // the card. The hub is a fake one (fetch), the data made up.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.hoisted(() => {
   window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
 });
@@ -13,6 +13,10 @@ import { AssistantCard, CardConversation, CardItem, LiveCard, VIEWS_FEATURE } fr
 import { applyBlock, applyView, conversationCards, getDraft, resetCards } from "../lib/assistant-views";
 import { getState } from "../lib/store";
 import type { AssistantView } from "../lib/extension-wire";
+import { loadPages } from "../lib/lazy-page";
+
+// The cards draw the renderer through a lazy chunk (#3614); these tests draw without waiting for it.
+beforeAll(() => loadPages(), 60_000);
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

@@ -245,11 +245,7 @@ func (s *Service) toolTaskRetry(ctx context.Context, self string, args json.RawM
 		return "", err
 	}
 	pt := p.Tasks[i]
-	// A plan saved before the rule, or edited, does not get past it on a remedy retry either (nothing is started).
 	pt.Permission = strings.TrimSpace(pt.Permission)
-	if err := pt.checkWritablePermission(); err != nil {
-		return "", fmt.Errorf("%w; nothing was started", err)
-	}
 	attempt := 1
 	if pt.Start != nil {
 		attempt = pt.Start.Attempt + 1
@@ -404,18 +400,44 @@ func (s *Service) remedyWatch(ctx context.Context, t Todo, now time.Time) {
 	}
 }
 
-// remedySeen marks that a supervision message about todo's failed start went to the main conversation at at.
+// failSeen is a failed start a supervision message carried: when it was put into the message, and the conversation
+// the message is for ("" when it is not known: any held conversation's turn then ends it, as before #4927).
+type failSeen struct {
+	at time.Time
+	to string
+}
+
+// remedySeen marks that a supervision message about todo's failed start was written at at; who it is for stays as
+// remedyGoesTo noted it.
 func (s *Service) remedySeen(todo string, at time.Time) {
 	b := &s.supervise
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.init()
-	b.failSeen[todo] = at
+	v := b.failSeen[todo]
+	v.at = at
+	b.failSeen[todo] = v
+}
+
+// remedyGoesTo notes conversation to as the one that gets the failed starts among the signals list, before their
+// entries are written (remedyEntry): only its turn ends what is left of them (remedyTurnEnded). Another held
+// conversation's turn, a leader's or the background supervisor's, has not seen the failure and ends nothing.
+func (s *Service) remedyGoesTo(to string, list []superviseSignal) {
+	b := &s.supervise
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.init()
+	now := time.Now()
+	for _, g := range list {
+		if g.Kind == sigFailed {
+			b.failSeen[g.Todo] = failSeen{at: now, to: to}
+		}
+	}
 }
 
 // remedyTurnEnded: conversation id's turn ended. A supervision turn that carried a failed start (remedySeen, by its
-// hold) ends what it left: a start still being remedied and not starting again fails for good; a failure the turn
-// did not tell the user about gets the hub's notice.
+// hold, in the conversation the message was for) ends what it left: a start still being remedied and not starting
+// again fails for good; a failure the turn did not tell the user about gets the hub's notice.
 func (s *Service) remedyTurnEnded(ctx context.Context, id string) {
 	b := &s.supervise
 	b.mu.Lock()
@@ -423,8 +445,11 @@ func (s *Service) remedyTurnEnded(ctx context.Context, id string) {
 	told := b.visible[id]
 	var due []string
 	if ok {
-		for todo, at := range b.failSeen {
-			if !held.Before(at) {
+		for todo, seen := range b.failSeen {
+			if seen.to != "" && seen.to != id {
+				continue // another conversation's message carried it
+			}
+			if !held.Before(seen.at) {
 				due = append(due, todo)
 				delete(b.failSeen, todo)
 			}

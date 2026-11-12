@@ -2,7 +2,14 @@
 
 Pitfalls, odd behavior, and the trade-offs made at the time (formerly in `CLAUDE.md`, index in `docs/lessons/README.md`). Add new lessons to the matching section; create a section if none fits.
 
-## A queued AGY turn cannot own the executing prompt's text (#4564)
+- An Agent SDK guest must register its session id and tools before the node starts: its bridge lists tools before
+  `assistant.send` returns. A later `guestSet` makes the first list empty, and a connected MCP server with no tools
+  does not fail by itself. On SDK 0.3.318 / Claude Code 2.1.322, use `tools: []` for no built-ins and register the
+  declared stdio MCP tools through an in-process SDK server. `--tools ""` suppresses MCP tools too, so don't reuse
+  the CLI flag here. Keep user setting sources and unrelated plugins out. Verify `system/init.tools` and a real
+  `tools/call`, not just bridge options, a server saying `connected`, or the model claiming a tool exists.
+
+- A queued AGY turn cannot own the executing prompt's text (#4564)
 
 The pending-turn record can change before the previous ACP prompt finishes. Keep the executing prompt's stream
 owner separately, clear its text at completion, and publish an empty boundary before the next prompt starts. Text

@@ -1,7 +1,9 @@
 // End-to-end check of typing a model ID on the web (#1644, docs/assistant/model-config.md "Typing a model ID"): "New
-// agent"'s list shows the IDs typed before and "Other model…", whose field says why an ID can't be used and starts with
-// a good one; a running Claude Code session's popover sends a typed ID through POST …/modes; the Persona chat's launcher
-// menu takes one for the next messages.
+// agent"'s model panel (#5104, the model pill at the right of the first message box) lists the IDs typed before with
+// Forget, offers no "Use “…”" for an ID the hub would refuse and offers it for a good one, which becomes the pick; a
+// running Claude Code session's model panel (the composer's model pill, #5032) lists the IDs typed before
+// with Forget, offers "Use “…”" for a good ID no listed model answers, and sends it through POST …/modes; the Persona
+// chat's launcher menu takes one for the next messages.
 //
 // Needs the web page against the fake hub with MOCK_CUSTOM_MODELS set, and Chrome (playwright-core drives it):
 //
@@ -10,9 +12,9 @@
 //   node web/e2e/custom-model.mjs http://127.0.0.1:5196 --hub http://127.0.0.1:18796 [--shots <dir>]
 //
 // What it checks follows the fake hub's mode: =1 the flows above; =forgetfail a Forget the hub refuses (New agent's
-// toast, the popover's alert, the row back); =empty New agent's empty list ("Enter model ID…"); =fail New agent
-// without a list. Runs wide (1280), light and dark, in Chinese; --shots saves each state. Prints one line per check and
-// a verdict; exits 1 on a failure.
+// toast and the model panel's, the row back in each); =empty New agent's empty list (its Default row, and a typed ID
+// offered by the search); =fail New agent without a list (why, Retry, and a typed ID still offered). Runs wide (1280),
+// light and dark, in Chinese; --shots saves each state. Prints one line per check and a verdict; exits 1 on a failure.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -70,14 +72,30 @@ async function open(browser, theme) {
   return { ctx, page };
 }
 
-// New agent with its model list open
+// New agent with its model panel open (#5104: the model pill at the right of the first message box; the panel is portaled
+// to the page), once claude's list is read
 async function newAgentList(page, theme) {
   await page.locator('button[aria-label="新建 Agent"]').first().click();
-  const dialog = page.getByRole("dialog");
-  const trigger = dialog.locator("button[aria-expanded]").filter({ hasText: /默认|Opus|acme/ }).first();
-  await expectVisible(page, trigger, `${theme}: New agent's model row`);
+  const dialog = page.getByRole("dialog", { name: "新建 Agent", exact: true });
+  const trigger = dialog.locator('[data-testid="new-agent-model"] [data-model-pill]');
+  await expectVisible(page, trigger, `${theme}: New agent's model pill`);
+  for (let i = 0; i < 60 && ((await trigger.isDisabled()) || (await trigger.getAttribute("data-model-pill")) === "loading"); i++) await page.waitForTimeout(150);
   await trigger.click();
-  return { dialog, trigger };
+  const panel = page.locator("[data-model-panel]");
+  await expectVisible(page, panel, `${theme}: New agent's model panel`);
+  for (let i = 0; (await panel.locator('[role="status"]').count()) > 0; i++) {
+    if (i === 60) fail(`${theme}: New agent's lists did not load`);
+    await page.waitForTimeout(150);
+  }
+  return { dialog, trigger, panel };
+}
+
+// Esc closes the panel (its flyout first), then New agent; pressed only while one of them is open
+async function closeNewAgent(page) {
+  for (let i = 0; i < 4 && (await page.locator('[data-model-panel], [role="dialog"]').count()); i++) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+  }
 }
 
 async function openSession(page) {
@@ -87,56 +105,100 @@ async function openSession(page) {
   }, REVIEW);
 }
 
+// The session's model panel, from the composer's model pill, once the session's own list is in (the model that runs)
+async function openPanel(page, theme) {
+  const pill = page.locator("button[data-model-pill]").first();
+  await expectVisible(page, pill, `${theme}: the session's model pill`);
+  await pill.click();
+  const panel = page.locator("[data-model-panel]");
+  await expectVisible(page, panel, `${theme}: the model panel`);
+  await expectVisible(page, panel.locator("[data-panel-row][data-current]"), `${theme}: the model that runs`);
+  return panel;
+}
+
+// a row of the panel by its words
+const panelRow = (panel, id) => panel.locator("[data-panel-row]").filter({ hasText: id });
+
 async function run(browser, theme) {
   const { ctx, page } = await open(browser, theme);
 
-  // New agent: the list, the field and its reason, the typed pick
-  const { dialog, trigger } = await newAgentList(page, theme);
-  const heading = dialog.getByText("输入过的");
-  await expectVisible(page, heading, `${theme}: the IDs typed before`);
-  await expectVisible(page, dialog.getByRole("button", { name: "忘记「vendor/model-x」" }), `${theme}: Forget beside a typed ID`);
-  const other = dialog.locator('[data-testid="model-picker-other"]');
-  await other.scrollIntoViewIfNeeded();
-  await dialog.getByRole("button", { name: "忘记「vendor/model-x」" }).scrollIntoViewIfNeeded(); // the typed IDs and their ×
+  // New agent: the IDs typed before (each a row of claude's group, "输入过的" under it, Forget beside it), then the
+  // panel's search in place of "Other model…"'s field
+  const { trigger, panel: naPanel } = await newAgentList(page, theme);
+  const typedBefore = panelRow(naPanel, "vendor/model-x").first();
+  await expectVisible(page, typedBefore.filter({ hasText: "输入过的" }), `${theme}: the IDs typed before`);
+  await typedBefore.scrollIntoViewIfNeeded();
+  await typedBefore.hover();
+  await expectVisible(page, typedBefore.getByRole("button", { name: "忘记「vendor/model-x」" }), `${theme}: Forget beside a typed ID`);
   await shot(page, "new-agent-list", theme);
-  ok(`${theme}: New agent lists the typed IDs and Other model…`);
-  await other.click();
-  const field = dialog.locator("[data-model-id-field] input");
-  await field.fill("acme coder");
-  await expectVisible(page, dialog.locator("[data-model-id-problem]").filter({ hasText: "空格" }), `${theme}: why "acme coder" can't be used`);
+  ok(`${theme}: New agent lists the typed IDs, each with Forget`);
+  // an ID the hub would refuse (a space) is offered nowhere: the search says nothing matches (the field's reason under
+  // it went with the field)
+  const naSearch = naPanel.locator('input[aria-label="搜索模型…"]');
+  const naUse = naPanel.locator('[data-panel-row^="typed:"]');
+  await naSearch.fill("acme coder");
+  await expectVisible(page, naPanel.getByText("没有匹配的模型"), `${theme}: "acme coder" matches nothing`);
+  if (await naUse.count()) fail(`${theme}: "acme coder" offered to use`);
   await shot(page, "new-agent-invalid", theme);
-  await field.fill("acme/coder-9");
-  await field.press("Enter");
-  await expectVisible(page, trigger.filter({ hasText: "acme/coder-9" }), `${theme}: the typed pick on the row`);
+  // a good one: "Use “…”" in each launcher that takes typed IDs (claude, codex; sonnetcc fixes its own model), and Enter
+  // picks the first, claude's
+  await naSearch.fill("acme/coder-9");
+  await expectVisible(page, naUse.filter({ hasText: "使用「acme/coder-9」" }), `${theme}: Use “acme/coder-9”`);
+  const offered = await naUse.evaluateAll((els) => els.map((e) => e.dataset.panelRow));
+  if (JSON.stringify(offered) !== JSON.stringify(["typed:claude\nacme/coder-9", "typed:codex\nacme/coder-9"])) fail(`${theme}: "Use" rows ${JSON.stringify(offered)}`);
+  await naSearch.press("Enter");
+  try {
+    await naPanel.waitFor({ state: "detached", timeout: 5000 });
+  } catch {
+    fail(`${theme}: New agent's panel stays open after the pick`);
+  }
+  // the pill names a gateway's model without its vendor ("coder-9"); the panel lights the typed ID itself, as a row of
+  // claude's
+  await expectVisible(page, trigger.filter({ hasText: "coder-9" }), `${theme}: the typed pick on the pill`);
+  if ((await trigger.locator("[data-pill-engine]").getAttribute("data-pill-engine")) !== "claude") fail(`${theme}: the typed pick isn't claude's`);
   await shot(page, "new-agent-picked", theme);
-  ok(`${theme}: the field says why, and a good ID is the pick`);
-  await page.keyboard.press("Escape");
+  await trigger.click();
+  await expectVisible(page, page.locator('[data-model-panel] [data-panel-row="model:claude\\a acme/coder-9"][data-current]'), `${theme}: the typed ID lit in claude's group`);
+  ok(`${theme}: no Use for an ID the hub would refuse, and a good ID is the pick`);
+  await closeNewAgent(page);
 
-  // A running session: Other model… in the popover, through …/modes (opened the way a click goes)
+  // A running session: its model panel (the composer's model pill, #5032), opened the way a click goes
   await openSession(page);
-  const chip = page.locator('button[title="模型与思考强度"]').first();
-  await expectVisible(page, chip, `${theme}: the session's model chip`);
-  await chip.click();
-  const popover = page.getByRole("dialog", { name: "模型与思考强度" });
-  await expectVisible(page, popover.locator('[data-testid="model-popover-other"]'), `${theme}: Other model… in the popover`);
-  await popover.locator('[data-testid="model-popover-other"]').click();
-  const pf = popover.locator("[data-model-id-field] input");
-  await pf.fill("a;b");
-  await expectVisible(page, popover.locator("[data-model-id-problem]"), `${theme}: why "a;b" can't be used`);
-  if (!(await popover.getByRole("button", { name: "应用" }).isDisabled())) fail(`${theme}: Apply takes a bad ID`);
-  await pf.fill(`~vendor/model-${theme}`); // a model the session doesn't run yet (the fake hub keeps the last switch)
-  // staged as it is typed: Apply is the one confirm (the field has no "Use" of its own here)
-  if (await popover.getByRole("button", { name: "应用" }).isDisabled()) fail(`${theme}: Apply stays off for a good ID`);
-  if (await popover.locator("[data-model-id-field] button").count()) fail(`${theme}: a second confirm beside the field`);
-  await shot(page, "session-popover", theme);
-  await pf.press("Enter"); // applies
+  const panel = await openPanel(page, theme);
+  const before = panelRow(panel, "vendor/model-x").first();
+  await expectVisible(page, before.filter({ hasText: "输入过的" }), `${theme}: an ID typed before, said so in the panel`);
+  await before.hover();
+  await expectVisible(page, before.getByRole("button", { name: "忘记「vendor/model-x」" }), `${theme}: Forget beside it`);
+  await shot(page, "session-panel", theme);
+  ok(`${theme}: the panel lists the IDs typed before, each with Forget`);
+  const search = panel.locator('input[aria-label="搜索模型…"]');
+  const use = panel.locator('[data-panel-row^="typed:"]');
+  // an ID the hub would refuse is offered nowhere
+  await search.fill("a;b");
+  await expectVisible(page, panel.getByText("没有匹配的模型"), `${theme}: "a;b" matches nothing`);
+  if (await use.count()) fail(`${theme}: "a;b" offered to use`);
+  // a word a listed model answers is a search, not an ID
+  await search.fill("opus");
+  await expectVisible(page, panelRow(panel, "Opus 5.5"), `${theme}: "opus" finds Opus`);
+  if (await use.count()) fail(`${theme}: "opus" offered as a typed ID beside the model it names`);
+  const id = `~vendor/model-${theme}`; // a model the session doesn't run yet (the fake hub keeps the last switch)
+  await search.fill(id);
+  await expectVisible(page, use.filter({ hasText: `使用「${id}」` }), `${theme}: Use “${id}” for an ID no listed model answers`);
+  if ((await use.count()) !== 1) fail(`${theme}: ${await use.count()} "Use" rows, want the session's launcher's one`);
+  await shot(page, "session-panel-typed", theme);
+  await use.first().click(); // applies
   for (let i = 0; i < 40; i++) {
     const { modes } = await mock("modes");
-    if ((modes ?? []).some((m) => m.session_id === "a1f3c2d4-0000-4000-8000-000000000006" && m.model === `~vendor/model-${theme}`)) break;
+    if ((modes ?? []).some((m) => m.session_id === "a1f3c2d4-0000-4000-8000-000000000006" && m.model === id)) break;
     if (i === 39) fail(`${theme}: no POST …/modes with the typed model`);
     await page.waitForTimeout(150);
   }
-  ok(`${theme}: the session switched through …/modes`);
+  try {
+    await panel.waitFor({ state: "detached", timeout: 5000 });
+  } catch {
+    fail(`${theme}: the panel stays open after the switch went through`);
+  }
+  ok(`${theme}: the session switched through …/modes, and the panel closed`);
 
   // The Persona chat: the launcher menu's Other model…
   await page.evaluate(() => {
@@ -168,42 +230,58 @@ async function run(browser, theme) {
 // MOCK_CUSTOM_MODELS=forgetfail: the row goes, comes back, and the reason is said
 async function forgetFails(browser, theme) {
   const { ctx, page } = await open(browser, theme);
-  const { dialog } = await newAgentList(page, theme);
-  const x = dialog.getByRole("button", { name: "忘记「vendor/model-x」" });
+  const { panel: naPanel } = await newAgentList(page, theme);
+  const typed = panelRow(naPanel, "vendor/model-x").first();
+  await typed.scrollIntoViewIfNeeded();
+  await typed.hover();
+  const x = typed.getByRole("button", { name: "忘记「vendor/model-x」" });
   await expectVisible(page, x, `${theme}: Forget beside a typed ID`);
   await x.click();
   await expectVisible(page, page.getByText(/没能忘记「vendor\/model-x」/), `${theme}: why it wasn't forgotten`);
-  await expectVisible(page, x, `${theme}: the row back`);
-  await x.scrollIntoViewIfNeeded();
+  await expectVisible(page, panelRow(naPanel, "vendor/model-x"), `${theme}: the row back`);
   await shot(page, "new-agent-forget-failed", theme);
   ok(`${theme}: New agent puts a refused Forget back`);
-  await page.keyboard.press("Escape");
+  await closeNewAgent(page);
   await page.waitForTimeout(600); // the toast goes
 
   await openSession(page);
-  const chip = page.locator('button[title="模型与思考强度"]').first();
-  await expectVisible(page, chip, `${theme}: the session's model chip`);
-  await chip.click();
-  const popover = page.getByRole("dialog", { name: "模型与思考强度" });
-  const px = popover.getByRole("button", { name: "忘记「vendor/model-x」" });
-  await expectVisible(page, px, `${theme}: Forget in the popover`);
-  await px.click();
-  await expectVisible(page, popover.getByRole("alert").filter({ hasText: "没能忘记" }), `${theme}: the popover says why`);
-  await expectVisible(page, px, `${theme}: the popover's row back`);
+  const panel = await openPanel(page, theme);
+  const row = panelRow(panel, "vendor/model-x").first();
+  await expectVisible(page, row, `${theme}: the ID typed before in the panel`);
+  // New agent's toast has gone, so the one that follows is the panel's
+  const why = page.getByText(/没能忘记「vendor\/model-x」/);
+  for (let i = 0; (await why.count()) > 0; i++) {
+    if (i === 60) fail(`${theme}: New agent's toast stays`);
+    await page.waitForTimeout(200);
+  }
+  await row.hover();
+  await row.getByRole("button", { name: "忘记「vendor/model-x」" }).click();
+  await expectVisible(page, why, `${theme}: why it wasn't forgotten`);
+  await expectVisible(page, panelRow(panel, "vendor/model-x"), `${theme}: the panel's row back`);
   await shot(page, "session-forget-failed", theme);
-  ok(`${theme}: the popover puts a refused Forget back`);
+  ok(`${theme}: the model panel puts a refused Forget back and says why`);
   await ctx.close();
 }
 
-// MOCK_CUSTOM_MODELS=empty / fail: New agent offers "Enter model ID…" without a list
+// MOCK_CUSTOM_MODELS=empty / fail: New agent takes a typed ID without a list. "Enter model ID…" went with the old list:
+// the panel's search offers "Use “…”" in claude's group instead (docs/assistant/model-config.md "Typing a model ID":
+// an empty list or one that couldn't be read still takes a typed ID), beside the error and Retry when it failed.
 async function noList(browser, theme, mode) {
   const { ctx, page } = await open(browser, theme);
-  const { dialog } = await newAgentList(page, theme);
-  const other = dialog.locator('[data-testid="model-picker-other"]');
-  await expectVisible(page, other.filter({ hasText: "输入模型 ID…" }), `${theme}: Enter model ID… (${mode})`);
-  if (mode === "fail") await expectVisible(page, dialog.getByText("claude 没有登录"), `${theme}: why the list couldn't be read`);
-  await other.scrollIntoViewIfNeeded();
+  const { dialog, panel } = await newAgentList(page, theme);
+  const claude = panel.locator('[data-panel-section="provider"][aria-label="claude"]');
+  if (mode === "fail") {
+    await expectVisible(page, claude.getByText("claude 没有登录"), `${theme}: why the list couldn't be read`);
+    await expectVisible(page, claude.getByRole("button", { name: "重试" }), `${theme}: Retry beside it`);
+    await expectVisible(page, dialog.locator('[data-testid="new-agent-models-failed"]'), `${theme}: the line under the box`);
+  } else {
+    const rows = await claude.locator("[data-panel-row]").evaluateAll((els) => els.map((e) => e.dataset.panelRow));
+    if (JSON.stringify(rows) !== JSON.stringify(["model:claude\ndefault"])) fail(`${theme}: claude's empty list shows ${JSON.stringify(rows)}`);
+  }
   await shot(page, mode === "fail" ? "new-agent-list-failed" : "new-agent-empty", theme);
+  await panel.locator('input[aria-label="搜索模型…"]').fill("acme/coder-9");
+  await expectVisible(page, panel.locator('[data-panel-row="typed:claude\\a acme/coder-9"]'), `${theme}: Use “acme/coder-9” in claude's group (${mode})`);
+  await shot(page, mode === "fail" ? "new-agent-typed-failed" : "new-agent-typed-empty", theme);
   ok(`${theme}: New agent takes an ID without a list (${mode})`);
   await ctx.close();
 }

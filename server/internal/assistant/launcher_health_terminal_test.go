@@ -161,6 +161,29 @@ func TestLauncherHealthRecordsAppStarts(t *testing.T) {
 	}
 }
 
+// A running Agent moving to another launcher is listed as starting meanwhile on the launcher it moves to (Starting with
+// its pending switch, node/launcher_switch.go): it is not followed, since the row listed clean afterwards may be back on
+// its own launcher (a switch that failed and rolled back): no start of the launcher the starting row named.
+func TestLauncherHealthLeavesSwitchesOut(t *testing.T) {
+	s, f := launcherHealthHubOn(t, newStorelessService)
+	delete(f.checks, "l4/work")
+	ctx := context.Background()
+	// a launcher whose starts did not run in the terminal: a start that works is what clears it
+	r := terminalRefusal(proto.CodeLauncherMissing, "work")
+	s.StartEnded(ctx, StartEnded{MachineID: "l4", Launcher: "work", Error: r.Message, Code: r.Code, Data: r.Data})
+	if h := healthState(s, "l4", "work"); h.Kind != errKindNotInTerminal || h.State != healthBlocked {
+		t.Fatalf("a failed start: %+v", h)
+	}
+	switching := proto.Session{SessionID: "a1", Launcher: "work", Starting: true, Status: proto.StatusIdle,
+		PendingSwitch: &proto.PendingSwitch{Launcher: "work", At: time.Now()}}
+	s.followStarts(ctx, DeviceSessions{MachineID: "l4", Sessions: []proto.Session{switching}})
+	back := proto.Session{SessionID: "a1", Launcher: "claude", Status: proto.StatusIdle}
+	s.followStarts(ctx, DeviceSessions{MachineID: "l4", Sessions: []proto.Session{back}})
+	if h := healthState(s, "l4", "work"); h.State != healthBlocked {
+		t.Fatalf("a switch counted as a start that worked: %+v", h)
+	}
+}
+
 // The failed app starts counted are kept with the records: after a restart, one the node still lists is not counted
 // again, so a start that worked since stays the latest word.
 func TestLauncherHealthCountsAnAppStartOnceAcrossARestart(t *testing.T) {

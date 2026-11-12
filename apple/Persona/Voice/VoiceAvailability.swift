@@ -42,6 +42,54 @@ nonisolated struct VoiceInfo: Decodable, Equatable, Sendable {
     }
 }
 
+extension VoiceInfo {
+    /// The extension can say a given text in the realtime voice (`POST …/speak`, #5004); older ones can't.
+    nonisolated static let speakFeature = "speak"
+}
+
+/// The realtime voice saying a text (`POST …/speak`): mono PCM16, little-endian, at `rate`, in pieces as they come.
+nonisolated struct VoiceSpeech: Sendable {
+    var rate: Int
+    var audio: AsyncThrowingStream<Data, Error>
+
+    struct Body: Encodable, Sendable {
+        var text: String
+        var model: String?
+        var voice: String?
+        var lang: String?
+    }
+
+    /// The header with the audio's rate in Hz; without it, the rate the services speak at.
+    static let rateHeader = "X-Persona-Audio-Rate"
+    static let defaultRate = 24000
+    /// What one piece holds: 100 ms at 24 kHz, so the player gets the voice as it comes, not byte by byte.
+    static let pieceBytes = 4800
+
+    /// The response's bytes in pieces of `pieceBytes`, read off the main actor; ending the stream (a stop) cancels
+    /// the request.
+    static func chunks(_ bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let reader = Task.detached {
+                do {
+                    var piece = Data(capacity: pieceBytes)
+                    for try await byte in bytes {
+                        piece.append(byte)
+                        if piece.count >= pieceBytes {
+                            continuation.yield(piece)
+                            piece = Data(capacity: pieceBytes)
+                        }
+                    }
+                    if !piece.isEmpty { continuation.yield(piece) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in reader.cancel() }
+        }
+    }
+}
+
 /// What asking `/info` came to.
 nonisolated enum VoiceInfoState: Equatable, Sendable {
     case info(VoiceInfo)
@@ -245,6 +293,16 @@ extension APIClient {
     /// `GET …/voices?model=`: the voices of `model` (nil: the extension's default model).
     func voiceVoices(_ extensionID: String, model: String?) async throws -> VoiceVoices {
         try await get(extensionPath("/\(extensionID)/voices"), query: ["model": model ?? ""])
+    }
+
+    /// `POST …/speak` (docs/assistant/voice.md, #5004): the realtime voice saying `text` with `model` and `voice` (nil:
+    /// the extension's default model, the model's default voice), streamed back as it is made. Throws as `request` does
+    /// when the extension refuses (`no_upstream`, `upstream_*`, `no_audio`), and when this client cannot stream.
+    func voiceSpeak(_ extensionID: String, text: String, model: String?, voice: String?, lang: String?) async throws -> VoiceSpeech {
+        let body = VoiceSpeech.Body(text: text, model: model, voice: voice, lang: lang)
+        let (response, bytes) = try await streamed("POST", extensionPath("/\(extensionID)/speak"), body: body)
+        let rate = response.value(forHTTPHeaderField: VoiceSpeech.rateHeader).flatMap(Int.init) ?? VoiceSpeech.defaultRate
+        return VoiceSpeech(rate: rate, audio: VoiceSpeech.chunks(bytes))
     }
 
     /// The use `plugin.<id>`; nil on a hub without model configuration (404).

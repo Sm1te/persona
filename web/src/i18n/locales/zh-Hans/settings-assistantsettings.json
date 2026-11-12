@@ -1,4 +1,14 @@
 {
+  "auto_naming": "修正不好用的会话名字",
+  "auto_naming_hint": "默认只修正明显无效的名字，每个会话一次。使用你选的信息分拣模型，绝不覆盖你手动起的名字。",
+  "auto_naming_max": "最多自动改名几次",
+  "auto_naming_max_hint": "每个会话自动改名成功的总次数，定期更新也算在内。填 1 到 1000。",
+  "auto_naming_periodic": "定期更新名字",
+  "auto_naming_periodic_hint": "默认关闭。只有产生新输出才更新，也受上面的总次数限制。开启后先按每 24 小时更新。",
+  "auto_naming_interval": "更新间隔（小时）",
+  "auto_naming_interval_hint": "填 1 到 8760 之间的整数。",
+  "auto_naming_raise_max": "要定期更新，请把最多改名次数提高到 1 次以上。",
+  "auto_naming_save_failed": "未能确认改名设置，已恢复上次确认的值。检查连接后重试。",
   "workspace_preference": "派发任务时优先使用",
   "workspace_prefer_existing": "优先已有工作区",
   "workspace_prefer_new": "优先新建工作区",
@@ -122,5 +132,8 @@
   "background_folded_footer": "主对话里由别的对话、定时任务或跟进发起的轮次折成一行，点开能看全部；问过你或通知过你的轮次照常显示。",
   "idle_close": "Agent 闲置多久后停止",
   "idle_close_hint": "它的终端会保留。0 表示不自动停止。",
-  "idle_close_unit": "小时"
+  "idle_close_unit": "小时",
+  "main_supervises": "主对话自己督办它派出的任务",
+  "main_supervises_hint": "默认关闭：Persona 派出的任务由内置的后台督办对话跟进和验收，主对话随时能回你；开启后改回由主对话自己跟进和验收",
+  "background_supervisor_model": "后台督办的模型"
 }

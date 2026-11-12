@@ -79,6 +79,12 @@ func (s *Service) launcherParams(ctx context.Context, machine, name string, para
 // its PATH ("path", node/pathlaunchers.go); its page shows its text and what a probe found.
 func machineSource(source string) bool { return source == "zshrc" || source == "path" }
 
+// listedRCLauncher: Settings › Model providers lists l from a computer's list. A runtime's launcher without model
+// configuration (DSH, node/runtimes.go) is not.
+func listedRCLauncher(l proto.Launcher) bool {
+	return l.Source == "" || machineSource(l.Source) || l.Agent == "agy" || l.Agent == "omp"
+}
+
 // launcherViews is the whole list: managed first (newest last), then ~/.zshrc ones by name; hidden ones flagged.
 func (s *Service) launcherViews(ctx context.Context) []LauncherView {
 	return s.launcherViewsOf(ctx, s.zshrcLaunchers(ctx, false))
@@ -100,8 +106,8 @@ func (s *Service) launcherViewsFrom(ctx context.Context, zshrc []zshrcLaunchers,
 	var names []string
 	for _, m := range zshrc {
 		for _, l := range m.Launchers {
-			if managed[l.Name] || l.Name == "claude" || (l.Source != "" && !machineSource(l.Source) && l.Agent != "agy" && l.Agent != "omp") {
-				continue // a runtime's launcher without model configuration (DSH, node/runtimes.go) is not listed here
+			if managed[l.Name] || l.Name == "claude" || !listedRCLauncher(l) {
+				continue
 			}
 			v := byName[l.Name]
 			if v == nil {
@@ -335,5 +341,16 @@ func (s *Service) askLauncherModels(ctx context.Context, machine, name string, r
 	if res.Models == nil {
 		res.Models = []proto.AgentModel{}
 	}
-	return s.presetModels(ctx, machine, name, res), nil
+	res = s.presetModels(ctx, machine, name, res)
+	for i, m := range res.Models {
+		id := m.ID
+		if m.Resolved != "" {
+			id = m.Resolved
+		}
+		res.Models[i].Price = nil
+		if c, ok := catalogModel(id); ok && c.InheritedFrom == "" {
+			res.Models[i].Price = c.Price
+		}
+	}
+	return res, nil
 }

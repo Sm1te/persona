@@ -37,7 +37,7 @@ describe("Header", () => {
     expect(html).toContain("data-switch");
     expect(html).toMatch(/class="flex min-w-0 flex-1 justify-center lg:hidden"><span data-switch/);
     expect(html).toMatch(/class="min-w-0 flex-1 max-lg:hidden"/);
-    // the buttons either side sit in slots of one width
+    // the buttons either side sit in slots of one least width, which grow to fit them (#5036)
     expect(html).toContain(`class="${HEADER_SLOT} ${HEADER_SLOT_START} lg:contents"`);
     expect(html).toContain(`class="${HEADER_SLOT} ${HEADER_SLOT_END} lg:contents"`);
   });
@@ -46,7 +46,7 @@ describe("Header", () => {
     const html = header();
     expect(html).not.toContain("justify-center lg:hidden");
     expect(html).not.toContain("max-lg:hidden");
-    expect(html).not.toContain("max-lg:w-20");
+    expect(html).not.toContain("max-lg:min-w-16");
   });
 
   it("leaves the title room on a phone: no state pill, 同空间 only from ⋯ (#3576)", () => {
@@ -169,6 +169,17 @@ describe("PendingCards", () => {
     expect(long).toBe(`来自子 Agent · ${"x".repeat(47)}…`);
     const html = cards({ narrow: false, interactions: [ix("p", "permission", { agent_id: "a1", agent_type: "code-reviewer" })] });
     expect(html).toMatch(/data-permission-from="true" title="来自子 Agent · code-reviewer" class="truncate/);
+  });
+
+  it("names a child session's card by the child's title, on its parent's page (#5120)", () => {
+    expect(permissionFrom({ folded_under: "lead", session_title: "  Write the\n tests " })).toBe("来自子 Agent · Write the tests");
+    expect(permissionFrom({ folded_under: "lead" })).toBe("来自子 Agent · 子 Agent 任务");
+    expect(permissionFrom({ folded_under: "lead", session_title: "y".repeat(80) })).toBe(`来自子 Agent · ${"y".repeat(47)}…`);
+    // a question card says it too, at its top; the session's own cards say nothing
+    const questions = [{ question: "用哪个框架？", options: [{ label: "A" }] }] as Interaction["questions"];
+    const html = cards({ narrow: false, interactions: [ix("q", "question", { questions, folded_under: "lead", session_title: "Write the tests" })] });
+    expect(html).toMatch(/data-permission-from="true" title="来自子 Agent · Write the tests"/);
+    expect(cards({ narrow: false, interactions: [ix("q", "question", { questions })] })).not.toContain("data-permission-from");
   });
 
   it("shows every card on a wide screen, in no box of their own", () => {
@@ -326,7 +337,7 @@ describe("QueueStrip", () => {
     expect(relayedOnly).toContain("Nova 忙完会依次处理");
     // the relayed one says it arrives when the turn ends; the user's own don't
     expect(html.match(/data-queue-note/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="排队的第 2 条：来自「日报」：今天的汇总 · 本轮结束后送达"');
+    expect(html).toContain('aria-label="排队的第 2 条：来自「日报」：今天的汇总 · 对话空闲后送达"');
   });
 
   it("marks the photos a Persona chat's queued message went with when this browser sent it (#4342)", () => {
@@ -405,30 +416,3 @@ describe("restoreQueued in a Persona chat (#4342)", () => {
   });
 });
 
-describe("Header in a task's panel (#3333)", () => {
-  const todoSession = { ...session, todo: { id: "t1", title: "代理的待办" } } as unknown as Session;
-  const agent = (key: string) => ({ key, label: key, onSelect: () => {} });
-
-  it("is the panel's only header: the task's title and subtitle, a close button, no 同空间", () => {
-    const html = header({ session: todoSession, panel: { onClose: () => {}, title: "修登录崩溃", sub: "在做 · MacBook", agents: [agent("a")] } });
-    expect(html).toContain(">修登录崩溃</h1>");
-    expect(html).toContain("在做 · MacBook");
-    expect(html).toContain('aria-label="关闭面板"');
-    expect(html).not.toContain("同空间");
-    // the agent's own todo line would repeat the task
-    expect(html).not.toContain("代理的待办");
-    // one agent: nothing to switch
-    expect(html).not.toContain('aria-label="切换 Agent"');
-  });
-
-  it("has a ⌄ beside the title for a task with several agents", () => {
-    const html = header({ panel: { onClose: () => {}, title: "修登录崩溃", agents: [agent("a"), agent("b")] } });
-    expect(html).toContain('aria-label="切换 Agent"');
-  });
-
-  it("is as before outside a panel", () => {
-    const html = header();
-    expect(html).not.toContain('aria-label="关闭面板"');
-    expect(html).toContain("同空间");
-  });
-});

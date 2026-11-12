@@ -674,7 +674,7 @@ func (l *daemonLink) row(s map[string]json.RawMessage) (map[string]json.RawMessa
 	}
 	// The session that started it (docs/integrations/runtimes.md, a row of its own with a parent) is another of the
 	// daemon's: named by its id here too, or not at all.
-	for _, k := range []string{"parent_session_id", "root_session_id"} {
+	for _, k := range []string{"parent_session_id", "root_session_id", "asking_parent_session_id"} {
 		if _, named := s[k]; !named {
 			continue
 		}

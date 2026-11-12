@@ -49,7 +49,7 @@ describe("设置 › 会话分诊", () => {
     expect(switches()).toHaveLength(0);
     expect(host.textContent).toContain("加载中");
     await answer(0, ON);
-    expect(switches()).toHaveLength(7);
+    expect(switches()).toHaveLength(8);
     expect(named("会话分诊")!.getAttribute("aria-checked")).toBe("true");
   });
 
@@ -98,7 +98,7 @@ describe("设置 › 会话分诊", () => {
     await act(async () => retry()!.click());
     expect(pending).toHaveLength(3);
     await answer(2, ON);
-    expect(switches()).toHaveLength(7);
+    expect(switches()).toHaveLength(8);
   });
 
   it("tool loop defaults off and saves without changing the other switches", async () => {
@@ -116,7 +116,7 @@ describe("设置 › 会话分诊", () => {
 
   it("ask for a closeout defaults off, saves with the hub's other switches, and needs the main switch", async () => {
     await render();
-    // a switch this page does not draw (closeout_ask) goes back to the hub as it came
+    // another switch the hub has on (closeout_ask) goes back to the hub as it came
     await answer(0, { ...ON, closeout_ask: true });
     const closeout = named("要收尾记录")!;
     expect(closeout.getAttribute("aria-checked")).toBe("false");
@@ -134,6 +134,25 @@ describe("设置 › 会话分诊", () => {
     await act(async () => named("会话分诊")!.click());
     await answer(3, { ...ON, enabled: false });
     expect(named("要收尾记录")!.disabled).toBe(true);
+  });
+
+  it("ask for the status afterwards (#3616) defaults off, saves with the hub's other switches, and needs the main switch", async () => {
+    await render();
+    await answer(0, { ...ON, closeout: true });
+    const ask = named("事后问一次进展")!;
+    expect(ask.getAttribute("aria-checked")).toBe("false");
+    expect(ask.disabled).toBe(false);
+    expect(host.textContent).toContain("会花它自己模型的一轮");
+    await act(async () => ask.click());
+    expect(pending[1].json).toEqual({ ...ON, closeout: true, closeout_ask: true });
+    await answer(1, { ...ON, closeout: true, closeout_ask: true });
+    expect(ask.getAttribute("aria-checked")).toBe("true");
+    await act(async () => ask.click());
+    expect(pending[2].json).toEqual({ ...ON, closeout: true, closeout_ask: false });
+    await answer(2, { ...ON, closeout: true, closeout_ask: false });
+    await act(async () => named("会话分诊")!.click());
+    await answer(3, { ...ON, enabled: false, closeout: true });
+    expect(named("事后问一次进展")!.disabled).toBe(true);
   });
 
   it("hub 没有这个接口（太旧）：说不支持，不给重试", async () => {

@@ -32,6 +32,7 @@ type Plugin struct {
 	// (Provider.Tools unset, #1420): their sessions go without them from then on, for as long as the plugin runs.
 	toolless sync.Map
 	calls    atomic.Int64 // the calls taken since it started: a call's id in the log (calllog.go)
+	speaks   atomic.Int64 // the texts read aloud since it started: a read-aloud's id in the log (speak.go)
 }
 
 func New(cfg Config, hubURL, hubToken string, logger *log.Logger) *Plugin {
@@ -56,13 +57,14 @@ func (pl *Plugin) forgoTools(id string) bool {
 	return !known
 }
 
-// Handler is the plugin's API (docs/extensions/extensions.md "Voice"): /health, /models, /voices, /ws.
+// Handler is the plugin's API (docs/extensions/extensions.md "Voice"): /health, /info, /models, /voices, /speak, /ws.
 func (pl *Plugin) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeHTTPJSON(w, http.StatusOK, map[string]any{"ok": true, "conversations": pl.active.Load()})
 	})
 	mux.HandleFunc("GET /info", pl.serveInfo)
+	mux.HandleFunc("POST /speak", pl.serveSpeak)
 	mux.HandleFunc("GET /models", func(w http.ResponseWriter, r *http.Request) {
 		models, def, err := pl.cat.models(r.Context(), pl.logf)
 		if err != nil {

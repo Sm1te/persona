@@ -140,7 +140,7 @@ func (s *Service) agentTaskAtTurnEnd(ctx context.Context, machine, sid string) (
 		}
 		return Todo{}, false
 	}
-	s.taskCard(ctx, main, todo.ID)
+	s.taskCard(ctx, main, todo.ID, wakeActive)
 	return s.taskOf(ctx, machine, sid)
 }
 

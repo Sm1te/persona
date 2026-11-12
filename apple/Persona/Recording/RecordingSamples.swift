@@ -7,10 +7,14 @@ enum RecordingSamples {
     /// Once per launch: the page appears again after its recording was deleted, and must not bring it back.
     nonisolated(unsafe) private static var installed = false
 
+    /// `-showRecordingSample second`: the same recording under another id, for a test that deletes one (the hub keeps the first's tombstone).
+    static let secondSample = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+
     static func installIfAsked() -> UUID? {
-        guard UserDefaults.standard.bool(forKey: "showRecordingSample"), !installed else { return nil }
+        let asked = UserDefaults.standard.string(forKey: "showRecordingSample")
+        guard !installed, UserDefaults.standard.bool(forKey: "showRecordingSample") || asked == "second" else { return nil }
         installed = true
-        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let id = asked == "second" ? secondSample : UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         RecordingLibrary.shared.restore(id)
         var entry = RecordingEntry(id: id, createdAt: Date(timeIntervalSince1970: 1_800_000_000), source: .watch,
                                    title: "项目讨论", active: false, expectedSegments: 1)
@@ -49,7 +53,7 @@ enum RecordingSamples {
         RecordingLibrary.shared.restore(liveMeeting)
         var live = RecordingEntry(id: liveMeeting, createdAt: .now, source: .phone, title: "产品周会", active: true)
         live.meeting = meeting
-        live.attendance = RecordingAttendance(role: .participant, session: nil, sessionTitle: "Persona")
+        live.attendance = RecordingAttendance(role: .participant, session: nil, sessionTitle: "Persona", mainPicked: true)
         try? RecordingLibrary.shared.save(live)
         let capture = RecordingCapture.shared
         capture.showSample(liveMeeting, elapsed: 1)
@@ -81,6 +85,7 @@ enum RecordingSamples {
 
     /// `-showMeetingSample recording|paused|interrupted`: a meeting 12:34 into its recording, as the recording page and its
     /// Live Activity show it (no microphone); `listening|taking-part|answered`: the same with Persona attending (#2981);
+    /// `room-listening|room-taking-part`: the same as a room meeting (#3862), whose sheet is the meeting page;
     /// `minutes` / `pending`: a finished meeting whose page opens (its minutes from the hub, or still being written). Both
     /// recordings are made up.
     static func showMeetingIfAsked() {
@@ -121,10 +126,18 @@ enum RecordingSamples {
         ])]
         live.marks = [65, 300]
         // `listening` / `taking-part` / `answered`: Persona attends (#2981), listening in, taking part, or taking part with two
-        // answers given. The main chat attends (no session named); the made-up meeting's upload tells the hub, as a real one
-        // would, and its lines go to the hub's live log, the last one just before the tap (12:34).
-        if ["listening", "taking-part", "answered"].contains(mode) {
-            live.attendance = RecordingAttendance(role: mode == "listening" ? .listener : .participant, session: nil, sessionTitle: "Persona")
+        // answers given. The main chat attends, picked for it (no session named, `mainPicked`: never the default, #3862);
+        // the made-up meeting's upload tells the hub, as a real one would, and its lines go to the hub's live log, the last
+        // one just before the tap (12:34). `room-listening` / `room-taking-part`: the meeting's own room conversation
+        // attends instead (#3862), not private.
+        let room = ["room-listening", "room-taking-part"].contains(mode)
+        if ["listening", "taking-part", "answered"].contains(mode) || room {
+            if room {
+                live.attendance = RecordingAttendance.room(mode == "room-listening" ? .listener : .participant, private: false, photos: false)
+            } else {
+                live.attendance = RecordingAttendance(role: mode == "listening" ? .listener : .participant, session: nil,
+                                                      sessionTitle: "Persona", mainPicked: true)
+            }
             live.segments.append(RecordingSegment(index: 1, start: 720, duration: 30, sentences: [
                 RecordingSentence(start: 741, end: 748, text: "上周定的长录音测试谁负责？"),
             ]))

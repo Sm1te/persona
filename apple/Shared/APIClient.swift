@@ -274,11 +274,13 @@ nonisolated struct APIClient: Sendable {
     /// `opID`: the write's op id (`X-Persona-Op-Id`, docs/protocol/protocol.md「操作回执」): the hub does it once however often
     /// it arrives. A repeat it cannot answer yet comes back `202 {"state":"pending" | "unknown"}`: thrown as an
     /// APIError with `OpReceipt.pendingCode` / `unknownCode`, so no caller takes it for done.
+    /// `extraHeaders`: what this one request says besides (a hand-off card's approval declares its feature).
     func request(_ method: String, _ path: String, query: [String: String] = [:], body: (any Encodable)? = nil,
-                 timeout: TimeInterval = 30, opID: UUID? = nil) async throws -> Data {
+                 timeout: TimeInterval = 30, opID: UUID? = nil, extraHeaders: [String: String] = [:]) async throws -> Data {
         let query = larkScoped(path, query)
         let headers = clientMetadata.headers.merging(opID.map(HubNaming.operationHeaders) ?? [:]) { _, operation in operation }
             .merging(routing(path, query)) { _, manager in manager }
+            .merging(extraHeaders) { _, extra in extra }
         if let answer = transport ?? (config.isDemo ? Self.local : nil) {
             let data: Data
             do {
@@ -357,6 +359,37 @@ nonisolated struct APIClient: Sendable {
         let http = resp as? HTTPURLResponse
         if http?.statusCode == 304 { return (nil, etag) }
         return (try checked(data, resp, requestID: requestID, path: path), http?.value(forHTTPHeaderField: "ETag"))
+    }
+
+    /// A request whose answer is read as it arrives (the realtime voice saying a text, `voiceSpeak`): the response once
+    /// its headers are in, then its bytes. A status outside 2xx throws as `request` does, with the body it came with.
+    /// Neither the fake transport nor Demo Mode streams: it throws there, and callers do what they do without it.
+    func streamed(_ method: String, _ path: String, body: (any Encodable)? = nil,
+                  timeout: TimeInterval = 30) async throws -> (HTTPURLResponse, URLSession.AsyncBytes) {
+        if transport != nil || config.isDemo { throw APIError(status: 501, message: "Streaming isn't available here") }
+        var req = URLRequest(url: url(path, query: [:]), timeoutInterval: timeout)
+        req.httpMethod = method
+        config.authorize(&req)
+        req.setValue(LanguageStore.shared.launched, forHTTPHeaderField: "Accept-Language")
+        clientMetadata.apply(to: &req)
+        let requestID = String(UUID().uuidString.prefix(8)).lowercased()
+        req.setValue(requestID, forHTTPHeaderField: "X-Client-Request-Id")
+        for (name, value) in routing(path, [:]) { req.setValue(value, forHTTPHeaderField: name) }
+        if let body {
+            req.httpBody = try JSON.encoder.encode(AnyEncodable(body))
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (bytes, resp) = try await session.bytes(for: req, delegate: HubRedirects.shared)
+        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if !(200..<300).contains(http.statusCode) {
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count >= 16 << 10 { break }
+            }
+            _ = try checked(data, resp, requestID: requestID, path: path)
+        }
+        return (http, bytes)
     }
 
     /// A bounded, staged attachment sent from disk. The fake transport reads it only in tests.
@@ -463,8 +496,9 @@ nonisolated struct APIClient: Sendable {
     }
 
     @discardableResult
-    func post(_ path: String, body: (any Encodable)? = nil, timeout: TimeInterval = 30, opID: UUID? = nil) async throws -> Data {
-        try await request("POST", path, body: body ?? [String: String](), timeout: timeout, opID: opID)
+    func post(_ path: String, body: (any Encodable)? = nil, timeout: TimeInterval = 30, opID: UUID? = nil,
+              extraHeaders: [String: String] = [:]) async throws -> Data {
+        try await request("POST", path, body: body ?? [String: String](), timeout: timeout, opID: opID, extraHeaders: extraHeaders)
     }
 
     func delete(_ path: String) async throws {
@@ -997,6 +1031,9 @@ nonisolated struct APIClient: Sendable {
         return try await get(sp(k) + "/screen", query: q)
     }
     func close(_ k: SessionKey) async throws { try await post(sp(k) + "/close") }
+    /// Closes a headless Persona conversation so its next start uses the configured model (#4489, docs/protocol/protocol.md
+    /// 「Going back to the configured model」). Claims nothing: the session's `model_restore` says it is pending.
+    func restoreModel(_ k: SessionKey) async throws { try await post(sp(k) + "/restore-model") }
     private struct ForkBody: Encodable { var at_item_id: String }
     private struct Forked: Decodable { var session_id: String }
     /// Branch to New Chat (#2137): a new session with the conversation up to the end of item's turn; its id.
@@ -1082,10 +1119,14 @@ nonisolated struct APIClient: Sendable {
     }
 
     struct QueueEdit: Encodable { var keep: [Int] }
-    struct QueueResponse: Decodable { var queue: [String] }
+    struct QueueResponse: Decodable {
+        var queue: [String]
+        /// Photos for each returned queue item; a Persona chat includes them so take-back can restore the composer.
+        var images: [[ImagePayload]]?
+    }
     /// Pulls the queued input back out of claude and re-queues the indexes in `keep`; returns what was queued.
-    func editQueue(_ k: SessionKey, keep: [Int]) async throws -> [String] {
-        try await post(sp(k) + "/queue", body: QueueEdit(keep: keep), as: QueueResponse.self).queue
+    func editQueue(_ k: SessionKey, keep: [Int]) async throws -> QueueResponse {
+        try await post(sp(k) + "/queue", body: QueueEdit(keep: keep), as: QueueResponse.self)
     }
 
     /// Gives the agent what waits in its queue now (#6088, Claude Code's own send-now: a command it runs moves to the
@@ -1104,6 +1145,9 @@ nonisolated struct APIClient: Sendable {
         /// What the assistant is told about the user (Settings › Assistant › About Me).
         var notes: String?
         var timezone: String?
+        /// The user picked `timezone` by hand (#1855, Android's Time zone without Match phone): devices then leave it. nil
+        /// from a hub that was never told, or one without picking.
+        var timezonePicked: Bool?
         /// The main conversation's session id (the Persona tab opens it); nil until there is one.
         var main: String?
         /// Notify Main-Chat Tasks Only in the Main Chat (#1731): tasks the main conversation starts are quiet (`TodoItem.quiet`). The
@@ -1120,11 +1164,25 @@ nonisolated struct APIClient: Sendable {
         /// conversations"), in the hub's order; nil when there are none or from an older hub. The sidebar shows them as
         /// the Directions group, under the names `assistantLeaders()` gives.
         var leaders: [String]?
+        /// The Main Chat Supervises Its Own Tasks (#4927, docs/assistant/unified-entry.md "Background supervisor"): the
+        /// value in effect. Off (the default) means the built-in background supervisor follows up the tasks no leader
+        /// supervises; nil from a hub without the background supervisor, which hides the switch.
+        var mainSupervisesOwnTasks: Bool?
+        /// The background supervisor's session id once the hub has made it (read-only); nil until then and from an
+        /// older hub.
+        var backgroundSupervisor: String?
         enum CodingKeys: String, CodingKey {
             case launcher, cwd, conversations, timezone, main, leaders
             case machineID = "machine_id", notes = "notes_effective", mainTasksQuiet = "main_tasks_quiet"
             case mainBackgroundFolded = "main_background_folded"
-            case meetingAttendanceDefault = "meeting_attendance_default"
+            case meetingAttendanceDefault = "meeting_attendance_default", timezonePicked = "timezone_picked"
+            case mainSupervisesOwnTasks = "main_supervises_own_tasks", backgroundSupervisor = "background_supervisor"
+        }
+
+        /// Whether conversation `id` is the built-in background supervisor (#5083): listed with the scheduled tasks'
+        /// conversations, never archived, ended or made a direction. Never the main conversation, as on the hub.
+        func isBackgroundSupervisor(_ id: String) -> Bool {
+            !id.isEmpty && id == backgroundSupervisor && id != main
         }
 
         /// Whether the main conversation folds its background rounds: on unless the hub says off (an older hub omits it).
@@ -1244,18 +1302,20 @@ nonisolated struct APIClient: Sendable {
         var mainTasksQuiet: Bool?
         var mainBackgroundFolded: Bool?
         var meetingAttendanceDefault: String?
+        var mainSupervisesOwnTasks: Bool?
         enum CodingKeys: String, CodingKey {
             case launcher, timezone, notes
             case machineID = "machine_id", mainTasksQuiet = "main_tasks_quiet", meetingAttendanceDefault = "meeting_attendance_default"
-            case mainBackgroundFolded = "main_background_folded"
+            case mainBackgroundFolded = "main_background_folded", mainSupervisesOwnTasks = "main_supervises_own_tasks"
         }
     }
     func setAssistant(machine: String? = nil, launcher: String? = nil, timezone: String? = nil, notes: String? = nil,
                       mainTasksQuiet: Bool? = nil, mainBackgroundFolded: Bool? = nil,
-                      meetingAttendanceDefault: String? = nil) async throws -> AssistantState {
+                      meetingAttendanceDefault: String? = nil, mainSupervisesOwnTasks: Bool? = nil) async throws -> AssistantState {
         owned(try JSON.decoder.decode(AssistantState.self, from: try await request("PUT", "/api/v1/assistant",
             body: AssistantConfigBody(machineID: machine, launcher: launcher, timezone: timezone, notes: notes, mainTasksQuiet: mainTasksQuiet,
-                                      mainBackgroundFolded: mainBackgroundFolded, meetingAttendanceDefault: meetingAttendanceDefault))))
+                                      mainBackgroundFolded: mainBackgroundFolded, meetingAttendanceDefault: meetingAttendanceDefault,
+                                      mainSupervisesOwnTasks: mainSupervisesOwnTasks))))
     }
     /// The Chat tab is open: the hub gets a claude process ready so the first message starts at once. With no launcher
     /// chosen the field is omitted and the hub warms its own default (#4200: the client never sends a made-up name).
@@ -1648,8 +1708,11 @@ nonisolated struct APIClient: Sendable {
     }
     @discardableResult
     /// opID: one per answer (the same on every retry of it), so a retry through a hub restart presses nothing twice.
-    func resolve(_ id: String, _ r: Resolution, opID: UUID = UUID()) async throws -> ResolveResult {
-        try JSON.decoder.decode(ResolveResult.self, from: try await post("/api/v1/interactions/\(id)/resolve", body: r, opID: opID))
+    /// `handoffCard`: a hand-off card's own approval, which says so (`SecretHandoff.feature`) on this request alone.
+    func resolve(_ id: String, _ r: Resolution, opID: UUID = UUID(), handoffCard: Bool = false) async throws -> ResolveResult {
+        let headers = handoffCard ? ["X-Persona-Features": SecretHandoff.feature] : [:]
+        return try JSON.decoder.decode(ResolveResult.self, from: try await post("/api/v1/interactions/\(id)/resolve", body: r, opID: opID,
+                                                                                 extraHeaders: headers))
     }
 
     /// One session's cards and how they ended (GET /api/v1/interactions/history), newest first; a row this app can't read

@@ -35,7 +35,7 @@ type ConfiguredLauncher struct {
 
 // The node's launcher methods the assistant calls (docs/protocol/protocol.md "hub ↔ node").
 const (
-	DeviceLaunchersZshrc      = "launchers.zshrc"       // {} → {aliases: [{alias, env, args, command}]}: the claude aliases with their env (keys too)
+	DeviceLaunchersZshrc      = "launchers.zshrc"       // {} → {aliases: [{alias, env, args, command, file}]}: the claude aliases of ~/.zshrc, ~/.bashrc and ~/.bash_aliases with their env (keys too)
 	DeviceLaunchersManaged    = "launchers.managed"     // {launchers: [proto.ManagedLauncher]} → {ok}: with their keys
 	DeviceLaunchersModels     = "launchers.models"      // {name, refresh, configured?, agent_type?} → proto.LauncherModels
 	DeviceLaunchersModelCheck = "launchers.model.check" // {name, model, configured?} → {agent}
@@ -155,6 +155,7 @@ var modelRoutes = []string{
 	"GET /api/v1/launchers/presets",
 	"POST /api/v1/launchers/test",
 	"POST /api/v1/launchers/discover",
+	"POST /api/v1/launchers/catalog",
 	"GET /api/v1/launchers/import",
 	"POST /api/v1/launchers/import",
 	"GET /api/v1/launchers/{name}",
@@ -165,6 +166,7 @@ var modelRoutes = []string{
 	"GET /api/v1/launchers/health",
 	"POST /api/v1/launchers/health/check",
 	"POST /api/v1/launchers/{name}/restore",
+	"GET /api/v1/launchers/{name}/uses", // what still names it, for the hide confirmation (#4661)
 	"GET /api/v1/launchers/{name}/quota",
 	"GET /api/v1/machines/{mid}/launchers",
 	"GET /api/v1/machines/{mid}/launchers/{name}/models",

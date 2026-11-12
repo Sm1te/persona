@@ -23,10 +23,6 @@
   "tray_shelved_hint": "No progress for 48 hours and no agent running. Not counted in In progress; nothing is lost.",
   "tray_empty_progress": "Nothing in progress",
   "plan_waiting": "Waiting for your Start",
-  "dispatch_single": "Dispatched: {title}",
-  "dispatch_open": "Open",
-  "dispatch_many_other": "Dispatched {count}",
-  "dispatch_many_one": "Dispatched {count}",
   "progress_count": "{value}/{total}",
   "progress_stopped": "Stopped, not done yet",
   "progress_stopped_reason": "Stopped, not done yet · {reason}",
@@ -229,5 +225,12 @@
   "interrupt_batch_counts": "→ {resolved} handled / {pending} pending",
   "interrupt_batch_all": "→ all handled",
   "needs_group_another": "Another conversation",
-  "new_agent_started": "Started a new Agent for this task"
+  "handoff_wake_created": "New",
+  "handoff_wake_active": "Already active",
+  "handoff_wake_resumed": "Resumed",
+  "handoff_last_active": "last active {when}",
+  "handoff_active_now": "last active just now",
+  "handoff_not_active": "no activity yet",
+  "handoff_gone": "This task no longer exists",
+  "handoff_closed": "Closed before an Agent started"
 }

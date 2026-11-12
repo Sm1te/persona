@@ -51,6 +51,20 @@ func HandoffApproverOf(ctx context.Context) (HandoffApprover, bool) {
 	return a, ok && a.DeviceID != ""
 }
 
+type humanStartKey struct{}
+
+// WithHumanStart is ctx of a new conversation's start that a person's own app asked for, as the hub vouched
+// (HTTPRequest.Human): its first message counts as theirs (StartParams.Human).
+func WithHumanStart(ctx context.Context) context.Context {
+	return context.WithValue(ctx, humanStartKey{}, true)
+}
+
+// HumanStartOf reports whether WithHumanStart marked ctx.
+func HumanStartOf(ctx context.Context) bool {
+	human, _ := ctx.Value(humanStartKey{}).(bool)
+	return human
+}
+
 // ToolCall is assistant.tool's params.
 type ToolCall struct {
 	Name      string          `json:"name"`
@@ -77,6 +91,8 @@ type ContextParams struct {
 // ContextResult is assistant.context's answer: the <persona-context> text, and the <persona-view-errors> block of the
 // conversation's rich views that failed their check and were not reported yet (docs/assistant/assistant-views.md "Next-turn feedback").
 // Reading it consumes nothing: the node acks Receipts once the message is delivered.
+// Receipts also carry what else the hub wants confirmed as delivered with the message (the background supervisor's
+// announcement, item_id "background_supervisor"): the node sends them all back as they are.
 type ContextResult struct {
 	Text       string             `json:"text"`
 	ViewErrors string             `json:"view_errors,omitempty"`

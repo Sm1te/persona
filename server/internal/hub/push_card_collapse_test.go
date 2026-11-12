@@ -134,3 +134,39 @@ func TestAManagersCardIsWithdrawnByItsID(t *testing.T) {
 		t.Fatalf("withdrawal %+v names %v", w, ids)
 	}
 }
+
+// A manager's push with a notification id goes under an apns-collapse-id of the manager and the id: the same push
+// asked for again after the hub forgot handing it over (a day recap's push after a restart) replaces the one the
+// phone shows. Another manager's push of the same id, and a push without one, get their own.
+func TestManagerPushCollapsesOnItsID(t *testing.T) {
+	h, f, attempts := localizedHub(t)
+	if err := h.push.setPrefs("phone", NotifyPrefs{Input: true}); err != nil {
+		t.Fatal(err)
+	}
+	sent := 0
+	push := func(from, id string) apnsCall {
+		t.Helper()
+		if err := h.deliverPushFrom(from, assistantwire.Notification{ID: id, Kind: assistantwire.NotifyPush, Title: "Your day recap is ready"}); err != nil {
+			t.Fatalf("%s's push %q: %v", from, id, err)
+		}
+		sent++
+		return sentPushes(t, f, attempts, sent)[sent-1]
+	}
+	const id = "ntf_dayrecap_2026-11-11"
+	first := push(assistantwire.AssistantID, id)
+	if first.Collapse != managerPushCollapseID(assistantwire.AssistantID, id) || !strings.HasPrefix(first.Collapse, "push:") || len(first.Collapse) > apnsCollapseMax {
+		t.Fatalf("apns-collapse-id %q", first.Collapse)
+	}
+	if again := push(assistantwire.AssistantID, id); again.Collapse != first.Collapse {
+		t.Fatalf("sent again under %q, first under %q", again.Collapse, first.Collapse)
+	}
+	if other := push("m-0b0b0b", id); other.Collapse == first.Collapse {
+		t.Fatal("another manager's push of the same id replaces the assistant's")
+	}
+	if none := push(assistantwire.AssistantID, ""); !strings.HasPrefix(none.Collapse, "p_") {
+		t.Fatalf("a push without an id: apns-collapse-id %q", none.Collapse)
+	}
+	if managerPushCollapseID("", id) != first.Collapse || managerPushCollapseID("ab", "c") == managerPushCollapseID("a", "bc") {
+		t.Fatal("the manager is not kept apart from the id")
+	}
+}

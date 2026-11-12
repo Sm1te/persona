@@ -79,7 +79,10 @@
     <string name="assistant_search_chats">搜索对话</string>
     <string name="assistant_start_main">开始主对话</string>
     <string name="assistant_main_chat">主对话</string>
+    <!-- The drawer's newest own chats, between 常驻 and All chats (#4922) -->
+    <string name="assistant_recent">最近</string>
     <string name="assistant_directions">常驻</string>
+    <string name="assistant_background_supervisor">后台督办</string>
     <string name="assistant_origin_inbox">收件箱</string>
     <string name="assistant_empty_title">还没有对话</string>
     <string name="assistant_empty_detail">发一句话，开始和 Persona 聊聊。</string>

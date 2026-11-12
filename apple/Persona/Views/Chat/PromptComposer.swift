@@ -1,5 +1,6 @@
 import AVFoundation
 import BeautifulUI
+import OSLog
 import Speech
 import SwiftUI
 
@@ -152,7 +153,7 @@ struct PromptComposer: View {
         if dictation.isListening { stopDictation(); return }
         let base = text.isEmpty || text.last?.isWhitespace == true ? text : text + " "
         Task {
-            if let problem = await dictation.start(update: { heard in text = base + heard }) {
+            if let problem = await dictation.start(hints: [text], update: { heard in text = base + heard }) {
                 AppModel.shared.toast = Toast(problem, style: .error)
             }
         }
@@ -329,25 +330,27 @@ final class Dictation {
     @ObservationIgnored private let microphoneOwner = UUID()
     @ObservationIgnored private var listeningRun = UUID()
 
-    /// A recognizer for the app's interface language (its region when supported, else any region of it);
-    /// Chinese, and languages speech recognition does not know, use zh-CN as before.
-    private static func recognizer() -> SFSpeechRecognizer? {
-        let fallback = Locale(identifier: "zh-CN") // i18n-ignore
-        let language = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "zh-Hans").language.languageCode?.identifier
-        guard let language, language != "zh" else { return SFSpeechRecognizer(locale: fallback) }
-        let supported = SFSpeechRecognizer.supportedLocales()
-        if let region = Locale.current.region?.identifier,
-           let match = supported.first(where: { $0.language.languageCode?.identifier == language && $0.region?.identifier == region }) {
-            return SFSpeechRecognizer(locale: match)
-        }
-        if let match = supported.sorted(by: { $0.identifier < $1.identifier }).first(where: { $0.language.languageCode?.identifier == language }) {
-            return SFSpeechRecognizer(locale: match)
-        }
-        return SFSpeechRecognizer(locale: fallback)
+    /// A recognizer for the language the owner speaks (`DictationLanguage`): their choice, else the language of `hints`
+    /// (the draft and their recent messages in this chat), else the last sure choice, else the interface language.
+    /// A sure choice is remembered for the next chat, written only when it changed.
+    private static func recognizer(hints: [String]) -> SFSpeechRecognizer? {
+        let defaults = UserDefaults.standard
+        let context = DictationLanguage.Context(
+            choice: defaults.string(forKey: DictationLanguage.choiceKey), texts: hints,
+            recent: defaults.string(forKey: DictationLanguage.recentKey),
+            interface: Bundle.main.preferredLocalizations.first ?? "zh-Hans", preferred: Locale.preferredLanguages,
+            region: Locale.current.region?.identifier, supported: SFSpeechRecognizer.supportedLocales().map(\.identifier))
+        let pick = DictationLanguage.pick(context)
+        if pick.sure, pick.locale != context.recent { defaults.set(pick.locale, forKey: DictationLanguage.recentKey) }
+        Self.log.info("dictation in \(pick.locale, privacy: .public) (\(String(describing: pick.source), privacy: .public))")
+        return SFSpeechRecognizer(locale: Locale(identifier: pick.locale))
     }
 
-    /// Starts listening; `update` gets the whole transcript so far. Returns what went wrong, if it could not start.
-    func start(update: @escaping (String) -> Void) async -> String? {
+    private static let log = Logger(subsystem: "persona", category: "dictation")
+
+    /// Starts listening; `update` gets the whole transcript so far. `hints` are what tells the language spoken: the
+    /// draft, then the owner's recent messages in this chat, newest first. Returns what went wrong, if it could not start.
+    func start(hints: [String] = [], update: @escaping (String) -> Void) async -> String? {
         #if DEBUG
         // `-showDictationSample "<words>"`: hears these words, one every beat, instead of the microphone (simulators
         // may have none), for screenshots and recordings of the composer's mic.
@@ -362,7 +365,7 @@ final class Dictation {
         #if os(iOS) || os(visionOS)
         guard RecordingCapture.shared.state == .idle else { return String(localized: "A recording is in progress. Stop it before dictating.") }
         #endif
-        guard let recognizer = Self.recognizer(), recognizer.isAvailable else {
+        guard let recognizer = Self.recognizer(hints: hints), recognizer.isAvailable else {
             return String(localized: "Speech recognition isn't available right now")
         }
         guard RecordingMicrophone.shared.claim(microphoneOwner) else { return String(localized: "The microphone is in use. Stop the recording or dictation first.") }

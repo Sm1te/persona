@@ -1,0 +1,10 @@
+{
+  "plan_start": "You started tasks like this {n} times. Always start tasks that change files in {directory} on {machine} directly?",
+  "merge": "You approved this {n} times. Always allow merging in {directory} on {machine} once checks pass and there are no conflicts?",
+  "push": "You approved this {n} times. Always allow pushing in {directory} on {machine}?",
+  "deploy_test": "You approved this {n} times. Always allow deploying to the test environment from {directory} on {machine}?",
+  "delegate": "You took the recommendation {n} times. Let Persona answer agents' own-call questions for you? You can turn this on in Settings.",
+  "source": "Suggested rule: the same answer {n} times in 14 days, confirmed with Always.",
+  "full_access": "Full access is required to answer a suggested rule.",
+  "gone": "This suggestion is no longer available."
+}

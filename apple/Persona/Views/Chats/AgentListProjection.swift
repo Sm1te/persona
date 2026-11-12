@@ -298,12 +298,11 @@ nonisolated struct AgentListProjection: Sendable {
     var busyRepositories: [String: [RepoTree.Repo]] = [:]
     var quietRepositories: [String: [SpaceGroup]] = [:]
     var rows: [String: Rows] = [:]
-    /// A listed Codex chat's subagents (`CodexTasks.flattened`): behind its Subtasks row, not rows or counts of the list.
+    /// A listed session's subtasks (`CodexTasks.flattened`: a Codex chat's subagents, the agents a runtime's agent
+    /// created): behind its Subtasks row, not rows or counts of the list. None needs the user: one that does is a row.
     var tasks: [SessionKey: [CodexTasks.Task]] = [:]
-    /// Searching: the subagents the search finds under each chat, and the ones they hang off; empty otherwise.
+    /// Searching: the subtasks the search finds under each session, and the ones they hang off; empty otherwise.
     var taskMatches: [SessionKey: [CodexTasks.Task]] = [:]
-    /// The listed chats' subagents that pass the list's filters: one waiting for the user is in Needs You.
-    var admittedTasks: [Session] = []
     var quietWorktrees: [String: Bool] = [:]
     /// By App's sections, their projects in them (`AppGroups`); empty under any other grouping.
     var apps: [AppGroup] = []
@@ -321,8 +320,13 @@ nonisolated struct AgentListProjection: Sendable {
         let parsed = plan.parsed
         result.sessionsByKey = Dictionary(input.sessions.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         result.machinesByRef = Dictionary(input.machines.map { ($0.ref, $0) }, uniquingKeysWith: { a, _ in a })
-        // Codex subagents go under their chat, as in the Codex App: the list and its counts are the chats'.
-        let forest = CodexTasks.build(input.sessions)
+        // Subtasks go under the session that started them, as in the Codex App and on Android: the list and its counts
+        // are the others'. A working one hangs under its parent only while the list draws a row above it (`runs`): the
+        // groupings that list what runs draw the pinned and live agents; Recently Used and By App draw every one.
+        let runs: ((Session) -> Bool)? = settings.grouping == "recent" || settings.grouping == "app" ? nil
+            : { $0.state.isLive || settings.pinned($0.key) }
+        // A row a quick filter showed stays a row while it is on, a subtask answered under Needs You too.
+        let forest = CodexTasks.build(input.sessions, ownRows: settings.filter == .all ? [] : settings.kept, runs: runs)
         let admits: (Session) -> Bool = { session in
             guard !session.assistant else { return false }
             guard settings.machine.isEmpty || session.machineRef.path == settings.machine else { return false }
@@ -359,20 +363,18 @@ nonisolated struct AgentListProjection: Sendable {
             if settings.pagedGroups.contains(session.group) && parsed.terms.isEmpty && settings.searchScope == .all { return true }
             return session.matchesScope(settings.searchScope, terms: parsed.terms)
         }
-        // A chat whose subagent matches stays, so that subagent can still be reached (Android's `searchSettings`).
+        // A session whose subtask matches stays, so that subtask can still be reached (Android's `searchSettings`).
         result.base = forest.roots.filter { root in
             guard forest.children[root.key] != nil else { return admits(root) }
             let tasks = forest.flattened(under: root.key)
-            let passing = tasks.filter { admits($0.session) }
-            guard admits(root) || !passing.isEmpty else { return false }
+            guard admits(root) || tasks.contains(where: { admits($0.session) }) else { return false }
             result.tasks[root.key] = tasks
-            result.admittedTasks += passing.map(\.session)
             if !settings.query.isEmpty { result.taskMatches[root.key] = CodexTasks.kept(tasks, passing: admits) }
             return true
         }
         for filter in AgentFilter.allCases where filter != .all {
-            // A subagent whose chat is not listed is a row of its own, not an agent counted (Android, the hub's Fleet counts).
-            result.filterCounts[filter] = result.base.count { !$0.isCodexSubagent && filter.matches($0, muted: settings.muted($0)) }
+            // A subtask whose parent is not drawn is a row of its own, not an agent counted (Android, the hub's Fleet counts).
+            result.filterCounts[filter] = result.base.count { !$0.isNestedSubtask && filter.matches($0, muted: settings.muted($0)) }
         }
         if settings.filter != .all {
             result.matching = Set(result.base.filter { settings.filter.matches($0, muted: settings.muted($0)) }.map(\.key))

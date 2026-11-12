@@ -40,6 +40,7 @@ internal fun sessionInfoSections(
     info: SessionInfo,
     zone: ZoneId = ZoneId.systemDefault(),
     onOpenTodo: ((String) -> Unit)? = null,
+    features: Set<String> = emptySet(),
 ): List<SessionInfoSection> {
     fun String?.orSession(fallback: String?) = this?.takeIf(String::isNotBlank) ?: fallback?.takeIf(String::isNotBlank)
     val cwd = info.cwd.orSession(session.cwd)
@@ -54,12 +55,14 @@ internal fun sessionInfoSections(
                 SessionInfoRow(res.getString(R.string.chat_info_todo), todo.title, copy = todo.id, onClick = onOpenTodo?.let { { it(todo.id) } })
             )))
         }
-        add(SessionInfoSection(res.getString(R.string.chat_info_run_section), listOf(
+        add(SessionInfoSection(res.getString(R.string.chat_info_run_section), listOfNotNull(
             SessionInfoRow(res.getString(R.string.chat_info_model), info.model.orSession(session.model)),
             SessionInfoRow(res.getString(R.string.chat_info_launcher), info.launcher.orSession(session.launcher)),
             SessionInfoRow(if (session.isClaude) "Claude Code" else session.agentLabel, info.version.orSession(null)),
             SessionInfoRow(res.getString(R.string.chat_info_permission), SessionModes.modeLabel(info.permissionMode.orSession(session.permissionMode), res)),
             SessionInfoRow(res.getString(R.string.chat_info_effort), SessionModes.effortLabel(info.effort.orSession(session.effort), res)),
+            // #582: on / off / unknown, as the node last saw it
+            SessionInfoRow(Ultracode.NAME, Ultracode.infoWord(session, res)).takeIf { Ultracode.infoShown(session, features) },
         )))
         add(SessionInfoSection(res.getString(R.string.chat_info_usage_section), buildList {
             add(SessionInfoRow(res.getString(R.string.chat_info_context), res.getString(R.string.chat_info_tokens, formatTokens(info.contextTokens, res))))
@@ -115,7 +118,8 @@ internal fun ChatSessionInfoSheet(
         }
         val loaded = info
         when {
-            loaded != null -> sessionInfoSections(res, session, loaded, onOpenTodo = onOpenTodo).filter { it.rows.isNotEmpty() }.forEach { section ->
+            loaded != null -> sessionInfoSections(res, session, loaded, onOpenTodo = onOpenTodo,
+                features = persona.core.designsystem.LocalHubFeatures.current).filter { it.rows.isNotEmpty() }.forEach { section ->
                 JSectionHeader(section.title)
                 section.rows.forEachIndexed { index, row ->
                     JGroupItem(GroupPosition.of(index, section.rows.size)) {

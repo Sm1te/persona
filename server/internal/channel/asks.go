@@ -34,12 +34,15 @@ type Ask struct {
 	// Options are a terminal dialog's option keys, in the order they were numbered.
 	Options []string  `json:"options,omitempty"`
 	At      time.Time `json:"at"`
+	// Later: the assistant's ask_user raised with wait false (proto.Interaction.AskedWithoutWaiting). No turn waits on
+	// it, so only a reply that reads as its answer (ReadsAsAnswer) is one; other words are an ordinary message.
+	Later bool `json:"later,omitempty"`
 }
 
 // NewAsk is ix as something to ask in channel.
 func NewAsk(channel string, ix proto.Interaction, now time.Time) *Ask {
 	return &Ask{ID: ix.ID, Channel: channel, MachineID: ix.MachineID, SessionID: ix.SessionID, Kind: ix.Kind, Title: askTitle(ix),
-		Questions: ix.Questions, At: now}
+		Questions: ix.Questions, At: now, Later: ix.AskedWithoutWaiting()}
 }
 
 // askTitle is the bracketed title (full-width lenticular brackets) an ask starts with: its conversation's title without the blocks a first message starts with

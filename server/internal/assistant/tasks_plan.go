@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -77,16 +76,14 @@ func (s *Service) taskPlanFrom(ctx context.Context, machine, sessionID string, a
 		t.normalizeReadonlyPermission()
 		t.TodoID, t.Error, t.ErrorCode, t.ErrorArgs = "", "", "", nil
 		t.WorkspaceResolved, t.ReservedTodoID, t.WorkspaceInferred = nil, "", false
+		t.OwnerStarted = false // the hub's: only the owner's Start on the card sets it (startPlan)
 		// Reroute is hub-owned: drop any reroute a model passes in task_plan args, so healthyPlace seeds it only from a
 		// real health detour and its first-detour guard keeps the true original machine (#2271).
 		t.Reroute = nil
 		t.Title, t.Prompt, t.Cwd = strings.TrimSpace(t.Title), strings.TrimSpace(t.Prompt), strings.TrimSpace(t.Cwd)
 		t.Model = strings.TrimSpace(t.Model)
 		t.Permission = strings.TrimSpace(t.Permission)
-		if err := t.checkWritablePermission(); err != nil {
-			return "", fmt.Errorf("task %d: %w. Nothing was planned", i+1, err)
-		}
-		if err := t.checkRole(ctx, s, sessionID, scope != nil); err != nil {
+		if err := t.checkRole(scope != nil); err != nil {
 			return "", fmt.Errorf("task %d: %w", i+1, err)
 		}
 		if m, ok := s.machineByName(ctx, t.Machine); ok && t.Role == roleLeader && s.isWorkMachine(m.ID) {
@@ -210,7 +207,7 @@ func (s *Service) taskPlanFrom(ctx context.Context, machine, sessionID string, a
 		return b.String(), nil
 	}
 	if health || !s.planStartsAtOnce(ctx, p.Tasks) {
-		s.event(ctx, map[string]any{"type": "task_plan", "plan": p})
+		s.event(ctx, map[string]any{"type": "task_plan", "plan": s.planWithSuggestion(ctx, p, s.lang(ctx))})
 		// A card below the answer is easy to miss: push it as well.
 		titles := make([]string, 0, len(p.Tasks))
 		for _, t := range p.Tasks {
@@ -252,13 +249,27 @@ func (s *Service) taskPlanFrom(ctx context.Context, machine, sessionID string, a
 		}
 	}
 	b.WriteString("This is not confirmation that any agent started. Startup can still fail; the task cards and context snapshot show the outcome.")
+	background := s.backgroundOn(s.settings(ctx)) // who follows up a task no leader supervises (supervise_background.go)
 	switch {
 	case lead != "":
 		fmt.Fprintf(&b, " Leader conversation %s supervises them: their supervision messages go there, and it reviews them with task_review.", lead)
+	case background && s.isBackground(ctx, sessionID):
+		b.WriteString(" You follow them up as the background supervisor: a supervision message comes when one needs you (review it with task_review).")
+	case background && s.isMain(ctx, sessionID):
+		b.WriteString(" The background supervisor follows them up: their supervision messages go to it and it reviews them with " +
+			"task_review, so none comes to you for them. You still hear of a start that failed and of what it hands to the user, " +
+			"and may review any of them yourself (task_review).")
 	case s.supervises(ctx, sessionID):
 		b.WriteString(" You supervise them: a supervision message comes when one needs you (review it with task_review).")
 	default:
-		if _, ok := s.defaultPlanSupervisor(ctx, sessionID, ""); ok {
+		// A live side conversation supervises what it hands out; one that cannot be told anything leaves its task to
+		// the main conversation's follow-up (defaultPlanSupervisor), which is the background supervisor's while it is on.
+		if sup, ok := s.defaultPlanSupervisor(ctx, sessionID, ""); ok && sup == sessionID {
+			b.WriteString(" You supervise them: a supervision message comes when one needs you (review it with task_review).")
+		} else if ok && background {
+			b.WriteString(" The background supervisor follows them up (their supervision messages and task_review); this conversation " +
+				"gets a one-line notice with the task's link when each one ends.")
+		} else if ok {
 			b.WriteString(" The main conversation supervises them (its supervision messages and task_review); this conversation " +
 				"gets a one-line notice with the task's link when each one ends.")
 		}
@@ -342,44 +353,15 @@ func planErr(w http.ResponseWriter, err error) {
 	}
 }
 
-// checkWritablePermission refuses a task that changes files and does not say bypassPermissions itself: it starts with
-// nobody there to answer a permission prompt, and a plan that left it to a default would stop at a prompt at run time.
-// It runs when a plan is made and again when a saved one is started, so a plan saved earlier, or one a card edit changed,
-// cannot get past it. Called with the permission trimmed.
-func (t *PlanTask) checkWritablePermission() error {
-	if t.Readonly || t.Permission == permBypass {
-		return nil
-	}
-	return t.permissionRuleError()
-}
-
-// errPermissionRule marks the refusal of checkWritablePermission, for a start that must not be tried again.
-var errPermissionRule = errors.New("writable task without bypassPermissions")
-
-type permissionRuleError struct{ error }
-
-func (e permissionRuleError) Is(target error) bool { return target == errPermissionRule }
-
-func (t *PlanTask) permissionRuleError() error {
-	got := "none"
-	if t.Permission != "" {
-		got = strconv.Quote(t.Permission)
-	}
-	return permissionRuleError{fmt.Errorf("%q changes files (readonly false), so permission must be %q, set explicitly (got %s); set it, or set "+
-		"readonly true when the task only reads", t.Title, permBypass, got)}
-}
-
-// checkRole refuses a role a plan task may not have, before anything is planned. Role leader is for a supervising
-// conversation: the leader's own reports need a supervisor to reach; a task leader's workers are never one.
-func (t *PlanTask) checkRole(ctx context.Context, s *Service, sessionID string, byLeader bool) error {
+// checkRole refuses a role a plan task may not have, before anything is planned. Any conversation may hand out a
+// leader: its own reports reach the conversation that planned it. A task leader's workers are never one.
+func (t *PlanTask) checkRole(byLeader bool) error {
 	switch {
 	case t.Role == "":
 	case byLeader:
 		return errors.New("a task leader plans workers only: role is refused")
 	case t.Role != roleLeader:
 		return fmt.Errorf("role %q is not one: leave it out, or \"leader\"", t.Role)
-	case !s.supervises(ctx, sessionID):
-		return errors.New("role \"leader\" is for the main conversation or a leader conversation: a task leader reports to its supervisor")
 	}
 	return nil
 }

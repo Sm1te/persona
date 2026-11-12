@@ -3,6 +3,7 @@ package hub
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/i18n"
+	"github.com/nwverse/persona/server/internal/memtrim"
 	"github.com/nwverse/persona/server/internal/rpc"
 )
 
@@ -58,12 +60,81 @@ func (h *Hub) forwardSend(w http.ResponseWriter, r *http.Request, id string) {
 // errSendInDoubt is what forwardSend answers when it can't tell whether the request was done.
 var errSendInDoubt = i18n.Err("hub-bus_forward.send_in_doubt")
 
+// readRelayed reads r's body for the bus with io.ReadAll's results: the bytes to its end, or the error that stopped
+// the read (an *http.MaxBytesError past busHTTPLimit). A body whose Content-Length is known and within the limit is read
+// into one buffer of that size, where io.ReadAll grows buffers and copies them into one more (49 MB for a 22 MB
+// upload). Bytes past the Content-Length are read on as io.ReadAll reads them; a body that ends early is what it was.
+func readRelayed(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	body := http.MaxBytesReader(w, r.Body, busHTTPLimit)
+	size := r.ContentLength
+	if size < 0 || size > busHTTPLimit {
+		return io.ReadAll(body)
+	}
+	b := make([]byte, size)
+	for n := 0; n < len(b); {
+		m, err := body.Read(b[n:])
+		n += m
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return b[:n], err
+		}
+	}
+	var one [1]byte
+	for {
+		m, err := body.Read(one[:])
+		if m > 0 {
+			b = append(b, one[0])
+			if err == nil {
+				var rest []byte
+				rest, err = io.ReadAll(body)
+				b = append(b, rest...)
+			}
+		}
+		if err != nil || m > 0 {
+			if err == io.EOF {
+				err = nil
+			}
+			return b, err
+		}
+	}
+}
+
+// httpParams is req as http.request's params, its body appended in base64 straight into the request's line. As a
+// value, the encoder writes the body into a buffer of its own and copies it out, and the line's encoder copies it
+// once more: three copies of a 22 MB upload, of 30 MB each, and the encoder's buffer kept for the next. The bytes are
+// the ones rpc.Call writes for req as a value: the rest of it goes through the same encoder (rpc.Marshal), the body
+// is its last field, and base64 has nothing to escape.
+func httpParams(req assistantwire.HTTPRequest) any {
+	body := req.Body
+	if len(body) == 0 {
+		return req
+	}
+	req.Body = nil
+	head, err := rpc.Marshal(req)
+	if err != nil {
+		req.Body = body
+		return req
+	}
+	head = head[:len(head)-1] // its closing brace; method and path are always there before the body
+	const mid, tail = `,"body":"`, `"}`
+	return rpc.Appended{
+		Size: len(head) + len(mid) + base64.StdEncoding.EncodedLen(len(body)) + len(tail),
+		Append: func(b []byte) []byte {
+			b = append(append(b, head...), mid...)
+			return append(base64.StdEncoding.AppendEncode(b, body), tail...)
+		},
+	}
+}
+
 func (h *Hub) relayHTTP(w http.ResponseWriter, r *http.Request, id string, send, admin bool) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, busHTTPLimit))
+	body, err := readRelayed(w, r)
 	if err != nil {
 		writeBodyErr(w, err, err)
 		return
 	}
+	defer memtrim.AfterLarge(len(body)) // a large upload's buffers go back to the system after it
 	req := assistantwire.HTTPRequest{Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery, Header: map[string][]string{}, Body: body}
 	for k, v := range r.Header {
 		if !hopHeaders[k] && k != "Authorization" && k != "Cookie" { // the hub's credentials stay with the hub
@@ -85,6 +156,7 @@ func (h *Hub) relayHTTP(w http.ResponseWriter, r *http.Request, id string, send,
 		req.Header[assistantwire.ExtensionHeader] = []string{p.Extension}
 	}
 	req.HandoffApprover = handoffApproverOf(r.Context()) // only the resolve route's gate sets it (secret_handoff.go)
+	req.Human = humanStartOf(r.Context())                // only a new conversation's start sets it (assistant_link.go)
 	ctx := r.Context()
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -98,7 +170,7 @@ func (h *Hub) relayHTTP(w http.ResponseWriter, r *http.Request, id string, send,
 		h.inboxAnswers.changed(id)
 	}
 	var res assistantwire.HTTPResponse
-	err = h.callBus(ctx, id, assistantwire.MethodHTTP, req, &res)
+	err = h.callBus(ctx, id, assistantwire.MethodHTTP, httpParams(req), &res)
 	if changes {
 		h.inboxAnswers.changed(id)
 	}

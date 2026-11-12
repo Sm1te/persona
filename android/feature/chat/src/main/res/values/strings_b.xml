@@ -150,7 +150,7 @@
     <string name="chat_request_allow">Allow</string>
     <string name="chat_request_deny">Deny</string>
     <string name="chat_request_always_allows">Always allowing lets through: %1$s</string>
-    <string name="chat_request_fields_elsewhere">This request needs details filled in before it can be allowed. Allow it on the web or on iPhone; you can still deny it here.</string>
+    <string name="chat_request_fill_in_allow">Fill In &amp; Allow</string>
     <string name="chat_request_secret_run_commands">Commands, run in order</string>
     <string name="chat_request_secret_run_password">Password</string>
     <string name="chat_request_secret_run_note">Used once, never saved. The assistant never sees it.</string>

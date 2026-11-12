@@ -1101,6 +1101,15 @@ internal fun AssistantDrawer(
                     counts = leaderCountsLabel(groups.counts[session.sessionId], resources),
                     named = groups.names[session.sessionId])
             }
+            // The user's own newest chats (#4922), the same rows and menu; All chats below still lists everything.
+            if (groups.recent.isNotEmpty()) item(key = "recent-header") { JSectionHeader(stringResource(R.string.assistant_recent)) }
+            itemsIndexed(groups.recent, key = { _, session -> "recent-" + session.key.path }) { index, session ->
+                ConversationRow(session, selected = session.key == active,
+                    position = GroupPosition.of(index, groups.recent.size),
+                    onOpen = { onOpen(session.key) }, onEnd = onEnd?.let { action -> { action(session) } },
+                    onCopy = { onCopy(session) }, onArchive = onArchive?.let { action -> { action(session) } },
+                    onLeader = onLeader?.let { action -> { action(session) } })
+            }
             // Every other chat is under one "All chats" row, which opens the list in place (a search lists what it finds
             // at once instead; the drawer's search finds every conversation either way).
             val searching = query.isNotBlank()
@@ -1111,11 +1120,15 @@ internal fun AssistantDrawer(
                 }
             }
             if (searching || showAllChats) itemsIndexed(groups.others, key = { _, session -> session.key.path }) { index, session ->
+                // The background supervisor (#4927) is built in: listed here with the chats Persona opened itself, under
+                // its own name, and its menu only copies its session id (the hub refuses to pin, archive or end it).
+                val builtIn = session.sessionId == groups.background
                 ConversationRow(session, selected = session.key == active,
                     position = GroupPosition.of(index, groups.others.size),
-                    onOpen = { onOpen(session.key) }, onEnd = onEnd?.let { action -> { action(session) } },
-                    onCopy = { onCopy(session) }, onArchive = onArchive?.let { action -> { action(session) } },
-                    onLeader = onLeader?.let { action -> { action(session) } })
+                    onOpen = { onOpen(session.key) }, onEnd = onEnd?.takeUnless { builtIn }?.let { action -> { action(session) } },
+                    onCopy = { onCopy(session) }, onArchive = onArchive?.takeUnless { builtIn }?.let { action -> { action(session) } },
+                    onLeader = onLeader?.takeUnless { builtIn }?.let { action -> { action(session) } },
+                    named = if (builtIn) stringResource(R.string.assistant_background_supervisor) else null)
             }
             if (groups.directions.isEmpty() && groups.others.isEmpty() && (groups.main == null || query.isNotBlank())) {
                 item { JEmptyState(stringResource(if (query.isBlank()) R.string.assistant_empty_title else R.string.assistant_no_match),

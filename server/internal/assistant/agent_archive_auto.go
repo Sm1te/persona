@@ -130,10 +130,11 @@ func autoArchivable(c proto.Session, now time.Time, idle time.Duration, onOpenTo
 		return false // nobody answered what it asked, and no to-do says the matter is over
 	}
 	last := c.UpdatedAt
-	for _, at := range []time.Time{lastDone, c.ArchiveChangedAt} {
-		if at.After(last) {
-			last = at
-		}
+	if lastDone.After(last) {
+		last = lastDone
+	}
+	if at := c.ArchiveChangedAt; at != nil && at.After(last) {
+		last = *at
 	}
 	return now.Sub(last) >= idle
 }

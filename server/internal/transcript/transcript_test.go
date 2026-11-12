@@ -716,10 +716,44 @@ func TestLoopFromScheduleWakeup(t *testing.T) {
 func TestCustomTitleBeatsAITitle(t *testing.T) {
 	var m Meta
 	ParseLine(1, []byte(`{"type":"ai-title","aiTitle":"Generated"}`), &m)
+	if m.TitleManual || m.TitleSource != "auto" {
+		t.Fatalf("generated title provenance: manual=%v source=%q", m.TitleManual, m.TitleSource)
+	}
 	ParseLine(2, []byte(`{"type":"custom-title","customTitle":"我起的名字"}`), &m)
 	ParseLine(3, []byte(`{"type":"ai-title","aiTitle":"Generated again"}`), &m)
-	if m.Title != "我起的名字" {
-		t.Fatalf("title = %q", m.Title)
+	if m.Title != "我起的名字" || !m.TitleManual || m.TitleSource != "manual" {
+		t.Fatalf("title = %q, manual=%v source=%q", m.Title, m.TitleManual, m.TitleSource)
+	}
+}
+
+func TestNamingMetadataMatchesFullParse(t *testing.T) {
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"Fix the build"}}`,
+		`{"type":"ai-title","aiTitle":"Generated"}`,
+		`{"type":"custom-title","customTitle":"Claude Code"}`,
+		`{"type":"ai-title","aiTitle":"Generated again"}`,
+		`{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Checking"}],"usage":{"input_tokens":1000,"output_tokens":20}}}`,
+		`{"type":"assistant","message":{"id":"m1","role":"assistant","content":[],"usage":{"input_tokens":2000,"output_tokens":20}}}`,
+		`{"type":"assistant","message":{"id":"m1","role":"assistant","content":[],"usage":{"input_tokens":3000,"output_tokens":25}}}`,
+		`{"type":"assistant","isSidechain":true,"message":{"id":"side","role":"assistant","content":[],"usage":{"output_tokens":999}}}`,
+		`{"type":"assistant","message":{"id":"m2","role":"assistant","content":[],"usage":{"input_tokens":4000,"output_tokens":10}}}`,
+		`{"type":"api-request-blob","message":{"id":"fake","usage":{"output_tokens":9999}},"customTitle":"Not a rename"}`,
+	}
+	var full, observed Meta
+	for i, line := range lines {
+		ParseLine(i, []byte(line), &full)
+		observed.ObserveNamingMetadata([]byte(line))
+	}
+	for _, m := range []*Meta{&full, &observed} {
+		if m.Title != "Claude Code" || !m.TitleManual || m.TitleSource != "manual" || m.OutputTokens != 35 {
+			t.Fatalf("title=%q manual=%v source=%q output=%d", m.Title, m.TitleManual, m.TitleSource, m.OutputTokens)
+		}
+	}
+	var codex Meta
+	codex.ObserveNamingMetadata([]byte(`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"output_tokens":123},"last_token_usage":{"input_tokens":9000,"output_tokens":3}}}}`))
+	codex.ObserveNamingMetadata([]byte(`{"type":"event_msg","payload":{"type":"token_count","info":null},"note":{"output_tokens":999}}`))
+	if codex.OutputTokens != 123 || codex.TitleSource != "" {
+		t.Fatalf("Codex naming metadata: output=%d source=%q", codex.OutputTokens, codex.TitleSource)
 	}
 }
 

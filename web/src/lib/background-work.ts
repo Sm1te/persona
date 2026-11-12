@@ -1,7 +1,8 @@
 import { t } from "../i18n";
-import type { Session, Workflow } from "./types";
+import type { Session, Subagent, Workflow } from "./types";
 import type { SessionLookup, Todo } from "./todos";
-import { workflowCounts } from "./workflows";
+import { waitingOnWorkflow, workflowCounts } from "./workflows";
+import { runningChildren } from "./child-sessions";
 
 /** Live work, not a waiting label: summary counts win over omitted detail arrays. */
 export interface BackgroundWork {
@@ -18,14 +19,25 @@ export function backgroundWork(session: Session | undefined): BackgroundWork | u
   const workflow = summary ? session.workflow_progress : session.workflows?.find((w) => w.running);
   const workflows = summary ? session.running_workflows ?? 0 : session.workflows?.filter((w) => w.running).length
     ?? background.filter((b) => b.kind === "workflow").length;
-  const subagents = summary ? session.running_subagents ?? 0 : session.subagents?.filter((a) => a.running).length
+  const own = summary ? session.running_subagents ?? 0 : session.subagents?.filter((a) => a.running).length
     ?? background.filter((b) => b.kind === "agent").length;
+  // its child sessions at work (#5120) are its subagents too; a Paseo parent may list the same ones as background
+  // agents already, so the larger count stands rather than their sum
+  const subagents = Math.max(own, runningChildren(session));
   // Old summaries expose only a raw background count, which may include workflows and agents. It cannot be split
   // reliably: retain a generic active-work line rather than invent an independent job count.
   const tasks = session.background_tasks_count ?? (summary ? 0
     : background.filter((b) => b.kind !== "workflow" && b.kind !== "agent").length);
   return tasks || subagents || workflows || session.background_working || (summary && session.background_tasks_count === undefined && (session.background_count ?? 0) > 0)
     ? { tasks, subagents, workflows, workflow } : undefined;
+}
+
+/** The hub says the agent's turn is over and a subagent it launched in the background still runs (#5030, cindy's
+ *  background subtasks): the chat draws that turn finished (its summary folded, the subagent's card running inside it),
+ *  and the bar above the composer says model usage goes on. A running workflow says so first (workflows.ts
+ *  backgroundLine). */
+export function waitingOnSubagents(s: Session | undefined, subagents: Subagent[] | undefined = s?.subagents): boolean {
+  return Boolean(s?.background_working) && !waitingOnWorkflow(s) && (subagents ?? []).some((a) => a.running && a.background);
 }
 
 /** One task can have several active agents: do not mistake a quiet lead for an idle task. */

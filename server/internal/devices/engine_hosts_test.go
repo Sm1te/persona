@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nwverse/persona/server/internal/devicewire"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
 )
@@ -208,5 +209,49 @@ func TestStartHostNeedsANodeWithSets(t *testing.T) {
 	m.mu.Unlock()
 	if err := m.call(context.Background(), "session.start", map[string]any{"cwd": "/tmp", "host": "orca"}, nil); err != nil {
 		t.Errorf("new node, host named: %v", err)
+	}
+}
+
+// devices.engine.get / put carry a choice between managers when a computer moves (#3611): nil when never chosen, the
+// set as stored once chosen, an error (not "never chosen") while settings can't be read; a put is validated and stored.
+func TestEngineChoiceForAMove(t *testing.T) {
+	h, _, _, _ := engineHub(t)
+	ctx := context.Background()
+	get := func(d *Devices) (devicewire.MachineEngine, error) {
+		out, handled, err := d.Request(ctx, devicewire.MethodEngineGet, json.RawMessage(`{"machine_id":"m1"}`))
+		if !handled {
+			t.Fatal("devices.engine.get not handled")
+		}
+		got, _ := out.(devicewire.MachineEngine)
+		return got, err
+	}
+	if got, err := get(h); err != nil || got.Choice != nil {
+		t.Fatalf("never chosen: %+v %v", got, err)
+	}
+	put := func(body string) error {
+		_, handled, err := h.Request(ctx, devicewire.MethodEnginePut, json.RawMessage(body))
+		if !handled {
+			t.Fatal("devices.engine.put not handled")
+		}
+		return err
+	}
+	if err := put(`{"machine_id":"m1","choice":{"hosts":["orca","herdr"],"default":"orca"}}`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := get(h); err != nil || got.Choice == nil || !slices.Equal(got.Choice.Hosts, []string{"herdr", "orca"}) || got.Choice.Default != "orca" {
+		t.Fatalf("after a put: %+v %v", got, err)
+	}
+	if c := h.engineChoiceOf("m1"); c.Default != "orca" {
+		t.Errorf("stored %v", c)
+	}
+	for _, bad := range []string{`{"machine_id":"m1","choice":{"hosts":["nope"],"default":"nope"}}`, `{"machine_id":"m1"}`} {
+		if err := put(bad); err == nil {
+			t.Errorf("put %s taken", bad)
+		}
+	}
+	down := newTestDevices(t)
+	down.opts.Store = &failingSettings{}
+	if got, err := get(down); err == nil {
+		t.Errorf("unreadable settings answered %+v", got)
 	}
 }

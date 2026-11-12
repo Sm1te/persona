@@ -37,19 +37,22 @@ struct AgentsListMenu: View {
         /// Not `openMonitor` / `openMachines`: a stored property's name is in the Release binary, and those are DEBUG
         /// launch arguments the release check looks for (TestFlight 50 stopped on one).
         private var onMachines: () -> Void = {}
+        private var onTerminals: () -> Void = {}
 
         /// `sections`: the fold ids of what the list shows now.
         func update(sections: [String], foldAll: @escaping ([String]) -> Void, unfoldAll: @escaping () -> Void,
-                    onMachines: @escaping () -> Void) {
+                    onMachines: @escaping () -> Void, onTerminals: @escaping () -> Void = {}) {
             self.sections = sections
             self.foldAll = foldAll
             self.unfoldAll = unfoldAll
             self.onMachines = onMachines
+            self.onTerminals = onTerminals
         }
 
         func collapse() { foldAll(sections) }
         func expand() { unfoldAll() }
         func machinesPage() { onMachines() }
+        func terminalsPage() { onTerminals() }
     }
 
     @StoredValue("dev.machineFilter") private var machineFilter = ""
@@ -137,6 +140,10 @@ struct AgentsListMenu: View {
             Section {
                 Button { actions.machinesPage() } label: {
                     Label("Machines", systemImage: Theme.Icon.machines)
+                }
+                // Every terminal on the computers, plain ones too (#4754): watch, type, close.
+                Button { actions.terminalsPage() } label: {
+                    Label("Terminals", systemImage: Theme.Icon.terminal)
                 }
             }
     }

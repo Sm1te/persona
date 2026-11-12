@@ -196,12 +196,32 @@ import UIKit
 
 /// Any page, measured (`-showPagePerf YES`, docs/operations/testing.md「Whole App」): 10 s after launch, 8 s on the page as it is
 /// (a script pushes hub updates meanwhile), then the page's main scroll view (the largest one on screen) glides
-/// down for 3 s and back up for 3 s at 2000 pt/s. Writes Documents/frames-page-idle.json and frames-page-glide.json.
+/// down for 3 s and back up for 3 s at 2000 pt/s. Writes Documents/frames-page-open.json (the first 10 s),
+/// frames-page-idle.json and frames-page-glide.json.
+/// `-showPagePerfSpeed <pt/s>` and `-showPagePerfSeconds <s>` change the glide (a slow read through a long reply, a fling);
+/// `-showPagePerfRepeat <n>` glides n times, each its own file after the first (frames-page-glide-2.json, …): the first
+/// pass lays rows out for the first time, the later ones show what scrolling back over them costs.
 @MainActor enum PagePerf {
+    /// Pages told a finger is on their scroll view (true) and lifted (false), so they treat a glide as the user's
+    /// scrolling (a chat stops following its newest end), by the page (`ChatView` registers its own). Each answers
+    /// only for its own list: several chats can be mounted at once (Persona's conversation stays in the shell).
+    static var touchers: [ObjectIdentifier: (UIScrollView, Bool) -> Void] = [:]
+
+    private static func touch(_ list: UIScrollView, _ down: Bool) {
+        for toucher in touchers.values { toucher(list, down) }
+    }
+
     static func runIfAsked() {
-        guard UserDefaults.standard.bool(forKey: "showPagePerf") else { return }
+        let d = UserDefaults.standard
+        guard d.bool(forKey: "showPagePerf") else { return }
+        let speed = d.double(forKey: "showPagePerfSpeed") > 0 ? d.double(forKey: "showPagePerfSpeed") : 2000
+        let seconds = d.double(forKey: "showPagePerfSeconds") > 0 ? d.double(forKey: "showPagePerfSeconds") : 3
+        let repeats = max(1, d.integer(forKey: "showPagePerfRepeat"))
+        // The first 10 s too (frames-page-open.json): launch, the page opening and its first layout.
+        FrameStats.shared.start()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(10))
+            FrameStats.shared.stop(label: "page-open")
             FrameStats.shared.start()
             // For the script: push now (Documents/page-idle-started).
             if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
@@ -211,12 +231,35 @@ import UIKit
             FrameStats.shared.stop(label: "page-idle")
             try? await Task.sleep(for: .seconds(1))
             guard let list = mainScrollView() else { return }
-            list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: false)
-            try? await Task.sleep(for: .seconds(1))
-            FrameStats.shared.start()
-            await ListGlide.run(list, seconds: 3, speed: 2000)
-            await ListGlide.run(list, seconds: 3, speed: -2000)
-            FrameStats.shared.stop(label: "page-glide")
+            for n in 1...repeats {
+                touch(list, true)
+                list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: false)
+                try? await Task.sleep(for: .seconds(1))
+                FrameStats.shared.start()
+                await ListGlide.run(list, seconds: seconds, speed: CGFloat(speed))
+                await ListGlide.run(list, seconds: seconds, speed: CGFloat(-speed))
+                FrameStats.shared.stop(label: n == 1 ? "page-glide" : "page-glide-\(n)")
+                touch(list, false)
+            }
+        }
+    }
+
+    /// `-showListOffset <pt>`: 8 s after launch the page's main scroll view sits that far from its start, and
+    /// Documents/list-offset-set says so: screenshots of the same place in two builds or two switches.
+    static func offsetIfAsked() {
+        let y = UserDefaults.standard.double(forKey: "showListOffset")
+        guard y > 0 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard let list = mainScrollView() else { return }
+            touch(list, true)
+            list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top + y), animated: false)
+            try? await Task.sleep(for: .seconds(0.5))
+            touch(list, false)
+            try? await Task.sleep(for: .seconds(2))
+            if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                try? Data().write(to: dir.appending(path: "list-offset-set"))
+            }
         }
     }
 

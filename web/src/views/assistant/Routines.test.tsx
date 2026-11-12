@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetProviderNames } from "../../lib/provider-names";
 import type { Run, Task } from "../../lib/routines";
 import { Routines } from "./Routines";
 
@@ -21,6 +22,7 @@ const failedText = /读不到运行记录：.*run history unavailable/;
 
 let runsReply: () => Response | Promise<Response>;
 let tasksReply: () => Response;
+let providers: unknown[];
 // the hub is unreachable: every request, a change or a read, answers 502
 let down: boolean;
 let calls: string[];
@@ -32,12 +34,15 @@ beforeEach(() => {
   down = false;
   runsReply = failure;
   tasksReply = () => json({ tasks: [task] });
+  providers = [];
+  forgetProviderNames();
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const path = String(input);
     calls.push(path);
     if (down) return Promise.resolve(json({ error: "hub unreachable" }, 502));
     if (path === "/api/v1/assistant/tasks") return Promise.resolve(tasksReply());
     if (path === "/api/v1/assistant/runs") return Promise.resolve(runsReply());
+    if (path === "/api/v1/model-config") return Promise.resolve(json({ providers }));
     throw new Error(`Unexpected request: ${path}`);
   }));
   host = document.createElement("div");
@@ -195,5 +200,18 @@ describe("a change the hub refuses while the list cannot be read again", () => {
     expect(calls.filter((path) => path === "/api/v1/assistant/tasks")).toHaveLength(2);
     expect(history().textContent).toContain("读不到运行记录");
     expect(rowOf(once.title)).toBeDefined();
+  });
+});
+
+describe("what a task runs with (#5029)", () => {
+  it("names its launcher by the provider's display name with the ID in the tooltip; an rc alias by its ID", async () => {
+    providers = [{ id: "launcher.relay-example-com", name: "我的中转 站", kind: "launcher" }];
+    tasksReply = () => json({ tasks: [{ ...task, launcher: "relay-example-com" }, { ...task, id: "task-2", title: "Weekly review", launcher: "cc_glm" }] });
+    runsReply = () => json({ runs: [] });
+    await render();
+    await flush();
+    const line = (title: string) => [...host.querySelectorAll<HTMLElement>('[role="button"]')].find((el) => el.textContent?.includes(title))!.querySelector<HTMLElement>("div.truncate > span.truncate")!;
+    expect([line("Daily summary").textContent, line("Daily summary").title]).toEqual(["我的中转 站", "relay-example-com"]);
+    expect([line("Weekly review").textContent, line("Weekly review").hasAttribute("title")]).toEqual(["cc_glm", false]);
   });
 });

@@ -6,6 +6,10 @@ import { t } from "../../i18n";
 import type { MachineUsage, UsageRange } from "../../lib/tokens";
 import { UsageSection } from "./UsageSection";
 
+// the providers' names (#5029), without a read of the model configuration among the usage reads
+const providerNames = vi.hoisted(() => ({ list: [] as { name: string; display_name?: string }[] }));
+vi.mock("../../lib/provider-names", async (original) => ({ ...(await original<typeof import("../../lib/provider-names")>()), useProviderNames: () => providerNames.list }));
+
 const usage: MachineUsage = {
   machine_id: "computer-a", online: true, range: "24h", step: 600,
   points: [{ t: 1_788_480_000, in: 100, out: 23, req: 4 }],
@@ -62,6 +66,7 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   reads = [];
+  providerNames.list = [];
   // Keep late responses deliverable after abort, exercising ownership beyond cooperative cancellation.
   vi.stubGlobal("fetch", vi.fn((url: string, init: RequestInit) => new Promise<Response>((resolve) => {
     reads.push({ url: new URL(url, "http://localhost"), signal: init.signal!, resolve });
@@ -350,5 +355,23 @@ describe("hovering the usage charts", () => {
     expect(first).toMatch(/^\d\d:\d\d$/);
     expect(crosshair()).toMatch(/^\d\d:\d\d$/);
     expect(crosshair()).not.toBe(first);
+  });
+});
+
+describe("launchers by their display names (#5029)", () => {
+  it("names a provider by its display name with its ID; an rc alias and Other read as before", async () => {
+    providerNames.list = [{ name: "launcher-a", display_name: "我的中转 站" }];
+    await ready();
+    expect([...select(1).options].map((o) => o.textContent)).toEqual([t("machines-usage.all_launchers"), "我的中转 站 (launcher-a)", "launcher-b", t("machines-usage.other_launcher")]);
+    const card = [...host.querySelectorAll("h3")].find((h) => h.textContent === t("machines-usage.by_launcher"))!.parentElement!;
+    const labels = [...card.querySelectorAll("button")].map((b) => b.querySelector("span")!);
+    expect(labels.map((l) => [l.textContent, l.classList.contains("font-mono")])).toEqual([
+      ["我的中转 站 launcher-a", false], ["launcher-b", true], [t("machines-usage.other_launcher"), true],
+    ]);
+    expect(labels[0].querySelector(".font-mono")!.textContent).toBe("launcher-a");
+    // picked, then gone from the catalog: still said by its display name
+    await choose(1, "launcher-a");
+    await answer(reads.at(-1)!, report({ launchers: [], total: {} }));
+    expect(select(1).selectedOptions[0].textContent).toBe("我的中转 站 (launcher-a)");
   });
 });

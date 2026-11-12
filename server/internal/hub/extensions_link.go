@@ -136,11 +136,13 @@ func machineExtrasEqual(a, b map[string]extwire.MachineExtras) bool {
 
 // features are the hub's features with those of the extensions serving part of the API.
 func (h *Hub) features() []string {
-	out := append(slices.Clone(proto.Features), featureSessionsList, featureSessionsLookup, featureSessionsPaneSource, featureSessionsManager, featureSessionsPageCounts, featureMachineRename)
+	out := append(slices.Clone(proto.Features), featureSessionsList, featureSessionsLookup, featureSessionsPaneSource, featureSessionsManager, featureSessionsPageCounts,
+		featureSessionsHierarchy, featureMachineRename)
 	out = append(out, h.agentSessionArchiveFeatures()...)
 	out = append(out, h.meetingAttendanceFeatures()...)
 	out = append(out, h.meetingConversationFeatures()...)
 	out = append(out, h.meetingPhotosFeatures()...)
+	out = append(out, h.recordingDayFeatures()...)
 	// The assistant's card interfaces that answer now (docs/assistant/assistant-views.md): assistant_views is declarative actions
 	// (expected_version), live cards and transcript cards; assistant_html_bridge is …/html-actions with both switches
 	// on. Neither says a client may run HTML: that is each platform's own security sign-off, else fallback.
@@ -153,8 +155,8 @@ func (h *Hub) features() []string {
 	for _, f := range h.extReport().Features {
 		switch f {
 		case featureAgentSessionArchives, featureAgentSessionArchiveClose, featureMeetingAttendance, featureMeetingConversation,
-			featureMeetingPhotos:
-			continue // only manager hello can promise fleet archive support and the meeting features
+			featureMeetingPhotos, featureRecordingDay:
+			continue // only manager hello can promise fleet archive support, the meeting features and all-day recordings
 		}
 		if !slices.Contains(out, f) {
 			out = append(out, f)

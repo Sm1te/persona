@@ -4,5 +4,9 @@
   "err_nothing_named": "Nothing named {name} to import",
   "err_machine_required": "machine is required",
   "err_machine_providers_required": "machine and providers are required",
-  "err_no_machine": "No such machine"
+  "err_no_machine": "No such machine",
+  "use_task": "Scheduled task “{name}”",
+  "use_profile": "Model profile “{name}”",
+  "use_tier": "Agent preset “{tier}” in “{profile}”",
+  "err_not_hidden": "The providers were imported, but the aliases could not be hidden. Hide them from the list, or try the import again."
 }

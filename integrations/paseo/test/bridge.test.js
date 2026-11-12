@@ -45,7 +45,7 @@ async function setup(t, o = {}) {
   const logs = []
   const paseo = new PaseoClient({ home, retryMin: 30, retryMax: 100, log: (m) => logs.push(m) })
   const bridge = createPaseoBridge({ paseo, log: (m) => logs.push(m) },
-    { socketPath: node.path, mcpConfig: o.mcpConfig, retryMs: 30, pushDelayMs: 5, refreshMs: 0, awayGrace: o.awayGrace ?? 400, callWait: 1500,
+    { socketPath: node.path, mcpConfig: o.mcpConfig, allowTools: o.allowTools, retryMs: 30, pushDelayMs: 5, refreshMs: 0, awayGrace: o.awayGrace ?? 400, callWait: 1500,
       listMax: o.listMax, pageSize: o.pageSize, closedChecks: o.closedChecks, sweepMs: o.sweepMs ?? 0 })
   bridge.start()
   t.after(() => bridge.stop())
@@ -948,6 +948,29 @@ test('Paseo restarting: the bridge connects again and keeps the sessions; gone f
     return gone
   }, 5000)
   assert.ok(logs.some((l) => /away/.test(l)))
+})
+
+test("an Agent Persona started calls its own Persona tools without a card; everything else still asks (#4966)", async (t) => {
+  const own = ['mcp__persona__report_to_supervisor', 'mcp__persona__todo_decision_add']
+  const { fake, node, a } = await setup(t, { allowTools: own })
+  node.resolve = () => ({ allow: true })
+  fake.permission(a.labeled.id, { id: 'own-1', provider: 'claude', name: 'mcp__persona__todo_decision_add', kind: 'tool',
+    input: { decision: 'Use the smaller icon' }, suggestions: [{ type: 'addRules', rules: [{ toolName: 'mcp__persona__todo_decision_add' }], behavior: 'allow', destination: 'session' }] })
+  await until('the own tool answered', () => fake.requestsOf('agent_permission_response').length === 1)
+  assert.deepEqual(fake.requestsOf('agent_permission_response')[0].response, { behavior: 'allow' }, 'allowed once: no rule kept, no mode set')
+  assert.equal(node.asked.length, 0, 'no card for it')
+  // Still asked: dispatch and the phone's tools in the same Agent, any tool of an agent made in Paseo's own app, a plan.
+  const asks = [
+    [a.labeled.id, { id: 'dispatch-1', provider: 'claude', name: 'mcp__persona__dispatch_start', kind: 'tool', input: {} }],
+    [a.labeled.id, { id: 'phone-1', provider: 'claude', name: 'mcp__persona__phone_notify', kind: 'tool', input: {} }],
+    [a.claude.id, { id: 'mine-1', provider: 'claude', name: 'mcp__persona__report_to_supervisor', kind: 'tool', input: { kind: 'done', text: 'x' } }],
+  ]
+  for (const [agentId, request] of asks) fake.permission(agentId, request)
+  await until('the others asked', () => node.asked.length === asks.length)
+  assert.deepEqual(node.asked.map((ix) => [ix.session_id, ix.tool_name]).sort(), [
+    ['paseo-e1', 'mcp__persona__dispatch_start'], ['paseo-e1', 'mcp__persona__phone_notify'], [SID, 'mcp__persona__report_to_supervisor'],
+  ].sort())
+  assert.equal(fake.requestsOf('set_agent_mode_request').length, 0)
 })
 
 for (const toolName of ['mcp__persona__report_to_supervisor', 'mcp__jarvis__report_to_supervisor']) {

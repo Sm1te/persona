@@ -1,17 +1,24 @@
 package hub
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/nwverse/persona/server/internal/assistantwire"
@@ -146,7 +153,7 @@ func TestBusForwardsTheAssistantRoutes(t *testing.T) {
 	for _, c := range [][2]string{{"POST", "/api/v1/task-plans/p1/start"}, {"GET", "/api/v1/task-trust"},
 		{"DELETE", "/api/v1/task-trust"}, {"POST", "/api/v1/todos/t1/done-check"}, {"GET", "/api/v1/todos"},
 		{"PUT", "/api/v1/todos/t1/spaces/m1/group/alpha"}, {"GET", "/api/v1/assistant"}, {"PUT", "/api/v1/assistant"},
-		{"POST", "/api/v1/assistant/conversations"}, {"POST", "/api/v1/assistant/main/new"},
+		{"POST", "/api/v1/assistant/conversations"}, {"POST", "/api/v1/assistant/main/new"}, {"POST", "/api/v1/assistant/main/clear"},
 		{"DELETE", "/api/v1/assistant/memory/note.md"}} {
 		if resp, _ := do(c[0], c[1], ""); resp.StatusCode != 201 {
 			t.Fatalf("%s %s: %d", c[0], c[1], resp.StatusCode)
@@ -250,6 +257,160 @@ func TestBusForwardRefusesAnImpossibleStatus(t *testing.T) {
 				t.Fatalf("got %d %v %q, want %d %q", resp.StatusCode, resp.Header, body, c[1], want)
 			}
 		})
+	}
+}
+
+// A relayed body is read as io.ReadAll read it, whatever its Content-Length says: the same bytes, or the same error
+// (413 too_large past the limit, 400 for one that broke off).
+func TestReadRelayedIsReadAll(t *testing.T) {
+	body := `{"prompt":"<a long message>"}`
+	broken := func() io.Reader {
+		return io.MultiReader(strings.NewReader(body[:9]), iotest.ErrReader(io.ErrUnexpectedEOF))
+	}
+	for _, c := range []struct {
+		name string
+		size int64
+		body func() io.Reader
+	}{
+		{"its length", int64(len(body)), nil},
+		{"longer than said", int64(len(body)) - 7, nil},
+		{"shorter than said", int64(len(body)) + 7, nil},
+		{"said empty", 0, nil},
+		{"empty", 0, func() io.Reader { return http.NoBody }},
+		{"unknown length", -1, nil},
+		{"over the limit", busHTTPLimit + 1, func() io.Reader { return &endlessBody{} }},
+		{"over the limit, said within", int64(len(body)), func() io.Reader { return &endlessBody{} }},
+		{"broken", int64(len(body)), broken},
+		{"broken, unknown length", -1, broken},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			read := func(relayed bool) ([]byte, string) {
+				r := httptest.NewRequest(http.MethodPost, "/api/v1/assistant/conversations", nil)
+				r.Body, r.ContentLength = io.NopCloser(strings.NewReader(body)), c.size
+				if c.body != nil {
+					r.Body = io.NopCloser(c.body())
+				}
+				w := httptest.NewRecorder()
+				if relayed {
+					b, err := readRelayed(w, r)
+					return b, fmt.Sprintf("%T %v", err, err)
+				}
+				b, err := io.ReadAll(http.MaxBytesReader(w, r.Body, busHTTPLimit))
+				return b, fmt.Sprintf("%T %v", err, err)
+			}
+			got, gerr := read(true)
+			want, werr := read(false)
+			if gerr != werr || (werr == "<nil> <nil>" && !bytes.Equal(got, want)) {
+				t.Fatalf("read %d bytes, %s; io.ReadAll read %d, %s", len(got), gerr, len(want), werr)
+			}
+		})
+	}
+}
+
+// callLineOf is the line a Call of http.request with params writes on a peer with the frame budget given, or the
+// Call's error.
+func callLineOf(params any, budget int) ([]byte, error) {
+	w := &lineThenClose{}
+	w.p = rpc.New("h", w)
+	w.p.Limits.FrameBytes = budget
+	err := w.p.Call(context.Background(), assistantwire.MethodHTTP, params, nil)
+	if errors.Is(err, rpc.ErrDropped) {
+		err = nil
+	}
+	return w.line, err
+}
+
+// lineThenClose keeps the line a peer writes and closes the peer, so its Call returns without an answer.
+type lineThenClose struct {
+	p    *rpc.Peer
+	line []byte
+}
+
+func (c *lineThenClose) Write(b []byte) (int, error) {
+	c.line = append(c.line, b...)
+	c.p.Close(io.EOF)
+	return len(b), nil
+}
+
+// A relayed request goes out in the line json.Marshal writes for it: header and query with HTML characters, U+2028
+// and U+2029, other non-ASCII and invalid UTF-8; bodies of 0 to 3 bytes (base64's padding) and longer; and the frame
+// budget the same at the line's size and one byte under it.
+func TestHTTPParamsAreJSONMarshals(t *testing.T) {
+	long := make([]byte, 1000)
+	for i := range long {
+		long[i] = byte(i * 31)
+	}
+	header := map[string][]string{"X-Html": {`<a href="?a=1&b=2">`}, "X-Sep": {"a\u2028b\u2029c"}, "X-Name": {"日本語 é"},
+		"X-Bad": {"\xff\xfe\xc3"}, "Content-Type": {"application/json"}}
+	for _, req := range []assistantwire.HTTPRequest{
+		{Method: "POST", Path: "/api/v1/assistant/conversations", Header: header, Body: []byte(`{"prompt":"<&>\u2028"}`)},
+		{Method: "POST", Path: "/api/v1/kb/recordings", Query: "q=<&>&x=\u2029\xff", Body: []byte{0}},
+		{Method: "PUT", Path: "/p", Body: []byte{1, 2}},
+		{Method: "PUT", Path: "/p", Body: []byte{1, 2, 3}},
+		{Method: "PUT", Path: "/é", Header: header, Body: long},
+		{Method: "GET", Path: "/p", Header: header, Body: []byte{}},
+		{Method: "GET", Path: "/p"},
+		{Body: []byte("x")}, // no method or path: written all the same, before the body
+	} {
+		want, werr := callLineOf(req, 0)
+		got, err := callLineOf(httpParams(req), 0)
+		if err != nil || werr != nil || !bytes.Equal(got, want) {
+			t.Errorf("%s %s with %d body bytes:\n%q, %v\nwas %q, %v", req.Method, req.Path, len(req.Body), got, err, want, werr)
+			continue
+		}
+		for _, budget := range []int{len(want), len(want) - 1} {
+			got, err := callLineOf(httpParams(req), budget)
+			want, werr := callLineOf(req, budget)
+			if !bytes.Equal(got, want) || err != werr {
+				t.Errorf("%s %s, frame budget %d: wrote %d bytes, %v; was %d, %v", req.Method, req.Path, budget, len(got), err, len(want), werr)
+			}
+		}
+	}
+}
+
+// httpParams appends the body after the rest of the request: it is HTTPRequest's last field, left out when empty,
+// and method and path, always written, come before it.
+func TestHTTPRequestBodyIsLast(t *testing.T) {
+	typ := reflect.TypeFor[assistantwire.HTTPRequest]()
+	last := typ.Field(typ.NumField() - 1)
+	if last.Name != "Body" || last.Tag.Get("json") != "body,omitempty" || last.Type != reflect.TypeFor[[]byte]() {
+		t.Fatalf("HTTPRequest's last field is %s %s `%s`", last.Name, last.Type, last.Tag)
+	}
+	if b, _ := json.Marshal(assistantwire.HTTPRequest{}); !bytes.HasPrefix(b, []byte(`{"method":"","path":""`)) {
+		t.Fatalf("an empty HTTPRequest is %s", b)
+	}
+}
+
+// A relayed upload costs the hub its body and the request's line, once each: no buffers grown and copied to read it,
+// no copy of its base64 encoded and copied out, and none of it kept in an encoder's buffer past a collection.
+func TestRelayCopiesALargeBodyOnce(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector's instrumentation allocates on its own")
+	}
+	h, body := answeringManager(t), largePrompt(4<<20)
+	relayOnce(t, h, body)
+	var before, after runtime.MemStats
+	least := uint64(math.MaxUint64)
+	func() {
+		defer debug.SetGCPercent(debug.SetGCPercent(-1)) // no GC empties a pool in the middle of a run
+		for range 3 {
+			runtime.ReadMemStats(&before)
+			relayOnce(t, h, body)
+			runtime.ReadMemStats(&after)
+			least = min(least, after.TotalAlloc-before.TotalAlloc)
+		}
+	}()
+	if limit := uint64(float64(len(body)+base64.StdEncoding.EncodedLen(len(body)))*1.03) + 256<<10; least > limit {
+		t.Errorf("relaying a %d-byte body allocated %d bytes, over %d (the body and its line)", len(body), least, limit)
+	}
+	runtime.GC()
+	runtime.GC() // what pools keep goes at the second
+	runtime.ReadMemStats(&before)
+	relayOnce(t, h, body)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if kept := int64(after.HeapAlloc) - int64(before.HeapAlloc); kept > int64(len(body))/8 {
+		t.Errorf("relaying a %d-byte body left %d bytes on the heap after a collection", len(body), kept)
 	}
 }
 

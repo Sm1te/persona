@@ -160,33 +160,62 @@ func (s *Service) presetDisplayName(ctx context.Context, preset string, n int) s
 	if !ok {
 		return ""
 	}
-	name := cmp.Or(pr.DisplayName, pr.Name)
-	if n > 1 {
-		name += " " + strconv.Itoa(n)
-	}
-	return name
+	return numberedName(cmp.Or(pr.DisplayName, pr.Name), n)
 }
 
-// launcherNameFor is the name a provider added from preset gets when none is given: the vendor's slug made to fit the
-// name rule, -2, -3… after it while taken.
-// n is 1 for the bare slug, else the number after it.
+// numberedName is a display name the hub gives a provider it named with n (1 for the bare slug): with the same number
+// after it when n > 1 ("Zhipu GLM 2"), name cut so the whole fits maxDisplayName (a long gateway host).
+func numberedName(name string, n int) string {
+	suffix := ""
+	if n > 1 {
+		suffix = " " + strconv.Itoa(n)
+	}
+	if r := []rune(name); len(r)+len(suffix) > maxDisplayName {
+		name = strings.TrimRight(string(r[:maxDisplayName-len(suffix)]), ".- ")
+	}
+	return name + suffix
+}
+
+// launcherNameFor is the name a provider added from preset gets when none is given: the vendor's slug, -2, -3… after
+// it while taken. n is 1 for the bare slug, else the number after it.
 func launcherNameFor(preset string, taken func(string) bool) (name string, n int) {
+	return freeLauncherName(cmp.Or(launcherSlug(presetSlug(preset)), "provider"), taken)
+}
+
+// customLauncherName is the name a provider added without a preset gets when none is given (#5029): the slug of its
+// display name, else of its gateway's host (gw.example.com → gw-example-com), else provider; -2, -3… after it while
+// taken. n is as launcherNameFor's.
+func customLauncherName(displayName, host string, taken func(string) bool) (name string, n int) {
+	return freeLauncherName(cmp.Or(launcherSlug(displayName), launcherSlug(host), "provider"), taken)
+}
+
+// launcherSlug is s made to fit the launcher name rule (managedLauncherName): lower case, each run of other characters
+// one -, none at either end, at most 40 bytes, p- before a leading digit. "" when nothing of s is left ("智谱").
+func launcherSlug(s string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(presetSlug(preset)) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '-':
+	dash := false
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' {
 			b.WriteRune(r)
-		default:
+			dash = false
+		} else if !dash {
 			b.WriteByte('-')
+			dash = true
 		}
 	}
-	base := strings.Trim(b.String(), "-")
-	if base == "" {
-		base = "provider"
+	slug := strings.Trim(b.String(), "-")
+	if len(slug) > 40 {
+		slug = strings.TrimRight(slug[:40], "-")
 	}
-	if c := base[0]; c >= '0' && c <= '9' {
-		base = "p-" + base
+	if slug != "" && slug[0] >= '0' && slug[0] <= '9' {
+		slug = "p-" + slug
 	}
+	return slug
+}
+
+// freeLauncherName is base while no launcher has it (taken) and no route keeps it (reservedLauncherNames), else the
+// first free one of base-2, base-3…; n is 1 for base itself, else the number after it.
+func freeLauncherName(base string, taken func(string) bool) (name string, n int) {
 	used := func(n string) bool { return taken(n) || slices.Contains(reservedLauncherNames, n) }
 	if !used(base) {
 		return base, 1

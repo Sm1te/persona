@@ -37,6 +37,12 @@ data class AssistantSnapshot(
      * 「在做 N · 等你 N」. A leader without open tasks is left out or says zero; empty from an older hub.
      */
     val leaderCounts: Map<String, LeaderCounts> = emptyMap(),
+    /**
+     * The built-in background supervisor's conversation id (`background_supervisor` of `GET /api/v1/assistant`, #4927,
+     * docs/assistant/unified-entry.md "Background supervisor"): listed, never a direction, never archived or ended from
+     * the app. Null until the hub has made it and from an older hub.
+     */
+    val backgroundSupervisor: String? = null,
 )
 
 /** The assistant's spaces besides its own (docs/assistant/health.md): their names on the wire (`space`). */

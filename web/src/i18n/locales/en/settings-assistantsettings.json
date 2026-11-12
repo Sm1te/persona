@@ -1,4 +1,14 @@
 {
+  "auto_naming": "Fix unhelpful session names",
+  "auto_naming_hint": "By default, fixes only clearly unusable names, once per session. Uses your information sorting model. Names you set yourself are never replaced.",
+  "auto_naming_max": "Maximum name changes",
+  "auto_naming_max_hint": "Total successful automatic name changes per session, including scheduled updates. Enter 1–1000.",
+  "auto_naming_periodic": "Update names regularly",
+  "auto_naming_periodic_hint": "Off by default. Only updates after new output, and counts toward the same maximum. Turning this on starts with 24 hours.",
+  "auto_naming_interval": "Update every (hours)",
+  "auto_naming_interval_hint": "Enter a whole number from 1 to 8760.",
+  "auto_naming_raise_max": "Raise the maximum above 1 to allow recurring name updates.",
+  "auto_naming_save_failed": "Couldn't confirm the naming settings. The last confirmed values are shown. Check the connection and retry.",
   "workspace_preference": "When dispatching tasks, prefer",
   "workspace_prefer_existing": "Existing workspaces",
   "workspace_prefer_new": "New workspaces",
@@ -124,5 +134,8 @@
   "background_folded_footer": "Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown.",
   "idle_close": "Stop idle Agents after",
   "idle_close_hint": "Their terminal stays. 0 turns it off.",
-  "idle_close_unit": "hours"
+  "idle_close_unit": "hours",
+  "main_supervises": "The main chat supervises its own tasks",
+  "main_supervises_hint": "Off by default: a built-in background supervisor follows up and reviews the tasks Persona hands out, so the main chat stays free to answer you; turn this on and the main chat does that itself, as it did before",
+  "background_supervisor_model": "Background supervisor's model"
 }

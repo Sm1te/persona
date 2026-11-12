@@ -1,0 +1,22 @@
+{
+  "name": "persona-omp-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persona runtime for omp (Oh My Pi): omp sessions in the Persona apps (built on persona-runtime-sdk).",
+  "license": "MIT",
+  "type": "module",
+  "omp": {
+    "extensions": ["./index.js"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "files": ["index.js", "lib/*.js"],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

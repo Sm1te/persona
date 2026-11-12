@@ -18,6 +18,8 @@
   "extension_over": "The extension theme \"{name}\" lays its colors over the theme color; set the extension theme to Default to see it.",
   "text_size": "Text size",
   "text_size_hint": "All text on the page gets larger or smaller; the browser's zoom still applies on top",
+  "recent_chats": "Recent chats in the sidebar",
+  "recent_chats_hint": "How many of your latest Persona chats the sidebar's Recent lists. Show more adds as many again. Saved in this browser only.",
   "small": "Small",
   "standard": "Standard",
   "large": "Large",

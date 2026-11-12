@@ -27,7 +27,8 @@ nonisolated struct QueuedDraft: Sendable {
     private static let pasted = try! NSRegularExpression(pattern: #"<[\\/]*pasted_content[^>]*>"#)
     private static let pathLine = "path: "
 
-    init(_ queued: String, standIns: Set<String> = QueuedDraft.standIns) {
+    /// `photoCount` also counts photos the hub returned separately (a Persona queue has words only, no machine paths).
+    init(_ queued: String, photoCount: Int = 0, standIns: Set<String> = QueuedDraft.standIns) {
         let quoted = ContextRef.parse(Self.replacing(Self.pasted, in: queued, with: ""))
         contexts = quoted.refs
         let sent = AttachedFile.parse(quoted.rest)
@@ -46,7 +47,7 @@ nonisolated struct QueuedDraft: Sendable {
         imagePaths = paths
         rest = Self.replacing(Self.imageBlock, in: rest, with: "\n")
         rest = Self.replacing(Self.placeholder, in: rest, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !(paths.isEmpty && files.isEmpty && contexts.isEmpty), standIns.contains(rest) { rest = "" }
+        if !(paths.isEmpty && files.isEmpty && contexts.isEmpty && photoCount == 0), standIns.contains(rest) { rest = "" }
         text = rest
     }
 

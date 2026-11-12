@@ -147,6 +147,9 @@ func Attach(ctx context.Context, newNode func() (*Node, error), extra <-chan net
 
 	keeper := newAssistantKeeper()
 	scans := &bgCarry{} // background-task scans go on from one connection's Node to the next (carry.go)
+	// Launcher switches too: one that outlives its connection is seen, waited for and written by the next Node
+	// (switch_share.go).
+	switches := &switchShare{}
 	// No manager connected yet (or between connections): standby answers node.sock (spool_standby.go).
 	sp := openSpool(SpoolPath())
 	sb := newStandby(sp, logf)
@@ -217,6 +220,7 @@ func Attach(ctx context.Context, newNode func() (*Node, error), extra <-chan net
 				n.runtimeHost = runtimes // Serve attaches it for this connection
 			}
 			n.adoptBgScans(scans)
+			n.share.Store(switches)
 			n.keeper = keeper                        // conversations go on from one connection to the next (assistant_keep.go)
 			n.spool = sp                             // what standby took goes to this connection first (spool.go)
 			go func() { <-cctx.Done(); c.Close() }() // a replaced connection stops reading at once

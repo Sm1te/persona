@@ -91,6 +91,7 @@ func referenceBackground(src []byte) transcript.Meta {
 			containsAny(l, transcript.PlanMarkers) || containsAny(l, m.PlanPending())) {
 			transcript.ParseLine(0, bytes.Clone(l), &m)
 		}
+		m.ObserveNamingMetadata(l)
 	}
 }
 

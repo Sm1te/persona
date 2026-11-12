@@ -382,6 +382,17 @@ func (n *Node) sendEchoed(id, clientMsgID, text string, images int, after int, s
 	return err
 }
 
+// expectFirstLine ties a new conversation's first message to its line once the conversation's id is known (a start
+// that did not name it): sent at at, after nothing, the hub told as after a send.
+func (n *Node) expectFirstLine(id, clientMsgID, text string, images int, at time.Time) {
+	if !n.echoes.expect(echoRecord{SessionID: id, ClientMsgID: clientMsgID, Text: text, Images: images, SentAt: at}) {
+		return
+	}
+	if cur, ok := n.echoes.record(id, clientMsgID); ok {
+		n.notifyEcho(cur)
+	}
+}
+
 func (n *Node) notifyEcho(r echoRecord) {
 	if n.peer == nil {
 		return

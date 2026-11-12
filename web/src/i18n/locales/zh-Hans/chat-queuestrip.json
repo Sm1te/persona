@@ -7,7 +7,7 @@
   "copy": "拷贝",
   "delete": "删除",
   "row_label": "排队的第 {n} 条：{text}",
-  "relayed_note": "本轮结束后送达",
+  "relayed_note": "对话空闲后送达",
   "summary_steer_other": "排队中 {count} 条 · {agent} 下一步就会依次接收",
   "send_now": "立即发送",
   "send_now_title_other": "现在就发送排队的 {count} 条消息？",

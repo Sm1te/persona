@@ -1,0 +1,5 @@
+{
+  "err_bad_request": "请求格式不对：ids 要是模型 ID 的列表",
+  "err_too_many": "一次最多查 {max} 个模型 ID",
+  "err_id_too_long": "模型 ID 最长 {max} 字节"
+}

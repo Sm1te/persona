@@ -128,6 +128,19 @@ type VoiceNudge struct {
 
 func RenderVoiceNudge(d VoiceNudge) string { return render("voice/nudge", d) }
 
+// VoiceReadAloud is what a realtime session that only reads texts aloud is told (voice/read_aloud, the extension's
+// POST /speak: the iPhone's spoken meeting answers outside a call, #5004). Others hear it, so it takes only the owner's
+// name, never their notes.
+type VoiceReadAloud struct {
+	Lang  string
+	Owner string // "" is the word for "user" in Lang
+	// TextLang is the language the texts are usually in (BCP 47, the hub's word for the answer's), "" when not known:
+	// the text's own language still wins.
+	TextLang string
+}
+
+func RenderVoiceReadAloud(d VoiceReadAloud) string { return render("voice/read_aloud", d) }
+
 // VoiceRefused is what the voice model is told when what it handed over was not sent (voice/refused).
 type VoiceRefused struct {
 	Lang string

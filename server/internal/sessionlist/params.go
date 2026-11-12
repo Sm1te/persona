@@ -14,7 +14,7 @@ import (
 // machine_id filtering. Presence matters: malformed new parameters must be
 // parsed and rejected rather than silently falling back to the legacy API.
 func Enabled(v url.Values) bool {
-	for _, key := range []string{"limit", "cursor", "since", "summary", "state", "project", "group", "counts", "pane_source"} {
+	for _, key := range []string{"limit", "cursor", "since", "summary", "state", "project", "group", "counts", "pane_source", "roots", "parent_session_id"} {
 		if _, exists := v[key]; exists {
 			return true
 		}
@@ -27,7 +27,7 @@ func Enabled(v url.Values) bool {
 // field: adapters choose the counts endpoint, while Query ignores the selector.
 func Parse(v url.Values) (Options, error) {
 	o := Options{Limit: defaultLimit}
-	for _, key := range []string{"limit", "cursor", "since", "summary", "state", "machine_id", "project", "group", "source", "provider", "q", "counts", "with_counts", "pane_source"} {
+	for _, key := range []string{"limit", "cursor", "since", "summary", "state", "machine_id", "project", "group", "source", "provider", "q", "counts", "with_counts", "pane_source", "roots", "parent_session_id"} {
 		if values, exists := v[key]; exists && len(values) != 1 {
 			return Options{}, failure("invalid_query", key+" must have exactly one value")
 		}
@@ -52,6 +52,19 @@ func Parse(v url.Values) (Options, error) {
 				return Options{}, err
 			}
 		}
+	}
+	if values, exists := v["roots"]; exists {
+		b, err := boolean(values[0])
+		if err != nil {
+			return Options{}, err
+		}
+		o.Roots = b
+	}
+	if values, exists := v["parent_session_id"]; exists {
+		if values[0] == "" {
+			return Options{}, failure("invalid_query", "parent_session_id must not be empty")
+		}
+		o.Under = values[0]
 	}
 	o.Cursor, o.Since = v.Get("cursor"), v.Get("since")
 	if _, exists := v["cursor"]; exists && o.Cursor == "" {
@@ -101,6 +114,13 @@ func validate(o Options) (Options, error) {
 	if o.Limit < 1 || o.Limit > maxLimit {
 		return Options{}, failure("invalid_query", "limit must be between 1 and 200")
 	}
+	if o.Under != "" && o.Machine == "" {
+		return Options{}, failure("invalid_query", "parent_session_id requires machine_id")
+	}
+	if o.Under != "" && o.Roots {
+		// The rows folded under a session are never roots: together they would always select nothing.
+		return Options{}, failure("invalid_query", "roots cannot be combined with parent_session_id")
+	}
 	switch o.PaneSource {
 	case "", "terminal", "feishu", "desktop", "unknown":
 	default:
@@ -131,7 +151,8 @@ func validate(o Options) (Options, error) {
 func normalizeQ(s string) string { return strings.ToLower(s) }
 
 func (o Options) filters() filters {
-	return filters{ID: o.ID, State: o.State, Machine: o.Machine, Project: o.Project, Group: o.Group, Source: o.Source, Provider: o.Provider, Q: o.Q, PaneSource: o.PaneSource, Manager: o.Manager}
+	return filters{ID: o.ID, State: o.State, Machine: o.Machine, Project: o.Project, Group: o.Group, Source: o.Source, Provider: o.Provider, Q: o.Q, PaneSource: o.PaneSource, Manager: o.Manager,
+		Roots: o.Roots, Under: o.Under}
 }
 
 func (o Options) binding() binding {

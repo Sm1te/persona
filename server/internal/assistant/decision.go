@@ -323,12 +323,13 @@ func (s *Service) chooseOption(ctx context.Context, id, asked, label string) (bo
 		return false, err
 	}
 	if st := s.todoDB(); st != nil {
-		at := decisionNow()
-		if ok, err := s.insertDecision(ctx, st, db.TodoDecisionRow{ID: "dec_" + randomHex(8), TodoID: id,
+		at, dec := decisionNow(), "dec_"+randomHex(8)
+		if ok, err := s.insertDecision(ctx, st, db.TodoDecisionRow{ID: dec, TodoID: id,
 			Question: cmp.Or(a.Reason, i18n.T(l, "assistant-reports.verdict_decide")), Choice: decisionText(label),
 			Source: db.DecisionManual, CreatedAt: at}); err != nil {
 			s.logf("task %s: decision: %v", id, err)
 		} else if ok {
+			s.ownerDecided(id, dec, a.WhyOwner)
 			s.decisionsChanged(ctx, id, at)
 		}
 	}

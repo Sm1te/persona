@@ -159,8 +159,8 @@ func TestHerdrStartManagedWithHooksPlugin(t *testing.T) {
 	want := inAgentEnv(dir, "HERDR_AGENT=claude /tmp/persona-test/personad launch work_gw --session-id "+startID+
 		" --settings "+shellQuote(filepath.Join(dir, "launcher-settings", "work_gw-env-settings.json"))+
 		" --mcp-config "+shellQuote(filepath.Join(dir, "mcp.json"))+
+		" --allowedTools "+shellQuote(pluginToolsRule(dir))+
 		" --plugin-dir "+shellQuote(filepath.Join(dir, "agent-plugin"))+
-		" --allowedTools "+shellQuote("Bash(sh "+filepath.Join(dir, "agent-plugin", "skills", "persona-office", "scripts", "office.sh")+" *)")+
 		" --plugin-dir "+shellQuote(filepath.Join(dir, "claude-hooks"))+
 		" --plugin-dir "+shellQuote(filepath.Join(dir, "claude-live-replies")), shellQuote)
 	if typed := f.trace("pane.send_input"); !slices.Contains(typed, call("pane.send_input", map[string]any{"pane_id": "w1:p2", "keys": []string{"Enter"}, "text": want})) {

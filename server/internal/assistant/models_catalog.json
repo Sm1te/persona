@@ -12,7 +12,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 4,
+    "output": 20,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "claude-sonnet-5-5",
@@ -25,7 +30,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 2,
+    "output": 10,
+    "cache_read": 0.1
+   }
   },
   {
    "id": "claude-haiku-5-5",
@@ -51,7 +61,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 10,
+    "output": 50,
+    "cache_read": 0.25
+   }
   },
   {
    "id": "claude-fable-5",
@@ -64,7 +79,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 10,
+    "output": 50,
+    "cache_read": 1
+   }
   },
   {
    "id": "claude-mythos-5",
@@ -77,7 +97,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 10,
+    "output": 50,
+    "cache_read": 1
+   }
   },
   {
    "id": "claude-opus-5",
@@ -90,7 +115,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 5,
+    "output": 25,
+    "cache_read": 0.5
+   }
   },
   {
    "id": "claude-opus-4-8",
@@ -103,7 +133,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 5,
+    "output": 25,
+    "cache_read": 0.5
+   }
   },
   {
    "id": "claude-opus-4-7",
@@ -116,7 +151,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 5,
+    "output": 25,
+    "cache_read": 0.5
+   }
   },
   {
    "id": "claude-opus-4-6",
@@ -128,7 +168,12 @@
     "high",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 5,
+    "output": 25,
+    "cache_read": 0.5
+   }
   },
   {
    "id": "claude-opus-4-5",
@@ -139,7 +184,12 @@
     "medium",
     "high"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 5,
+    "output": 25,
+    "cache_read": 0.5
+   }
   },
   {
    "id": "claude-sonnet-5",
@@ -152,7 +202,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 2,
+    "output": 10,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "claude-sonnet-4-6",
@@ -164,17 +219,32 @@
     "high",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 3,
+    "output": 15,
+    "cache_read": 0.3
+   }
   },
   {
    "id": "claude-sonnet-4-5",
    "name": "Sonnet 4.5",
-   "context_window": 200000
+   "context_window": 200000,
+   "price": {
+    "input": 3,
+    "output": 15,
+    "cache_read": 0.3
+   }
   },
   {
    "id": "claude-haiku-4-5",
    "name": "Haiku 4.5",
-   "context_window": 200000
+   "context_window": 200000,
+   "price": {
+    "input": 1,
+    "output": 5,
+    "cache_read": 0.1
+   }
   },
   {
    "id": "seed-2.1-pro",
@@ -207,22 +277,42 @@
   {
    "id": "kimi-k2.7-code",
    "name": "Kimi K2.7 Code",
-   "context_window": 262144
+   "context_window": 262144,
+   "price": {
+    "input": 0.95,
+    "output": 4,
+    "cache_read": 0.19
+   }
   },
   {
    "id": "kimi-k2.7-code-highspeed",
    "name": "Kimi K2.7 Code Highspeed",
-   "context_window": 262144
+   "context_window": 262144,
+   "price": {
+    "input": 1.9,
+    "output": 8,
+    "cache_read": 0.38
+   }
   },
   {
    "id": "kimi-k2.6",
    "name": "Kimi K2.6",
-   "context_window": 262144
+   "context_window": 262144,
+   "price": {
+    "input": 0.95,
+    "output": 4,
+    "cache_read": 0.16
+   }
   },
   {
    "id": "glm-5.1",
    "name": "GLM-5.1",
-   "context_window": 200000
+   "context_window": 200000,
+   "price": {
+    "input": 1.4,
+    "output": 4.4,
+    "cache_read": 0.26
+   }
   },
   {
    "id": "glm-5.2",
@@ -232,7 +322,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 1.4,
+    "output": 4.4,
+    "cache_read": 0.26
+   }
   },
   {
    "id": "glm-5.3",
@@ -243,7 +338,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 1.4,
+    "output": 4.4,
+    "cache_read": 0.26
+   }
   },
   {
    "id": "glm-5.3-flash",
@@ -254,7 +354,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 0.15,
+    "output": 0.5,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "deepseek-v4-pro",
@@ -265,7 +370,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 1.32,
+    "output": 3.96,
+    "cache_read": 0.044
+   }
   },
   {
    "id": "deepseek-v4-flash",
@@ -276,7 +386,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.006
+   }
   },
   {
    "id": "MiniMax-M3",
@@ -286,37 +401,72 @@
   {
    "id": "MiniMax-M2.7",
    "name": "MiniMax M2.7",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.06
+   }
   },
   {
    "id": "MiniMax-M2.7-highspeed",
    "name": "MiniMax M2.7 Highspeed",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.6,
+    "output": 2.4,
+    "cache_read": 0.06
+   }
   },
   {
    "id": "MiniMax-M2.5",
    "name": "MiniMax M2.5",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "MiniMax-M2.5-highspeed",
    "name": "MiniMax M2.5 Highspeed",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.6,
+    "output": 2.4,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "MiniMax-M2.1",
    "name": "MiniMax M2.1",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "MiniMax-M2.1-highspeed",
    "name": "MiniMax M2.1 Highspeed",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.6,
+    "output": 2.4,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "MiniMax-M2",
    "name": "MiniMax M2",
-   "context_window": 204800
+   "context_window": 204800,
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.03
+   }
   },
   {
    "id": "kimi-for-coding",
@@ -338,7 +488,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 3,
+    "output": 15,
+    "cache_read": 0.3
+   }
   },
   {
    "id": "kimi-k3.1-pro",
@@ -349,7 +504,12 @@
     "high",
     "max"
    ],
-   "default_effort": "max"
+   "default_effort": "max",
+   "price": {
+    "input": 2,
+    "output": 10,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "k3.1-pro",
@@ -360,7 +520,12 @@
     "high",
     "max"
    ],
-   "default_effort": "max"
+   "default_effort": "max",
+   "price": {
+    "input": 2,
+    "output": 10,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "kimi-k3.1-pro-highspeed",
@@ -371,7 +536,12 @@
     "high",
     "max"
    ],
-   "default_effort": "max"
+   "default_effort": "max",
+   "price": {
+    "input": 4,
+    "output": 20,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "k3.1-pro-highspeed",
@@ -382,7 +552,12 @@
     "high",
     "max"
    ],
-   "default_effort": "max"
+   "default_effort": "max",
+   "price": {
+    "input": 4,
+    "output": 20,
+    "cache_read": 0.2
+   }
   },
   {
    "id": "MiniMax-M3.1-Flash",
@@ -395,7 +570,12 @@
     "xhigh",
     "max"
    ],
-   "default_effort": "medium"
+   "default_effort": "medium",
+   "price": {
+    "input": 0.15,
+    "output": 0.6,
+    "cache_read": 0.015
+   }
   },
   {
    "id": "deepseek-flash",
@@ -406,7 +586,12 @@
     "high",
     "max"
    ],
-   "default_effort": "high"
+   "default_effort": "high",
+   "price": {
+    "input": 0.3,
+    "output": 1.2,
+    "cache_read": 0.006
+   }
   },
   {
    "id": "k3",
@@ -476,17 +661,33 @@
   {
    "id": "mimo-v2.6-pro",
    "name": "MiMo V2.6 Pro",
-   "context_window": 1000000
+   "context_window": 1000000,
+   "price": {
+    "input": 0.435,
+    "output": 0.87,
+    "cache_read": 0.0036
+   }
   },
   {
    "id": "mimo-v2.6-flash",
    "name": "MiMo V2.6 Flash",
-   "context_window": 1000000
+   "context_window": 1000000,
+   "price": {
+    "input": 0.14,
+    "output": 0.28,
+    "cache_read": 0.0028
+   }
   },
   {
    "id": "mimo-v2.6-pro-ultraspeed",
    "name": "MiMo V2.6 Pro UltraSpeed",
-   "context_window": 1000000
+   "context_window": 1000000,
+   "price": {
+    "input": 4.35,
+    "output": 8.7,
+    "cache_read": 0.036
+   }
   }
- ]
+ ],
+ "price_source": "cindy baseModels global standard prices without input-size tiers, registry updatedAt 2026-11-09T03:15:49.561Z"
 }

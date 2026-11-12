@@ -1,8 +1,9 @@
-// One folded execution summary while running or completed; manual expansion reveals its complete trace (#2602).
+// One folded execution summary while running or completed; manual expansion reveals its complete trace (#2602): with
+// intermediate narration, cindy's timeline of that narration and an inner summary for each run of work between (#5155).
 import { lazy, memo, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { childSessionOf, isChildSessionStep } from "../../lib/child-cards";
 import { useSessionLive } from "../../lib/live";
 import { useStore } from "../../lib/store";
-import { subagentFor } from "../../lib/tasks";
 import type { Item } from "../../lib/types";
 import { groupTitle, nestedLineDefault, togglesLiveOverride, workLineOpen, workLineOpens, isAgentStep, isPlanStep, isRowStep, isWorkflowStep, planTodos, workDuration, type AgentStatus, type ToolStep, type WorkGroupNode, type WorkLineStyle, type WorkNode } from "../../lib/work-groups";
 import type { WorkflowCalls } from "../../lib/workflows";
@@ -10,7 +11,7 @@ import type { Step } from "../../lib/turns";
 import { Collapse, cx, Spinner, useNow } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { ActionRow } from "./ActionRow";
-import { LiveClockContext, useChatContext } from "./chat-context";
+import { LiveClockContext } from "./chat-context";
 import { useFreshWords } from "./fresh-words";
 import { inOpenedFold, openFoldRange, useExpanded, useLiveOverride } from "./expanded";
 import { useReveal } from "./search-reveal";
@@ -19,11 +20,15 @@ import { PlanCard } from "./PlanCard";
 import { Answer } from "./SegmentView";
 import { NoticeRow, Thumb } from "./Steps";
 import { WorkflowCallCard } from "./WorkflowCard";
-import { ThinkingCard } from "./ThinkingCard";
+import { LiveThinking as LiveThinkingLine } from "./ThinkingCard";
 import { t } from "../../i18n";
 
-// This card is only mounted inside manually opened work; keep its report reader off the first screen.
+// Subagent cards sit inside the folded work (super rule 2), drawn only once a reader opens it: off the first screen.
 const SubagentCard = lazy(() => import("./SubagentCard").then((m) => ({ default: m.SubagentCard })));
+// Thought rows too (#5155), with their emphasis parser: only an opened summary draws them.
+const ThinkingRow = lazy(() => import("./ThinkingRow").then((m) => ({ default: m.ThinkingRow })));
+// A child session's card (#5120) the same way: drawn only once the work summary it sits in is opened.
+const ChildSessionCard = lazy(() => import("./ChildSessionCard").then((m) => ({ default: m.ChildSessionCard })));
 
 export interface WorkProps {
   mid: string;
@@ -32,11 +37,13 @@ export interface WorkProps {
   scope: string;
   expandFold: (f: Item) => Promise<void>;
   agentStatus: (s: ToolStep) => AgentStatus;
-  thinking: Map<string, number>;
   /** The Workflow calls whose run the hub lists (#3434): those draw the run's card. */
   workflowCalls?: WorkflowCalls;
-  /** Inside an open group (a finished timeline's inner groups stay folded). */
+  /** Inside an open group: a timeline's inner groups, which open with it (nestedLineDefault). */
   nested?: boolean;
+  /** Inside an open group: whether its outermost group is live. A call without its result spins while it is, in every
+   *  inner group, a finished one too (the run was over, the call may not be); nested groups keep their outer's. */
+  rowsLive?: boolean;
   /** The exchange these steps are of (its segment's id): what of it the reader opened is kept under it. */
   segment?: string;
   /** Show every tool's original input/result in place in an opened supervision trace. */
@@ -58,11 +65,11 @@ function foldsOf(g: WorkGroupNode): Item[] {
   return g.children.flatMap((c) => (c.kind === "group" ? foldsOf(c) : c.step.kind === "fold" ? [c.step.item] : []));
 }
 
-/** The screen's status line while this exchange is live (contract §3): a thinking card at the live group's end. Read
- *  here, not handed down: it changes about once a second while the agent works, and only this card shows it (#5417). */
+/** The screen's status line while this exchange is live (contract §3): a thinking line at the live group's end. Read
+ *  here, not handed down: it changes about once a second while the agent works, and only this line shows it (#5417). */
 function useThinkingNow(mid: string, sid: string) {
   const status = useSessionLive(mid, sid);
-  return status?.thinking ? <ThinkingCard live={status} /> : null;
+  return status?.thinking ? <LiveThinkingLine /> : null;
 }
 
 function LiveThinking({ mid, sid }: { mid: string; sid: string }) {
@@ -82,7 +89,8 @@ export const WorkGroup = memo(function WorkGroup({ g, p }: { g: WorkGroupNode; p
   const [loading, setLoading] = useState(false);
   const opens = workLineOpens(g, style, turnLive);
   const open = workLineOpen({ style, turnLive, remembered, liveOverride }) && opens;
-  const inside = useMemo(() => ({ ...p, nested: true }), [p]);
+  const rowsLive = p.nested ? Boolean(p.rowsLive) : g.live;
+  const inside = useMemo(() => ({ ...p, nested: true, rowsLive }), [p, rowsLive]);
   const toggle = () => {
     const next = !open;
     setOpen(next);
@@ -147,39 +155,31 @@ export const WorkGroup = memo(function WorkGroup({ g, p }: { g: WorkGroupNode; p
       )}
       <Collapse open={open} lazy>
         <div className="mt-1 flex min-w-0 flex-col gap-2 border-l-2 border-tool-rail py-[2px] pl-3" data-work-detail>
-          <WorkNodes nodes={g.children} p={inside} live={g.live} />
-          {g.live && <LiveThinking mid={p.mid} sid={p.sid} />}
+          <WorkNodes nodes={g.children} p={inside} live={rowsLive} />
+          {/* once, in the innermost live group: a live timeline's last run is live too */}
+          {g.live && !g.children.some((c) => c.kind === "group" && c.live) && <LiveThinking mid={p.mid} sid={p.sid} />}
         </div>
       </Collapse>
     </div>
   );
 });
 
-/** Nodes in order; tool calls next to each other sit together without a gap, like cindy's tool segments. `fade`: the
- *  agent's words among them that just came in fade in (fresh-words.ts); not inside a group. */
+/** Nodes in order; tool calls next to each other sit together without a gap, like cindy's tool segments; each subagent
+ *  is a card of its own, in the order it was launched (#5030). `fade`: the agent's words among them that just
+ *  came in fade in (fresh-words.ts); not inside a group. */
 export function WorkNodes({ nodes, p, live, fade }: { nodes: WorkNode[]; p: WorkProps; live?: boolean; fade?: boolean }) {
-  const runs: (WorkNode | ToolStep[] | AgentRun)[] = [];
+  const runs: (WorkNode | ToolStep[])[] = [];
   for (const n of nodes) {
     const last = runs[runs.length - 1];
     if (n.kind === "step" && drawnAsRow(n.step, p)) {
       if (Array.isArray(last)) last.push(n.step);
       else runs.push([n.step]);
-    } else if (n.kind === "step" && isAgentStep(n.step)) {
-      // subagents launched one after another (in parallel) sit together in one grid (#5602)
-      if (last && "agents" in last) last.agents.push(n.step as ToolStep);
-      else runs.push({ agents: [n.step as ToolStep] });
     } else runs.push(n);
   }
   return (
     <>
       {runs.map((run) =>
-        "agents" in run ? (
-          run.agents.length === 1 ? (
-            <StepView key={run.agents[0].id} step={run.agents[0]} p={p} live={live} fade={fade} />
-          ) : (
-            <AgentGrid key={run.agents[0].id} agents={run.agents} p={p} />
-          )
-        ) : Array.isArray(run) ? (
+        Array.isArray(run) ? (
           <div key={run[0].id} className="flex min-w-0 flex-col">
             {run.map((s) => (
               <ActionRow key={s.id} step={s} running={live && !s.result} mid={p.mid} sid={p.sid} trace={p.trace} />
@@ -192,35 +192,6 @@ export function WorkNodes({ nodes, p, live, fade }: { nodes: WorkNode[]; p: Work
         ),
       )}
     </>
-  );
-}
-
-interface AgentRun {
-  agents: ToolStep[];
-}
-
-/** Subagents launched together: "Running N agents" while any runs, "Ran N agents · M steps" after; their cards in a
- *  grid, two to a row where there is room, in the order they were launched. */
-function AgentGrid({ agents, p }: { agents: ToolStep[]; p: WorkProps }) {
-  const { subagents } = useChatContext();
-  const statuses = agents.map((a) => p.agentStatus(a));
-  const running = statuses.filter((s) => s === "running").length;
-  const steps = agents.reduce((n, a) => n + (subagentFor(subagents, a.use)?.steps ?? 0), 0);
-  const head = running
-    ? t("chat-subagentcard.agents_running", { count: running })
-    : [t("chat-subagentcard.agents_ran", { count: agents.length }), steps ? t("chat-subagentcard.agents_steps", { count: steps }) : ""].filter(Boolean).join(" · ");
-  return (
-    <div className="@container flex min-w-0 flex-col gap-1.5" data-subagent-grid={agents.length}>
-      <div className="flex items-center gap-1.5 text-[12px] leading-[1.333333] text-ink-2">
-        {running ? <Spinner size={11} /> : <Icon name="agent" size={12} />}
-        <span className="min-w-0 truncate">{head}</span>
-      </div>
-      <div className="grid min-w-0 grid-cols-1 gap-2 @[560px]:grid-cols-2">
-        {agents.map((a, i) => (
-          <SubagentCard key={a.id} step={a} status={statuses[i]} mid={p.mid} sid={p.sid} scope={p.scope} />
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -237,12 +208,13 @@ export const StepView = memo(function StepView({ step, p, live, fade }: { step: 
   switch (step.kind) {
     case "tool":
       if (p.trace) return <ActionRow step={step} running={live && !step.result} mid={p.mid} sid={p.sid} trace />;
+      if (isChildSessionStep(step)) return <Suspense fallback={null}><ChildSessionCard mid={p.mid} sid={childSessionOf(step)} scope={p.scope} /></Suspense>;
       if (isAgentStep(step)) return <Suspense fallback={null}><SubagentCard step={step} status={p.agentStatus(step)} mid={p.mid} sid={p.sid} scope={p.scope} /></Suspense>;
       if (isPlanStep(step)) return <PlanCard id={step.id} todos={planTodos(step)} live={live} mid={p.mid} sid={p.sid} />;
       if (workflowCard(step, p)) return <WorkflowCallCard step={step} mid={p.mid} sid={p.sid} scope={p.scope} />;
       return <ActionRow step={step} running={live && !step.result} mid={p.mid} sid={p.sid} />;
     case "thinking":
-      return <ThinkingCard item={step.item} durationMs={p.thinking.get(step.id)} scope={p.scope} />;
+      return <Suspense fallback={null}><ThinkingRow item={step.item} scope={p.scope} /></Suspense>;
     case "text":
       return fade ? <FreshAnswer item={step.item} mid={p.mid} sid={p.sid} /> : <Answer item={step.item} mid={p.mid} sid={p.sid} />;
     case "notice":

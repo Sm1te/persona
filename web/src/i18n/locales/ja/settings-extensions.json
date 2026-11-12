@@ -131,5 +131,20 @@
   "local_source": "マーケット外でインストール",
   "runtime": "実行方式",
   "manager_offline": "この拡張機能のアシスタントはオフラインです。操作するには再接続してください。",
-  "warning": "注意"
+  "warning": "注意",
+  "use_reference": "参照を使う",
+  "reference_placeholder": "op://vault/item/field",
+  "reference_hint": "この拡張機能が必要なときにプロバイダーが値を渡します。Persona は参照だけを保存します。",
+  "secret_reference_saved": "{title}は参照を使うようになりました",
+  "users_title": "使用中",
+  "users_footer": "これらの設定はこのプロバイダーから値を取ります。設定を保存すると、その後も値を取ることを許可したことになります。",
+  "user_launcher": "「{name}」のキー",
+  "user_launcher_machine": "{machine}の「{name}」のキー",
+  "rules_title": "Agent に常に渡す",
+  "rules_footer": "このコンピュータでこのランチャーを使い、あなたが自分で始めた Agent は確認なしで値を受け取ります。",
+  "rule_label": "{machine}の「{launcher}」",
+  "rule_remove": "削除",
+  "rule_remove_title": "このルールを削除しますか？",
+  "rule_remove_body": "次に{machine}の{launcher}が必要とするとき、もう一度承認します。",
+  "rule_removed": "ルールを削除しました"
 }

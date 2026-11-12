@@ -96,8 +96,7 @@ describe("a stopped Agent's page (#4754)", () => {
     expect(composerSlot(undefined)).toBe("composer");
   });
 
-  it("keeps the composer for a side panel's transcript, the assistant's chats and an offline computer", () => {
-    expect(composerSlot(stopped, { readOnly: true })).toBe("composer");
+  it("keeps the composer for the assistant's chats and an offline computer", () => {
     expect(composerSlot(stopped, { assistant: true })).toBe("composer");
     expect(composerSlot(stopped, { offline: true })).toBe("composer");
   });

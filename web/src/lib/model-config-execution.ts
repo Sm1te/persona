@@ -1,5 +1,6 @@
 // Settings-only presentation stays out of the shared API module and first-screen catalog.
 import { t } from "../i18n";
+import { SUPERVISE_PURPOSE } from "./background-supervisor";
 import { modelSummary, providerAgent, providerName, runtimeLabel, type ModelProvider, type ModelPurpose } from "./model-config";
 import type { Machine } from "./types";
 
@@ -31,6 +32,12 @@ export function executionForm(p: ModelPurpose, providers: ModelProvider[] = [], 
     backend = `${machine ? machine.engine_default || machine.engine || "herdr" : t("lib-agent-groups.by_machine")} · ${agent}`;
   }
   return { label: executionLabel(launch || p.kind), backend };
+}
+
+/** What a purpose is for, in a sentence under its row; only the ones this page has words for (the background
+ *  supervisor's, #5082). */
+export function purposeDescription(p: Pick<ModelPurpose, "id">): string {
+  return p.id === SUPERVISE_PURPOSE ? t("settings-modelconfiguration.supervise_description") : "";
 }
 
 export function purposeGroups(purposes: ModelPurpose[], query: string, providers: ModelProvider[] = []): [string, ModelPurpose[]][] {

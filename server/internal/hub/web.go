@@ -105,6 +105,9 @@ func webFrom(dir string, embedded fs.FS) http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		if htmlRuntimeWorker(name) {
+			w.Header().Set("Content-Security-Policy", htmlRuntimeWorkerCSP)
+		}
 		if file == "index.html" {
 			serveIndex(w, r, site, builtIn, tags)
 			return
@@ -322,6 +325,18 @@ func (g *gunzipSeeker) Read(p []byte) (int, error) {
 // the page's files are relative to it and lib/base.ts reads it for the API, the WebSocket and the page's routes. The
 // same file answers differently per X-Forwarded-Prefix, so a cache must key on it (Vary). The built-in copy's ETag is
 // that of the bytes sent: at the root the file's (kept in tags), under a sub-path worked out each time.
+// htmlRuntimeWorkerCSP is the policy of the worker that runs an assistant html card's code on the web (#4215,
+// web/src/lib/html-runtime/, docs/assistant/assistant-views.md "Free-form HTML rendering"): it may load and connect to
+// nothing. The worker is one file with QuickJS built in and gets the WebAssembly compiled from the page, so it needs
+// nothing but to instantiate it ('wasm-unsafe-eval'). One of the layers between a card and the network: the card's
+// code has no network API in QuickJS, and the worker removes its own once QuickJS is up.
+const htmlRuntimeWorkerCSP = "default-src 'none'; script-src 'wasm-unsafe-eval'"
+
+// htmlRuntimeWorker: the web build's html card worker, assets/html-runtime.worker-<hash>.js (Vite names it so).
+func htmlRuntimeWorker(name string) bool {
+	return strings.HasPrefix(name, "assets/html-runtime.worker-") && strings.HasSuffix(name, ".js") && !strings.Contains(strings.TrimPrefix(name, "assets/"), "/")
+}
+
 func serveIndex(w http.ResponseWriter, r *http.Request, site fs.FS, builtIn bool, tags *rootTags) {
 	b, err := fs.ReadFile(site, "index.html")
 	if err != nil {

@@ -88,6 +88,37 @@ class AssistantTest {
         assertTrue(conversationGroups(AssistantSnapshot(main.key, listOf(main, mine)), "", words).directions.isEmpty())
     }
 
+    // #5084: the background supervisor is built in. It waits under "All chats" with the chats Persona opened itself,
+    // never among 常驻 or Recent, and is found by the name the app gives it.
+    @Test fun theBackgroundSupervisorIsListedUnderAllChatsOnly() {
+        val main = Session(machineId = "demo", sessionId = "main", title = "主对话")
+        val mine = Session(machineId = "demo", sessionId = "mine", title = "周报", origin = "user", updatedAt = "2026-11-12T08:00:00Z")
+        val scheduled = Session(machineId = "demo", sessionId = "scheduled", title = "早报", origin = "task", originRef = "t1",
+            updatedAt = "2026-11-12T09:00:00Z")
+        val background = Session(machineId = "demo", sessionId = "bg", title = "Background supervisor", origin = "task",
+            updatedAt = "2026-11-12T10:00:00Z")
+        val named = words.copy(background = resources.getString(R.string.assistant_background_supervisor))
+        val snapshot = AssistantSnapshot(main.key, listOf(main, mine, scheduled, background), backgroundSupervisor = "bg")
+        val result = conversationGroups(snapshot, "", named)
+        assertEquals("bg", result.background)
+        assertEquals(listOf(background, scheduled, mine), result.others)
+        assertEquals(listOf(mine), result.recent)
+        assertTrue(result.directions.isEmpty())
+        // whatever the leaders or its origin say, it is no direction and no recent chat of the user's
+        val odd = snapshot.copy(leaders = listOf("bg"), conversations = listOf(main, mine, background.copy(origin = null)))
+        assertTrue(conversationGroups(odd, "", named).directions.isEmpty())
+        assertEquals(listOf(mine), conversationGroups(odd, "", named).recent)
+        assertEquals(listOf(background.copy(origin = null), mine), conversationGroups(odd, "", named).others)
+        // found by the app's name for it, in the app's language, whatever language the hub titled it in
+        assertEquals("后台督办", named.background)
+        assertEquals(listOf(background), conversationGroups(snapshot, "后台督办", named).others)
+        // an older hub names none: the conversation list is as before
+        val old = conversationGroups(snapshot.copy(backgroundSupervisor = null), "", named)
+        assertNull(old.background)
+        assertEquals(listOf(background, scheduled, mine), old.others)
+        assertTrue(conversationGroups(snapshot.copy(backgroundSupervisor = null), "后台督办", named).others.isEmpty())
+    }
+
     @Test fun archivedConversationsLeaveTheHistory() {
         val kept = Session(machineId = "demo", sessionId = "kept", title = "留着")
         val archived = Session(machineId = "demo", sessionId = "gone", title = "归档了", archived = true)
@@ -128,5 +159,23 @@ class AssistantTest {
         assertEquals(1, repository.outbox.value.size)
         assertEquals(main, repository.outbox.value.single().session)
         assertEquals("整理日程", repository.assistant.value.conversations.single { it.key == main }.lastText)
+    }
+
+    /** #4922 (web `recentConversations`, iOS `AssistantSidebarGroups.recent`): the drawer's Recent. */
+    @Test fun recentIsTheUsersOwnNewestFiveWithoutMainLeadersOrPersonasOwn() {
+        fun chat(id: String, minutes: Long, origin: String? = null, archived: Boolean = false) = Session(machineId = "demo", sessionId = id,
+            updatedAt = Instant.parse("2026-11-11T12:00:00Z").minusSeconds(minutes * 60).toString(), origin = origin, archived = archived)
+        val main = chat("main", 0)
+        val chats = listOf(main, chat("lead", 1), chat("inbox", 2, "inbox"), chat("task", 2, "task"), chat("lark", 2, "lark_agent"),
+            chat("spawned", 2, "spawned"), chat("ext", 2, "extension"), chat("future", 2, "something_new"), chat("gone", 2, archived = true),
+            chat("b", 3, "user"), chat("a", 3, "channel"), chat("c", 4, ""), chat("d", 5), chat("e", 6), chat("f", 7))
+        val snapshot = AssistantSnapshot(main.key, chats + chats.last(), leaders = listOf("lead"))
+        assertEquals("newest first, equal times by session id, at most 5", listOf("a", "b", "c", "d", "e"), recentConversations(snapshot).map { it.sessionId })
+        assertEquals("ending the leader lets it back in", "lead", recentConversations(snapshot.copy(leaders = emptyList())).first().sessionId)
+        val groups = conversationGroups(snapshot, "", words)
+        assertEquals(listOf("a", "b", "c", "d", "e"), groups.recent.map { it.sessionId })
+        assertTrue("All chats still lists them", groups.others.map { it.sessionId }.containsAll(listOf("a", "b", "inbox")))
+        assertTrue("no Recent while searching", conversationGroups(snapshot, "x", words).recent.isEmpty())
+        assertTrue("nothing qualifies: no Recent", recentConversations(AssistantSnapshot(main.key, listOf(main, chat("inbox", 1, "inbox")))).isEmpty())
     }
 }

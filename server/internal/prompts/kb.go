@@ -184,6 +184,64 @@ func RenderKBMinutesMergeInput(in KBMinutesMergeInput) string {
 	return render("kb/minutes_merge_input", in)
 }
 
+// RenderKBDayRecap is the system prompt noting one chunk (an hour at most) of an all-day recording (kb/day_recap).
+func RenderKBDayRecap(o KBOwner) string { return render("kb/day_recap", o) }
+
+// RenderKBDayRecapMerge is the system prompt merging an all-day recording's chunks' notes into the day's recap
+// (kb/day_recap_merge).
+func RenderKBDayRecapMerge(o KBOwner) string { return render("kb/day_recap_merge", o) }
+
+// KBDayRecapDay is an all-day recording as the recap's prompts name it (kb/day_recap_day): Day its date (YYYY-MM-DD)
+// in Zone, Title the user's, Part its part when above 1.
+type KBDayRecapDay struct {
+	Pinned, Title, Day, Weekday, Zone, Language string
+	Part                                        int
+}
+
+// KBDayRecapInput is one chunk of an all-day recording to note (kb/day_recap_input): From and To its first and last
+// lines' clock times, Transcript its lines ("[N] HH:MM text").
+type KBDayRecapInput struct {
+	Day                  KBDayRecapDay
+	From, To, Transcript string
+}
+
+func RenderKBDayRecapInput(in KBDayRecapInput) string { return render("kb/day_recap_input", in) }
+
+// KBDayMeeting is a meeting the knowledge base knows of on the day, numbered N for the model: one of the user's
+// meeting recordings (Kind recordings, From and To its span) or a calendar item (meetings, events: To zero).
+type KBDayMeeting struct {
+	N           int
+	Kind, Title string
+	From, To    time.Time
+}
+
+// KBDayRecapEntry is a candidate timeline entry of a chunk's notes: its first and last lines, meeting or outside.
+type KBDayRecapEntry struct {
+	FromLine, ToLine int
+	Kind, Title      string
+	Points           []KBMinutesNote
+}
+
+// KBDayRecapChunk is a chunk's notes for the merge, From and To its first and last lines' clock times.
+type KBDayRecapChunk struct {
+	From, To, Summary string
+	Entries           []KBDayRecapEntry
+	Actions           []KBMinutesNote
+}
+
+// KBDayRecapMergeInput is an all-day recording's chunks' notes to merge into its recap (kb/day_recap_merge_input),
+// with the day's known meetings; Partial: chunks from the middle of the day were left out.
+type KBDayRecapMergeInput struct {
+	Day      KBDayRecapDay
+	Meetings []KBDayMeeting
+	Chunks   []KBDayRecapChunk
+	Partial  bool
+}
+
+func RenderKBDayRecapMergeInput(in KBDayRecapMergeInput) string {
+	return render("kb/day_recap_merge_input", in)
+}
+
 // KBDigestEntry is one project or chat in the digest.
 type KBDigestEntry struct {
 	ID, Name, Importance, OneLine string

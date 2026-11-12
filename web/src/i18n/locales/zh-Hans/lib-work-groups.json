@@ -5,10 +5,9 @@
   "working": "正在工作…",
   "worked_for": "已工作 {duration}",
   "work": "工作过程",
-  "dur_seconds": "{s} 秒",
-  "dur_minutes_seconds": "{m} 分 {s} 秒",
-  "dur_minutes": "{m} 分钟",
+  "dur_seconds": "{s}s",
+  "dur_minutes_seconds": "{m}m {s}s",
+  "dur_minutes": "{m}m",
   "dur_hours_minutes": "{h} 小时 {m} 分",
-  "dur_days_hours_minutes": "{d} 天 {h} 小时 {m} 分",
-  "dur_hours": "{h} 小时"
+  "dur_days_hours_minutes": "{d} 天 {h} 小时 {m} 分"
 }

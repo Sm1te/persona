@@ -6,21 +6,22 @@
 // the answer, lib/assistant-views.ts), open opens inside the app, push / pop move through the card's named pages. A
 // reply is only offered once the hub has the card (a live one, or a block it registered from a trusted reply) and says
 // it takes answers (feature assistant_views); while a reply is still being written the card is drawn, nothing sends.
-// An html component is never run on the web (lib/assistant-html.ts): the card shows its plain-text fallback.
-import { createContext, useContext, useMemo, useState } from "react";
+// An html component runs only where the web's runtime may (lib/assistant-html.ts, ui/HtmlCard.tsx, #4215): otherwise
+// the card shows its plain-text fallback.
+import { createContext, lazy, Suspense, useContext, useMemo, useState } from "react";
 import { assistantView, cardText } from "../lib/assistant-view";
 import { blockKey, blockOf, cardKnown, checkCard, openTarget, type OpenTarget } from "../lib/assistant-blocks";
-import { hasHtml } from "../lib/assistant-html";
+import { hasHtml, HTML_BRIDGE_FEATURE, WEB_HTML_RUNTIME_VERIFIED } from "../lib/assistant-html";
 import { conversationCards, draftKey, submitAction, updateDraft, useCards, type CardDraft } from "../lib/assistant-views";
 import type { AssistantView, ViewAction } from "../lib/extension-wire";
 import { fieldValues, numberProblem, readView, type UIAction, type UIItem, type UIView } from "../lib/extension-ui";
 import { openLink } from "../lib/links";
 import { useLinkManager } from "../lib/manager-choice";
 import { openPanel } from "../lib/panel";
+import { openTask } from "../lib/handoff";
 import { navigate } from "../lib/router";
 import { hubHas, useStore } from "../lib/store";
-import { mediaMatches, NARROW } from "../lib/viewport";
-import { INERT, ViewSections } from "../views/extensions/ViewBody";
+import { INERT, ViewSections } from "../views/extensions/view-sections-lazy";
 import { t } from "../i18n";
 import { Button, cx, Dialog, toast } from "./atoms";
 import { Icon } from "./icons";
@@ -39,30 +40,45 @@ export const CardItem = createContext<{ id: string; text: string } | null>(null)
 /** How deep push goes (docs/assistant/assistant-views.md "Actions and multiple pages"). */
 const STACK_MOST = 4;
 
+/** Whether html components run here: WEB_HTML_RUNTIME_VERIFIED (dev pages and tests may set it for themselves). */
+export const HtmlRuntime = createContext<boolean>(WEB_HTML_RUNTIME_VERIFIED);
+
+const HtmlCard = lazy(() => import("./HtmlCard"));
+
+/** A card's html components run when the runtime may, the hub has the bridge (persona_view and html_views on), and the
+ *  card is one the hub keeps (a conversation and a key). Otherwise the whole card is its fallback. */
+function useHtmlRuns(keyed: boolean): boolean {
+  const verified = useContext(HtmlRuntime);
+  const hubAllows = useStore((s) => hubHas(s.features, HTML_BRIDGE_FEATURE));
+  return verified && hubAllows && keyed;
+}
+
 export function AssistantCard({ lang, code, fallback }: { lang: string; code: string; fallback: React.ReactNode }) {
   const conversation = useContext(CardConversation);
   const item = useContext(CardItem);
+  const block = lang === "persona-card" || !item ? undefined : blockOf(item.text, code);
+  const htmlRuns = useHtmlRuns(!!conversation && !!block && !!item);
   if (lang === "persona-card") return <LegacyCard lang={lang} code={code} fallback={fallback} />;
   const checked = checkCard(code);
   if ("problem" in checked) return checked.fallback ? <FallbackCard text={checked.fallback} /> : <>{fallback}</>;
   // which block of its reply this is: only then can an answer be kept for it
-  const block = item ? blockOf(item.text, code) : undefined;
   const fb = String(checked.raw.fallback);
   if (block && (!block.complete || block.index >= 3)) return <FallbackCard text={fb} />;
-  if (hasHtml(checked.raw)) return <HtmlFallback text={fb} title={typeof checked.raw.title === "string" ? checked.raw.title : undefined} />;
-  return <CardBody raw={checked.raw} conversation={conversation} cardKey={block && item ? blockKey(item.id, block.index) : ""} version={1} source="text" />;
+  if (hasHtml(checked.raw) && !htmlRuns) return <HtmlFallback text={fb} title={typeof checked.raw.title === "string" ? checked.raw.title : undefined} />;
+  return <CardBody raw={checked.raw} conversation={conversation} cardKey={block && item ? blockKey(item.id, block.index) : ""} version={1} source="text" htmlRuns={htmlRuns} />;
 }
 
 /** A live card of the feed (kind view): the newest version the hub sent, drawn in place. */
 export function LiveCard({ conversation, id, first }: { conversation: string; id: string; first?: AssistantView }) {
   const stored = useCards((s) => conversationCards(conversation, s).views[id]);
+  const htmlRuns = useHtmlRuns(!!conversation && !!id);
   const v = stored && (!first || stored.version >= first.version) ? stored : first;
   if (!v) return null;
   const raw = v.view as unknown as Record<string, unknown>;
   const fb = typeof raw.fallback === "string" ? raw.fallback : "";
   if (!cardKnown(raw)) return <FallbackCard text={fb} />;
-  if (hasHtml(raw)) return <HtmlFallback text={fb} title={typeof raw.title === "string" ? raw.title : undefined} />;
-  return <CardBody raw={raw} conversation={conversation} cardKey={v.id} version={v.version} source="live" />;
+  if (hasHtml(raw) && !htmlRuns) return <HtmlFallback text={fb} title={typeof raw.title === "string" ? raw.title : undefined} />;
+  return <CardBody raw={raw} conversation={conversation} cardKey={v.id} version={v.version} source="live" htmlRuns={htmlRuns} />;
 }
 
 function LegacyCard({ lang, code, fallback }: { lang: string; code: string; fallback: React.ReactNode }) {
@@ -99,6 +115,12 @@ function HtmlFallback({ text, title }: { text: string; title?: string }) {
       <p className="px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap break-words text-ink select-text">{text}</p>
     </div>
   );
+}
+
+/** One html component of a card that runs them: nothing while the card's code loads (the first card only), its words for
+ *  a component without a key (no bridge). */
+function HtmlItem(p: { item: UIItem; conversation: string; cardKey: string; version: number; page: string; fallback: string }) {
+  return p.item.key ? <Suspense fallback={null}><HtmlCard {...p} /></Suspense> : <HtmlFallback text={p.fallback} title={p.item.title} />;
 }
 
 // ── the card ──
@@ -141,12 +163,13 @@ function cardActions(raw: Record<string, unknown>): Map<string, CardAction> {
   return out;
 }
 
-/** A page of the card as the renderer draws it ("" the root); one that does not read draws nothing. */
-function pageView(raw: Record<string, unknown>, name: string): UIView | null {
+/** A page of the card as the renderer draws it ("" the root); one that does not read draws nothing. `html`: its html
+ *  components are kept, for a card that runs them. */
+function pageView(raw: Record<string, unknown>, name: string, html: boolean): UIView | null {
   const page = name ? (isObject(raw.pages) ? raw.pages[name] : undefined) : raw;
   if (!isObject(page)) return null;
   try {
-    return readView(typeof page.type === "string" ? { sections: [{ items: [page] }] } : page);
+    return readView(typeof page.type === "string" ? { sections: [{ items: [page] }] } : page, { html });
   } catch {
     return null;
   }
@@ -175,7 +198,7 @@ interface Asking {
 
 const NO_DRAFT: CardDraft = { values: {}, stack: [] };
 
-function CardBody({ raw, conversation, cardKey, version, source }: { raw: Record<string, unknown>; conversation: string; cardKey: string; version: number; source: "text" | "live" }) {
+function CardBody({ raw, conversation, cardKey, version, source, htmlRuns }: { raw: Record<string, unknown>; conversation: string; cardKey: string; version: number; source: "text" | "live"; htmlRuns?: boolean }) {
   const manager = useLinkManager();
   const takesAnswers = useStore((s) => hubHas(s.features, VIEWS_FEATURE));
   const keyed = !!conversation && !!cardKey;
@@ -195,7 +218,7 @@ function CardBody({ raw, conversation, cardKey, version, source }: { raw: Record
   for (const p of draft.stack) if (p in pages) stack.push(p);
   else break;
   const page = stack.at(-1) ?? "";
-  const view = useMemo(() => pageView(raw, page), [raw, page]);
+  const view = useMemo(() => pageView(raw, page, !!htmlRuns), [raw, page, htmlRuns]);
   const rootTitle = typeof raw.title === "string" ? raw.title : undefined;
   if (!view) return <FallbackCard text={String(raw.fallback ?? "")} />;
 
@@ -268,6 +291,7 @@ function CardBody({ raw, conversation, cardKey, version, source }: { raw: Record
         // an html reply's action is the component's key, not one of the card's actions: nothing to mark
         chosen={answer && answer.kind !== "html" ? answer.action : undefined}
         locked={answered || !!sending?.inFlight}
+        renderHtml={htmlRuns ? (it) => <HtmlItem key={`${cardKey}/${version}/${page}/${it.key ?? ""}`} item={it} conversation={conversation} cardKey={cardKey} version={version} page={page} fallback={String(raw.fallback ?? "")} /> : undefined}
       />
       <CardStatus answer={answer} draft={draft} hint={hint} onRetry={retry} />
       {asking && (
@@ -364,8 +388,7 @@ export function openTargetOf(target: string, manager?: string) {
       navigate({ name: "session", mid: to.mid, sid: to.sid });
       return;
     case "task":
-      if (mediaMatches(NARROW)) navigate({ name: "todos", id: to.id });
-      else openPanel({ kind: "task", todo: to.id });
+      openTask(to.id);
       return;
     case "kb":
       navigate({ name: "kb", kind: to.path[0], id: to.path.slice(1).join("/") || undefined });

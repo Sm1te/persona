@@ -19,5 +19,7 @@
   "reply_reminder": "Remind me when I haven't replied",
   "reply_reminder_hint": "If an agent asked you something and you still haven't replied {minutes} minutes after seeing it, you get one reminder. Rule-based, no tokens used",
   "closeout": "Ask for a closeout",
-  "closeout_hint": "When an agent stops after doing work without saying whether it's done, merged and deployed, and what's missing, its stop is held once to ask for that record. Costs one short extra turn on the agent's model"
+  "closeout_hint": "When an agent stops after doing work without saying whether it's done, merged and deployed, and what's missing, its stop is held once to ask for that record. Costs one short extra turn on the agent's model",
+  "closeout_ask": "Ask for the status afterwards",
+  "closeout_ask_hint": "When an agent that nobody supervises stops after doing work, without a closeout and without being clearly finished, Persona asks it once for a status report on the work already done. Costs one turn on the agent's model"
 }

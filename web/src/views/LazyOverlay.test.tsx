@@ -110,7 +110,7 @@ describe("the first screen's dialogs", () => {
     ["./machines/AddComputerEntry.tsx", "./AddComputer"],
     ["./assistant/Readiness.tsx", "../machines/AddComputer"],
     ["./assistant/Persona.tsx", "./LookUpload"],
-    ["./chat/SessionDialogs.tsx", "./ModelEffortPopover"],
+    ["./chat/ModelPill.tsx", "./SessionModelPanel"],
   ])("%s loads %s on demand", (file, dialog) => {
     const source = read(file);
     expect(staticImports(source)).not.toContain(dialog);
@@ -118,7 +118,7 @@ describe("the first screen's dialogs", () => {
   });
 
   it("the dynamic imports resolve to the components drawn", async () => {
-    const [add, look, popover] = await Promise.all([import("./machines/AddComputer"), import("./assistant/LookUpload"), import("./chat/ModelEffortPopover")]);
-    for (const c of [add.AddComputer, look.LookUploadDialog, popover.ModelEffortPopover]) expect(typeof c).toBe("function");
+    const [add, look, panel] = await Promise.all([import("./machines/AddComputer"), import("./assistant/LookUpload"), import("./chat/SessionModelPanel")]);
+    for (const c of [add.AddComputer, look.LookUploadDialog, panel.SessionModelPanel]) expect(typeof c).toBe("function");
   }, 60_000);
 });

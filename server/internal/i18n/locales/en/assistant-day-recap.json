@@ -1,0 +1,16 @@
+{
+  "ready_title": "Your day recap is ready",
+  "ready_body": "{day} · meetings: {meetings} · suggested to-dos: {actions}",
+  "name": "Day · {date}",
+  "no_text": "Nothing of this day was transcribed yet, so there is no recap to write.",
+  "transcript_expired": "This recording’s transcript has expired; only its recap is kept, so it can’t be written again.",
+  "stale": "The recap changed. Reload it and try again.",
+  "unknown_action": "This recap has no suggested to-do {id}.",
+  "no_recap": "This recording has no recap yet.",
+  "todo_notes": "From the day recap of {day}, said at {clock}.",
+  "not_day": "This recording isn’t an all-day recording.",
+  "base_changed": "This recording was uploaded again since that base. Continue from the latest upload.",
+  "segments_gap": "Sentences are missing before these. Send again from {next}.",
+  "day_full": "This part of the day is full. Continue in the next part.",
+  "kind_changed": "A recording becomes an all-day recording only at its first upload, and stays one."
+}

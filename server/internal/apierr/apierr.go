@@ -251,6 +251,18 @@ var rpcFailureKeys = map[string]string{
 	"agent_stopped": "rpc-errors.agent_stopped",
 	// a start in a directory whose name can't be typed into a terminal (node/hostorca_launch.go)
 	proto.CodeDirectoryUntypable: "rpc-errors.directory_untypable",
+	// a running Agent's switch to another launcher, picked and carried out by the next message (node/launcher_switch.go)
+	proto.CodeSwitchStale:           "rpc-errors.switch_stale",
+	proto.CodeSwitchPickModel:       "rpc-errors.switch_pick_model",
+	proto.CodeSwitchUnderWay:        "rpc-errors.switch_under_way",
+	proto.CodeSwitchUnsupported:     "rpc-errors.switch_unsupported",
+	proto.CodeSwitchLauncherMissing: "rpc-errors.switch_launcher_missing",
+	proto.CodeSwitchOtherAgent:      "rpc-errors.switch_other_agent",
+	proto.CodeSwitchModelLocked:     "rpc-errors.switch_model_locked",
+	proto.CodeSwitchConfigDir:       "rpc-errors.switch_config_dir",
+	proto.CodeSwitchNotStopped:      "rpc-errors.switch_not_stopped",
+	proto.CodeSwitchFailed:          "rpc-errors.switch_failed",
+	proto.CodeSwitchFailedStopped:   "rpc-errors.switch_failed_stopped",
 }
 
 func localizeFailure(body map[string]any, status int, err error, l i18n.Lang) {

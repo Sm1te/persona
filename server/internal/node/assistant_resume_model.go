@@ -31,12 +31,22 @@ func (n *Node) resumeModel(launcher, cwd, settings, configDir string) string {
 	if _, managed := n.managedLauncher(launcher); managed {
 		return ""
 	}
+	model, _ := n.resumeModelOf(launcher, cwd, settings, configDir)
+	return model
+}
+
+// resumeModelOf is resumeModel for a launcher that is not managed, and whether what it starts claude with could be
+// seen: false for a launcher the probe cannot follow (a wrapper script, a probe that failed or found another agent)
+// and for a settings "model" that is no model id; "" with true when the launcher names its model itself.
+func (n *Node) resumeModelOf(launcher, cwd, settings, configDir string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	p, err := n.launcherProbe(ctx, launcher)
-	if err != nil || p.Agent != "claude" || p.Shell == nil || indexOf(p.Args, "-m", "--model") >= 0 ||
-		slices.ContainsFunc(p.Args, func(a string) bool { return strings.HasPrefix(a, "--model=") }) {
-		return ""
+	if err != nil || p.Agent != "claude" || p.Shell == nil {
+		return "", false
+	}
+	if indexOf(p.Args, "-m", "--model") >= 0 || slices.ContainsFunc(p.Args, func(a string) bool { return strings.HasPrefix(a, "--model=") }) {
+		return "", true
 	}
 	env := make(map[string]any, len(p.Shell)+len(p.Env))
 	for _, vars := range []map[string]string{p.Shell, p.Env} {
@@ -82,14 +92,14 @@ func (n *Node) resumeModel(launcher, cwd, settings, configDir string) string {
 	}
 	for _, k := range claudeModelVars {
 		if v, _ := env[k].(string); v != "" {
-			return ""
+			return "", true
 		}
 	}
 	if model == "" {
-		return "default"
+		return "default", true
 	}
 	if !proto.ValidModelID(model) {
-		return ""
+		return "", false
 	}
-	return model
+	return model, true
 }

@@ -190,13 +190,18 @@ final class MeetingRecordingUITests: XCTestCase {
                                    "-ui.scheme", look == "dark" ? "dark" : "light"]
                 + (look == "large" ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] : [])
             app.launchPinned()
-            // At the largest text the meeting's own card fills the first screens, and a list builds no rows below them:
-            // scroll a little while the minutes load.
+            // At the largest text the meeting's own card fills the first screens, the minutes run many screens more, and a
+            // list builds no rows away from the screen: go down slowly to the transcript, then back up until Copy (at the
+            // minutes' top) has been on the screen, again while they load (#5144).
             let copy = app.buttons["minutes-copy"]
-            var swipes = 0
-            XCTAssertTrue(wait(45) {
+            let transcript = app.descendants(matching: .any)["recording-sentence"].firstMatch
+            var down = true, swipes = 0
+            XCTAssertTrue(wait(150) {
                 if copy.exists { return true }
-                if look == "large", swipes < 4 { app.swipeUp(); swipes += 1 }
+                guard look == "large" else { return false }
+                if down { app.swipeUp(velocity: .slow) } else { app.swipeDown(velocity: .slow) }
+                swipes += 1
+                if (down && transcript.exists) || swipes >= 30 { down.toggle(); swipes = 0 }
                 return false
             }, "\(look): no minutes:\n\(app.debugDescription)")
             let regenerate = app.buttons["minutes-regenerate"]
@@ -206,7 +211,7 @@ final class MeetingRecordingUITests: XCTestCase {
                 try shot(app, "minutes-regenerate", look: look)
             }
             let addAll = app.buttons["minutes-add-all"]
-            scroll(to: addAll, in: app, swipes: look == "large" ? 30 : 8)
+            scroll(to: addAll, in: app, swipes: look == "large" ? 40 : 8, slow: look == "large")
             XCTAssertTrue(onScreen(addAll, in: app), "\(look): no Add All with two left:\n\(app.debugDescription)")
             let add = app.buttons.matching(identifier: "minutes-add")
             if look != "large" { XCTAssertEqual(add.count, 2, "\(look): each action item has Add to To-Dos") }
@@ -239,6 +244,27 @@ final class MeetingRecordingUITests: XCTestCase {
             XCTAssertTrue(updating.waitForNonExistence(timeout: 30), "\(look): the next version never came:\n\(app.debugDescription)")
             XCTAssertTrue(regenerate.waitForExistence(timeout: 5), "\(look): Regenerate not back")
             app.terminate()
+        }
+    }
+
+    /// The minutes' time in the app's own date style, as the recording's header above it, not the hub's fixed format
+    /// (#4875): Chinese and Japanese, light and dark. The mock's minutes carry `start` / `end` as the hub writes them.
+    @MainActor func testMinutesTimeInTheAppsDateStyle() throws {
+        let hub = try mockHub()
+        for (language, locale) in [("zh-Hans", "zh_CN"), ("ja", "ja_JP")] {
+            for look in ["light", "dark"] {
+                try minutesMode(hub, "ready")
+                let app = XCUIApplication()
+                app.launchArguments = ["-pairURL", pair(hub), "-tab", "assistant", "-openShellPage", "recordings", "-showMeetingSample", "minutes",
+                                       "-ui.scheme", look, "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+                app.launchPinned()
+                let when = app.descendants(matching: .any)["minutes-when"].firstMatch
+                XCTAssertTrue(when.waitForExistence(timeout: 45), "\(language) \(look): no minutes:\n\(app.debugDescription)")
+                acceptIconAlert(timeout: 2)
+                XCTAssertTrue(when.label.contains("月") && !when.label.contains("2027-"), "\(language) \(look): \(when.label)")
+                try shot(app, "minutes-when-\(language)", look: look)
+                app.terminate()
+            }
         }
     }
 
@@ -301,8 +327,10 @@ final class MeetingRecordingUITests: XCTestCase {
 
     /// Scrolls until `el` is on the screen and clear of the navigation bar: a button under the bar's blur still reads as
     /// hittable, and a tap there lands on the bar (Regenerate after an add, in the first run).
-    @MainActor private func scroll(to el: XCUIElement, in app: XCUIApplication, swipes: Int = 8, up: Bool = false) {
-        for _ in 0..<swipes where !onScreen(el, in: app) { if up { app.swipeDown() } else { app.swipeUp() } }
+    /// `slow` swipes without momentum, so a short row is not flung past at the largest text.
+    @MainActor private func scroll(to el: XCUIElement, in app: XCUIApplication, swipes: Int = 8, up: Bool = false, slow: Bool = false) {
+        let velocity: XCUIGestureVelocity = slow ? .slow : .default
+        for _ in 0..<swipes where !onScreen(el, in: app) { if up { app.swipeDown(velocity: velocity) } else { app.swipeUp(velocity: velocity) } }
     }
 
     @MainActor private func onScreen(_ el: XCUIElement, in app: XCUIApplication) -> Bool {

@@ -22,5 +22,6 @@
   "copy_field": "拷贝{label}",
   "fix_it": "去修",
   "background_done": "后台轮次",
-  "background_running": "后台运行中"
+  "background_running": "后台运行中",
+  "model_changed": "模型已从 {from} 切换到 {to}"
 }

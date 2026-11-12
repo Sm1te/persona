@@ -334,6 +334,9 @@ export function agentRow(agent, o = {}) {
     agent: appAgent(root),
     launcher: agent.provider,
   }
+  // When it was created: a delegated agent's card in its creator's chat counts its running time from it (#5120).
+  const created = Date.parse(agent.createdAt)
+  if (created) row.started_at = new Date(created).toISOString()
   // Its Paseo workspace (a worktree, or one of the tasks in a folder) names where in the project it is. It is no slot:
   // a slot is one tab, and the apps draw the agents sharing one as that tab's panes (one row for them all, each named
   // by its agent; one that stopped running "replaced" by another there). A workspace's agents are conversations of

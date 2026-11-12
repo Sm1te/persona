@@ -151,6 +151,8 @@ internal class NewAgentViewModel(
     private val adopt: suspend (Session) -> Unit = {},
     private val prefill: NewAgentPrefill? = null,
     private val now: () -> Instant = Instant::now,
+    /** The subscription use of the hub a computer belongs to, for ultracode's quota line (#582); null: none drawn. */
+    internal val usage: (suspend (machineId: String) -> List<persona.core.contracts.api.UsageAccount>)? = null,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(NewAgentState())
     val state = mutable.asStateFlow()

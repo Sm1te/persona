@@ -21,6 +21,7 @@
     "test": "node --test e2e/extension-mirrors-cleanup.node-test.mjs && vitest run"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@novnc/novnc": "1.7.0",
     "@tanstack/react-virtual": "^3.14.26",
     "@xterm/addon-clipboard": "0.2.0",
@@ -38,6 +39,7 @@
     "mermaid": "^12.3.0",
     "micromark-extension-gfm": "3.0.0",
     "pdfjs-dist": "^6.5.438",
+    "quickjs-emscripten-core": "0.32.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "10.1.0",

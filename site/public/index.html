@@ -267,19 +267,22 @@ h1 .say path{fill:none;stroke:var(--cheek);stroke-width:7;stroke-linecap:round}
 .path p{margin:0 0 18px;font-size:15px;line-height:1.7;color:var(--body)}
 .path .btn{margin-top:auto;padding:13px 18px;font-size:15px}
 .path.first{background:var(--cheek-tint)}
-.cmd{position:relative;width:100%;margin:0 0 14px;padding:12px 44px 12px 14px;background:var(--ink);color:#E9E8F0;border-radius:14px;font:400 12.5px/1.6 var(--mono);word-break:break-all}
+.cmd{position:relative;width:100%;margin:0 0 14px;padding:12px 44px 12px 14px;background:var(--ink);color:#E9E8F0;border-radius:14px;font:400 12.5px/1.6 var(--mono)}
+/* One line that scrolls sideways (a narrow screen must not break the address); the copy button stays put outside it. */
+.cmd .line{display:block;white-space:pre;overflow-x:auto;scrollbar-width:thin}
 .cmd .pr{color:#9C9AB0;user-select:none}
 .copy{position:absolute;right:8px;top:8px;width:30px;height:30px;display:grid;place-items:center;padding:0;background:#2E2D38;color:#E9E8F0;border:0;border-radius:8px;cursor:pointer}
 .copy svg{width:15px;height:15px}
 .copy::before{content:"";position:absolute;inset:-7px}
 .copy.ok{background:var(--go)}
 .paths{grid-template-columns:minmax(0,5fr) minmax(0,7fr);align-items:start}
-.steps{width:100%;margin:4px 0 22px;padding:0;list-style:none;counter-reset:step;display:grid;gap:18px}
+.steps{width:100%;margin:4px 0 22px;padding:0;list-style:none;counter-reset:step;display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
 .steps li{position:relative;padding-left:46px;counter-increment:step}
 .steps li::before{content:counter(step);position:absolute;left:0;top:0;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;border:2px solid var(--ink);background:var(--sky-tint);font:600 14px/1 var(--mono)}
 .steps b{display:block;font-size:16px;line-height:1.6}
 .steps li > span{display:block;font-size:14.5px;line-height:1.7;color:var(--body)}
 .steps .cmd{margin:10px 0 0}
+.steps li > span code,.faq p code{padding:1px 6px;border-radius:6px;background:var(--sky-tint);color:var(--ink);font-size:.9em;white-space:nowrap}
 
 /* ---------- privacy ---------- */
 .lockmark{display:block;width:66px;height:66px;margin-bottom:24px;padding:13px;background:var(--paper);border:var(--stroke);border-radius:18px;box-shadow:var(--lift)}
@@ -654,10 +657,10 @@ html:not(.js) .sw::after,.ext.in .sw::after{transform:translateX(16px)}
       <h3>自己搭一个</h3>
       <ol class="steps">
         <li><b>在一台常开的机器上装 hub</b><span>Linux 或 Mac 都行，贴这一行。Mac 上要先装 Docker Desktop 或 OrbStack。</span>
-          <div class="cmd"><span class="pr">$ </span><span id="cmd-text">curl -fsSL https://personaside.com/install.sh | sh -s -- --hub</span>
+          <div class="cmd"><span class="line"><span class="pr">$ </span><span id="cmd-text">curl -fsSL https://personaside.com/install.sh | sh -s -- --hub</span></span>
             <button class="copy" id="copy" type="button" aria-label="复制安装命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg></button>
           </div></li>
-        <li><b>手机扫码配对</b><span>装完终端里会打出一个二维码，用 iPhone 相机扫一下就连上了。</span></li>
+        <li><b>手机扫码配对</b><span>装完终端里会打出一个二维码，用 iPhone 相机扫一下就连上了。二维码 10 分钟内有效、只能用一次；过期了，在 hub 那台机器上运行 <code>personad hub pair</code> 再出一个，或者把上面这行再贴一遍。</span></li>
         <li><b>连上你的电脑</b><span>hub 那台机器先装了 Claude Code 的话，它自己就是第一台电脑；要加别的电脑，在网页版里点「添加电脑」，照屏幕上的提示做。</span></li>
         <li><b>接上模型</b><span>用你已经在用的 Claude Code，或者贴一个 API Key。</span></li>
       </ol>
@@ -679,6 +682,7 @@ html:not(.js) .sw::after,.ext.in .sw::after{transform:translateX(16px)}
       <details><summary>手机不在身边，Agent 卡住了怎么办？</summary><p>要你处理的事会推到手机和手表，锁屏和灵动岛上能看到是哪台电脑的哪个 Agent，点开就能回答。技术细节类的问题，Persona 会先替你答，只有该你拍板的才来找你。</p></details>
       <details><summary>数据会经过你们的服务器吗？</summary><p>只有推送会。没配自己推送密钥的 hub，经开发者运营的推送中继发通知：通知正文端到端加密，中继看不到；锁屏和灵动岛的实时活动按 iOS 要求是明文，经过中继时它看得到。介意的话，给 hub 配上自己的 APNs 密钥，或者自己搭一个中继。详见<a href="/privacy/">隐私政策</a>。</p></details>
       <details><summary>怎么拿到 App？</summary><p>iPhone 和 Apple Watch 版通过 TestFlight 公开测试，需要 iOS 26，装好可以先用体验模式。网页版就在你的 hub 上，浏览器打开 hub 的地址就行。Android 版还没有公开安装包，目前要自己构建。</p></details>
+      <details><summary>换了手机、重装了 App，怎么重新配对？</summary><p>在 hub 那台机器的终端里运行 <code>personad hub pair</code>，会打出新的二维码和配对链接，同样 10 分钟内有效、只能用一次；提示找不到这个命令的话，把安装命令再贴一遍，装好的部分不会重做，最后也会给你一个新码。还有别的手机或平板连着的话，不用回 hub 那台机器：在它的「设置 › 设备 › 连接新设备」里出码，用新手机扫。hub 重装了或者搬到了别的机器，用新 hub 打出的码，在 App 的「设置 › 重新配对」里扫；移除过的电脑，在网页版里重新「添加电脑」。其他情况见<a href="https://github.com/nwverse/persona/blob/main/docs/operations/getting-started.md#pair-again" target="_blank" rel="noopener">安装指南</a>。</p></details>
       <details><summary>要花钱吗？</summary><p>Persona 以 MIT 协议开源，自己部署就能用。模型走你自己的 Claude Code 订阅或 API Key。</p></details>
     </div>
   </div>

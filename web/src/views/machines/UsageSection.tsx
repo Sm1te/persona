@@ -28,6 +28,7 @@ import {
 import { Button, cx, Loading } from "../../ui/atoms";
 import { t } from "../../i18n";
 import { useWidth } from "../../lib/use-width";
+import { namedLauncher, providerIdNote, providerLabel, providerTitle, useProviderNames } from "../../lib/provider-names";
 
 const H = 150;
 const HIT_H = 84;
@@ -74,6 +75,10 @@ function UsageReport({ mid, heading }: { mid: string; heading: (right: React.Rea
   const data = accepted?.scope === scope && !current.unsupported ? accepted.data : null;
   const [hover, setHover] = useState<number | null>(null);
   const tz = -new Date().getTimezoneOffset() * 60;
+  // a launcher by the provider's display name, its startup ID as secondary text (#5029); "" is the report's Other
+  const names = useProviderNames();
+  const launcherOf = (name: string) => (name === "" ? { name: launcherName(name) } : namedLauncher(name, names));
+  const launcherLabel = (name: string) => providerLabel(launcherOf(name));
 
   useEffect(() => {
     let dead = false;
@@ -162,7 +167,8 @@ function UsageReport({ mid, heading }: { mid: string; heading: (right: React.Rea
               label={t("machines-usage.launcher")}
               all={t("machines-usage.all_launchers")}
               value={launcher}
-              options={(catalog?.launchers ?? []).map((l) => ({ value: l.name, label: launcherName(l.name) }))}
+              options={(catalog?.launchers ?? []).map((l) => ({ value: l.name, label: launcherLabel(l.name) }))}
+              labelOf={launcherLabel}
               onChange={setLauncher}
               disabled={catalog?.launchers_known === false}
             />
@@ -220,7 +226,7 @@ function UsageReport({ mid, heading }: { mid: string; heading: (right: React.Rea
         {data && <div className="flex flex-col gap-3">
           <Shares title={t("machines-usage.by_model")} shares={data.models.map((m) => ({ key: m.name, label: m.name, tokens: m }))} selected={model} onPick={(k) => setModel(model === k ? null : k)} />
           {data.launchers_known && (
-            <Shares title={t("machines-usage.by_launcher")} shares={data.launchers.map((l) => ({ key: l.name, label: launcherName(l.name), tokens: l }))} selected={launcher} onPick={(k) => setLauncher(launcher === k ? null : k)} />
+            <Shares title={t("machines-usage.by_launcher")} shares={data.launchers.map((l) => ({ key: l.name, label: providerTitle(launcherOf(l.name)), note: providerIdNote(launcherOf(l.name)), tokens: l }))} selected={launcher} onPick={(k) => setLauncher(launcher === k ? null : k)} />
           )}
         </div>}
       </div>
@@ -257,11 +263,13 @@ function Totals({ data }: { data: MachineUsage }) {
   );
 }
 
-function Filter({ label, all, value, options, onChange, disabled }: {
+function Filter({ label, all, value, options, labelOf = launcherName, onChange, disabled }: {
   label: string;
   all: string;
   value: string | null;
   options: { value: string; label: string }[];
+  /** What a picked value no longer in `options` is called. */
+  labelOf?: (value: string) => string;
   onChange: (v: string | null) => void;
   disabled?: boolean;
 }) {
@@ -275,7 +283,7 @@ function Filter({ label, all, value, options, onChange, disabled }: {
         onChange={(e) => onChange(e.target.value === "\u0000all" ? null : e.target.value)}
       >
         <option value={"\u0000all"}>{all}</option>
-        {value !== null && !options.some((o) => o.value === value) && <option value={value}>{value === "" ? launcherName(value) : value}</option>}
+        {value !== null && !options.some((o) => o.value === value) && <option value={value}>{labelOf(value)}</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -519,7 +527,8 @@ function Crosshair({ at, H: h, label, W }: { at: number | null; H: number; label
   );
 }
 
-function Shares({ title, shares, selected, onPick }: { title: string; shares: { key: string; label: string; tokens: MachineUsage["total"] }[]; selected: string | null; onPick: (k: string) => void }) {
+/** `note`: a launcher's startup ID beside its display name (#5029); a label without one is an ID or a model, in mono. */
+function Shares({ title, shares, selected, onPick }: { title: string; shares: { key: string; label: string; note?: string; tokens: MachineUsage["total"] }[]; selected: string | null; onPick: (k: string) => void }) {
   const top = Math.max(1, ...shares.map((s) => totalTokens(s.tokens)));
   return (
     <div className="rounded-card bg-surface px-4 pt-3 pb-1.5 shadow-card">
@@ -530,7 +539,10 @@ function Shares({ title, shares, selected, onPick }: { title: string; shares: { 
         return (
           <button key={s.key} type="button" onClick={() => onPick(s.key)} aria-pressed={selected === s.key} className={cx("block w-full rounded-[6px] py-2 text-left hover:bg-inset/60", i > 0 && "border-t border-line")}>
             <div className="flex items-baseline gap-2">
-              <span className={cx("min-w-0 flex-1 truncate font-mono text-[12px]", selected === s.key ? "text-accent" : "text-ink")}>{s.label}</span>
+              <span className={cx("min-w-0 flex-1 truncate text-[12px]", !s.note && "font-mono", selected === s.key ? "text-accent" : "text-ink")}>
+                {s.label}
+                {s.note && <> <span className="font-mono text-[11px] text-ink-3">{s.note}</span></>}
+              </span>
               <span className="text-[12.5px] font-medium text-ink tabular-nums">{formatTokens(totalTokens(s.tokens))}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-2">

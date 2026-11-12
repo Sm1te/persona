@@ -22,6 +22,8 @@
   "compact_start_failed": "Couldn't start compacting: {error}",
   "compacted": "Context compacted",
   "compact_failed": "Compacting failed: {error}",
+  "clear": "Clear context",
+  "clear_failed": "Couldn't clear the context: {error}",
   "close": "Close",
   "new_main_done_carried": "Started a new main chat with a summary of the old one",
   "new_main_done": "Started a new main chat",

@@ -190,6 +190,7 @@ private object MeetingMinutes : KnowledgeRepository {
     )
 
     private val minutes = RecordingMinutes(version = 3, revision = 1, title = "Weekly sync", time = "2026-11-10 14:00–14:32",
+        start = "2026-11-10T14:00:00+08:00", end = "2026-11-10T14:32:00+08:00",
         where = "Room 3", attendees = listOf("Alex", "Sam", "Kim"),
         points = listOf(
             MinutesItem("The widgets are ready; Monday works for the release.", 95.5, "Sam"),

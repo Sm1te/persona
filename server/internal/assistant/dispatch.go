@@ -397,6 +397,6 @@ func (s *Service) superviseDispatched(ctx context.Context, am Device, c proto.Se
 		return
 	}
 	if made {
-		s.taskCard(ctx, main, todo.ID)
+		s.taskCard(ctx, main, todo.ID, "")
 	}
 }

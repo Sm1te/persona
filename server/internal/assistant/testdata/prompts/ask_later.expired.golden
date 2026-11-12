@@ -1,0 +1,6 @@
+🔔 你 11-08 15:04 用 ask_user 问过用户（wait: false，当时没有等回答）：
+- Merge the release PR now?
+
+卡片到点没人回：Nobody answered within the wait, so the question is now to-do todo_ask_0a1b2c ("Merge the release PR now?"): it waits for the user's call in their to-do list and in the next briefing. Don't ask it again, and don't go ahead with what you asked about. When the user decides, their answer comes to this conversation as a new message; if they close the to-do without deciding, you are told that too. Say in a line what is waiting for them, then go on with anything that does not depend on it.
+
+（这是 Persona 的通知，不是用户在这里发的消息。）

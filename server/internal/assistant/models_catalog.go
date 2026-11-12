@@ -208,14 +208,19 @@ func closestGeneration(key string, gens []catalogGeneration) (catalogGeneration,
 	return gens[best], true
 }
 
-// enrichModel fills what the gateway did not say from the catalog; what it said wins. A name is filled only from an
-// exact entry (a listed id, or the same generation written with the other separator). InheritedFrom is set only when
-// a missing capability was copied from an earlier generation. An unlisted "[1m]" id is a 1M window, ahead of an
-// inherited window; an exact entry keeps the window the catalog states.
+// enrichModel fills capabilities the gateway did not say from the catalog; what it said about them wins. Price is
+// different: only an exact catalog entry supplies the reference price, so an external value never survives enrichment.
+// A name is filled only from an exact entry (a listed id, or the same generation written with the other separator).
+// InheritedFrom is set only when a missing capability was copied from an earlier generation. An unlisted "[1m]" id is
+// a 1M window, ahead of an inherited window; an exact entry keeps the window the catalog states.
 func enrichModel(m proto.ProviderModel) proto.ProviderModel {
+	m.Price = nil
 	if c, ok := catalogModel(m.ID); ok {
 		if m.Name == "" && c.InheritedFrom == "" {
 			m.Name = c.Name
+		}
+		if c.InheritedFrom == "" {
+			m.Price = c.Price
 		}
 		window := c.ContextWindow
 		if c.InheritedFrom != "" && idHas1M(m.ID) {

@@ -198,7 +198,8 @@ func TestAnExtensionsTokenOnlyOnItsManagersThings(t *testing.T) {
 	}
 	for _, l := range strings.Split(a.log(), "\n") { // asked whose token it is (extensions.authorize), nothing else
 		if l != "" && !strings.HasPrefix(l, extwire.MethodAuthorize+" ") && !strings.HasPrefix(l, "assistant.tools") &&
-			!strings.Contains(l, `"method":"fs.watch"`) { // (the hub's own on ma's connection)
+			!strings.Contains(l, `"method":"fs.watch"`) && // (the hub's own on ma's connection)
+			!strings.HasPrefix(l, devicewire.MethodEngineGet+" ") { // (the move's own: mb's engine choice)
 			t.Fatalf("A was reached: %s", l)
 		}
 	}

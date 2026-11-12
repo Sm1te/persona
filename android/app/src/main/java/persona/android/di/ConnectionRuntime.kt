@@ -201,6 +201,10 @@ class ConnectionRuntime @Inject constructor(application: Application) : HubConne
         override suspend fun discard(clientMessageId: String) = gate.withLock {
             owner(clientMessageId)?.messages?.discard(clientMessageId) ?: false
         }
+        // By its session: a cancelled message is in no group's outbox any more.
+        override fun restore(message: OutboxMessage) {
+            groupOf(message.session.machineId)?.data?.messages?.restore(message.copy(session = GroupKeys.rawKey(message.session)))
+        }
         override suspend fun retry(clientMessageId: String) = gate.withLock {
             owner(clientMessageId)?.messages?.retry(clientMessageId) ?: false
         }

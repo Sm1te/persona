@@ -12,10 +12,18 @@ What it adds, under /api/v1/extensions and the old /api/v1/plugins alike:
                                                with GET /mock/voice2?voices=fail|slow|slowfail|flaky|stale|none|ok
   GET  …/voice/ws                              a start with protocol 2 and a target gets the script below; any other
                                                start is handed to mock_hub.py's protocol 1 script unchanged
+  POST …/voice/speak                           a text read aloud (docs/assistant/voice.md 4.15, #5004): `speak` in the
+                                               features, and a quiet 440 Hz tone as audio/pcm at 24 kHz, streamed in
+                                               100 ms pieces at about real time, MOCK_VOICE_SPEAK_SECONDS long (3 by
+                                               default). MOCK_VOICE_SPEAK=ok|fail|slow|off: the tone / 502
+                                               upstream_failed / the tone after 12 s (the phone's wait for the first
+                                               audio runs out) / an extension from before it (no `speak`, a 404); or
+                                               for the rest of the run GET /mock/voice2?speak=…&speak_seconds=…
   GET  /mock/voice2                            what the app sent (starts, texts, interrupts, resends, the PCM frames: how
                                                many, their bytes and sizes, how many were all zero, how many times it
-                                               asked for the voices), the script's steps, how many protocol 2 sockets
-                                               closed, and the script's pace
+                                               asked for the voices, the texts it had read aloud: speaks, newest last),
+                                               the script's steps, how many protocol 2 sockets closed, the script's
+                                               pace, and the speak mode and length
 The model configuration's use plugin.voice comes from mock_hub.py's own MOCK_VOICE code.
 
 The script (seconds after ready): the user's words come in as captions (partial, then final) and the voice hands them
@@ -28,6 +36,7 @@ done and read out. interrupt while the voice speaks: clear.
 import base64
 import hashlib
 import json
+import math
 import os
 import struct
 import threading
@@ -39,7 +48,21 @@ EXTENSION = "voice"
 # MOCK_VOICE_PACE=0.1: the script ten times as fast (test_voice_mock.py); 1 for the app, at a pace a screen can follow.
 PACE = float(os.environ.get("MOCK_VOICE_PACE") or "1")
 FEATURES = ["target", "runs", "asks", "resume", "suspend"]
-LOG = {"starts": [], "texts": [], "interrupts": 0, "resends": [], "audio": 0, "audio_bytes": 0, "audio_sizes": {}, "audio_silent": 0, "steps": [], "closes": 0, "voices": 0}
+LOG = {"starts": [], "texts": [], "interrupts": 0, "resends": [], "audio": 0, "audio_bytes": 0, "audio_sizes": {}, "audio_silent": 0, "steps": [], "closes": 0, "voices": 0,
+       "speaks": []}
+# How POST …/speak answers (#5004): ok the tone, fail a 502 upstream_failed, slow the tone after SPEAK_SLOW seconds,
+# off as an extension from before it (no `speak` in the features, the route a 404). seconds: how long the tone is.
+SPEAK = {"mode": os.environ.get("MOCK_VOICE_SPEAK", "") or "ok",
+         "seconds": float(os.environ.get("MOCK_VOICE_SPEAK_SECONDS") or "3")}
+SPEAK_MODES = ("ok", "fail", "slow", "off")
+SPEAK_SLOW = float(os.environ.get("MOCK_VOICE_SPEAK_SLOW") or "12")  # test_voice_mock.py shortens it
+SPEAK_RATE = 24000
+HUB_MODE = {"mode": lambda: "1"}  # MOCK_VOICE as install sees it (the extension's state)
+
+
+def features():
+    """What /info and ready list: speak unless the mock plays an extension from before it."""
+    return FEATURES + ([] if SPEAK["mode"] == "off" else ["speak"])
 PREFIXES = ("/api/v1/extensions", "/api/v1/plugins")
 # How GET …/voices answers (#2411): "" its list; fail a 502 (the hub could not reach the extension); slow its list
 # after VOICES_DELAY seconds (the pickers' Loading voices…); slowfail a 502 after VOICES_DELAY seconds (a failure
@@ -120,7 +143,15 @@ def install(hub):
             how = (q.get("voices") or [None])[0]
             if how is not None and how in VOICES_MODES:
                 VOICES["mode"], VOICES["failed"] = ("" if how == "ok" else how), 0
-            handler.send_json(dict(LOG, pace=PACE, voices_mode=VOICES["mode"] or "ok"))
+            speak_how = (q.get("speak") or [None])[0]
+            if speak_how in SPEAK_MODES:
+                SPEAK["mode"] = speak_how
+            try:
+                SPEAK["seconds"] = max(0.0, min(60.0, float((q.get("speak_seconds") or [SPEAK["seconds"]])[0])))
+            except ValueError:
+                pass
+            handler.send_json(dict(LOG, pace=PACE, voices_mode=VOICES["mode"] or "ok", speak_mode=SPEAK["mode"],
+                                   speak_seconds=SPEAK["seconds"]))
             return True
         if p == "/api/v1/extensions":
             handler.send_json({"extensions": [extension()]})
@@ -140,7 +171,7 @@ def install(hub):
                     handler.send_json({"error": "not found"}, 404)
                 else:
                     setup = ["还没填实时语音服务的 Key"] if mode() == "setup" else []
-                    handler.send_json({"protocol": 2, "features": FEATURES, "setup": setup, "warnings": []})
+                    handler.send_json({"protocol": 2, "features": features(), "setup": setup, "warnings": []})
             elif rest == "models":
                 handler.send_json(hub.VOICE_MODELS)
             elif rest == "voices":
@@ -158,7 +189,79 @@ def install(hub):
                          "iOS 语音模式的协议 2 脚本见 scripts/mock/voice_mock.py，GET /mock/voice2 看 App 发了什么")
     hub.MOCK_HELP.append("MOCK_VOICE_VOICES=fail|slow|slowfail|flaky|stale|none  语音扩展的音色列表：502 / 晚 MOCK_VOICE_VOICES_DELAY 秒（默认 6）/ "
                          "晚 MOCK_VOICE_VOICES_DELAY 秒再 502 / 前两次 502 / 标成 stale / 空列表；运行中用 GET /mock/voice2?voices=… 改（#2411）")
+    hub.MOCK_HELP.append("MOCK_VOICE_SPEAK=ok|fail|slow|off  POST …/voice/speak (a text read aloud, #5004): a quiet tone of "
+                         "MOCK_VOICE_SPEAK_SECONDS seconds (default 3) as audio/pcm at 24 kHz, at about real time / 502 "
+                         "upstream_failed / the tone after 12 s / an extension from before it (no speak feature, 404); "
+                         "while it runs: GET /mock/voice2?speak=…&speak_seconds=…")
+    # mock_hub.py's do_POST has no voice hook: the speak route goes in front of the first route it asks
+    # (custom_models_route, defined before this module is loaded and looked up by name on every request).
+    old_post_route = hub.custom_models_route
+
+    def post_route(h, method, p, q, body=b""):
+        if method == "POST" and hub.VOICE_MODE and any(p == prefix + "/" + EXTENSION + "/speak" for prefix in PREFIXES):
+            speak(h, body)
+            return True
+        return old_post_route(h, method, p, q, body)
+
+    hub.custom_models_route = post_route
+    HUB_MODE["mode"] = mode
     return route
+
+
+# ---------- reading a text aloud (POST …/speak) ----------
+
+def tone(seconds):
+    """A quiet 440 Hz tone, PCM16 little-endian mono at SPEAK_RATE: what the mock's voice says."""
+    n = int(seconds * SPEAK_RATE)
+    return b"".join(struct.pack("<h", int(1600 * math.sin(2 * math.pi * 440 * i / SPEAK_RATE))) for i in range(n))
+
+
+def speak(h, body):
+    """POST …/speak as the built-in extension answers it (server/internal/voice/speak.go): the text logged, then the
+    voice as it comes (chunked, 100 ms at a time), or an error before any audio."""
+    try:
+        req = json.loads(body or b"{}")
+    except ValueError:
+        req = None
+    if not isinstance(req, dict):
+        h.send_json({"error": "the body is JSON: {text, model?, voice?, lang?}", "code": "bad_request"}, 400)
+        return
+    mode = SPEAK["mode"]
+    voice = HUB_MODE["mode"]()
+    if mode == "off" or voice in ("off", "p1"):  # an extension from before it, or none running
+        h.send_json({"error": "not found"}, 404)
+        return
+    LOG["speaks"].append({k: req.get(k) for k in ("text", "model", "voice", "lang")})
+    if voice == "setup":
+        h.send_json({"error": "no realtime voice service is set up yet", "code": "no_upstream"}, 503)
+        return
+    if not str(req.get("text") or "").strip():
+        h.send_json({"error": "no text to read", "code": "bad_request"}, 400)
+        return
+    if mode == "fail":
+        h.send_json({"error": "the realtime voice service did not read it: HTTP 500", "code": "upstream_failed"}, 502)
+        return
+    if mode == "slow":
+        time.sleep(SPEAK_SLOW)
+    pcm = tone(SPEAK["seconds"])
+    piece = SPEAK_RATE * 2 // 10  # 100 ms
+    try:
+        h.send_response(200)
+        h.send_header("Content-Type", "audio/pcm")
+        h.send_header("X-Persona-Audio-Rate", str(SPEAK_RATE))
+        h.send_header("Cache-Control", "no-store")
+        h.send_header("Transfer-Encoding", "chunked")
+        h.end_headers()
+        for i in range(0, len(pcm), piece):
+            chunk = pcm[i:i + piece]
+            h.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+            h.wfile.flush()
+            if i + piece < len(pcm):
+                time.sleep(0.1)
+        h.wfile.write(b"0\r\n\r\n")
+        h.wfile.flush()
+    except OSError:
+        h.close_connection = True  # the phone hung up (Stop Speaking, the next answer)
 
 
 # ---------- the socket ----------
@@ -453,7 +556,7 @@ class Call:
 
     def run(self):
         target = self.start.get("target") or {}
-        self.say({"type": "ready", "protocol": 2, "features": FEATURES, "input_rate": 16000, "output_rate": 24000,
+        self.say({"type": "ready", "protocol": 2, "features": features(), "input_rate": 16000, "output_rate": 24000,
                   "model": self.start.get("model") or self.hub.VOICE_MODELS["default"], "voice": self.start.get("voice"),
                   "target": {"machine_id": target.get("machine_id"), "session_id": target.get("session_id"),
                              "kind": "main" if self.label == "Persona" else "agent",

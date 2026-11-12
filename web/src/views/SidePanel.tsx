@@ -8,10 +8,7 @@ import { returnFocus } from "../ui/overlay";
 import { CHAT_MIN, PANEL_MIN, useLayout } from "../lib/layout";
 import { cx, EASE, Loading } from "../ui/atoms";
 import { ResizeHandle } from "../ui/ResizeHandle";
-import { AgentPanel, TaskPanel } from "./assistant/TaskPanel";
-import { SubagentPanel } from "./chat/SubagentPanel";
 import { PlanPanel } from "./chat/PlanPanel";
-import { subagentParent } from "../lib/tasks";
 import { useCloseOnBack } from "../lib/back-close";
 import { mediaMatches, NARROW, PHONE, useMedia } from "../lib/viewport";
 import { t } from "../i18n";
@@ -136,7 +133,7 @@ export function SidePanel() {
 }
 
 function panelLabel(p: Panel) {
-  return p.kind === "files" ? t("sidepanel.files") : p.kind === "git" ? "Git" : p.kind === "review" ? t("sidepanel.review") : p.kind === "file" ? t("sidepanel.files") : p.kind === "task" ? t("sidepanel.task") : p.kind === "agent" ? t("sidepanel.agent") : p.kind === "plan" ? t("sidepanel.plan") : p.kind === "preview" ? t("sidepanel.preview") : t("sidepanel.link");
+  return p.kind === "files" ? t("sidepanel.files") : p.kind === "git" ? "Git" : p.kind === "review" ? t("sidepanel.review") : p.kind === "file" ? t("sidepanel.files") : p.kind === "plan" ? t("sidepanel.plan") : p.kind === "preview" ? t("sidepanel.preview") : t("sidepanel.link");
 }
 
 function body(p: Panel) {
@@ -151,12 +148,6 @@ function body(p: Panel) {
       return <FileViewerPanel key={`${p.mid}:${p.path}:${p.line ?? ""}-${p.to ?? ""}`} mid={p.mid} sid={p.sid} path={p.path} cwd={p.cwd} line={p.line} to={p.to} onClose={closePanel} />;
     case "link":
       return <LinkPanel key={`${p.manager ?? ""} ${p.url}`} url={p.url} title={p.title} manager={p.manager} onClose={closePanel} />;
-    case "task":
-      return <TaskPanel key={p.todo} todoId={p.todo} onClose={closePanel} />;
-    case "agent":
-      // a subagent's conversation ("<parent>@<agent>", its card's "View full run"), read-only
-      if (subagentParent(p.sid) !== p.sid) return <SubagentPanel key={`${p.mid}/${p.sid}`} mid={p.mid} sid={p.sid} onClose={closePanel} />;
-      return <AgentPanel key={`${p.mid}/${p.sid}`} mid={p.mid} sid={p.sid} onClose={closePanel} />;
     case "plan":
       return <PlanPanel key={`${p.mid}/${p.sid}`} mid={p.mid} sid={p.sid} onClose={closePanel} />;
     case "preview":

@@ -19,6 +19,11 @@ import SwiftUI
     /// Set by the chat: a held header began, or ended, rising to show what opened under it (`rising`). Meanwhile the
     /// newest end is off the screen for a moment, and ↓ came up for that moment only (#1123).
     var onRising: (Bool) -> Void = { _ in }
+    /// Set by the chat: a row is opening or closing under the click (`toggleInPlace`). True when the chat holds the list
+    /// there instead of following what comes in next (`ChatFollow.toggledRow`, as on iOS, #3005).
+    var anchor: () -> Bool = { false }
+    /// Set by the chat: a kept hold glided to the newest end (iOS, #1173). The Mac pin does not glide; never called.
+    var landed: () -> Void = {}
 
     nonisolated static let space = "chatContent"
     /// How long a tapped header is held at most.
@@ -60,6 +65,10 @@ import SwiftUI
         gliding = false
     }
 
+    /// The list's height changed under a held header (iOS puts the header back, #3005). Not followed up in the frozen
+    /// Mac app (docs/apple/mac.md): there the header may move with the list's bottom edge.
+    func resized(by d: CGFloat) {}
+
     /// The kept hold lasts the usual time from now (as on iOS).
     func unkeep() {
         if var h = held, h.until == .distantFuture {
@@ -71,6 +80,12 @@ import SwiftUI
     #if DEBUG
     /// Where `key` last reported itself on screen (`UnfoldTrace`).
     func screenY(_ key: String) -> CGFloat? { last[key]?.y }
+    /// How tall the list's content is (`UnfoldTrace`).
+    var contentHeight: CGFloat? { list?.documentView?.frame.height }
+    /// What is held, for `ScrollTrace`: its key, and whether it is kept.
+    var traceHeld: String { held.map { "\($0.key)\($0.until == .distantFuture ? "+kept" : "")" } ?? "-" }
+    /// The iPhone's trace says where its scroll view is; the Mac's says nothing more.
+    var traceFrame: String { "-" }
     #endif
 
     func moved(_ key: String, to spot: Spot) {

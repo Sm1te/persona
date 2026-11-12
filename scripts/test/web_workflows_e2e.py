@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end check of how the web shows a background workflow (#2935): the agent's row in the sidebar says which run
 it waits for and how far it got, the chat's "Background" chip opens a card per run (#3434: counts, a progress bar, one block
-per phase, the stopped one's error), the running phase's block lists its agents, another phase opens on a click, and an
-agent opens read-only in the side panel; the task card says the same in a line. These runs carry no phase_stats (an older
+per phase, the stopped one's error), the running phase's block lists its agents, another phase opens on a click, and the
+agent rows only read (#5030: a workflow agent opens no conversation of its own); the task card says the same in a line. These runs carry no phase_stats (an older
 hub): the blocks come from the agents listed. With MOCK_WORKFLOWS=legacy (a hub without the workflows field) the row only
 says "Running in the background". The cards in the chat itself: scripts/test/web_workflow_cards_e2e.py.
 
@@ -100,17 +100,16 @@ def run(browser, base, token, size, theme, shots, legacy):
         expect(audit.locator("[data-agent]")).to_have_count(0)
         audit.get_by_role("button").first.click()
         expect(audit.locator("[data-agent]")).to_have_count(3)
-        expect(audit.locator('[data-agent="wa2"] button')).to_have_attribute("title", "降雨概率在 0.5% 以下时显示成 0%，和 App 里不一致。")
+        expect(audit.locator('[data-agent="wa2"]')).to_have_attribute("title", "降雨概率在 0.5% 以下时显示成 0%，和 App 里不一致。")
         if page.evaluate(OVERFLOW) > 0:
             fail(f"{tag}: the page scrolls sideways (agents open)")
         ok(f"{tag}: the card opens its agents with their last words")
         shot("agents")
-        running.get_by_role("button", name="看 audit:rain 的对话").click()
-        expect(dialog).to_have_count(0)
-        expect(page.get_by_text("降雨概率在 0.5% 以下时显示成 0%").last).to_be_visible()
-        expect(page.get_by_text("audit:rain").first).to_be_visible()
-        ok(f"{tag}: an agent opens read-only in the side panel")
-        shot("panel")
+        if running.locator("[data-agent] button, [data-agent] a, [data-agent][role=button]").count():
+            fail(f"{tag}: the agent rows should open nothing")
+        audit.locator('[data-agent="wa2"]').click()
+        expect(dialog).to_have_count(1)  # nothing opened over it
+        ok(f"{tag}: the agent rows only read")
     if errors:
         fail(f"{tag}: page errors: {errors[:3]}")
     ctx.close()

@@ -136,12 +136,9 @@ struct ChatView: View {
     /// ↓'s jump to the newest end, run on the list itself (#3027).
     @State private var jumpRun = ChatJumpRun()
     #endif
-    /// Work lines just opened, until when their steps reveal themselves as they appear (they arrive from the hub after
-    /// the tap); and ones folding away before they close (`Unfolding`).
+    /// Work lines just opened, until when their steps fade in as they appear (they arrive from the hub after the tap,
+    /// `Unfolding`). Closing has no such phase: what closes goes at once (#3005).
     @State private var revealUntil: [String: Date] = [:]
-    @State private var concealing: Set<String> = []
-    /// The calls of a run of chips folding away before it closes (the rest of its work line stays).
-    @State private var concealingCalls: Set<String> = []
 
     private enum Entry: Equatable { case latestAnswer, line(String), message(String) }
     /// The line being landed on, measured while landing (only that one row watches its frame).
@@ -167,7 +164,8 @@ struct ChatView: View {
     @Environment(\.shell) private var shell
     /// iPhone Duo's bars down the side: the shell's bar over the Persona conversation is the side rail (`ShellSideRail`).
     @Environment(\.shellRailEdge) private var railEdge
-    /// The Persona page's manager switcher under its top bar (several managers).
+    /// The page draws this chat's lifted message (`MessageLiftHost`).
+    @Environment(\.messageLiftHost) private var liftHost
     /// The shell's composer (`ShellComposerBar`): the assistant's conversation and, in the shell, an agent's too, in every
     /// style (#1091). Other platforms retain `ComposerRow` / `PromptComposer` and their mode chips. On the Mac
     /// the card in every style but BeautifulUI's (its prompt bar is already one): the field, and under it Add, the model
@@ -295,9 +293,14 @@ struct ChatView: View {
         // sheets this page presents (a tool's detail) are inside it too.
         chatPage.environment(\.rowMemoScope, RowMemo.scope(shownKey))
             .environment(\.assistantCardConversation, style == .assistant ? shownKey : nil)
-            // A pressed message, lifted over the whole page with its bar (#603).
+            // Only this chat hands its lifted message to the page (a chat shown in a sheet from it draws its own).
+            .environment(\.messageLiftHost, nil)
+            // A pressed message, lifted over the whole page with its bar (#603); over the page around it where that
+            // floats a bar over the chat (Persona's conversation, `MessageLiftHost`, #3188).
             .liftBlur(menu)
-            .overlay { MessageLiftLayer(menu: menu) }
+            .overlay { if liftHost == nil { MessageLiftLayer(menu: menu) } }
+            .onAppear { liftHost?.menu = menu }
+            .onDisappear { if liftHost?.menu === menu { liftHost?.menu = nil } }
     }
 
     @ViewBuilder private var chatPage: some View {
@@ -934,6 +937,11 @@ struct ChatView: View {
             blocks = built.blocks
         }
         var lines = lineBuilder.build(Self.debugTrim(blocks), live: key.live, streaming: key.streaming)
+        #if os(iOS)
+        // An Agent's long finished answers as several rows: one row many screens tall stuttered whenever it was on
+        // screen (#4970). Persona's own conversation keeps its boxed answers whole.
+        if style == .dev { lines = ChatLines.splitAnswers(lines) }
+        #endif
         if style == .assistant { // docs/assistant/unified-entry.md: the hub's items, quick results, a line for each day
             // Dispatch links have no instruction list. Keep Persona's hand-offs as their own folded lines instead
             // of hiding them as though a full task card still rendered them (#3711).
@@ -1219,70 +1227,55 @@ struct ChatView: View {
 
     /// Folds or opens a work line. From its header, the header stays under the finger (`ChatPin`), through the steps
     /// arriving from the hub after the tap; from Collapse under the last step, the flipped list keeps the reply below where
-    /// it was on its own. No animation: hundreds of rows animating out left blank frames behind.
+    /// it was on its own. No animation: hundreds of rows animating out left blank frames behind. Folding is at once too:
+    /// the steps used to fade away first, their space held, and for a fifth of a second the screen showed a fading copy
+    /// of them over a blank (#3005).
     private func toggleWork(_ id: String, fromHeader: Bool, run: Bool = false) {
         Haptics.tap()
         let wasOpen = run ? isRunOpen(id) : isOpen(id)
         #if DEBUG
-        UnfoldTrace.shared.begin("\(run ? "run" : "work") \(wasOpen ? "fold" : "open")") { [pin] in
+        UnfoldTrace.shared.begin("\(run ? "run" : "work") \(wasOpen ? "fold" : "open")", height: { [pin] in pin.contentHeight },
+                                 drawn: { Self.drawnTop(id) }) { [pin] in
             pin.screenY(id)
         }
         #endif
-        guard run || !wasOpen else { return concealWork(id, fromHeader: fromHeader) }
-        // Its steps reveal themselves (a fade from nothing) as they appear, unless the list is at its newest end: the
-        // steps come in there first and the pin brings the header back a frame later, and for that frame the screen
-        // held nothing but steps still fading in: blank (#754). They show at once instead.
-        if !run { revealUntil[id] = scratch.atNewest ? nil : .now.addingTimeInterval(Self.stepsArrive) }
+        // Its steps fade in as they appear, unless the list is at its newest end: the steps come in there first and the
+        // pin brings the header back a frame later, and for that frame the screen held nothing but steps still fading in:
+        // blank (#754). They show at once instead.
+        if !run { revealUntil[id] = wasOpen || scratch.atNewest ? nil : .now.addingTimeInterval(Self.stepsArrive) }
         changeWork(id, fromHeader: fromHeader, run: run, wasOpen: wasOpen)
     }
 
     /// How long after opening a work line its steps may still arrive (and reveal themselves): the pin's hold.
     private static let stepsArrive: TimeInterval = 1.5
 
-    /// Opens or closes a run of chips like a work line: its calls reveal themselves under it, or fold away first.
-    /// They are already loaded, so only the ones appearing in this pass reveal (`revealUntil` of the work line, briefly).
-    private func toggleRun(_ id: String, calls: [ToolCall]) {
+    /// Opens or closes a run of chips like a work line: its calls fade in under it, or go at once. They are already
+    /// loaded, so only the ones appearing in this pass fade in (`revealUntil` of the work line, briefly).
+    private func toggleRun(_ id: String) {
         let line = id.components(separatedBy: "/run-")[0] // a run's id is "<work line>/run-<first call>"
+        let wasOpen = isRunOpen(id)
         #if DEBUG
-        UnfoldTrace.shared.begin("run \(isRunOpen(id) ? "fold" : "open")") { [pin] in pin.screenY(id) }
+        UnfoldTrace.shared.begin("run \(wasOpen ? "fold" : "open")", height: { [pin] in pin.contentHeight },
+                                 drawn: { Self.drawnTop(id) }) { [pin] in pin.screenY(id) }
         #endif
-        guard isRunOpen(id) else {
-            Haptics.tap()
-            revealUntil[line] = max(revealUntil[line] ?? .distantPast, .now.addingTimeInterval(Theme.Motion.revealTime))
-            return changeWork(id, fromHeader: true, run: true, wasOpen: false)
-        }
         Haptics.tap()
-        concealingCalls.formUnion(calls.map(\.id))
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(Theme.Motion.concealTime))
-            concealingCalls.subtract(calls.map(\.id))
-            changeWork(id, fromHeader: true, run: true, wasOpen: true)
-        }
-    }
-
-    /// Closing a work line: its steps fold away first, then go. Under a header near the top (opened at the newest, it
-    /// goes up there), its steps are all the screen holds: fading away they left it blank for the fade, so they go at
-    /// once, as they come at once there (#754).
-    private func concealWork(_ id: String, fromHeader: Bool) {
-        if let y = scratch.workHeadY[id], scratch.listFrame.height > 0,
-           y < scratch.listFrame.minY + headerRoom + scratch.listFrame.height / 3 {
-            revealUntil[id] = nil
-            return changeWork(id, fromHeader: fromHeader, run: false, wasOpen: true)
-        }
-        concealing.insert(id)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(Theme.Motion.concealTime))
-            concealing.remove(id)
-            revealUntil[id] = nil
-            changeWork(id, fromHeader: fromHeader, run: false, wasOpen: true)
-        }
+        if !wasOpen { revealUntil[line] = max(revealUntil[line] ?? .distantPast, .now.addingTimeInterval(Theme.Motion.revealTime)) }
+        changeWork(id, fromHeader: true, run: true, wasOpen: wasOpen)
     }
 
     private func changeWork(_ id: String, fromHeader: Bool, run: Bool, wasOpen: Bool) {
         // A work line opened while following (at the newest end its header goes up under the top bar, #1173): it stays
         // where it is while a running turn's steps keep coming in under it, until the user takes the list, folds it or
-        // taps ↓. Following on would scroll it away; holding back would freeze the turn (#1046).
-        let anchored = fromHeader && !run && !wasOpen && follow.follows
+        // taps ↓. Following on would scroll it away; holding back would freeze the turn (#1046). The same for one opened
+        // while the chat holds still for a row the user opened (`ChatFollow.toggledRow`), and for a run of chips opened
+        // or closed: handed to the usual hold, following came back 1.5 s later and took the list to the newest end, the
+        // tapped chips up by what had opened under them (BeautifulUI, 119–381 pt, #1123), or the next step did (#3005).
+        // Folded, likewise: the folded header stays where it was, and the user reads on from there. Going back to the
+        // newest end 1.5 s later moved the list by itself (a work line folded 61 pt short of it, `UnfoldTests`). Only a
+        // fold the list could not keep the header for (at the newest end, what is left under it shorter than the
+        // screen) glides to the newest end, and follows from there (`ChatPin.landed`, #1173).
+        let following = follow.follows
+        let anchored = fromHeader && follow.followsNext
         if fromHeader {
             pin.hold(id, from: id, slow: true,
                      rise: !run && !wasOpen ? workRise(id) : 0, keep: anchored)
@@ -1290,11 +1283,8 @@ struct ChatView: View {
         if wasOpen { scratch.foldedAt = .now }
         // Not taking the list: while the header settles nothing pulls it away (the pin has it) and nothing is held
         // back (the running turn opened at the newest keeps growing: it froze, #1046); then the chat goes on as before.
-        // A run of chips in a work line kept in place (opened while following): it stays kept. Handed to the usual
-        // hold, following came back 1.5 s later and took the list to the newest end, the tapped chips up by what had
-        // opened under them (BeautifulUI, 119–381 pt, #1123).
-        if !(run && follow.anchored) { holdFollow(anchored: anchored) }
-        if anchored { keepHeader(id, rise: workRise(id)) }
+        holdFollow(anchored: anchored)
+        if anchored, following, !run, !wasOpen { keepHeader(id, rise: workRise(id)) }
         var t = Transaction()
         t.disablesAnimations = true
         withTransaction(t) {
@@ -1316,11 +1306,20 @@ struct ChatView: View {
         return y - (scratch.listFrame.minY + headerRoom + Theme.Space.l)
     }
 
-    /// A step of the work line `group`, as it opens and closes: steps appearing just after it opened reveal themselves.
-    private func stepUnfolding(_ group: String, item: WorkItem? = nil) -> Unfolding {
-        var closing = concealing.contains(group)
-        if !closing, !concealingCalls.isEmpty, case .step(.call(let c))? = item { closing = concealingCalls.contains(c.id) }
-        return Unfolding(revealing: (revealUntil[group] ?? .distantPast) > .now, concealing: closing)
+    #if DEBUG
+    /// Where the work line header `id` is drawn (`DrawnProbe`); the Mac has no probe.
+    private static func drawnTop(_ id: String) -> CGFloat? {
+        #if os(iOS)
+        return DrawnProbe.top(id)
+        #else
+        return nil
+        #endif
+    }
+    #endif
+
+    /// A step of the work line `group` as it opens: steps appearing just after it opened fade in.
+    private func stepUnfolding(_ group: String) -> Unfolding {
+        Unfolding(revealing: (revealUntil[group] ?? .distantPast) > .now)
     }
 
     /// A work line's header moved (its top on screen): kept for the fold probe, and told to the pin. The wake
@@ -1363,6 +1362,9 @@ struct ChatView: View {
             SupervisionInputLine(item: item)
         case .row(let r):
             if r.errorCandidate != nil, let card = turnErrorCard(line, raw: r.errorCandidate?.text) { card } else { rowView(r, isLatest: false, live: true, showsSource: line.showsSource, hidesPrompt: line.hidesPrompt) }
+        case .answerPart(let item, let part, let index, let count):
+            AssistantTextPart(item: item, part: part, index: index, count: count).equatable()
+                .chatMark(index == 0 ? "chat.answer." + item.id : "chat.answer.\(item.id).\(index)")
         case .feed(let item): FeedLine(item: item, group: shownKey.group)
         case .quick(let result): QuickResultCard(result: result)
         case .day(let date): DayLine(date: date)
@@ -1371,8 +1373,10 @@ struct ChatView: View {
         case .apiError(let item, let info, let count):
             // Retry only when the error is the last thing, the agent is not working (someone may have retried already) and
             // trying again can help (not a login or a bad request).
+            // Not when the fallback model is missing (#4489): Continue would go to the same model.
             APIErrorCard(info: info, count: count, at: item.ts,
                          retry: info.transient != false && !status.isActive && currentLines().last?.id == line.id
+                             && model.session(key)?.turnErrorCode != ModelFallbackText.unavailableCode
                              ? { model.sendNow(key, text: "继续") } : nil) // i18n-ignore
         case .userImages(_, let items):
             // Close to the bubble below it, like the photos on a message being sent (the list's spacing is 14).
@@ -1386,7 +1390,7 @@ struct ChatView: View {
             .modifier(WorkHeadReport(id: id, moved: workHeadMoved))
         case .workStep(let group, let item, let first):
             WorkStepView(item: item, first: first).equatable()
-                .unfolding(stepUnfolding(group, item: item))
+                .unfolding(stepUnfolding(group))
         case .agentOut(_, let call):
             // A card of its own (no rail on the timeline: the line above is shut).
             Group {
@@ -1397,7 +1401,7 @@ struct ChatView: View {
             SubagentGrid(calls: calls, first: first, alone: alone)
                 .unfolding(alone ? Unfolding() : stepUnfolding(group))
         case .toolRun(let id, let calls, let open, let first):
-            ToolRunRow(calls: calls, open: open, first: first) { toggleRun(id, calls: calls) }
+            ToolRunRow(calls: calls, open: open, first: first) { toggleRun(id) }
                 .equatable()
                 .unfolding(stepUnfolding(id.components(separatedBy: "/run-")[0])) // a run's id is "<work line>/run-<first call>"
                 .modifier(WorkHeadReport(id: id, moved: workHeadMoved))
@@ -1722,24 +1726,52 @@ struct ChatView: View {
         #if os(iOS) || os(visionOS)
         if let list = pin.list {
             if pin.holding { pin.release() } // a tapped header held in place would put the list back each frame
+            // SwiftUI's stored position still says where the user's own scrolling left the list. The jump moves the
+            // scroll view, not that position: on the next change of content (the rows held back while reading, let in
+            // by this tap; a streamed line; a row laid out taller than guessed) SwiftUI put the list back there, during
+            // the jump or after it, and as it was following by then, ↓ was gone and nothing brought it back (#4788).
+            // Forgotten here, as `ChatPin` forgets it before it moves the list; the newest end is stored once there.
+            position = ScrollPosition(idType: String.self)
             #if DEBUG
             scratch.endJumps += 1
             let tapped = CACurrentMediaTime()
             #endif
-            jumpRun.start(list) { _ in
+            jumpRun.start(list) { arrived in
                 #if DEBUG
                 scratch.jumpMs = Int((CACurrentMediaTime() - tapped) * 1000)
                 #endif
-                reconcileNewestGeometry()
-                // A reply that streamed on, or held-back lines let in by ↓: the list stays at offset 0, and this
-                // makes sure of it (a finger that took the list meanwhile has decided already).
-                if follow.follows, !scratch.atNewest { scrollToEnd() }
+                landedAtNewest(list, arrived: arrived, again: true)
             }
             return
         }
         #endif
         scrollToEnd(animated: true)
     }
+
+    #if os(iOS) || os(visionOS)
+    private static let jumpLog = Logger(subsystem: "persona", category: "chat-jump")
+
+    /// ↓'s jump is over: the geometry is read from the list (#1211), and following, SwiftUI's position is the newest end
+    /// again, as every other way there leaves it, so what streams in next keeps the list there (it is there already:
+    /// nothing moves). A finger that took the list meanwhile has decided already. `again`: a moment later the list is
+    /// looked at once more, and if anything took it away from the newest end while it follows, it goes there again.
+    private func landedAtNewest(_ list: UIScrollView, arrived: Bool, again: Bool) {
+        reconcileNewestGeometry()
+        if follow.follows { scrollToEnd() }
+        guard arrived, again else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard pin.list === list, follow.follows, !jumpRun.running, !list.isTracking, !list.isDecelerating,
+                  let gap = pin.measuredNewestGap, gap > ChatJump.there else { return }
+            Self.jumpLog.notice("↓ landed, then the list moved \(Int(gap), privacy: .public) pt from the newest end: again")
+            #if DEBUG
+            scratch.jumpSlips += 1
+            #endif
+            position = ScrollPosition(idType: String.self)
+            jumpRun.start(list) { arrived in landedAtNewest(list, arrived: arrived, again: false) }
+        }
+    }
+    #endif
 
     /// ↓ shows: the follow state says so, once the chat has settled on entry.
     private var arrowShows: Bool { follow.arrow && settled && !pinRising }
@@ -1750,9 +1782,9 @@ struct ChatView: View {
         var next = follow
         change(&next)
         guard next != follow else { return }
-        // Out of a kept hold (↓, sending, the user's scrolling): the pin lets go of the header too; into another hold
-        // (folded, another line opened), what was tapped settles first.
-        if follow.anchored && !next.anchored {
+        // Out of a kept hold (↓, sending, the user's scrolling, a jump to a saved place): the pin lets go of the header
+        // too; into another hold (folded, another line opened), what was tapped settles first.
+        if follow.anchored, !next.anchored || next.mode == .landing {
             if next.mode == .holding { pin.unkeep() } else { pin.release() }
         }
         follow = next
@@ -2147,7 +2179,7 @@ struct ChatView: View {
         var target: String?
         for line in currentLines() {
             switch line.content {
-            case .row, .recaps:
+            case .row, .recaps, .answerPart:
                 if line.holds(ref.msg) { target = line.id }
             case .work(let wid, let items, let live, _, _):
                 // The agent's words before its last ones are in the work line: open it, go to that step.
@@ -2256,6 +2288,15 @@ struct ChatView: View {
     }
     #endif
 
+    /// The list's distance from its newest end by its scroll view, for `probe.chat-rows` (-1: none, the Mac).
+    private var listGap: Int {
+        #if os(iOS) || os(visionOS)
+        return pin.measuredNewestGap.map { Int($0.rounded()) } ?? -1
+        #else
+        return -1
+        #endif
+    }
+
     /// `probe.chat-rows` (`-probes YES`): what the list has and shows, sampled ten times a second (which lines are on
     /// screen is the list's, written as it scrolls and not observed): the chat must not go blank or move by itself.
     private var rowsProbe: some View {
@@ -2263,6 +2304,7 @@ struct ChatView: View {
             let order = currentLines().map(\.id)
             let index = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
             let visible = scratch.visibleLines.filter { index[$0] != nil }.sorted { index[$0]! < index[$1]! }
+            let lastShown = order.last.map { scratch.drawnLines.contains($0) } ?? false
             // A work line's header by its own report, the one the pin holds it by: the pin moves the list from inside
             // that report, and the line's own geometry callback missed the move. A header kept in place while a reply
             // streamed under it read as moving 56 pt and back, on screenshots identical to the pixel (#1046).
@@ -2276,7 +2318,8 @@ struct ChatView: View {
                                            x: Int(scratch.offsetX.rounded()),
                                            near: follow.near, mode: "\(follow.mode)", arrow: arrowShows, gap: Int(scratch.newestGap.rounded()),
                                            dragging: scratch.userDragging, held: pin.holding, blank: scratch.blankLandings,
-                                           glideTaps: scratch.glideTaps, jumpMs: scratch.jumpMs))
+                                           glideTaps: scratch.glideTaps, jumpMs: scratch.jumpMs, slips: scratch.jumpSlips,
+                                           listGap: listGap, lastShown: lastShown, storedRow: position.viewID(type: String.self) != nil))
         }
     }
 
@@ -2426,8 +2469,12 @@ struct ChatView: View {
                         openNext(next)
                     }
                 }
-                if let queued = session?.queued, !queued.isEmpty, style == .dev {
-                    QueueStrip(key: key, queued: queued, steers: session?.steersQueue == true)
+                if let queued = session?.queued, !queued.isEmpty,
+                   style == .dev || session?.assistant == true {
+                    QueueStrip(key: key, queued: queued, own: session?.ownQueuedCount ?? queued.count,
+                               photoMarks: model.chat(key).queuePhotoMarks,
+                               steers: session?.steersQueue == true || (session?.assistant == true && session?.canSend == true),
+                               persona: session?.assistant == true ? model.persona.name : nil)
                 }
                 // The newest plan while its line is out of view (#5602): which step of how many; tap, the whole plan.
                 // Folded while a card asks something (#2970): it sat over the card's buttons.
@@ -2442,14 +2489,18 @@ struct ChatView: View {
                     SessionModeBar(key: key, session: session, pick: requestMode)
                         .padding(.leading, Theme.Space.xs)
                 }
-                if let s = session, !s.canSend, let reason = s.sourceSubtitle {
+                if let s = session, s.isStopped {
+                    StoppedAgentBar(openTerminal: openTerminal) // read-only: its terminal page has the shell and Resume (#4754)
+                } else if let s = session, !s.canSend, let reason = s.sourceSubtitle {
                     Text(reason).font(Theme.Font.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Composer(key: key, status: status, placeholder: style == .assistant ? String(localized: "Ask \(model.persona.name)…") : String(localized: "Message \(session?.agentLabel ?? "Claude") [Chat View c6f021]"),
-                         covered: link != nil, onCleared: { switchTo($0) }, onFocus: { composerTyping = $0 }, pickMode: { requestMode($0) })
-                    // The shell's expanding field stays in the page's layout graph; so does BeautifulUI's prompt bar,
-                    // whose menus hang above it: an island's hosting view takes no touches outside its bounds.
-                    .layoutIsland(enabled: !usesShellComposer && !AppStyle.current.usesBeautifulUI)
+                if session?.isStopped != true { // a stopped Agent takes no messages: its line above says so (#4754)
+                    Composer(key: key, status: status, placeholder: style == .assistant ? String(localized: "Ask \(model.persona.name)…") : String(localized: "Message \(session?.agentLabel ?? "Claude") [Chat View c6f021]"),
+                             covered: link != nil, onCleared: { switchTo($0) }, onFocus: { composerTyping = $0 }, pickMode: { requestMode($0) })
+                        // The shell's expanding field stays in the page's layout graph; so does BeautifulUI's prompt bar,
+                        // whose menus hang above it: an island's hosting view takes no touches outside its bounds.
+                        .layoutIsland(enabled: !usesShellComposer && !AppStyle.current.usesBeautifulUI)
+                }
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.bottom, Theme.Space.s)
@@ -2590,8 +2641,14 @@ struct ChatView: View {
             case .loading:
                 ChatSkeleton().flippedBack().accessibilityIdentifier("chat-loading-placeholder")
             case .empty:
-                EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages yet"), message: String(localized: "Send a message to get started."))
-                    .flippedBack().accessibilityIdentifier("chat-empty-placeholder")
+                if model.session(key)?.isStopped == true { // read-only (#4754): nothing to start from here
+                    EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages"),
+                                   message: String(localized: "This Agent stopped before it left any messages."))
+                        .flippedBack().accessibilityIdentifier("chat-empty-placeholder")
+                } else {
+                    EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages yet"), message: String(localized: "Send a message to get started."))
+                        .flippedBack().accessibilityIdentifier("chat-empty-placeholder")
+                }
             case .none: EmptyView()
             }
             if store.hasMore {
@@ -2657,7 +2714,16 @@ struct ChatView: View {
             var f = g.frame(in: .global)
             f.size.height = max(0, f.height - under)
             return f
-        }) { scratch.listFrame = $0 }
+        }) { rect in
+            let old = scratch.listFrame
+            scratch.listFrame = rect
+            // Drawn upside down from its bottom edge, the list moves everything on it when that edge moves: what sits
+            // under it came or went (the queue strip taken as the next turn started moved the rows the user had open
+            // 60 pt down, #3005). The pin puts a held row back. Only that edge: its top edge moving moves nothing on
+            // it, and going by the list's height the pin moved a work line's header 40 pt by itself (`UnfoldTests`).
+            // Not for the keyboard: the newest stays above it, as it always has.
+            if old.height > 0, !KeyboardState.shared.isUp { pin.resized(by: rect.maxY - old.maxY) }
+        }
         .scrollDismissesKeyboard(.interactively)
         .simultaneousGesture(TapGesture().onEnded { menu.dismiss(); Keyboard.dismiss() })
         // Only the user's own scrolling closes the bar; content streaming in also moves the offset (.animating).
@@ -2689,6 +2755,9 @@ struct ChatView: View {
             // The user's own scrolling: a drag, and the glide after a flick. Deceleration alone is not proof — landing
             // on the entry line produced it with no finger down and folded the chrome on open.
             if phase != .idle { scratch.lastActivity = .now }
+            #if DEBUG
+            scratch.phase = "\(old)>\(phase)"
+            #endif
             let flick = phase == .decelerating && (old == .tracking || old == .interacting || scratch.userDragging)
             #if DEBUG
             // The user's flick glides on: UI tests that tap during the glide wait for this (`TouchScript`, #3027).
@@ -2697,7 +2766,9 @@ struct ChatView: View {
             scratch.userDragging = phase == .tracking || phase == .interacting || flick
             if phase == .idle, old != .idle, old != .animating {
                 settleChrome() // the finger lifted, the glide ended
-                setFollow { $0.released() } // where the user's scrolling stopped decides (nothing if it was the app's)
+                // Where the user's scrolling stopped decides (nothing if it was the app's). A tap (down and up, the list
+                // never scrolled) is no scrolling: deciding there ended the hold on a row just opened (#3005).
+                setFollow { if old == .tracking { $0.tapped() } else { $0.released() } }
             }
             // On this upside-down list (`flippedBack`) `.scrollDismissesKeyboard(.interactively)` never put the keyboard
             // away while scrolling (#1823). A real drag does it; a touch that may still be a tap (.tracking) does not, so
@@ -2725,6 +2796,39 @@ struct ChatView: View {
         .onAppear {
             pin.letGo = { [position = $position] in position.wrappedValue = ScrollPosition(idType: String.self) }
             pin.onRising = { [rising = $pinRising] in rising.wrappedValue = $0 }
+            pin.anchor = { [follow = $follow] in
+                var next = follow.wrappedValue
+                let anchored = next.toggledRow()
+                if next != follow.wrappedValue { follow.wrappedValue = next }
+                return anchored
+            }
+            pin.landed = { [follow = $follow, pin] in
+                var next = follow.wrappedValue
+                guard next.anchored else { return }
+                next.follow()
+                follow.wrappedValue = next
+                pin.release()
+            }
+            #if DEBUG && (os(iOS) || os(visionOS))
+            // The page measurements move the list's scroll view themselves (`PagePerf`): tell the chat a finger is on
+            // it, as a drag does (`onScrollPhaseChange`), or it keeps following the newest end and puts its stored
+            // position back whenever rows come in, and the list never gets far (#4970).
+            PagePerf.touchers[ObjectIdentifier(pin)] = { [pin] list, down in
+                guard pin.list === list else { return }
+                if down {
+                    scratch.userDragging = true
+                    scratch.lastUserScroll = .now
+                    entry = nil
+                    userScrolled = true
+                    setFollow { $0.touched() }
+                    pin.letGo()
+                    pin.release() // as a finger lets go of a kept header: it would put the list back (`ChatPin.keepHeld`)
+                } else {
+                    scratch.userDragging = false
+                    setFollow { $0.released() }
+                }
+            }
+            #endif
         }
         #if os(macOS)
         .onAppear {
@@ -2737,8 +2841,9 @@ struct ChatView: View {
         #if DEBUG
         .onAppear {
             guard ScrollTrace.enabled else { return }
-            ScrollTrace.shared.start(list: { [pin] in pin.list }) { [store, scratch, follow = $follow, frozen = $frozen] in
-                Self.traceLine(follow: follow.wrappedValue, frozen: frozen.wrappedValue, scratch: scratch, store: store)
+            ScrollTrace.shared.start(list: { [pin] in pin.list }) { [store, scratch, pin, follow = $follow, frozen = $frozen, position = $position] in
+                Self.traceLine(follow: follow.wrappedValue, frozen: frozen.wrappedValue, scratch: scratch, store: store,
+                               position: position.wrappedValue) + " sv \(pin.traceFrame) pin \(pin.traceHeld)"
             }
         }
         #endif
@@ -2825,10 +2930,21 @@ struct ChatView: View {
     static let glideNote = "dev.persona.test.chat-glide"
 
     /// One `ScrollTrace` state line. Out of the modifier chain: inline, its interpolation helped the chain time out (#2963).
-    private static func traceLine(follow: ChatFollow, frozen: Frozen?, scratch: ChatScratch, store: ChatStore) -> String {
-        let mode = "\(follow.mode) near \(follow.near ? 1 : 0) touch \(follow.touching ? 1 : 0) drag \(scratch.userDragging ? 1 : 0)"
+    private static func traceLine(follow: ChatFollow, frozen: Frozen?, scratch: ChatScratch, store: ChatStore,
+                                  position: ScrollPosition) -> String {
+        let mode = "\(follow.mode)\(follow.anchored ? "+anchored" : "") near \(follow.near ? 1 : 0) touch \(follow.touching ? 1 : 0) drag \(scratch.userDragging ? 1 : 0)"
         let held = "frozen \(frozen == nil ? 0 : 1) ftext \(frozen?.text.count ?? -1)"
+        let list = " list \(Int(scratch.listFrame.minY))-\(Int(scratch.listFrame.maxY)) ph \(scratch.phase)"
         return "\(mode) \(held) live \(store.liveText.count) items \(store.items.count) gap \(Int(scratch.newestGap)) jumps \(scratch.endJumps)"
+            + list + " pos \(traced(position)) slips \(scratch.jumpSlips)"
+    }
+
+    /// What SwiftUI's stored position holds, for the trace: an edge, a point, a row's id, or nothing; `user` when the
+    /// user's own scrolling put it there (#4788).
+    private static func traced(_ p: ScrollPosition) -> String {
+        let at = if let e = p.edge { "edge:\(e)" } else if let pt = p.point { "pt:\(Int(pt.y))" }
+            else if let id = p.viewID(type: String.self) { "id:\(id.suffix(12))" } else { "none" }
+        return at + (p.isPositionedByUser ? "/user" : "")
     }
     #endif
 
@@ -4493,10 +4609,8 @@ struct Composer: View, Equatable {
         get { held.images }
         nonmutating set { held.images = newValue }
     }
-    private var imagesBinding: Binding<[(UIImage, ImagePayload)]> { Binding(get: { images }, set: { images = $0 }) }
     private var uploads: FileUploads { held.uploads }
     private var videos: VideoAttachments { held.videos }
-    @State private var editingIndex: Int?
     @State private var showFiles = false
     #if os(iOS)
     /// The iPhone's 「+」 panel (`AttachSheet`, Telegram's attachment menu).
@@ -4773,6 +4887,11 @@ struct Composer: View, Equatable {
                 UltracodeLostNote(key: key, session: s)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            // After an upstream refusal the session runs on a fallback model (#4489): which, and the way back.
+            if let s = model.session(key), s.modelFallback != nil {
+                ModelFallbackCard(key: key, session: s, working: status.isActive)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if isMain {
                 // The main conversation: what it still needs, or a refused send (docs/assistant/onboarding.md 4.4, 5.2).
                 ReadinessHomeCard(route: $failureRoute)
@@ -4803,7 +4922,7 @@ struct Composer: View, Equatable {
                 PasteImageChip(focused: focused) { add($0) }
                 #endif
                 if !images.isEmpty {
-                    ComposerImages(images: imagesBinding) { editingIndex = $0 } // a tap marks it up before sending
+                    ComposerImages.editable(held) // a tap marks it up before sending
                 }
                 #if os(iOS)
                 if !(model.composerComments[key] ?? []).isEmpty {
@@ -4846,6 +4965,7 @@ struct Composer: View, Equatable {
                                  gate: gate,
                                  openAttach: attachOpener,
                                  glows: glowsWhileReplying,
+                                 dictationHints: { [model, key] in DictationLanguage.ownerTexts(model.chat(key).items) },
                                  send: { if let gate { gate.action() } else { Task { await sendText(text) } } }) {
                     #if os(iOS)
                     // The iPhone's tap opens the panel, its touch and hold this menu; the iPad's + is the menu, with
@@ -4926,7 +5046,10 @@ struct Composer: View, Equatable {
                                    let t = text
                                    if let gate { gate.action(); Task { @MainActor in text = t }; return } // the draft stays
                                    if videos.busy { return holdForVideos(restoring: t) }
-                                   Task { await sendText(t) }
+                                   Task {
+                                       let accepted = await sendText(t)
+                                       if !accepted { text = t }
+                                   }
                                })
             } else {
                 ComposerRow(placeholder: status.isActive ? String(localized: "Add a note (queued)") : (suggestion ?? placeholder ?? String(localized: "Message Claude")),
@@ -5113,15 +5236,6 @@ struct Composer: View, Equatable {
             focused = true
         }
         #endif
-        .fullScreenCover(item: Binding(get: { editingIndex.map(EditIndex.init) }, set: { if $0 == nil { editingIndex = nil } })) { e in
-            if images.indices.contains(e.id) {
-                let original = images[e.id].0
-                ImageEditor(image: original) { edited in
-                    // The photo marked up, wherever it is now: another window on the same chat may have taken one out.
-                    if let p = MessagePhotos.payload(edited), let i = images.firstIndex(where: { $0.0 === original }) { images[i] = p }
-                }
-            }
-        }
     }
 
     /// The iPhone's 「+」 opens the panel (iPad and the Mac keep the menu). The keyboard goes down first and the panel
@@ -5179,31 +5293,32 @@ struct Composer: View, Equatable {
     /// What the panel handed back: picked photos and videos into the composer (and sent, from its Send), or a row's action.
     private func attachFinished(_ outcome: AttachOutcome) {
         switch outcome {
-        case .then(let ids, let action):
-            Task { await addPicked(ids) }
+        case .then(let picks, let action):
+            Task { await addPicked(picks) }
             action()
-        case .closed(let ids):
-            Task { await addPicked(ids) }
-        case .send(let ids):
+        case .closed(let picks):
+            Task { await addPicked(picks) }
+        case .send(let picks):
             Task {
-                await addPicked(ids)
+                await addPicked(picks)
                 // As the box's Send: the gate first; videos still on their way hold the message and say so (sendText).
                 if let gate { gate.action() } else if allowsSend { await sendText(text) }
             }
         }
     }
 
-    private func addPicked(_ ids: [String]) async { await held.addPicked(ids, machine: key.machineRef, model: model) }
+    private func addPicked(_ picks: AttachPicks) async { await held.addPicked(picks, machine: key.machineRef, model: model) }
     #endif
 
-    private func sendText(_ raw: String) async {
-        guard model.allowSend(key) else { return }
-        if videos.busy { return holdForVideos() }
+    @discardableResult
+    private func sendText(_ raw: String) async -> Bool {
+        guard model.allowSend(key) else { return false }
+        if videos.busy { holdForVideos(); return false }
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let ctx = model.composerContexts[key] ?? []
         let comments = model.composerComments[key] ?? []
         let files = videos.ready
-        guard !t.isEmpty || !images.isEmpty || !files.isEmpty || !ctx.isEmpty || !comments.isEmpty else { return }
+        guard !t.isEmpty || !images.isEmpty || !files.isEmpty || !ctx.isEmpty || !comments.isEmpty else { return false }
         // Picked page excerpts ride along as <persona-context> tags before what was typed, comments as `> ` blocks
         // after them (the web's order), videos as <persona-file> after the text. Comments alone need no words.
         let alone = t.isEmpty && images.isEmpty && files.isEmpty && !comments.isEmpty
@@ -5218,15 +5333,16 @@ struct Composer: View, Equatable {
             if raw == text { text = "" }
             model.composerContexts[key] = nil
             model.composerComments[key] = nil
-            return
+            return true
         }
         // On screen at once; the request runs in the background (a failure turns the bubble into "Resend").
-        model.sendNow(key, text: message, images: images.map(\.1))
+        guard model.sendNow(key, text: message, images: images.map(\.1)) else { return false }
         if raw == text { text = "" }
         images = []
         videos.sent()
         model.composerContexts[key] = nil
         model.composerComments[key] = nil
+        return true
     }
 
     /// A send while a video is still on its way: nothing goes; what was typed goes back in the box (the prompt bar
@@ -5454,6 +5570,26 @@ struct TerminalCover: View {
     private func close() { dismiss() }
 }
 
+/// Above a stopped Agent's composer (#4754, docs/integrations/engines.md「Agents run in a terminal」): it takes no messages;
+/// its terminal page shows the shell it left and offers Resume, the one way it runs again.
+private struct StoppedAgentBar: View {
+    var openTerminal: () -> Void
+
+    var body: some View {
+        HStack(spacing: Theme.Space.s) {
+            Text("This Agent has stopped. Its conversation and terminal stay; it doesn't take messages.")
+                .font(Theme.Font.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: openTerminal) {
+                Label("Terminal", systemImage: Theme.Icon.terminal).font(Theme.Font.labelStrong).lineLimit(1)
+            }
+            .themedButton()
+            .accessibilityIdentifier("chat.stopped.terminal")
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// A queued message moved one place (#6088): the `keep` of `/queue` that re-queues them in the new order.
 nonisolated enum QueueOrder {
     /// The original indexes in their new order with the one at `index` moved `step` places (-1 up, 1 down); nil when
@@ -5477,7 +5613,14 @@ struct QueueStrip: View {
     @Environment(AppModel.self) private var model
     let key: SessionKey
     var queued: [String]
+    /// The user's own messages come first; relayed ones are only shown and copied.
+    var own: Int
+    /// Local photo counts derived by `ChatStore` for the own rows; Agent attachment marks come from `QueuedDraft`.
+    var photoMarks: [Int] = []
     var steers = false
+    /// A Persona chat names the persona; an Agent chat keeps Claude's wording.
+    var persona: String? = nil
+    private var agent: String { persona ?? "Claude" }
     @State private var busy = false
     @State private var expanded = false
     @State private var confirmSend = false
@@ -5498,11 +5641,11 @@ struct QueueStrip: View {
         } label: {
             HStack(spacing: Theme.Space.sm) {
                 ThemedIcon("tray.and.arrow.down").accessibilityHidden(true)
-                Text("\(queued.count) queued · Claude will handle them in order").lineLimit(1)
+                Text("\(queued.count) queued · \(agent) will handle them in order [Queue Strip]").lineLimit(1)
                 Spacer(minLength: 0)
                 if busy {
                     ProgressView().controlSize(.mini)
-                } else if steers {
+                } else if steers, own > 0 {
                     Button { confirmSend = true } label: {
                         Label("Send Now [Queue Strip]", systemImage: Theme.Icon.sendNow).lineLimit(1).fixedSize()
                     }
@@ -5519,7 +5662,11 @@ struct QueueStrip: View {
         .confirmationDialog(String(localized: "Send the queued messages now? [Queue Strip]"), isPresented: $confirmSend, titleVisibility: .visible) {
             Button("Send Now [Queue Strip]") { sendNow() }.accessibilityIdentifier("queue-send-now-confirm")
         } message: {
-            Text("Sends the queued messages to the agent now. A command it is running keeps running in the background; a reply it is writing starts again with your message. [Queue Strip]")
+            if let persona {
+                Text("\(persona) gets them right away instead of at its next step. What it is doing now stops, or goes on in the background when it can, and it starts again with your messages. [Queue Strip]")
+            } else {
+                Text("Sends the queued messages to the agent now. A command it is running keeps running in the background; a reply it is writing starts again with your message. [Queue Strip]")
+            }
         }
         .padding(Theme.Space.m)
         .surface(in: .rect(cornerRadius: Theme.Radius.panel, style: .continuous))
@@ -5530,19 +5677,24 @@ struct QueueStrip: View {
     private var rows: some View {
         VStack(alignment: .leading, spacing: Theme.Space.sm) {
             ForEach(Array(queued.enumerated()), id: \.offset) { i, q in
-                let draft = QueuedDraft(q)
+                let photos = i < own && photoMarks.indices.contains(i) ? photoMarks[i] : 0
+                let draft = QueuedDraft(q, photoCount: photos)
                 Menu {
-                    Button { act(i, delete: false) } label: { Label("Take Back to Edit", systemImage: Theme.Icon.edit) }
-                    if steers, queued.count > 1 {
-                        Button { move(i, by: -1) } label: { Label("Move Up [Queue Strip]", systemImage: Theme.Icon.queueUp) }
-                            .disabled(i == 0)
-                            .accessibilityIdentifier("queue-move-up")
-                        Button { move(i, by: 1) } label: { Label("Move Down [Queue Strip]", systemImage: Theme.Icon.queueDown) }
-                            .disabled(i == queued.count - 1)
-                            .accessibilityIdentifier("queue-move-down")
+                    if i < own {
+                        Button { act(i, delete: false) } label: { Label("Take Back to Edit", systemImage: Theme.Icon.edit) }
+                        if steers, own > 1 {
+                            Button { move(i, by: -1) } label: { Label("Move Up [Queue Strip]", systemImage: Theme.Icon.queueUp) }
+                                .disabled(i == 0)
+                                .accessibilityIdentifier("queue-move-up")
+                            Button { move(i, by: 1) } label: { Label("Move Down [Queue Strip]", systemImage: Theme.Icon.queueDown) }
+                                .disabled(i == own - 1)
+                                .accessibilityIdentifier("queue-move-down")
+                        }
                     }
                     Button { UIPasteboard.general.string = draft.text.isEmpty ? q : draft.text } label: { Label("Copy [Readiness Views d37380]", systemImage: Theme.Icon.copy) }
-                    Button(role: .destructive) { act(i, delete: true) } label: { Label("Delete", systemImage: Theme.Icon.delete) }
+                    if i < own {
+                        Button(role: .destructive) { act(i, delete: true) } label: { Label("Delete", systemImage: Theme.Icon.delete) }
+                    }
                 } label: {
                     HStack(alignment: .top, spacing: Theme.Space.s) {
                         Text("\(i + 1)")
@@ -5550,7 +5702,20 @@ struct QueueStrip: View {
                             .foregroundStyle(Theme.accent)
                             .scaledFrame(width: Theme.Size.badge, height: Theme.Size.badge)
                             .background(Theme.accent.opacity(0.14), in: .circle)
-                        QueuedWords(draft: draft)
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                            QueuedWords(draft: draft)
+                            if photos > 0 {
+                                HStack(spacing: Theme.Space.xs) {
+                                    ThemedIcon(Theme.Icon.photo)
+                                    Text("\(photos) images")
+                                }
+                                .font(Theme.Font.caption).foregroundStyle(.secondary)
+                            }
+                            if i >= own {
+                                Text("Arrives when this turn ends [Queue Strip]")
+                                    .font(Theme.Font.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer(minLength: 0)
                         ThemedIcon(Theme.Icon.more).font(Theme.Font.label).foregroundStyle(.secondary).padding(.top, Theme.Space.xs)
                     }
@@ -5559,9 +5724,10 @@ struct QueueStrip: View {
                     .background(Theme.Fill.well, in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
                 }
                 .disabled(busy)
-                .accessibilityLabel(Text("Item \(i + 1): \(QueuedWords.spoken(draft))"))
+                .accessibilityLabel(i < own ? Text("Item \(i + 1): \(QueuedWords.spoken(draft))") : Text("Item \(i + 1): \(QueuedWords.spoken(draft)), arrives when this turn ends [Queue Strip]"))
                 .accessibilityIdentifier("queue-item")
-                .accessibilityHint(Text("Edit, copy or delete"))
+                .accessibilityHint(i < own ? Text("Edit, copy or delete") : Text("Copy [Readiness Views d37380]"))
+                .accessibilityValue(photos > 0 ? Text("\(photos) images") : Text(""))
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
@@ -5928,6 +6094,8 @@ struct ChatLine: Identifiable {
         case day(Date)
         /// The images an exchange's work looked at, between it and the answer (`ViewedImages`, docs/protocol/protocol.md「Images viewed this turn」).
         case viewed(id: String, images: [ViewedImage])
+        /// A part of a long finished answer, a row of its own (#4970, `AnswerParts`): the first has the answer's id.
+        case answerPart(item: Item, part: AnswerParts.Part, index: Int, count: Int)
 
         var id: String {
             switch self {
@@ -5947,6 +6115,7 @@ struct ChatLine: Identifiable {
             case .quick(let q): "quick-" + q.callID
             case .day(let d): "day-\(Int(d.timeIntervalSince1970))"
             case .viewed(let id, _): id
+            case .answerPart(let item, _, let index, _): index == 0 ? item.id : item.id + "/part-\(index)"
             }
         }
     }
@@ -5981,6 +6150,9 @@ struct ChatLine: Identifiable {
     static func quick(_ result: QuickResult) -> Self { Self(.quick(result)) }
     static func day(_ date: Date) -> Self { Self(.day(date)) }
     static func viewed(id: String, images: [ViewedImage]) -> Self { Self(.viewed(id: id, images: images)) }
+    static func answerPart(item: Item, part: AnswerParts.Part, index: Int, count: Int) -> Self {
+        Self(.answerPart(item: item, part: part, index: index, count: count))
+    }
     static func toolRun(id: String, calls: [ToolCall], open: Bool, first: Bool) -> Self {
         Self(.toolRun(id: id, calls: calls, open: open, first: first))
     }
@@ -5991,6 +6163,7 @@ struct ChatLine: Identifiable {
         case .supervision(_, let lines, _, _): return lines.contains { $0.holds(id) }
         case .supervisionInput(let item): return item.id == id
         case .row(let r): return r.id == id
+        case .answerPart(let item, _, _, _): return item.id == id
         case .recaps(_, let items): return items.contains { $0.id == id }
         default: return false
         }
@@ -6525,7 +6698,6 @@ struct WorkLine: View, Equatable {
     }
 }
 
-private struct EditIndex: Identifiable { var id: Int }
 
 /// Where a work line's or tool run's header is, told to the chat's pin (`workHeadMoved`). Not from Full Page's copies of
 /// the lines (#1609): they are off screen, and their positions moved the list the next time a header was tapped.
@@ -6539,6 +6711,9 @@ private struct WorkHeadReport: ViewModifier {
             content
         } else {
             content.onGeometryChange(for: ChatPin.Spot.self, of: ChatView.headSpot) { moved(id, $0) }
+                #if DEBUG && os(iOS)
+                .background { if UnfoldTrace.enabled { DrawnProbe(key: id) } }
+                #endif
         }
     }
 }
@@ -6762,6 +6937,8 @@ final class ChatScratch {
     /// Where the list is and how tall its content is (`probe.chat-rows`).
     var scrollY: CGFloat = 0
     var contentHeight: CGFloat = 0
+    /// The scroll phase's last change, from and to (`ScrollTrace`).
+    var phase = ""
     #endif
     /// The finger is on the list (or it is gliding after a flick): only then does the chrome follow it.
     var userDragging = false
@@ -6791,6 +6968,7 @@ final class ChatScratch {
     var endJumps = 0 // jumps to the newest (scrollToEnd), for the scroll probe
     var glideTaps = 0 // ↓ tapped while the list glided (#3027), for the scroll probe
     var jumpMs = -1 // how long the last ↓ took to the newest end (#3027), for the scroll probe
+    var jumpSlips = 0 // ↓ landed and the list was taken away from the newest end while following (#4788), for the scroll probe
     var lineY: [String: CGFloat] = [:] // each line's top on screen, for the fold probe (-showFoldProbe)
     #endif
 }
@@ -6902,5 +7080,15 @@ nonisolated struct ChatRowsShown: Encodable, Equatable {
     /// end (ms; -1: none yet).
     var glideTaps: Int
     var jumpMs: Int
+    /// ↓ landed and the list was then taken away from the newest end while following (#4788): it went there again.
+    var slips: Int
+    /// The list's distance from its newest end as its scroll view has it now (pt; -1: not known), not SwiftUI's
+    /// geometry, which can lag a move made on the scroll view (#1211).
+    var listGap: Int
+    /// The newest line has some part on screen.
+    var lastShown: Bool
+    /// SwiftUI's stored scroll position names a row: once a row was opened (`ChatPin.letGo`), the user's own scrolling
+    /// stores the row it leaves on screen, and SwiftUI scrolls back to it when the content changes (#4788).
+    var storedRow: Bool
 }
 #endif

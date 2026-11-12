@@ -80,6 +80,7 @@ func defaultReason(l i18n.Lang, loc *time.Location, deadline time.Time) string {
 // sweepDecisionDeadlines handles every decision whose deadline passed unanswered: the supervised tasks' and the
 // questions' that became to-dos.
 func (s *Service) sweepDecisionDeadlines(now time.Time) {
+	s.sweepWaitingDecisions(now) // first: one no briefing brought to the owner is pushed (decision_wait.go)
 	s.sweepTaskDeadlines(now)
 	s.sweepAskDeadlines(now)
 	s.sweepDecisionAges(now) // after the deadlines: a decision taken by default is not rechecked (decision.go)

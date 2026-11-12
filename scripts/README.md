@@ -11,7 +11,7 @@ Scripts are grouped by purpose and resolve their own repository root. Build/depl
 | `migrate/` | One-shot, explicitly approved offline maintenance | `migrate/persona-cutover.py` (plan only by default; never starts a service) |
 | `mock/` | Synthetic hub and screenshot/demo fixtures | `mock/mock_hub.py`, `mock/mock_scenarios.py`, `mock/make_demo_data.py` |
 | `assets/` | Icons, avatar packages and the website's generated assets | `assets/make_icon.py`, `assets/make_alt_icons.py`, `assets/make_persona.py`, `assets/make_site_assets.py` |
-| `diag/` | Push replay, client traffic and redacted transcript diagnostics | `diag/hub_traffic_report.py`, `diag/agentsync_replay.py`, `diag/pane_probe.py`, `diag/redact_transcript.py` |
+| `diag/` | Push replay, client traffic, redacted transcript and memory diagnostics | `diag/hub_traffic_report.py`, `diag/agentsync_replay.py`, `diag/pane_probe.py`, `diag/redact_transcript.py`, `diag/relay_body_rss.py` |
 | `test/` | Server, protocol, source and script regression checks | `test/check-fast.sh`, `test/test-server.sh`, `test/test_doc_paths.py` |
 | `hooks/` | Privacy hooks and PR merging | `hooks/merge-pr.sh` |
 | `gen/` | Generated extension wire types and SDK bundles | `gen/extension_schema.py`, `gen/sdk_bundle.py`, `gen/sync-sdk.sh` |

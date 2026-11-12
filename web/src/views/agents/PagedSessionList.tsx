@@ -79,7 +79,10 @@ export function PagedSessionList<T>({ root, path, identity, compare, removeIdent
   }), [q, state, dimension, value, machine, provider]);
   const filtered = Object.keys(filters).length > 0;
   const summaryMode = root.isSummary();
-  const list = useMemo(() => filtered ? new SessionList<T>(path, identity, compare, undefined, removeIdentity, { summary: summaryMode, pageCounts: () => root.usesPageCounts() }) : root, [filtered, path, identity, compare, removeIdentity, summaryMode, root, filters]);
+  // a hub that folds child sessions (#5120): every read and count of this list leaves them out, as the root's do
+  const rootsMode = root.isRoots();
+  const countsPath = rootsMode ? `${path}?roots=1&` : `${path}?`;
+  const list = useMemo(() => filtered ? new SessionList<T>(path, identity, compare, undefined, removeIdentity, { summary: summaryMode, roots: rootsMode, pageCounts: () => root.usesPageCounts() }) : root, [filtered, path, identity, compare, removeIdentity, summaryMode, rootsMode, root, filters]);
   const page = useSyncExternalStore(list.subscribe, list.getSnapshot, list.getSnapshot);
   const [facets, setFacets] = useState<ListCounts | null>(null);
   const [facetError, setFacetError] = useState("");
@@ -117,14 +120,14 @@ export function PagedSessionList<T>({ root, path, identity, compare, removeIdent
     const controller = new AbortController();
     const read = () => {
       const request = ++sequence;
-      void api<ListCounts>(`${path}?${facetQuery}`, { signal: controller.signal }).then((counts) => {
+      void api<ListCounts>(`${countsPath}${facetQuery}`, { signal: controller.signal }).then((counts) => {
         if (live && request === sequence && counts.state && counts.group && counts.project && counts.machine) { setFacets(counts); setFacetError(""); }
       }, (e) => { if (live && request === sequence) setFacetError(errorText(e)); });
     };
     read();
     const off = onHubEvent(event, read);
     return () => { live = false; controller.abort(); off(); };
-  }, [path, event, facetScoped, facetsFromList, facetQuery]);
+  }, [countsPath, event, facetScoped, facetsFromList, facetQuery]);
   useEffect(() => {
     // Keep the last counts while a refresh or a new scope is loading, including a root rebaseline.
     if (scopeQuery !== "counts=1") return;
@@ -144,14 +147,14 @@ export function PagedSessionList<T>({ root, path, identity, compare, removeIdent
     const abort = new AbortController();
     const read = () => {
       const request = ++sequence;
-      void api<ListCounts>(`${path}?${scopeQuery}`, { signal: abort.signal }).then((counts) => {
+      void api<ListCounts>(`${countsPath}${scopeQuery}`, { signal: abort.signal }).then((counts) => {
         if (request === sequence && counts.state) { setScopeCounts(counts); setScopeError(""); }
       }, (e) => { if (request === sequence) setScopeError(errorText(e)); });
     };
     read();
     const off = onHubEvent(event, read);
     return () => { sequence++; abort.abort(); off(); };
-  }, [scopeQuery, scopeFromFacets, path, event]);
+  }, [scopeQuery, scopeFromFacets, countsPath, event]);
   useEffect(() => {
     if (filtered) void list.setFilters(filters).catch(() => {});
     else if (!list.getSnapshot().loaded) void list.load().catch(() => {});

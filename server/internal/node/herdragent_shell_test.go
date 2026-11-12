@@ -100,7 +100,7 @@ func TestHerdrAgentReachesClaudeInRealShells(t *testing.T) {
 							configDir = filepath.Join(home, l.configDir)
 						}
 						want := append([]string{"claude", l.mark, configDir}, l.pre...)
-						want = append(append(want, args...), "--mcp-config", filepath.Join(n.dir, "mcp.json"))
+						want = append(append(want, args...), "--mcp-config", filepath.Join(n.dir, "mcp.json"), "--allowedTools", ownToolsRule)
 						want = append(want, "after", "unset", "unset")
 						if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
 							t.Fatalf("%s\nran %q\nwant %q", line, got, want)

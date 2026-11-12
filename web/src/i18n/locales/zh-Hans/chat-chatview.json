@@ -76,7 +76,6 @@
   "route_no_images": "直接发给任务暂不支持图片，请移除图片后重试",
   "not_live": "不是实时的",
   "not_live_reload": "重新加载",
-  "switch_agent": "切换 Agent",
   "composer_source": "来源",
   "call_not_loaded": "这一步不在已载入的记录里，往上翻一翻再试",
   "refresh_failed": "刷新失败",
@@ -110,5 +109,7 @@
   "closeout_found_deployed_no": "hub 查到没有部署",
   "stopped_line": "这个 Agent 已停止。它的对话和终端都留在这里，但它不再接收消息。",
   "resume": "恢复",
-  "resume_failed": "没能恢复这个 Agent。{error}"
+  "resume_failed": "没能恢复这个 Agent。{error}",
+  "handoff_from": "从「{title}」跳来 · 点这里返回",
+  "handoff_dismiss": "关闭返回提示"
 }

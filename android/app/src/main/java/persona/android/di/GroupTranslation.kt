@@ -298,7 +298,8 @@ internal fun AssistantConversations.inGroup(names: GroupNames, scope: CoroutineS
     return object : AssistantConversations {
         override val assistant = source.assistant.mapIn(scope) { snapshot ->
             AssistantSnapshot(snapshot.mainSession?.let(names::key), snapshot.conversations.map(names::session), snapshot.manager, snapshot.managerId,
-                snapshot.leaders, snapshot.directionNames, leaderCounts = snapshot.leaderCounts)
+                snapshot.leaders, snapshot.directionNames, leaderCounts = snapshot.leaderCounts,
+                backgroundSupervisor = snapshot.backgroundSupervisor)
         }
         override val pinned = source.pinned.mapIn(scope) { keys -> keys.mapTo(LinkedHashSet(), names::key) }
         override suspend fun refresh() = source.refresh()

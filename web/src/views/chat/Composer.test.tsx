@@ -648,3 +648,19 @@ describe("sending while another send is in flight", () => {
     });
   });
 });
+
+// #5032: an Agent's model pill sits at the right of the bottom row, before voice and send, and the card is the container
+// whose width it takes its modes from
+describe("the trailing slot", () => {
+  it("draws what it is given right before voice and send, inside the composer container", () => {
+    localStorage.setItem("draft:trailing", "hello"); // a draft: voice is the small icon, send stays
+    act(() => root.render(<Composer draftKey="trailing" placeholder="" onSend={async () => true} footer={<span data-footer />} trailing={<span data-pill />} voice={{ mode: "explain", label: "voice", onClick: () => {} }} />));
+    const pill = host.querySelector("[data-pill]")!;
+    const row = pill.parentElement!;
+    const order = [...row.children].map((c) => (c.matches("[data-pill]") ? "pill" : c.querySelector("[data-footer]") ? "footer" : c.getAttribute("data-testid") ?? c.getAttribute("aria-label") ?? c.tagName));
+    const at = order.indexOf("pill");
+    expect(order[at - 1]).toBe("footer");
+    expect(order.slice(at + 1)).toEqual(["composer-voice", t("chat-composer.send")]);
+    expect(row.closest("[class*='@container/composer']")).not.toBeNull();
+  });
+});

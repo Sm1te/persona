@@ -459,10 +459,8 @@ func (s *Service) deliverViewAction(parent context.Context, conversation, key st
 	if session, known := s.session(ctx, a.MachineID, a.Conversation); !known || !session.Assistant {
 		status, reason = "pending", i18n.T(s.lang(ctx), "assistant-view_actions.waiting_machine")
 	} else {
-		params := map[string]any{"session_id": a.Conversation, "client_msg_id": a.MessageID, "text": a.Text, "resume_only": true}
-		err = s.sendModel(ctx, a.MachineID, a.Conversation, params)
-		if err == nil {
-			s.UserSpoke(ctx, SessionRef{MachineID: a.MachineID, SessionID: a.Conversation})
+		var params map[string]any
+		if params, err = s.viewActionParams(ctx, *a); err == nil {
 			err = s.sendOnce(ctx, a.MachineID, params)
 		}
 		if err != nil {
@@ -482,6 +480,18 @@ func (s *Service) deliverViewAction(parent context.Context, conversation, key st
 	if err == nil && updated != nil {
 		s.viewActionChanged(finish, *updated)
 	}
+}
+
+// viewActionParams are the session.send_once parameters of a view action's message: the owner's own, as one they
+// typed is (what it runs on, UserSpoke, and a round they did not start preempted: owner_preempt.go).
+func (s *Service) viewActionParams(ctx context.Context, a db.AssistantViewActionRow) (map[string]any, error) {
+	params := map[string]any{"session_id": a.Conversation, "client_msg_id": a.MessageID, "text": a.Text, "resume_only": true}
+	if err := s.sendModel(ctx, a.MachineID, a.Conversation, params); err != nil {
+		return nil, err
+	}
+	s.UserSpoke(ctx, SessionRef{MachineID: a.MachineID, SessionID: a.Conversation})
+	s.ownerInterjects(a.Conversation, params)
+	return params, nil
 }
 
 func (s *Service) viewActionLoop(ctx context.Context) {

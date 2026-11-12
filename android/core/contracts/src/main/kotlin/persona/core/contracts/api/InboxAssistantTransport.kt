@@ -64,6 +64,11 @@ interface InboxAssistantTransport {
     suspend fun replyMail(itemId: String, text: String, clientId: String, target: MailReplyTarget): JsonObject =
         throw UnsupportedOperationException("Checked mail replies unavailable")
     suspend fun messages(feedId: String, around: Long? = null, before: String? = null, after: String? = null): JsonObject
+    /**
+     * A Feishu topic group's topics (`…/messages?topic=1`, #576 G134), newest page or [before] a cursor (backward paging
+     * only); a transport without the parameter reads the chat as it is.
+     */
+    suspend fun topics(feedId: String, before: String? = null): JsonObject = messages(feedId, before = before)
     /** One Feishu message (`GET /api/v1/lark/messages/{id}`, `{account?, message}`): the outbox confirms delivery with it. */
     suspend fun larkMessage(messageId: String): JsonObject = throw UnsupportedOperationException("Message lookup unavailable")
     suspend fun assistant(): JsonObject

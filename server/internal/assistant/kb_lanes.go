@@ -18,7 +18,9 @@ import (
 //     Moments links, item tagging and pruning (chats, projects, people, items); its steps keep their order, so the
 //     project rewrites see what this run's compression made due;
 //   - topics: knowledge points' distill and merge (topics and their sources' marks, under the store's topicMu);
-//   - minutes: meeting minutes from recordings (the recordings' minutes, under recMu).
+//   - minutes: meeting minutes from recordings (the recordings' minutes, under recMu);
+//   - recap: the daily recap of all-day recordings (their notes and recaps, under recMu; kb_day.go), so a long day
+//     never holds back a meeting's minutes.
 //
 // The loop (kbLoop) starts a lane when it is due (a round's time, a wake, a kick) and not still running; one still
 // running when it became due starts again as soon as it ends, as a round used to after a long one.
@@ -98,6 +100,9 @@ func (s *Service) kbLaneSet(r *kbRounds) *kbLanes {
 		}},
 		// Meetings' minutes (kb/minutes.go): a recording's can take many calls, so they have their own lane.
 		&kbLane{name: "minutes", run: func(ctx context.Context, e *kb.Engine) { e.WriteMinutes(ctx, 2) }},
+		// All-day recordings' recaps (kb/day_recap_write.go): one recording's notes or recap a run, and the day's push
+		// at its recap time; appends that finished an hour wake it.
+		&kbLane{name: "recap", run: func(ctx context.Context, e *kb.Engine) { e.WriteDayRecaps(ctx, 1) }},
 	)
 }
 

@@ -29,7 +29,14 @@ export function query({ prompt, options }) {
       content: JSON.parse(readFileSync(options.settings, 'utf8')),
     }
   }
-  send({ type: 'fake_options', options: rest, settings_file: file, env_keys: Object.keys(env ?? {}).length, has_stderr: typeof stderr === 'function' })
+  // An in-process MCP server is a live object graph, not a stdio config. Record
+  // its boundary for the bridge tests instead of serializing the SDK instance.
+  const mcpServers = Object.fromEntries(Object.entries(rest.mcpServers ?? {}).map(([name, server]) => [name,
+    server?.type === 'sdk'
+      ? { type: 'sdk', name: server.name }
+      : server,
+  ]))
+  send({ type: 'fake_options', options: { ...rest, mcpServers }, settings_file: file, env_keys: Object.keys(env ?? {}).length, has_stderr: typeof stderr === 'function' })
   stderr?.(`cli says ${process.env.ANTHROPIC_AUTH_TOKEN} at ${process.env.ANTHROPIC_BASE_URL}\n`)
   if (options.resume) {
     send({ type: 'assistant', uuid: process.env.FAKE_OLD_UUID, session_id: options.resume, message: { content: [{ type: 'text', text: 'old' }] } })

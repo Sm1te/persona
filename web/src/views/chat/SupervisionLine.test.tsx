@@ -73,8 +73,9 @@ describe("quiet supervision rendering", () => {
     await act(async () => host.querySelector<HTMLButtonElement>("[data-work-group] > button")!.click());
     expect(host.querySelector('[data-action-row="supervision_finish"]')).not.toBeNull();
     expect(host.querySelector('[data-action-row="Read"]')).not.toBeNull();
-    act(() => host.querySelector<HTMLButtonElement>('[data-thinking="words"] > button')!.click());
-    expect(host.textContent).toContain(thought.text);
+    // a thought that fits on its row says it there; rows come in their own chunk (#5155)
+    await act(async () => { await vi.dynamicImportSettled(); });
+    expect(host.querySelector('[data-thinking="words"]')?.textContent).toContain(thought.text);
     act(() => host.querySelector<HTMLButtonElement>('[data-action-row="Read"] > button')!.click());
     expect(host.querySelector('[data-action-row="Read"] [data-inline-detail]')?.textContent).toContain(result.text);
     expect(host.querySelector('[data-action-row="Read"] [data-inline-detail]')?.textContent).toContain('"file_path": "/tmp/fictional-example.txt"');

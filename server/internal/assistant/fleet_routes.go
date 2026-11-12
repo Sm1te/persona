@@ -185,6 +185,9 @@ func (s *Service) localFleetDeviceCall(ctx context.Context, p DeviceCall) (json.
 			if sess.Assistant {
 				sess.Space = identity.SpaceOf(sess.Cwd)
 			}
+			if title := s.agentDisplayName(m.ID, sess); title != "" {
+				sess.Title = title
+			}
 			// The node fills in no unified state: the callers that ask whether it works or waits for the user
 			// (sessionBusy, waitTurnEnd, a repair's end) read the manager's, as the lists have it.
 			if d, found := s.decoratedSession(m.ID, a.SessionID); found {

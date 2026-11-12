@@ -56,5 +56,26 @@ nonisolated extension Theme {
         /// How often the spoken time (VoiceOver's value for the timer) is refreshed, and the marker's number.
         static let spokenTimeRefresh: TimeInterval = 60
         static let gapRefresh: TimeInterval = 5
+        /// The meeting page (#3862): its title (the live header, the status card after the meeting) takes at most this
+        /// many lines.
+        static let pageTitleLines = 2
+        /// How many of the newest transcript lines its Live box shows, and how many lines of text each may take: the
+        /// box says what is being said now, the whole transcript is one tap away.
+        static let liveLines = 3
+        static let liveLineLength = 2
+        /// The step, in seconds, of the Live box's "About N s behind" (so it changes a few times a minute).
+        static let liveBehindStep = 5
+        /// How many exchanges Show Earlier brings of the room conversation: each batch of lines is a turn of its own,
+        /// so the chat's two would bring little.
+        static let earlierTurns = 6
+        /// A photo in the meeting's thread: its thumbnail's side.
+        static let photoSide: CGFloat = Theme.Size.box80
+        /// The meeting's material (the follow-up's first message) opened: this many lines show until Show All, which a
+        /// text longer than that, or than this many characters, offers.
+        static let materialLines = 12
+        static let materialPreview = 1200
+        /// How often the page after the meeting asks the hub for the minutes while they are on their way, in seconds,
+        /// as the wrap-up and the recording's page do.
+        static let minutesPoll: TimeInterval = 15
     }
 }

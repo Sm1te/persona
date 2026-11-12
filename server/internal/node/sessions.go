@@ -144,7 +144,7 @@ func (n *Node) sessionListIn(ctx context.Context, refreshAgents bool, pass *code
 				if m.title != "" && a.Agent != "codex" && a.Agent != traexAgent {
 					s.Title = m.title
 				}
-				if s.Title == "" || s.Title == "Claude Code" {
+				if s.Title == "" || s.Title == "Claude Code" && !m.titleManual {
 					s.Title = ""
 					untitled(&s, m)
 				}
@@ -191,7 +191,7 @@ func (n *Node) sessionListIn(ctx context.Context, refreshAgents bool, pass *code
 			n.codexEffortRow(id, &s.Efforts, &s.Effort, rollout) // joined on its app-server: its effort (codex_effort.go)
 			n.codexSpeedRow(&s)
 		}
-		if a.Agent == piAgent {
+		if piFamily(a.Agent) {
 			n.mergePiRow(&s) // its conversation is the extension's (pi.go)
 		}
 		switch {
@@ -212,6 +212,11 @@ func (n *Node) sessionListIn(ctx context.Context, refreshAgents bool, pass *code
 	n.forgetDialogs(livePanes)
 
 	for _, s := range n.starts.listed(seen) { // starting.go
+		n.decorateIn(&s, pass)
+		out = append(out, s)
+		seen[s.SessionID] = true
+	}
+	for _, s := range n.switches().listed(seen) { // an agent moving to another launcher, between its two (switch_share.go)
 		n.decorateIn(&s, pass)
 		out = append(out, s)
 		seen[s.SessionID] = true
@@ -345,6 +350,13 @@ func (n *Node) decorateIn(s *proto.Session, pass *codexListPass) {
 	}
 	if st, ok := n.decorateState(s); ok {
 		s.Compaction = st.Compaction
+		s.PendingSwitch = st.PendingSwitch // launcher_switch.go
+	}
+	if s.PendingSwitch == nil {
+		s.PendingSwitch = n.unrecordedSwitch(s.SessionID)
+	}
+	if ps := s.PendingSwitch; ps != nil && time.Since(ps.At) > switchMaxAge {
+		s.PendingSwitch = nil // dropped by the next message that would carry it out: not shown as waiting meanwhile
 	}
 	if s.Launcher == "" {
 		s.Launcher = n.inferLauncher(s.SessionID)

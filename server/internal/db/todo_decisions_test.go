@@ -117,3 +117,42 @@ func ids(rows []TodoDecisionRow) string {
 	}
 	return s
 }
+
+// TodoDecisionsSince is every todo's decisions in effect written inside the window, oldest first.
+func TestTodoDecisionsSince(t *testing.T) {
+	d := open(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
+	for _, id := range []string{"todo_a", "todo_b"} {
+		if err := d.CreateTodo(ctx, TodoRow{ID: id, Title: id, CreatedAt: base, UpdatedAt: base}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []TodoDecisionRow{
+		{ID: "old", TodoID: "todo_a", Question: "Merge the PR now?", Choice: "Yes", Source: DecisionCard, SourceMessage: "ix0", CreatedAt: base.Add(-time.Minute)},
+		{ID: "d1", TodoID: "todo_a", Question: "What next?", Choice: "Wait", Source: DecisionManual, CreatedAt: base},
+		{ID: "d2", TodoID: "todo_b", Question: "Merge the PR now?", Choice: "Yes", Source: DecisionCard,
+			SourceMachine: "box", SourceSession: "s1", SourceMessage: "ix1", CreatedAt: base.Add(time.Minute)},
+		{ID: "d3", TodoID: "todo_a", Question: "What next?", Choice: "Merge", Source: DecisionManual, SupersedesID: "d1", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "d4", TodoID: "todo_b", Question: "Push?", Choice: "Yes", Source: DecisionAgent, CreatedAt: base.Add(3 * time.Minute)},
+	} {
+		if ok, err := d.InsertTodoDecision(ctx, r); err != nil || !ok {
+			t.Fatalf("insert %s: %v %v", r.ID, ok, err)
+		}
+	}
+	rows, err := d.TodoDecisionsSince(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not the one from before the window, nor the one a later decision replaced; both todos', in the order written.
+	if ids(rows) != "d2,d3,d4" {
+		t.Fatalf("since = %s, want d2,d3,d4", ids(rows))
+	}
+	if r := rows[0]; r.TodoID != "todo_b" || r.Source != DecisionCard || r.SourceMessage != "ix1" || r.SourceMachine != "box" ||
+		r.Choice != "Yes" || !r.CreatedAt.Equal(base.Add(time.Minute)) || rows[1].SupersedesID != "d1" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if rows, err := d.TodoDecisionsSince(ctx, base.Add(time.Hour)); err != nil || len(rows) != 0 {
+		t.Fatalf("after the last: %+v, %v", rows, err)
+	}
+}

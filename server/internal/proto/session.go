@@ -1,6 +1,9 @@
 package proto
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // Claude Code's effort levels and permission modes (node/modes.go sets them; the hub checks a scheduled task's).
 var (
@@ -78,9 +81,18 @@ type Session struct {
 	Assistant        bool `json:"assistant"` // runs in the assistant directory (the app's "Chat" tab)
 	// Archived: a retained conversation moved out of the normal list. Assistant
 	// conversations and Claude/Codex Agents are managed by their owning manager.
-	Archived bool   `json:"archived,omitempty"`
-	Title    string `json:"title"`
-	Cwd      string `json:"cwd"`
+	Archived    bool `json:"archived,omitempty"`
+	TitleManual bool `json:"title_manual,omitempty"` // A runtime record proves the user chose a title.
+	// BypassAvailable sits here, beside the bools before it, not with PermissionMode: alone between two wider fields it
+	// took an 8-byte word, and a Session must stay at most 1,528 bytes (see BackgroundWorking below); PendingSwitch got
+	// that word (#5035).
+	// BypassAvailable: this Claude Code can be switched to bypassPermissions (Allow All) while it runs, since it was
+	// started with --dangerously-skip-permissions, --allow-dangerously-skip-permissions or --permission-mode
+	// bypassPermissions, which put that mode in its shift+tab cycle (#1379). The node reads it off the claude process its
+	// hooks run under; false while unknown (no hook yet, a node too old to say).
+	BypassAvailable bool   `json:"bypass_available,omitempty"`
+	Title           string `json:"title"`
+	Cwd             string `json:"cwd"`
 	// WorkspaceCwd is the node-verified physical directory for Cwd. Consumers
 	// matching workspace bindings prefer it and fall back to Cwd on older nodes.
 	WorkspaceCwd string `json:"workspace_cwd,omitempty"`
@@ -123,24 +135,28 @@ type Session struct {
 	// drives through its app-server has an Effort too (Codex's levels, see Efforts) but never a PermissionMode.
 	PermissionMode string `json:"permission_mode,omitempty"`
 	Effort         string `json:"effort,omitempty"`
-	// BypassAvailable: this Claude Code can be switched to bypassPermissions (Allow All) while it runs, since it was
-	// started with --dangerously-skip-permissions, --allow-dangerously-skip-permissions or --permission-mode
-	// bypassPermissions, which put that mode in its shift+tab cycle (#1379). The node reads it off the claude process its
-	// hooks run under; false while unknown (no hook yet, a node too old to say).
-	BypassAvailable bool `json:"bypass_available,omitempty"`
 	// Ultracode is Claude Code's independent session-only workflow switch: nil means unknown.
-	// Pending means a requested change waits for an idle input box; LostAt asks the client to offer reopening
-	// after a resumed process reset an enabled switch. Reopening or dismissing the notice clears LostAt.
-	UltracodePending bool       `json:"ultracode_pending,omitempty"`
-	Ultracode        *bool      `json:"ultracode,omitempty"`
-	UltracodeNote    string     `json:"ultracode_note,omitempty"`
-	UltracodeLostAt  *time.Time `json:"ultracode_lost_at,omitempty"`
+	// UltracodePending (beside AsksRead) means a requested change waits for an idle input box; LostAt asks the client
+	// to offer reopening after a resumed process reset an enabled switch. Reopening or dismissing the notice clears
+	// LostAt.
+	Ultracode       *bool      `json:"ultracode,omitempty"`
+	UltracodeNote   string     `json:"ultracode_note,omitempty"`
+	UltracodeLostAt *time.Time `json:"ultracode_lost_at,omitempty"`
+	// PendingSwitch is a switch of this running Claude Code Agent to another launcher (model provider) of the same
+	// engine that the user picked and that waits for the next message (#5035, docs/integrations/claude-integration.md
+	// "Switching a running Agent to another provider"): that message quits the agent and resumes the same conversation
+	// on the new launcher in the same terminal first. Nil when none waits.
+	PendingSwitch *PendingSwitch `json:"pending_switch,omitempty"`
 	// ContextTokens is what the model saw in the agent's latest reply (Claude: input + cache read + cache creation;
 	// Codex: the last token_count's input) and ContextWindow the model's window, both read off the transcript tail the
 	// node already reads (#2430). ContextTokens is omitted while unknown (no reply yet); ContextWindow too, when the
 	// node cannot tell the model's window. The apps show used / window as the context bar.
-	ContextTokens int `json:"context_tokens,omitempty"`
-	ContextWindow int `json:"context_window,omitempty"`
+	// Both are int32, next to each other, to leave Session the word Hierarchy takes (TestSessionFitsItsSizeClass): the
+	// largest windows are a few million tokens (Tokens32 saturates anything bigger).
+	ContextTokens int32 `json:"context_tokens,omitempty"`
+	ContextWindow int32 `json:"context_window,omitempty"`
+	// OutputTokens is cumulative generated output, not the latest context size or transcript revision.
+	OutputTokens int `json:"output_tokens,omitempty"`
 	// Efforts are the levels session.modes takes for Effort when they are not Claude Code's (which the apps know): a
 	// Codex thread the phone drives through its app-server (node/codex_effort.go), its model's levels weakest first.
 	// Speed has its own advertised choices in ServiceTiers. Empty for every other session: Claude's and the assistant's keep the apps' own
@@ -152,9 +168,10 @@ type Session struct {
 	// Space is the assistant's space it runs in: "health" for the health space's (docs/assistant/health.md), "" for the
 	// assistant's own. Set by the hub on the assistant's conversations.
 	Space string `json:"space,omitempty"`
-	// ArchiveChangedAt is the manager's last explicit archive/restore visibility change.
-	// The hub uses it only to order its legacy delete tombstones against that report.
-	ArchiveChangedAt time.Time `json:"archive_changed_at,omitzero"`
+	// ArchiveChangedAt is the manager's last explicit archive/restore visibility change; nil when there was none. The
+	// hub uses it only to order its legacy delete tombstones against that report. A pointer, not a time.Time: the 16
+	// bytes it saves keep Session in its size class (session_size_test.go).
+	ArchiveChangedAt *time.Time `json:"archive_changed_at,omitempty"`
 	// NativeArchive is whether the tool that owns an archived (or just restored) agent session has it the same way
 	// in its own archive (Codex's archived threads): only on GET /api/v1/sessions/archived rows, nil when the manager
 	// never asked the tool.
@@ -250,6 +267,8 @@ type Session struct {
 	// Asks is what the agent's last reply asks the user, when its closing words put a question or a decision to
 	// them (transcript.AskOf, #5096): read by the node off the whole reply, since LastText is only its beginning.
 	Asks string `json:"asks,omitempty"`
+	// UltracodePending: a requested switch waits for an idle input box (grouped here to keep rows compact).
+	UltracodePending bool `json:"ultracode_pending,omitempty"`
 	// AsksRead: the node read Asks off the reply (an empty Asks then means it asks nothing, or the user answered it);
 	// without it (an older node, a host that does not say) the hub reads the list's last words when they are whole.
 	AsksRead bool `json:"asks_read,omitempty"`
@@ -264,6 +283,8 @@ type Session struct {
 	// TurnErrorAfterWork: the turn did some work (a reply, a tool call) before TurnError ended it; false when the error
 	// was all it did (a continuation the limit turned down again).
 	TurnErrorAfterWork bool `json:"turn_error_after_work,omitempty"`
+	// Known transcript provenance, packed with flags; its JSON remains a string.
+	TitleSource TitleSource `json:"title_source,omitempty"`
 	// TurnError: the agent's latest turn ended in a model API error (the connection lost mid-response, overloaded,
 	// rate limited, the model service down…). The node sets it when the agent's own record says the turn failed
 	// (Codex: a rollout's task_complete.error, an app-server's failed turn, #2185); otherwise the hub reads it off the
@@ -339,6 +360,12 @@ type Session struct {
 	// paseo for the Paseo runtime's; empty for transcripts with no live host and for other runtimes. The apps label a
 	// row with it when the machine enables more than one host.
 	Host string `json:"host,omitempty"`
+	// Hierarchy is where the session stands among the sessions that started one another, and when it began
+	// (docs/protocol/protocol.md "Session hierarchy"); nil for most rows. Its members are written on the row itself
+	// (folded_under, children, started_at, asking_parent_session_id: sessionWire), so it has no key of its own. Read it
+	// with FoldedUnder, Children, StartedAt and AskingParentSessionID; it is shared by every copy of the row, so it is
+	// never written in place: SetFold, SetStartedAt and SetAskingParentSessionID put a new one.
+	Hierarchy *SessionHierarchy `json:"-"`
 }
 
 // Session.TurnErrorKind values.
@@ -391,6 +418,53 @@ const (
 	CodeModesNotRunning = "modes_not_running"
 )
 
+// PendingSwitch is Session.PendingSwitch: the launcher the Agent moves to, the model and effort to run it with ("":
+// the launcher's own default model; the effort it runs with now), and when the user picked it.
+type PendingSwitch struct {
+	Launcher string    `json:"launcher"`
+	Model    string    `json:"model,omitempty"`
+	Effort   string    `json:"effort,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+// Codes a launcher switch of a running Agent refuses with (node/launcher_switch.go, #5035): 409, nothing typed, the
+// text in the request's language (apierr.Call, rpc-errors.<code>); the node's own words, with the names, are the
+// body's detail. switch_stale comes only from POST …/modes; the not-stopped and failed ones only from the user's
+// message that carries a switch out; the rest from both, a message's when something changed since the pick. A message
+// refused with one of them drops the switch: nothing tries it again by itself.
+const (
+	// CodeSwitchStale: the pick was made against another launcher than the session runs on by now (POST …/modes'
+	// from): a switch was carried out meanwhile. Nothing was recorded.
+	CodeSwitchStale = "switch_stale"
+	// CodeSwitchUnderWay: a switch of the session is being carried out right now (maybe on the last connection's Node
+	// of a resident node): what would type into its pane or press its keys (a model, mode or effort change, a rewind,
+	// an answer, keys, a close), and a message that would carry out another, is refused with nothing done.
+	CodeSwitchUnderWay = "switch_under_way"
+	// CodeSwitchPickModel: no model was picked, and what the launcher runs by default cannot be seen (a wrapper script,
+	// a provider that names no model): resumed without --model, the conversation would go on with the model of the
+	// launcher it ran on.
+	CodeSwitchPickModel = "switch_pick_model"
+	// CodeSwitchUnsupported: not a Claude Code Agent running in a terminal Persona can restart it in (Codex, another
+	// CLI, a runtime's session, an assistant conversation, botmux).
+	CodeSwitchUnsupported = "switch_unsupported"
+	// CodeSwitchLauncherMissing: the launcher picked is not on the session's computer.
+	CodeSwitchLauncherMissing = "switch_launcher_missing"
+	// CodeSwitchOtherAgent: the launcher picked runs another agent than Claude Code.
+	CodeSwitchOtherAgent = "switch_other_agent"
+	// CodeSwitchModelLocked: a model was picked, and the launcher fixes its own.
+	CodeSwitchModelLocked = "switch_model_locked"
+	// CodeSwitchConfigDir: the launcher runs Claude Code with another config directory than the one the conversation
+	// is in: --resume would not find it there, and the sign-in lives in that directory too.
+	CodeSwitchConfigDir = "switch_config_dir"
+	// CodeSwitchNotStopped: the agent did not quit; it runs on as before.
+	CodeSwitchNotStopped = "switch_not_stopped"
+	// CodeSwitchFailed: the agent did not come up on the new launcher; it is back on its own one.
+	CodeSwitchFailed = "switch_failed"
+	// CodeSwitchFailedStopped: the agent did not come up on the new launcher and could not be brought back on its own
+	// one: it has stopped (Resume on its terminal page).
+	CodeSwitchFailedStopped = "switch_failed_stopped"
+)
+
 // TodoRef is a session's link to an active todo (docs/assistant/todos.md).
 type TodoRef struct {
 	ID    string `json:"id"`
@@ -438,4 +512,9 @@ type ServiceTier struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+}
+
+// Tokens32 is n as Session.ContextTokens and ContextWindow hold it: saturated at the int32 bounds.
+func Tokens32(n int) int32 {
+	return int32(max(min(n, math.MaxInt32), math.MinInt32))
 }

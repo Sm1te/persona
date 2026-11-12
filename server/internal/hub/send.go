@@ -86,6 +86,25 @@ func withoutControls(s string) string {
 	}, s)
 }
 
+// switchSendWait is how long the hub waits for a message carrying out a launcher switch: the node's checks before the
+// quit take at most a minute and the rest at most five (node/launcher_switch.go switchProbeWait, switchBudget).
+const switchSendWait = 7 * time.Minute
+
+// sendWait is how long the hub waits for the node to take message p to session s (as listed; zero when not): 90
+// seconds; 5 minutes for one that is starting or not running (a resume, node's claudeStartWait, #1396); switchSendWait
+// for the user's message that carries out a switch to another launcher (apply_switch): it quits the agent and starts
+// it again, and brings it back on its own launcher when that fails. Decided by the request, not the cached row, which
+// may not show a switch picked a moment ago.
+func sendWait(p map[string]any, s proto.Session) time.Duration {
+	if apply, _ := p["apply_switch"].(bool); apply {
+		return switchSendWait
+	}
+	if s.Starting || s.Status == proto.StatusOffline {
+		return 5 * time.Minute
+	}
+	return 90 * time.Second
+}
+
 func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	p := map[string]any{}
 	if r.ContentLength != 0 {
@@ -96,6 +115,12 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	}
 	if p == nil {
 		writeErr(w, http.StatusBadRequest, errors.New("request body must be a JSON object"))
+		return
+	}
+	if id, _ := p["client_msg_id"].(string); strings.HasPrefix(id, assistantwire.FirstMessageIDPrefix) {
+		// The manager's own, for a conversation's first message (assistant start.go humanStart): never an app's, so no
+		// later message carries one (and passes for that first message). Refused before anything else is done with it.
+		writeErrCode(w, http.StatusBadRequest, "client_msg_id_reserved", i18n.Err("hub-send.reserved_id"))
 		return
 	}
 	sid := r.PathValue("sid")
@@ -168,12 +193,14 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	s, known := m.session(sid)
 	picked := "" // a model picked in the chat's chip that the message runs on (#1644)
 	assistantConv := false
+	note := "" // the main chat runs on another launcher than configured (#4659): told in a delivered send's answer
 	if h.isMainOn(m.cfg.ID, sid) || (known && (s.Assistant || m.isAssistant(s))) {
 		assistantConv = true
 		// One of the assistant's conversations: it says what the message runs on (and, the first one to a new main
 		// conversation started empty, what the old one left before it).
 		asked, _ := p["model"].(string)
-		if err := h.assistantSend(r.Context(), m, sid, p); err != nil {
+		var err error
+		if note, err = h.assistantSend(r.Context(), m, sid, p); err != nil {
 			writeAssistantErr(w, err)
 			return
 		}
@@ -187,11 +214,8 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	// its outcome is what the retry gets. Resuming an offline session can take a while (shell + claude startup).
 	// One sent while the session still starts waits for claude to be ready (node/starting.go); one to a session that is
 	// not running resumes it first. Either can wait minutes on a busy machine (node's claudeStartWait, #1396).
-	wait := 90 * time.Second
-	if s, ok := m.session(sid); ok && (s.Starting || s.Status == proto.StatusOffline) {
-		wait = 5 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), wait)
+	row, _ := m.session(sid)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), sendWait(p, row))
 	defer cancel()
 	id, _ := p["client_msg_id"].(string)
 	if ch := channel.FromClientMsgID(id, []string{"voice"}); ch != "" {
@@ -214,6 +238,7 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	}
 	if id == "" {
 		status, body, outcome := h.deliverOnce(ctx, m, p)
+		body = withLauncherNote(status, body, note)
 		if assistantConv {
 			h.conversationSent(m.cfg.ID, sid, status, body, outcome)
 		}
@@ -266,12 +291,13 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 	}
 	switch state {
 	case sendDelivered:
-		f.status, f.body = http.StatusOK, []byte("{}\n")
+		f.status, f.body = http.StatusOK, withLauncherNote(http.StatusOK, []byte("{}\n"), note)
 	case sendSending, sendUnknown: // an earlier hub or connection was sending it and never learned the outcome
 		f.status, f.body = callErrBytes(l, unknownDelivery(l, "hub-send.lost_before"))
 	default:
 		var outcome string
 		f.status, f.body, outcome = h.deliverOnce(ctx, m, p)
+		f.body = withLauncherNote(f.status, f.body, note)
 		if assistantConv {
 			h.conversationSent(m.cfg.ID, sid, f.status, f.body, outcome)
 		}

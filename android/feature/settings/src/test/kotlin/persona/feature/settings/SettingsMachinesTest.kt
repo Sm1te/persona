@@ -385,4 +385,45 @@ class ModelConfigurationStateTest {
         broken.load()
         assertEquals("读取失败：boom", broken.state.value.error?.resolve(res))
     }
+
+    /** #5084: the hub's catalog leaves the background supervisor's use out, so the page asks for it by its id. */
+    @Test fun theBackgroundSupervisorsUseIsListedWhenTheHubHasIt() = runBlocking {
+        val supervise = ModelPurpose(BackgroundSupervisor.PURPOSE, "后台督办", "对话与 Agent", parent = "assistant",
+            effective = ModelBinding("launcher.claude", "model-chat"), inheritedFrom = "assistant")
+        var answer: (String) -> ModelPurposeDetail = { ModelPurposeDetail(supervise, providers) }
+        var listed = catalog
+        val asked = mutableListOf<String>()
+        val model = ModelCatalogModel(object : ModelConfiguration {
+            override suspend fun catalog() = listed
+            override suspend fun purpose(id: String): ModelPurposeDetail { asked += id; return answer(id) }
+            override suspend fun save(purpose: ModelPurpose, draft: ModelConfigurationDraft): ModelPurposeSave = throw IllegalStateException()
+            override suspend fun providerModels(provider: String, refresh: Boolean, machine: String?): ProviderModels? = null
+        })
+        fun ids() = model.state.value.catalog?.purposes?.map { it.id }
+        model.load()
+        // after the last use of its group, the hub's order otherwise
+        assertEquals(listOf("agent.new", "assistant", "assistant.supervise", "inbox.triage", "misc"), ids())
+        assertEquals(listOf("assistant.supervise"), asked)
+        assertEquals("claude，model-chat\n跟随 Persona 对话", purposeSubtitle(res, supervise, requireNotNull(model.state.value.catalog)))
+        // a hub without it (404), one that cannot answer, and an answer about another use: the catalog as it is
+        answer = { throw ModelPurposeNotFound("no such purpose") }
+        model.load()
+        assertEquals(catalog.purposes.map { it.id }, ids())
+        answer = { throw HubFailure(HubError.Server, "boom", 500) }
+        model.load()
+        assertEquals(catalog.purposes.map { it.id }, ids())
+        assertNull(model.state.value.error)
+        answer = { ModelPurposeDetail(agent, providers) }
+        model.load()
+        assertEquals(catalog.purposes.map { it.id }, ids())
+        // a hub that lists it itself is not asked, and it is not listed twice
+        asked.clear()
+        listed = catalog.copy(purposes = catalog.purposes + supervise)
+        model.load()
+        assertEquals(listOf("agent.new", "assistant", "inbox.triage", "misc", "assistant.supervise"), ids())
+        assertTrue(asked.isEmpty())
+        // a group no listed use is in: at the end
+        assertEquals(listOf("agent.new", "assistant", "inbox.triage", "misc", "assistant.supervise"),
+            modelPurposesWith(catalog.purposes, supervise.copy(group = "主对话")).map { it.id })
+    }
 }

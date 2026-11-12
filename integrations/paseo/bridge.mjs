@@ -1,5 +1,6 @@
 // The Paseo bridge's process (docs/integrations/paseo.md): the node runs it while the machine's engine is Paseo —
 //   node bridge.mjs --socket <runtime.sock> --paseo-home <Paseo's home> [--mcp-config <the node's mcp.json>]
+//     [--allow-tools <the Persona tools its Agents call without a card, comma-separated>]
 // and it runs until the node stops it, or its stdin (held open by the node) ends: a node that dies leaves none behind.
 
 import { parseArgs } from 'node:util'
@@ -11,12 +12,15 @@ const { values } = parseArgs({
     socket: { type: 'string' },
     'paseo-home': { type: 'string' },
     'mcp-config': { type: 'string' },
+    'allow-tools': { type: 'string' },
   },
   strict: true,
 })
 
 const log = (msg) => process.stderr.write(`${msg}\n`)
-const bridge = createPaseoBridge({ log }, { socketPath: values.socket || undefined, home: values['paseo-home'] || paseoHome(), mcpConfig: values['mcp-config'] || undefined })
+const allowTools = (values['allow-tools'] ?? '').split(',').filter(Boolean)
+const bridge = createPaseoBridge({ log }, { socketPath: values.socket || undefined, home: values['paseo-home'] || paseoHome(),
+  mcpConfig: values['mcp-config'] || undefined, allowTools })
 bridge.start()
 
 let stopping = false

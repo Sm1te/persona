@@ -22,8 +22,9 @@ final class ComposerHold {
 
     static let space = "composer-hold"
 
-    /// The finger has held long enough: dictation starts, what it hears kept aside until the finger decides.
-    func begin(_ dictation: Dictation, text: Binding<String>, reduceMotion: Bool) {
+    /// The finger has held long enough: dictation starts, what it hears kept aside until the finger decides. `hints`
+    /// tell it the language spoken (`Dictation.start`), after the draft.
+    func begin(_ dictation: Dictation, text: Binding<String>, hints: [String] = [], reduceMotion: Bool) {
         draft = text.wrappedValue
         heard = ""
         locked = false
@@ -33,7 +34,7 @@ final class ComposerHold {
         Haptics.tap()
         withAnimation(reduceMotion ? nil : Theme.Motion.holdAppear) { holding = true }
         Task {
-            let problem = await dictation.start { [weak self] words in
+            let problem = await dictation.start(hints: [draft] + hints) { [weak self] words in
                 guard let self, self.run == mine else { return }
                 if self.locked { text.wrappedValue = DictationHold.joined(self.draft, words) } else { self.heard = words }
             }
@@ -77,6 +78,8 @@ struct ComposerHoldMic: View {
     @Binding var text: String
     let hold: ComposerHold
     var id: String
+    /// What tells dictation the language spoken besides the draft: the owner's recent messages in this chat.
+    var hints: () -> [String] = { [] }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Counts the touch toward a hold; cancelled when the finger lifts first (a tap).
     @State private var pending: Task<Void, Never>?
@@ -106,7 +109,7 @@ struct ComposerHoldMic: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(dictation.isListening ? String(localized: "Stop Dictation") : String(localized: "Dictate"))
             .accessibilityHint("Touch and hold to dictate. Slide left to cancel, or up to keep dictating.")
-            .accessibilityAction { dictation.toggle(into: $text) }
+            .accessibilityAction { dictation.toggle(into: $text, hints: hints) }
             .accessibilityIdentifier(id)
             .shellScaled()
     }
@@ -126,7 +129,7 @@ struct ComposerHoldMic: View {
                         try? await Task.sleep(for: Theme.Hold.delay)
                         guard !Task.isCancelled else { return }
                         decided = true // a hold, even one that could not start: letting go is no tap
-                        hold.begin(dictation, text: $text, reduceMotion: reduceMotion)
+                        hold.begin(dictation, text: $text, hints: hints(), reduceMotion: reduceMotion)
                     }
                 }
             }
@@ -137,7 +140,7 @@ struct ComposerHoldMic: View {
                     hold.finish(DictationHold.onRelease(value.translation, velocity: value.velocity), dictation, text: $text,
                                 reduceMotion: reduceMotion)
                 } else if !decided {
-                    dictation.toggle(into: $text) // a tap
+                    dictation.toggle(into: $text, hints: hints) // a tap
                 }
                 decided = false
             }

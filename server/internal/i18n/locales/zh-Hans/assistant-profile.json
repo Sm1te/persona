@@ -1,7 +1,10 @@
 {
   "launcher_agent": "{launcher} 跑的是 {agent}，助手只能用启动 Claude Code、Codex 或能当助手的 runtime 的启动器",
-  "manager_required": "请先明确选择助手，再修改其默认权限模式。",
+  "manager_required": "请先选择助手，再修改设置。",
   "other_manager": "请求指定了另一位助手，请重新读取目标助手的设置后再试。",
   "manager_conflict": "请求头和网址指定了不同助手，请明确同一个目标后再试。",
+  "agent_names_unavailable": "无法读取保存的 Agent 名字，这次没有改名。请重试。",
+  "bad_agent_naming_max": "改名次数请填写 1 至 1000 的整数。",
+  "bad_agent_naming_interval": "更新间隔请填写 1 至 8760 的整数小时，或关闭定期更新。",
   "bad_minutes_days": "minutes_days 必须为 0（永久保留）或 1 至 3650 的整数天数。"
 }

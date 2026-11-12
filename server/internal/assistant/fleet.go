@@ -78,6 +78,10 @@ type fleetBook struct {
 	shown   map[string][]proto.Session
 	// asks: what each session's last words ask, while they stay the same (fleet_asks.go).
 	asks asksMemo
+	// folds: what each machine's last complete list folded its children under (fleet_fold.go), for the rows and
+	// cards sent without the rest of the list.
+	foldMu sync.Mutex
+	folds  map[string]sessionFold
 
 	// rep is the last snapshot's parts the session lists show (fleetTakeSnapshot).
 	rep fleetReport

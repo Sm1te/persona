@@ -1,5 +1,17 @@
 package prompts
 
+func RenderAgentSessionName() string { return render("agents/session_name", nil) }
+
+// AgentSessionNameInput contains only bounded dialogue, never machine paths or credentials.
+type AgentSessionNameInput struct {
+	First  string
+	Recent string
+}
+
+func RenderAgentSessionNameInput(v AgentSessionNameInput) string {
+	return render("agents/session_name_input", v)
+}
+
 // RenderReadonlyTaskPlanExit keeps a read-only task from requesting writable implementation approval.
 func RenderReadonlyTaskPlanExit() string { return render("agents/readonly_plan_exit", nil) }
 

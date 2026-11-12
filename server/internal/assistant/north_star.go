@@ -190,6 +190,7 @@ func (s *Service) recordManagerSend(machine string, p map[string]any, res []byte
 // appSendRefused: the manager refused an app's message to one of its conversations before the hub sent it
 // (SendParams), so the hub never tells ConversationSent; it is a failed resume all the same.
 func (s *Service) appSendRefused(machine, session string, err error) {
+	s.availOwnerFailed(machine, session) // availability.go
 	s.recordSendAsync(machine, session, "resume", originApp, false, outcomeFailed, errCode(err), err.Error())
 }
 
@@ -217,6 +218,9 @@ func (s *Service) ConversationSent(_ context.Context, r ConversationSent) {
 		outcome = outcomeOK
 	case assistantwire.ConversationUnknown:
 		outcome = outcomeUnknown
+	}
+	if outcome == outcomeFailed {
+		s.availOwnerFailed(r.MachineID, r.SessionID) // nothing was sent: no reply to wait for (availability.go)
 	}
 	s.recordSend(r.MachineID, r.SessionID, "resume", originApp, false, outcome, r.Code, r.Error)
 }

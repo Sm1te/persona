@@ -232,6 +232,140 @@ struct AgentRepoTreeTests {
         #expect(RepoPlace.git(session("old", "/code/app")) == nil)
     }
 
+    // MARK: A linked worktree named by its host workspace's title (#4768; the web's and Android's cases, #4497)
+
+    private let appRepo = "/home/me/code/app"
+    private let fox = "/home/me/.paseo/worktrees/abc123/brave-fox"
+
+    private func placed(_ id: String, _ cwd: String, _ fields: [String: Any]) -> Session {
+        var all: [String: Any] = ["machine_id": "machine-a", "session_id": id, "title": id, "cwd": cwd, "status": "idle", "state": "idle"]
+        all.merge(fields) { _, new in new }
+        do { return try JSON.decoder.decode(Session.self, from: JSONSerialization.data(withJSONObject: all)) }
+        catch { fatalError("bad fixture: \(error)") }
+    }
+
+    /// An agent Paseo placed: the node's git place and branch, its workspace's title in `slot_name`, no `slot_id`.
+    /// `without`: the fields it does not send.
+    private func paseo(_ id: String, _ worktree: String, _ patch: [String: Any] = [:], without: Set<String> = []) -> Session {
+        var fields: [String: Any] = ["host": "paseo", "space_kind": "paseo", "repo_root": appRepo, "worktree": worktree,
+                                     "branch": "fix/login", "slot_name": "Fix the login flow"]
+        fields.merge(patch) { _, new in new }
+        for key in without { fields[key] = nil }
+        return placed(id, worktree, fields)
+    }
+
+    private func mainCheckout(_ id: String, _ patch: [String: Any] = [:]) -> Session {
+        var fields: [String: Any] = ["repo_root": appRepo, "worktree": appRepo, "branch": "main"]
+        fields.merge(patch) { _, new in new }
+        return placed(id, appRepo, fields)
+    }
+
+    private func linked(_ all: [Session]) throws -> RepoTree.Worktree {
+        try #require(RepoTree.build(all, machines: machines).first?.repos.first?.worktrees.first { !$0.main })
+    }
+
+    @Test func aLinkedWorktreeTakesTheTitleItsSessionsShareAndKeepsItsBranch() throws {
+        let repo = try #require(RepoTree.build([mainCheckout("main"), paseo("a", fox), paseo("b", fox)], machines: machines).first?.repos.first)
+        #expect(repo.worktrees.map(\.name) == ["main", "Fix the login flow"])
+        #expect(repo.worktrees.map(\.branch) == ["main", "fix/login"])
+        #expect(repo.worktrees.map(\.main) == [true, false])
+        #expect(repo.worktrees[1].sessions.map(\.sessionID).sorted() == ["a", "b"])
+    }
+
+    @Test func aSessionOfAnotherSourceWithNoTitleNeitherVotesNorBlocks() throws {
+        let tree = try linked([paseo("a", fox), paseo("b", fox),
+                               placed("cli", fox, ["repo_root": appRepo, "worktree": fox, "branch": "fix/login"])])
+        #expect(tree.name == "Fix the login flow" && tree.branch == "fix/login" && tree.sessions.count == 3)
+    }
+
+    @Test func twoDifferentTitlesKeepTheBranch() throws {
+        let tree = try linked([paseo("a", fox), paseo("b", fox, ["slot_name": "Speed up the importer"])])
+        #expect(tree.name == "fix/login" && tree.branch == "fix/login")
+    }
+
+    /// White space around a title is not part of it (the web's `trim()`): the same title, and shown without it.
+    @Test func whiteSpaceAroundATitleIsNotPartOfIt() throws {
+        let tree = try linked([paseo("a", fox, ["slot_name": " Fix the login flow"]), paseo("b", fox, ["slot_name": "Fix the login flow\n"])])
+        #expect(tree.name == "Fix the login flow")
+    }
+
+    /// A `slot_name` beside a `slot_id` is a tab's label (herdr), not a place.
+    @Test func aTabsLabelKeepsTheBranch() throws {
+        let tree = try linked([paseo("tab", fox, ["host": "herdr", "space_kind": "herdr", "slot_id": "w1:t2"])])
+        #expect(tree.name == "fix/login" && tree.branch == "fix/login")
+    }
+
+    @Test func theMainCheckoutKeepsItsName() throws {
+        let named = try #require(RepoTree.build([mainCheckout("main", ["slot_name": "Triage"])], machines: machines).first?.repos.first)
+        #expect(named.worktrees.map(\.name) == ["main"] && named.worktrees.map(\.main) == [true])
+        // An older node sends no git place: the main checkout is named after its repository.
+        let older = try #require(RepoTree.build([placed("old", appRepo, ["repo_root": appRepo, "slot_name": "Triage"])],
+                                                machines: machines).first?.repos.first)
+        #expect(older.worktrees.map(\.name) == ["app"] && older.worktrees.map(\.main) == [true])
+    }
+
+    @Test func aTreeWithoutABranchTakesItsTitleElseItsFolder() throws {
+        #expect(try linked([paseo("a", fox, without: ["branch"])]).name == "Fix the login flow")
+        #expect(try linked([paseo("a", fox, without: ["branch", "slot_name"])]).name == "brave-fox")
+        #expect(try linked([paseo("a", fox, ["slot_name": "  "], without: ["branch"])]).name == "brave-fox")
+        // An older node: the tree is the working directory under the repository the host names (#2840).
+        #expect(try linked([paseo("a", fox, without: ["branch", "worktree"])]).name == "Fix the login flow")
+    }
+
+    @Test func aTreeKeepsItsIdWithAndWithoutTheTitle() throws {
+        let titled = try linked([paseo("a", fox)])
+        let plain = try linked([paseo("a", fox, without: ["slot_name"])])
+        #expect(titled.name == "Fix the login flow" && plain.name == "fix/login")
+        #expect(titled.id == plain.id && titled.path == plain.path)
+    }
+
+    @Test func linkedTreesSortByTheNamesTheyShowAfterTheMainCheckout() throws {
+        let repo = try #require(RepoTree.build([
+            paseo("readme", "/home/me/.paseo/worktrees/abc123/wise-owl", ["branch": "docs/readme", "slot_name": "Update the README"]),
+            paseo("import", "/home/me/.paseo/worktrees/abc123/calm-otter", ["branch": "perf/importer", "slot_name": "Speed up the importer"]),
+            paseo("login", fox),
+            mainCheckout("main"),
+        ], machines: machines).first?.repos.first)
+        #expect(repo.worktrees.map { $0.name + ($0.main ? "*" : "") } == ["main*", "Fix the login flow", "Speed up the importer", "Update the README"])
+    }
+
+    @Test func twoTreesWithOneTitleKeepTheirOrderWhicheverSessionComesFirst() {
+        let owl = "/home/me/.paseo/worktrees/abc123/wise-owl"
+        let twins = [paseo("fox", fox), paseo("owl", owl, ["branch": "fix/login-2"])]
+        let trees = { (all: [Session]) in RepoTree.build(all, machines: self.machines)[0].repos[0].worktrees.map { $0.name + " " + $0.path } }
+        #expect(trees(twins) == ["Fix the login flow " + fox, "Fix the login flow " + owl])
+        #expect(trees(Array(twins.reversed())) == trees(twins))
+    }
+
+    @Test func anOrcaWorktreeKeepsOrcasNaming() throws {
+        let orcaTree = "/home/me/orca/workspaces/app/fix-login"
+        let orca = placed("orca", orcaTree, ["repo_root": appRepo, "worktree": orcaTree, "branch": "fix/login", "space_kind": "orca",
+                                             "space_id": "fix-login", "slot_id": "tab1", "slot_name": "tab tab1"])
+        let placedByOrca = try #require(RepoTree.build([orca, paseo("paseo", orcaTree)], machines: machines).first?.repos)
+        #expect(placedByOrca.count == 1)
+        #expect(placedByOrca[0].worktrees.map(\.name) == ["fix/login"])
+        #expect(placedByOrca[0].worktrees[0].sessions.map(\.sessionID).sorted() == ["orca", "paseo"])
+        // An Orca agent the host did not place (no space id) still leaves its tree to Orca's naming.
+        var loose = orca
+        loose.spaceID = nil
+        #expect(try linked([loose, paseo("paseo", orcaTree)]).name == "fix/login")
+    }
+
+    @Test func aLoneLinkedTreeItNamesKeepsItsLevel() throws {
+        let branched = try #require(RepoTree.build([paseo("a", fox)], machines: machines).first?.repos.first)
+        let unbranched = try #require(RepoTree.build([paseo("a", fox, without: ["branch"])], machines: machines).first?.repos.first)
+        #expect(!branched.flat && !unbranched.flat)
+    }
+
+    /// The same name whatever the list asks for: a quick filter (`includeEmpty`) or a search.
+    @Test func theTreeIsNamedTheSameWayWhateverTheListAsksFor() {
+        let all = [mainCheckout("main"), paseo("a", fox)]
+        for tree in [RepoTree.build(all, machines: machines, workspaces: [], includeEmpty: false),
+                     RepoTree.build(all, machines: machines, workspaces: [], includeEmpty: true, search: "login")] {
+            #expect(tree.first?.repos.first?.worktrees.map(\.name) == ["main", "Fix the login flow"])
+        }
+    }
+
     private func workspace(_ id: String, parent: String? = nil, machine: String = "machine-a", group: String = "",
                            path: String? = nil) -> HostWorkspace {
         HostWorkspace(machineID: machine, source: "orca", sourceID: id, title: id, cwd: path ?? "/work/" + id,

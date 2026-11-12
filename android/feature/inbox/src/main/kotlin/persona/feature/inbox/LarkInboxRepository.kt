@@ -34,6 +34,8 @@ class LarkInboxRepository(
         var newer: String? = null
         var readPosition = -1L
         val readIds = mutableSetOf<String>()
+        /** A topic group (#576): read as its topics (`topic=1`), from the inbox row or the hub's own page. */
+        @Volatile var topic = false
     }
     private val windows = mutableMapOf<String, Window>()
     private val readers = mutableMapOf<Window, Int>()
@@ -88,8 +90,9 @@ class LarkInboxRepository(
                 val pending = if (!state.hasNewer) messages.filter { it.position == null && it.clientId != null }
                     .filterNot { local -> state.messages.any { it.id == local.id || it.clientId == local.clientId } } else emptyList()
                 val row = inbox.records.firstOrNull { it.feedId == feedId }
+                if (row?.isTopic == true) w.topic = true
                 state.copy(title = row?.item?.title ?: state.title, messages = state.messages + pending,
-                    isGroup = row?.isGroup ?: state.isGroup, isTopic = row?.isTopic ?: state.isTopic)
+                    isGroup = row?.isGroup ?: state.isGroup, isTopic = if (w.topic) true else row?.isTopic ?: state.isTopic)
             }.collect { send(it) }
             } finally { synchronized(windows) {
                 val users = (readers[w] ?: 1) - 1
@@ -244,7 +247,14 @@ class LarkInboxRepository(
 
     private class WindowGap : Exception()
     private suspend fun fetch(w: Window, around: Long? = null, before: String? = null, after: String? = null): JsonObject {
+        // A topic group lists its topics, pages backward only (`topic=1`); one the hub says is a topic group is read again so.
+        if (w.topic && after == null) return w.source.read { w.transport.topics(w.feed, before) }
         val page = w.source.read { w.transport.messages(w.feed, around, before, after) }
+        if (page.flag("topic") && after == null) {
+            w.topic = true
+            w.state.update { it.copy(isTopic = true) }
+            return w.source.read { w.transport.topics(w.feed, before) }
+        }
         val sync = page.cursor("sync_state") ?: page.cursor("syncState")
         if (sync == "gap") throw WindowGap()
         check(sync == null || sync == "complete") { "Window is not authoritative" }

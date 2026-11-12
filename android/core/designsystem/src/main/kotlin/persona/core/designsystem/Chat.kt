@@ -193,12 +193,21 @@ fun WorkGroup(
             JIcon(if (expanded) PhIcons.CaretUp else PhIcons.CaretDown, null, size = 14.dp, tint = palette.ink3)
         }
     }
+    // Glass as iOS's plain work line (#4339 C5): no card, the spinner while it runs, the words and the chevron after them.
+    val glassHeader: @Composable () -> Unit = {
+        Row(
+            Modifier.clickable(role = Role.Button, onClick = onToggle).semantics { contentDescription = spoken }
+                .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.s),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.sm),
+        ) {
+            if (running) JSpinner(Modifier.size(Tokens.Space.m), stroke = Tokens.Space.xxs)
+            Text(summary, style = type.caption, color = palette.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            trailing?.let { CompositionLocalProvider(LocalContentColor provides palette.ink2, LocalTextStyle provides type.micro) { it() } }
+            JIcon(if (expanded) persona.core.designsystem.icons.PersonaIcons.expand else PhIcons.CaretRight, null, size = Tokens.Space.m, tint = palette.ink3)
+        }
+    }
     when (PersonaTheme.style) {
-        AppStyle.Glass -> Column(
-            modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(24.dp)).background(palette.surface)
-                .border(1.dp, Brush.verticalGradient(listOf(palette.strokeTop, palette.strokeBottom)), RoundedCornerShape(24.dp))
-                .animateContentSize(PersonaTheme.motion.size()).padding(vertical = 4.dp),
-        ) { header(); body() }
+        AppStyle.Glass -> Column(modifier.fillMaxWidth().animateContentSize(PersonaTheme.motion.size())) { glassHeader(); body() }
         AppStyle.Brief -> Column(modifier.fillMaxWidth().padding(vertical = 6.dp).animateContentSize(PersonaTheme.motion.size())) {
             header(); if (expanded || peek != null) { Spacer(Modifier.height(4.dp)); body() }
         }
@@ -293,6 +302,22 @@ fun PlanCard(
     }
 }
 
+/**
+ * The rail an open work line's steps hang on, in Glass (iOS's work timeline, #4339 C5): a thin line through the middle of
+ * the steps' icons ([WorkStep] puts the page behind each icon, so the line stops at it), down to the [last] step's middle.
+ * Nothing in the other styles, whose steps draw their own.
+ */
+@Composable
+fun Modifier.workRail(last: Boolean): Modifier {
+    if (PersonaTheme.style != AppStyle.Glass) return this
+    val color = PersonaTheme.palette.line
+    return drawBehind {
+        val x = (Tokens.Space.m + Tokens.Size.iconXS / 2).toPx()
+        val w = Tokens.Size.lineMedium.toPx()
+        drawRect(color, topLeft = Offset(x - w / 2, 0f), size = androidx.compose.ui.geometry.Size(w, if (last) size.height / 2 else size.height))
+    }
+}
+
 /** [Unknown]: an older step with no recorded result; neither a success nor a failure. */
 enum class WorkState { Done, Running, Failed, Waiting, Unknown }
 
@@ -334,11 +359,14 @@ fun WorkStep(
     }
     val titleStyle = if (mono) type.code else type.callout
     when (PersonaTheme.style) {
+        // Glass as iOS's work timeline (#4339 C5): no hairlines; the steps sit on the rail their list draws ([workRail]).
         AppStyle.Glass -> Column(modifier.fillMaxWidth().then(click)) {
-            Box(Modifier.padding(start = 50.dp).fillMaxWidth().height(1.dp).background(palette.line))
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                JIcon(icon, null, size = 20.dp, tint = palette.ink2, decorative = true)
-                Spacer(Modifier.width(16.dp))
+            Row(Modifier.padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+                // The page under the icon hides the rail behind it.
+                Box(Modifier.size(Tokens.Size.iconXS).clip(CircleShape).background(palette.background), contentAlignment = Alignment.Center) {
+                    JIcon(icon, null, size = Tokens.Space.l, tint = palette.ink2, decorative = true)
+                }
+                Spacer(Modifier.width(Tokens.Space.l))
                 Column(Modifier.weight(1f)) {
                     Text(title, style = titleStyle, color = palette.ink, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
                     detail?.let { Text(it, style = type.caption.copy(fontWeight = FontWeight.Normal), color = palette.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis) }

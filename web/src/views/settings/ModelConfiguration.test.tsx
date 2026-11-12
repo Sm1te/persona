@@ -71,6 +71,7 @@ const hub = async (input: RequestInfo | URL, init?: RequestInit): Promise<Respon
     { ...agents, id: "kb", name: "信息处理", kind: "api", effective: { provider: "api.messages" } },
     { ...agents, id: "extension.example", name: "Example extension", kind: "api", effective: { provider: "api.responses" } },
   ], providers });
+  if (path.endsWith("/purposes/assistant.supervise")) return json({ error: "not found" }, 404); // a hub without the background supervisor's purpose (#5082)
   if (path.endsWith(`/purposes/${current.id}`)) return json({ purpose: current, providers });
   if (path.endsWith(`/purposes/${readonly.id}`)) return json({ purpose: readonly, providers });
   if (path.endsWith("/models")) return listFails ? json({ error: "unavailable" }, 404) : json({
@@ -301,5 +302,27 @@ describe.each([
     expect(button(t("common.save"), dialog()).disabled).toBe(true);
     expect(button(t("settings-modelconfiguration.restore"), dialog()).disabled).toBe(true);
     expect(writes).toEqual([]);
+  });
+});
+
+describe("a provider this use can't pick", () => {
+  beforeEach(() => {
+    use = LARK;
+    readonly = { ...child(), id: TWIN.id, name: "Inbox Agent", fields: [] };
+  });
+  const picked = () => dialog().querySelector("select")!.selectedOptions[0].textContent;
+
+  it("is named by the provider's name (a launcher's display name, #5029)", async () => {
+    current = { ...child({ provider: "launcher.custom" }), provider_ids: ["launcher.default"] };
+    await render();
+    await open();
+    expect(picked()).toBe(t("settings-modelconfiguration.provider_unavailable", { id: "Custom launcher" }));
+  });
+
+  it("is named by its ID when the hub has it no more", async () => {
+    current = child({ provider: "launcher.gone" });
+    await render();
+    await open();
+    expect(picked()).toBe(t("settings-modelconfiguration.provider_unavailable", { id: "launcher.gone" }));
   });
 });

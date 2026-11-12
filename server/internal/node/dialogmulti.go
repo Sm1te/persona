@@ -99,6 +99,9 @@ func toward(from, to int) string {
 // want checked and the rest not, the free-text field holding text, then Submit / Next; a review tab that follows
 // with every question answered is submitted too. A changed or gone dialog refuses with prompt_changed before any key.
 func (n *Node) dialogMulti(ctx context.Context, id, rev string, want []string, text string) error {
+	if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+		return err
+	}
 	defer n.typing.lock(id)()
 	pane, err := n.paneFor(ctx, id)
 	if err != nil {

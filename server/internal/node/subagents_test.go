@@ -279,7 +279,7 @@ func TestSubagentEdgeDetails(t *testing.T) {
 			if again := subagentEdgesCached(path, st, true); !reflect.DeepEqual(got, again) {
 				t.Fatalf("unchanged file changed details: %+v -> %+v", got, again)
 			}
-			// A subagent's (#5602): the same steps, latest call and times, without its usage and model.
+			// A subagent's: the same steps, latest call and times (#5602), usage and model (#5030).
 			sub := filepath.Join(t.TempDir(), "agent-test.jsonl")
 			if err := os.WriteFile(sub, []byte(tt.body), 0o600); err != nil {
 				t.Fatal(err)
@@ -287,10 +287,8 @@ func TestSubagentEdgeDetails(t *testing.T) {
 			if st, err = os.Stat(sub); err != nil {
 				t.Fatal(err)
 			}
-			want := got
-			want.tokens, want.model = 0, ""
-			if s := subagentEdgesCached(sub, st, false); !reflect.DeepEqual(s, want) {
-				t.Fatalf("a subagent's = %+v, tool = %+v; want %+v", s, s.latestTool, want)
+			if s := subagentEdgesCached(sub, st, false); !reflect.DeepEqual(s, got) {
+				t.Fatalf("a subagent's = %+v, tool = %+v; want %+v", s, s.latestTool, got)
 			}
 		})
 	}
@@ -461,9 +459,119 @@ func TestSubagentListsStepsLastToolAndContentTime(t *testing.T) {
 	}
 }
 
-// A subagent's (not a workflow agent's) metadata is all of it but its usage and model: its first timestamp, its steps
-// and latest call (#5602), its last exchange, and its last words however far back a large tool output pushed them.
-// Asked for as a workflow agent's, the usage and model are read too.
+// A listed subagent says which model it ran on and how many tokens its latest reply had (#5030), from its own
+// transcript: Claude Code's error replies (<synthetic>) are neither. A later reply moves both, at the list's pace: a
+// growing file is read again at most every metaMinInterval.
+func TestSubagentListsModelAndTokens(t *testing.T) {
+	n, parent, dir := subagentTree(t)
+	jp := filepath.Join(dir, "agent-m1.jsonl")
+	at := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	ts := func(d time.Duration) string { return at.Add(d).Format(time.RFC3339) }
+	appendLines := func(lines ...string) {
+		t.Helper()
+		f, err := os.OpenFile(jp, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.WriteString(strings.Join(lines, ""))
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func() proto.Subagent {
+		t.Helper()
+		subs := n.subagents(parent)
+		if len(subs) != 1 {
+			t.Fatalf("listed %+v", subs)
+		}
+		return subs[0]
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent-m1.meta.json"), []byte(`{"agentType":"Explore","description":"示例：找测试"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appendLines(`{"type":"user","timestamp":"`+ts(0)+`","isSidechain":true,"message":{"role":"user","content":"find the tests"}}`+"\n",
+		edgeReply("r1", ts(time.Second), "claude-haiku-4-5", `[{"type":"tool_use","id":"toolu_m1","name":"Grep","input":{"pattern":"func Test"}}]`,
+			`{"input_tokens":100,"cache_read_input_tokens":20000,"cache_creation_input_tokens":300,"output_tokens":50}`))
+	if a := listed(); a.Model != "claude-haiku-4-5" || a.Tokens != 20450 || a.Steps != 1 {
+		t.Fatalf("first reply: model %q tokens %d steps %d", a.Model, a.Tokens, a.Steps)
+	}
+
+	appendLines(`{"type":"user","timestamp":"`+ts(2*time.Second)+`","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_m1","content":"ok"}]}}`+"\n",
+		edgeReply("r2", ts(3*time.Second), "claude-sonnet-4-5", `[{"type":"text","text":"Found them"}]`,
+			`{"input_tokens":200,"cache_read_input_tokens":20500,"cache_creation_input_tokens":0,"output_tokens":80}`),
+		apiErrorReply("r3", ts(4*time.Second), "API Error: 500 Server error mid-response"))
+	if a := listed(); a.Model != "claude-haiku-4-5" || a.Tokens != 20450 {
+		t.Fatalf("read again before metaMinInterval: model %q tokens %d", a.Model, a.Tokens)
+	}
+	expireEdges(jp)
+	if a := listed(); a.Model != "claude-sonnet-4-5" || a.Tokens != 20780 || a.LastText != "API Error: 500 Server error mid-response" {
+		t.Fatalf("after a later reply and an error: model %q tokens %d last %q", a.Model, a.Tokens, a.LastText)
+	}
+}
+
+// Asked for as a workflow agent's after a subagent's, or the other way round, a file is read only for the lines it
+// gained since, never whole again. Claude Code only appends; the call rewritten in place here (past the bytes that
+// tell a rewritten file, edgeMemo.head) only shows whether the lines before were read again.
+func TestSubagentEdgesEitherWayReadsOnlyNewLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent-test.jsonl")
+	prompt := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":"` + strings.Repeat("p", 300) + `"}}` + "\n"
+	call := func(id string, tokens int) string {
+		return edgeReply(id, "2026-01-01T00:00:01Z", "model-a", `[{"type":"tool_use","id":"`+id+`","name":"Read","input":{}}]`,
+			`{"input_tokens":`+strconv.Itoa(tokens)+`}`)
+	}
+	if err := os.WriteFile(path, []byte(prompt+call("t1", 5)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read := func(full bool, calls, tokens int) {
+		t.Helper()
+		st, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expireEdges(path)
+		if got := subagentEdgesCached(path, st, full); got.calls != calls || got.tokens != tokens || got.model != "model-a" {
+			t.Fatalf("full %v: calls %d tokens %d model %q, want %d, %d, model-a", full, got.calls, got.tokens, got.model, calls, tokens)
+		}
+	}
+	read(false, 1, 5)
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := edgeReply("t1", "2026-01-01T00:00:01Z", "model-a", `[{"type":"text","text":"`+strings.Repeat("w", 29)+`"}]`, `{"input_tokens":5}`)
+	if len(words) != len(call("t1", 5)) {
+		t.Fatalf("the rewritten line is %d bytes, not %d", len(words), len(call("t1", 5)))
+	}
+	_, err = f.WriteAt([]byte(words), int64(len(prompt)))
+	if err == nil {
+		_, err = f.WriteAt([]byte(call("t2", 7)), int64(len(prompt)+len(words)))
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	read(true, 2, 7) // read whole again, t1 would be gone: 1 call
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(call("t3", 9))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	read(false, 3, 9)
+}
+
+// A subagent's metadata is all of a workflow agent's: its first timestamp, its steps and latest call (#5602), its last
+// exchange, its last words however far back a large tool output pushed them, and its latest usage and model (#5030).
 func TestSubagentEdgesLastWords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent-test.jsonl")
 	body := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":"go"}}` + "\n" +
@@ -481,17 +589,15 @@ func TestSubagentEdgesLastWords(t *testing.T) {
 	read := &proto.WorkflowTool{ID: "t1", Name: "Read", Summary: "在读 a.go"}
 	got := subagentEdgesCached(path, st, false)
 	if got.last != "Found it" || got.started.Format(time.RFC3339) != "2026-01-01T00:00:00Z" || got.calls != 1 ||
-		!reflect.DeepEqual(got.latestTool, read) || got.lastAt.Format(time.RFC3339) != "2026-01-01T00:00:03Z" || got.tokens != 0 || got.model != "" {
+		!reflect.DeepEqual(got.latestTool, read) || got.lastAt.Format(time.RFC3339) != "2026-01-01T00:00:03Z" || got.tokens != 6 || got.model != "model-a" {
 		t.Fatalf("a subagent's edges = %+v, tool %+v", got, got.latestTool)
 	}
-	full := subagentEdgesCached(path, st, true)
-	if full.last != "Found it" || full.calls != 1 || full.tokens != 6 || full.model != "model-a" || !reflect.DeepEqual(full.latestTool, read) ||
-		full.lastAt.Format(time.RFC3339) != "2026-01-01T00:00:03Z" {
-		t.Fatalf("read whole: %+v", full)
+	// Asked for as a workflow agent's, the unchanged file is not read again, and the other way round.
+	if full := subagentEdgesCached(path, st, true); full != got {
+		t.Fatalf("as a workflow agent's: %+v", full)
 	}
-	// Read whole, it serves a subagent's request too.
-	if again := subagentEdgesCached(path, st, false); again != full {
-		t.Fatalf("after a whole read: %+v", again)
+	if again := subagentEdgesCached(path, st, false); again != got {
+		t.Fatalf("as a subagent's again: %+v", again)
 	}
 }
 

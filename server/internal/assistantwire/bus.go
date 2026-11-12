@@ -15,6 +15,8 @@ const (
 	CapabilityConfigOwn = "config.own"
 	// CapabilityAgentSessionArchives: the manager owns recoverable Codex/Claude archives.
 	CapabilityAgentSessionArchives = "agent_session_archives"
+	// CapabilityAgentNaming: ordinary full-user renames record manual intent before node dispatch.
+	CapabilityAgentNaming = "agent_naming.v1"
 	// CapabilityAgentSessionArchiveClose: the manager's archive also takes ?close=1, "Archive and close", which closes
 	// the agent on its computer (session.retire) once archived (docs/protocol/protocol.md "Agent session archives").
 	CapabilityAgentSessionArchiveClose = "agent_session_archive_close"
@@ -36,6 +38,10 @@ const (
 	// photos"). The hub lists meeting_photos only while the default manager names it beside
 	// CapabilityMeetingConversation.
 	CapabilityMeetingPhotos = "meeting_photos"
+	// CapabilityRecordingDay: the manager takes all-day recordings and writes their daily recap (the upload's kind
+	// day, POST …/segments, detail.recap, recap_state; #4741). The hub lists the recording_day feature only while the
+	// default manager names it.
+	CapabilityRecordingDay = "recording_day"
 )
 
 // The methods and events, by direction. The assistant's handshake is manager.hello {id, host, os, arch, deploy,
@@ -91,20 +97,29 @@ const (
 	// CodeMeetingEnded: a message into a meeting's room that ended (docs/assistant/meeting-minutes.md "Messages from
 	// elsewhere"): the hub answers 409 meeting_ended, and the apps write in the follow-up instead.
 	CodeMeetingEnded = "meeting_ended"
+	// CodeLauncherOtherKind: a launcher of another agent kind picked for a message in an existing assistant
+	// conversation (Data: conversation_agent, launcher, launcher_agent, delivered "none"): the hub answers 409, nothing
+	// was sent, and the conversation keeps its agent (docs/assistant/assistant.md, #4662).
+	CodeLauncherOtherKind = "launcher_other_kind"
 )
 
 // HTTPRequest is http.request's params: an app's request on one of Routes, with an escaped URL path (header without
 // the hub's credentials and hop-by-hop headers, the asking device's role in RoleHeader; body as base64).
-// HandoffApprover is set by the hub on a card's answer from a device that may approve a hand-off card.
+// HandoffApprover is set by the hub on a card's answer from a device that may approve a hand-off card; Human on a new
+// conversation a person's own app opens.
 type HTTPRequest struct {
 	Caller          *devicewire.Caller         `json:"caller,omitempty"`
 	ShareAuthority  *devicewire.ShareAuthority `json:"share_authority,omitempty"`
 	HandoffApprover *HandoffApprover           `json:"handoff_approver,omitempty"`
-	Method          string                     `json:"method"`
-	Path            string                     `json:"path"`
-	Query           string                     `json:"query,omitempty"`
-	Header          map[string][]string        `json:"header,omitempty"`
-	Body            []byte                     `json:"body,omitempty"`
+	// Human is the hub's word that a person's own app opens this conversation (POST /api/v1/assistant/conversations
+	// with a full device's credential, decided as for SendParams.Human): its first message counts as theirs
+	// (WithHumanStart). Set by the hub on that route only, never from the request; an older hub never sends it.
+	Human  bool                `json:"human,omitempty"`
+	Method string              `json:"method"`
+	Path   string              `json:"path"`
+	Query  string              `json:"query,omitempty"`
+	Header map[string][]string `json:"header,omitempty"`
+	Body   []byte              `json:"body,omitempty"`
 }
 
 // HTTPResponse is http.request's answer, written back to the app unchanged.
@@ -127,11 +142,14 @@ var Routes = []string{
 	"GET /api/v1/assistant/standing-authorizations",
 	"GET /api/v1/assistant/north-star",
 	"DELETE /api/v1/assistant/standing-authorizations/{id}",
+	"POST /api/v1/assistant/rule-suggestions/{id}/always",
+	"POST /api/v1/assistant/rule-suggestions/{id}/not-now",
 	"DELETE /api/v1/assistant/conversations/{id}/always/{hash}",
 	"POST /api/v1/assistant/conversations/{id}/unarchive",
 	"POST /api/v1/assistant/conversations/{id}/stop",
 	"GET /api/v1/assistant/reporters",
 	"GET /api/v1/assistant/leaders",
+	"GET /api/v1/assistant/availability",
 	"GET /api/v1/assistant/directions/tree",
 	"GET /api/v1/assistant/directions/offers",
 	"DELETE /api/v1/assistant/directions/offers/{id}",
@@ -204,6 +222,7 @@ var Routes = []string{
 	"POST /api/v1/assistant/conversations",
 	"POST /api/v1/assistant/conversations/{id}/compact",
 	"POST /api/v1/assistant/main/new",
+	"POST /api/v1/assistant/main/clear",
 	"POST /api/v1/assistant/origins/backfill",
 	// The channels (channels.go there, docs/extensions/channels.md "API").
 	"GET /api/v1/channels",
@@ -240,6 +259,8 @@ var Routes = []string{
 	"GET /api/v1/recordings",
 	"POST /api/v1/recordings/{id}/minutes",
 	"POST /api/v1/recordings/{id}/minutes/todos",
+	// All-day recordings' appends (kb_day.go there, #4741).
+	"POST /api/v1/recordings/{id}/segments",
 	// Attending a meeting (meeting_live.go there, docs/assistant/meeting-minutes.md "Attending a meeting").
 	"POST /api/v1/recordings/{id}/live",
 	"GET /api/v1/recordings/{id}/live",

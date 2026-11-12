@@ -96,6 +96,15 @@ describe("a Persona conversation's sidebar menu (iOS AssistantSidebar)", () => {
     expect(failed.calls).toEqual(["error:offline", "refresh"]);
   });
 
+  it("gives the background supervisor only 拷贝会话 ID: it is built in, running or not (#5082)", async () => {
+    const { d, calls } = deps();
+    const items = conversationMenuItems(conv(), { main: false, builtIn: true }, d);
+    expect(items.map((i) => i.label)).toEqual(["拷贝会话 ID"]);
+    expect(conversationMenuItems(conv({ status: "offline" }), { main: false, leader: true, builtIn: true }).map((i) => i.key)).toEqual(["copy"]);
+    await items[0].onSelect();
+    expect(calls).toEqual(["copy:c1"]);
+  });
+
   it("keeps the menu open with the reason when ending fails", async () => {
     const { d, calls } = deps({ end: async () => Promise.reject(new Error("offline")) });
     const end = conversationMenuItems(conv(), { main: false }, d).find((i) => i.key === "end")!;

@@ -180,7 +180,8 @@ func (ps *extensions) describeSecret(ctx context.Context, reference string) (Sec
 	if err := hp.proc.Call(cctx, "secrets.describe", wire.SecretsDescribeParams{Contribution: prov.Contribution, Reference: reference}, &res); err != nil {
 		return SecretDescription{}, providerError(prov, err, cctx.Err() != nil && ctx.Err() == nil)
 	}
-	d := SecretDescription{Provider: prov.Extension, ProviderName: prov.Name, Title: providerWords(res.Title, 200), Detail: providerWords(res.Detail, 200)}
+	d := SecretDescription{Provider: prov.Extension, ProviderName: prov.Name, Title: providerWords(res.Title, 200),
+		Detail: providerWords(res.Detail, secretDetailMost)}
 	if d.Title == "" {
 		d.Title = reference
 	}
@@ -240,6 +241,12 @@ func providerError(prov extension.SecretProvider, err error, timedOut bool) *Sec
 	return secretErr("failed", args)
 }
 
+// secretDetailMost is the most characters of a provider's detail (secrets.describe) the host keeps, on one line, a
+// longer one cut with "…": what fits after the item's name in a card's line on a phone (docs/extensions/secret-providers.md
+// "Methods"). Every page and card reads the cut one; a provider's own restraint is not relied on.
+const secretDetailMost = 40
+
+// providerWords is s on one line, its words joined by single spaces, cut to most characters with "…".
 func providerWords(s string, most int) string {
 	return clip(strings.Join(strings.Fields(s), " "), most)
 }

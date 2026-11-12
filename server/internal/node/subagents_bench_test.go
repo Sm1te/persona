@@ -86,8 +86,8 @@ func writeAgentTranscripts(tb testing.TB, dir string, n, size int) []string {
 	return paths
 }
 
-// The first session list after a node starts reads every workflow agent and every subagent of the last day (a
-// subagent's without its usage and model): 40 transcripts of 2 MB.
+// The first session list after a node starts reads every workflow agent and every subagent of the last day: 40
+// transcripts of 2 MB.
 func BenchmarkSubagentEdgesCold(b *testing.B) {
 	paths := writeAgentTranscripts(b, b.TempDir(), 40, 2<<20)
 	var total int64
@@ -104,9 +104,6 @@ func BenchmarkSubagentEdgesCold(b *testing.B) {
 			}
 			st, _ := os.Stat(paths[0])
 			want := referenceEdges(data)
-			if !full { // a subagent's: all but its usage and model
-				want.tokens, want.model = 0, ""
-			}
 			if diff := edgesDiff(subagentEdgesCached(paths[0], st, full), want); want.last != "Done: no gaps found." || diff != "" {
 				b.Fatalf("edges: %s", diff)
 			}
@@ -214,8 +211,8 @@ func expireEdges(path string) {
 
 // A workflow agent's metadata from transcripts laid out the way Claude Code writes them (a reply's type after its
 // message: lineKind's slower paths), the last ending in an API error, is what parsing every line finds: read cold, and
-// read again each time the file grew by an arbitrary number of bytes (cut mid-line, mid-chunk). So is a subagent's,
-// but its usage and model (#5602: its steps, latest call and last exchange are counted and found the same way).
+// read again each time the file grew by an arbitrary number of bytes (cut mid-line, mid-chunk). So is a subagent's
+// (#5602, #5030), and one asked for as either in turn: each read takes the lines the other left off at.
 func TestSubagentEdgesRealLayout(t *testing.T) {
 	paths := writeAgentTranscripts(t, t.TempDir(), 2, 300<<10)
 	f, err := os.OpenFile(paths[1], os.O_APPEND|os.O_WRONLY, 0)
@@ -242,14 +239,15 @@ func TestSubagentEdgesRealLayout(t *testing.T) {
 			cuts = append(cuts, rng.IntN(len(data)))
 		}
 		slices.Sort(cuts)
-		for _, full := range []bool{true, false} {
-			reference := func(data []byte) subagentEdge {
-				e := referenceEdges(data)
-				if !full {
-					e.tokens, e.model = 0, ""
-				}
-				return e
-			}
+		for _, mode := range []struct {
+			name string
+			full func(read int) bool
+		}{
+			{"a workflow agent's", func(int) bool { return true }},
+			{"a subagent's", func(int) bool { return false }},
+			{"each in turn", func(read int) bool { return read%2 == 1 }},
+		} {
+			full := mode.full(0)
 			cold := filepath.Join(t.TempDir(), filepath.Base(p))
 			if err := os.WriteFile(cold, data, 0o600); err != nil {
 				t.Fatal(err)
@@ -258,13 +256,13 @@ func TestSubagentEdgesRealLayout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := edgesDiff(subagentEdgesCached(cold, st, full), reference(data)); diff != "" {
-				t.Fatalf("%s full %v cold: %s", filepath.Base(p), full, diff)
+			if diff := edgesDiff(subagentEdgesCached(cold, st, full), referenceEdges(data)); diff != "" {
+				t.Fatalf("%s as %s, cold: %s", filepath.Base(p), mode.name, diff)
 			}
 
 			grown := filepath.Join(t.TempDir(), filepath.Base(p))
 			done := 0
-			for _, cut := range cuts {
+			for i, cut := range cuts {
 				f, err := os.OpenFile(grown, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 				if err != nil {
 					t.Fatal(err)
@@ -280,8 +278,8 @@ func TestSubagentEdgesRealLayout(t *testing.T) {
 					t.Fatal(err)
 				}
 				expireEdges(grown)
-				if diff := edgesDiff(subagentEdgesCached(grown, st, full), reference(data[:cut])); diff != "" {
-					t.Fatalf("%s full %v grown to %d of %d bytes: %s", filepath.Base(p), full, cut, len(data), diff)
+				if diff := edgesDiff(subagentEdgesCached(grown, st, mode.full(i)), referenceEdges(data[:cut])); diff != "" {
+					t.Fatalf("%s as %s, grown to %d of %d bytes: %s", filepath.Base(p), mode.name, cut, len(data), diff)
 				}
 			}
 		}

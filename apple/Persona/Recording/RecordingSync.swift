@@ -41,10 +41,17 @@ nonisolated struct RecordingUpload: Encodable, Sendable {
     var attendance: String?
     /// The session that attends; left out for the main chat.
     var attendingSession: SessionRef?
+    /// A room meeting's role (#3862, docs/assistant/meeting-minutes.md「Upload fields」): the meeting's own room attends.
+    struct RoomUpload: Encodable, Sendable { var attendance: String }
+    /// On every upload of a room meeting, whatever the role (`off` included), in place of `attendance` and
+    /// `attending_session`: an older manager after a rollback reads only those, so it sees a meeting that is off.
+    var room: RoomUpload?
+    /// A room meeting's private mark as it started (the hub takes it only while it has none).
+    var privateMark: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case revision, duration, language, device, title, bookmarks, segments, complete, kind, calendar, attendance
-        case startedAt = "started_at", endedAt = "ended_at", attendingSession = "attending_session"
+        case revision, duration, language, device, title, bookmarks, segments, complete, kind, calendar, attendance, room
+        case startedAt = "started_at", endedAt = "ended_at", attendingSession = "attending_session", privateMark = "private"
     }
 
     init(_ entry: RecordingEntry) {
@@ -67,8 +74,18 @@ nonisolated struct RecordingUpload: Encodable, Sendable {
                                     location: meeting.location)
         }
         if let a = Self.attendance(entry) {
-            attendance = a.role.rawValue
-            if a.role.attends, let key = a.key { attendingSession = SessionRef(machineID: key.machineID, sessionID: key.sessionID) }
+            if a.room {
+                room = RoomUpload(attendance: a.role.rawValue)
+                privateMark = a.privateMark ?? false
+            } else {
+                // Never an attending role without an explicit target (#3862, the owner's rule after a real meeting): the hub
+                // reads `attending_session` left out as the main chat, so with no session named and the main chat not
+                // picked for this meeting the role goes as off (`sentRole`), and the meeting's words never fill the main
+                // chat by default.
+                let role = a.sentRole
+                attendance = role.rawValue
+                if role.attends, let key = a.key { attendingSession = SessionRef(machineID: key.machineID, sessionID: key.sessionID) }
+            }
         }
     }
 
@@ -78,9 +95,13 @@ nonisolated struct RecordingUpload: Encodable, Sendable {
         return entry.attendance
     }
 
-    /// What the hub must have stored before live lines and questions go (`role|session`).
+    /// What the hub must have stored before live lines and questions go (`role|session`; `room|role` for a room meeting).
+    /// The role as sent (`sentRole`): a meeting sent as off settles as off, so nothing waits on a role the hub never got.
     static func attendanceMark(_ entry: RecordingEntry) -> String? {
-        attendance(entry).map { "\($0.role.rawValue)|\($0.role.attends ? $0.session ?? "" : "")" }
+        attendance(entry).map { a in
+            let role = a.sentRole
+            return a.room ? "room|\(role.rawValue)" : "\(role.rawValue)|\(role.attends ? a.session ?? "" : "")"
+        }
     }
 }
 
@@ -125,8 +146,17 @@ final class RecordingSync {
     private(set) var attendanceStored: [UUID: String] = [:]
     /// Why the hub stored a recording's attendance as off (`attendance_problem`), when it said.
     private(set) var attendanceProblem: [UUID: String] = [:]
+    /// Room meetings (#3862) whose last upload `200` had no `room`: an older manager after a rollback, which stored the
+    /// meeting with Persona off. Not for good: the uploads keep carrying `room`, and no live line or question goes until
+    /// a `200` has it again.
+    private(set) var roomMissing: Set<UUID> = []
+    /// Recordings the hub has stored an upload with `ended_at` of in this run: until then it answers the follow-up
+    /// `409 meeting_running`.
+    private(set) var endedStored: Set<UUID> = []
     /// Called after an upload of an attending recording was stored: its live lines can go.
     @ObservationIgnored var onAttendanceStored: ((UUID) -> Void)?
+    /// The `room` (and `private`, when there) of every upload `200` of a room meeting (`MeetingConversation.start`).
+    @ObservationIgnored var onRoom: ((UUID, MeetingRoom, Bool?) -> Void)?
     /// Every save of a recording, after this sync's own reaction to it (the live log of a meeting Persona attends).
     @ObservationIgnored var onChange: ((UUID) -> Void)?
     /// Uploaded first, without the save debounce: a recording whose attendance the hub doesn't have yet.
@@ -192,6 +222,10 @@ final class RecordingSync {
         if RecordingUpload.attendance(entry) != nil { return true }
         return entry.sentences.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
+
+    /// The revision of `id` the hub last stored (ms, the entry's `revision` when it went), or nil when none was. The meeting
+    /// page counts the hub's 12 hours from it: a meeting whose `ended_at` never landed ends then (#3862).
+    func storedRevision(_ id: UUID) -> Int64? { store.synced[id] }
 
     /// The hub has stored the attendance `entry` carries now.
     func attendanceSettled(_ entry: RecordingEntry) -> Bool {
@@ -337,6 +371,17 @@ final class RecordingSync {
             var revision: Int64?; var status: String?; var attendance: String?; var attendanceProblem: String?
             enum CodingKeys: String, CodingKey { case revision, status, attendance, attendanceProblem = "attendance_problem" }
         }
+        /// A room meeting's part of the answer (#3862), read on its own so the rest reads exactly as before; a field of
+        /// another shape is left out.
+        struct RoomAnswer: Decodable {
+            var room: MeetingRoom?; var privateMark: Bool?
+            enum CodingKeys: String, CodingKey { case room, privateMark = "private" }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                room = try? c.decodeIfPresent(MeetingRoom.self, forKey: .room)
+                privateMark = try? c.decodeIfPresent(Bool.self, forKey: .privateMark)
+            }
+        }
         uploading = entry.id
         defer { uploading = nil }
         var body = RecordingUpload(entry)
@@ -360,7 +405,14 @@ final class RecordingSync {
             }
             store.rejected[entry.id] = nil
             save()
-            if body.attendance != nil { attendanceAnswered(entry, sent: body, answer?.attendance, problem: answer?.attendanceProblem) }
+            if body.endedAt != nil, !endedStored.contains(entry.id) { endedStored.insert(entry.id) }
+            if body.room != nil {
+                let room = try? JSON.decoder.decode(RoomAnswer.self, from: data)
+                roomAnswered(entry, sent: body, answer?.attendance, problem: answer?.attendanceProblem, room: room?.room,
+                             privateMark: room?.privateMark)
+            } else if body.attendance != nil {
+                attendanceAnswered(entry, sent: body, answer?.attendance, problem: answer?.attendanceProblem)
+            }
             return true
         } catch let error as APIError where error.status == 410 {
             deletedOnHub(entry.id)
@@ -397,6 +449,25 @@ final class RecordingSync {
         // Stored as asked, or as off (a problem): either way what the hub holds now.
         attendanceStored[entry.id] = took == body.attendance ? mark : "\(took)|"
         if took == body.attendance, took != MeetingAttendance.off.rawValue { onAttendanceStored?(entry.id) }
+    }
+
+    /// What the hub said about a room meeting's upload (#3862). A `200` without `room` is an older manager after a
+    /// rollback: unlike #2981's rule nothing stops for good; the meeting just waits (no live lines, no questions) until a
+    /// `200` carries `room` again.
+    private func roomAnswered(_ entry: RecordingEntry, sent body: RecordingUpload, _ took: String?, problem: String?,
+                              room: MeetingRoom?, privateMark: Bool?) {
+        guard let room else {
+            if !roomMissing.contains(entry.id) { roomMissing.insert(entry.id) }
+            attendanceStored[entry.id] = nil
+            return
+        }
+        if roomMissing.contains(entry.id) { roomMissing.remove(entry.id) }
+        attendanceProblem[entry.id] = problem
+        onRoom?(entry.id, room, privateMark)
+        guard let mark = RecordingUpload.attendanceMark(entry), let sent = body.room?.attendance else { return }
+        // Stored as asked, or as another role (a problem): either way what the hub holds now.
+        attendanceStored[entry.id] = took == sent ? mark : "room|\(took ?? "")"
+        if took == sent, sent != MeetingAttendance.off.rawValue { onAttendanceStored?(entry.id) }
     }
 
     private func sendDelete(_ id: UUID, _ api: APIClient) async -> Bool {
@@ -439,6 +510,8 @@ final class RecordingSync {
         store.rejected[id] = nil
         attendanceStored[id] = nil
         attendanceProblem[id] = nil
+        if roomMissing.contains(id) { roomMissing.remove(id) }
+        if endedStored.contains(id) { endedStored.remove(id) }
     }
 
     private func note(_ error: Error) {

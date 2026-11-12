@@ -10,6 +10,7 @@ import { isSpacePinned } from "../lib/pins";
 import { href, navigate, onLinkClick, type Route } from "../lib/router";
 import { spaceTodos, spaceView } from "../lib/space-page";
 import { useStore } from "../lib/store";
+import { foldRows } from "../lib/folded-rows";
 import { makeSessionLookup, todoStatus, todoStatusLabel, TODO_STATUS_INFO } from "../lib/todos";
 import type { Session } from "../lib/types";
 import { shortPath } from "../lib/format";
@@ -36,7 +37,8 @@ const TONE: Record<(typeof TODO_STATUS_INFO)[keyof typeof TODO_STATUS_INFO]["ton
 export function SpacePage({ mid, space, onToggleSidebar }: { mid: string; space: string; onToggleSidebar: () => void }) {
   const machines = useStore((s) => s.machines);
   const loaded = useStore((s) => s.loaded);
-  const sessions = useStore((s) => s.sessions[mid] ?? NO_SESSIONS);
+  // a child session folds into its parent (#5120): never a row of the space of its own
+  const sessions = useStore((s) => foldRows(s.sessions[mid] ?? NO_SESSIONS));
   const pins = useStore((s) => s.pins);
   const mutes = useStore((s) => s.mutes);
   const todos = useStore((s) => s.todos);

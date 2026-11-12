@@ -122,4 +122,9 @@ type Subagent struct {
 	LastText  string        `json:"last_text,omitempty"`
 	Steps     int           `json:"steps,omitempty"`     // tool calls it made
 	LastTool  *WorkflowTool `json:"last_tool,omitempty"` // its latest tool call: what it is doing now while it runs
+	// Model is the model it ran on, its latest reply's in its own transcript (never <synthetic>), not the one its
+	// Agent call asked for (#5030).
+	Model string `json:"model,omitempty"`
+	// Tokens is its latest reply's context plus output tokens, as a workflow agent's (WorkflowAgent.Tokens).
+	Tokens int `json:"tokens,omitempty"`
 }

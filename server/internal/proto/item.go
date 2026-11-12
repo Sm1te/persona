@@ -167,6 +167,10 @@ type Item struct {
 	Compact *Compact `json:"compact,omitempty"`
 	// ModelRefusal preserves Claude Code's refusal record on a notice.
 	ModelRefusal *ModelRefusal `json:"model_refusal,omitempty"`
+	// Model is the model that wrote this assistant item as the transcript records it: Claude Code's message.model
+	// (never its "<synthetic>" placeholder), a Codex turn's turn_context model. Absent when the transcript does not
+	// say, on other roles, and from older nodes. Clients draw a divider where the model of the replies changes.
+	Model string `json:"model,omitempty"`
 }
 
 // ModelRefusal is a Claude Code model_refusal_* record as clients see it: its known fields, values kept as recorded

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { boardSections, type BoardSectionKey } from "../../lib/task-board";
 import { startFailure, useFeed } from "../../lib/feed";
-import { openPanel } from "../../lib/panel";
 import { plainMarkdown } from "../../lib/plain-markdown";
 import { getState, useStore } from "../../lib/store";
 import type { Session } from "../../lib/types";
@@ -17,7 +16,8 @@ import { StatusMark } from "../../ui/StatusMark";
 import { Icon } from "../../ui/icons";
 import { answeredSessions } from "./answered-lookup";
 import { Empty } from "./parts";
-import { openTask, place, progressOf, removeTaskNow, statusOf, TaskMark, taskAsk, taskInteraction, useTaskLookup } from "./Tasks";
+import { openAgent, openTask } from "../../lib/handoff";
+import { place, progressOf, removeTaskNow, statusOf, TaskMark, taskAsk, taskInteraction, useTaskLookup } from "./Tasks";
 
 const BOARD_TITLE: Record<BoardSectionKey, string> = {
   waiting: stateName("needs_you"),
@@ -117,7 +117,7 @@ export function TaskBoard({ open, conversation, onClose }: { open: boolean; conv
                     type="button"
                     onClick={() => {
                       onClose();
-                      openPanel({ kind: "agent", mid: s.machine_id, sid: s.session_id });
+                      openAgent(s.machine_id, s.session_id);
                     }}
                     className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-hover"
                   >

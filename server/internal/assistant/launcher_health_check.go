@@ -324,7 +324,9 @@ func (s *Service) healthLines(ctx context.Context, machine string) string {
 // launcherWithHealth is a launcher of the "New Agent" picker with how its last check went on that machine.
 type launcherWithHealth struct {
 	ConfiguredLauncher
-	Health *launcherHealthView `json:"health,omitempty"`
+	// DisplayName is a Persona-managed provider's name shown, any language (launcher_auto_name); "" shows Name.
+	DisplayName string              `json:"display_name,omitempty"`
+	Health      *launcherHealthView `json:"health,omitempty"`
 }
 
 type launcherHealthView struct {

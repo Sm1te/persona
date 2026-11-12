@@ -75,6 +75,8 @@ export interface KBDetail {
   segments?: KBSegment[] | null;
   /** Recordings may retain older minutes while a newer revision is pending or failed. */
   minutes?: RecordingMinutes | null;
+  /** An all-day recording's recap (#4741), kept while a newer one is pending or failed. */
+  recap?: DayRecap | null;
   /** topics: the knowledge points (docs/assistant/knowledge.md "Knowledge points"). */
   points?: TopicPoint[] | null;
 }
@@ -123,6 +125,57 @@ export interface RecordingMinutes {
   decisions?: MinutesPoint[];
   actions?: MinutesAction[];
   open?: MinutesPoint[];
+  partial?: boolean;
+  markdown: string;
+}
+
+/** A recap point: what was said, at the start of the transcript line it cites (seconds since `started_at`). */
+export type DayRecapPoint = MinutesPoint;
+
+/** The meeting a recap entry lies in, when the hub knows it: one of the user's meeting recordings (`recordings`) or a
+ *  `meetings` / `events` item of the knowledge base. */
+export interface DayRecapMeeting {
+  kind: string;
+  id: string;
+  name: string;
+}
+
+/** One stretch of the day: inside a meeting or outside one, with what was said (docs/assistant/day-recap.md). */
+export interface DayRecapEntry {
+  from: number;
+  to: number;
+  /** "meeting" or "outside"; anything else is shown as outside. */
+  kind: string;
+  title: string;
+  meeting?: DayRecapMeeting | null;
+  points?: DayRecapPoint[] | null;
+}
+
+/** Time of the day with no text and why: `paused`, `interrupted`, `stopped`, `pending`, `lost`, `erased`, or a reason
+ *  this client doesn't know. */
+export interface DayRecapGap {
+  from: number;
+  to: number;
+  reason: string;
+}
+
+/** `detail.recap` of an all-day recording (docs/assistant/day-recap.md "What the hub stores and returns"): every time is
+ *  seconds since the recording's `started_at`, the clock of its segments. */
+export interface DayRecap {
+  version: number;
+  revision: number;
+  generated_at: string;
+  day: string;
+  /** What the recap read: up to the end of the last chunk. */
+  covers: { from: number; to: number };
+  /** Made after the day closed: `complete` (everything arrived) or `cutoff` (what arrived by 6 hours after the day). */
+  final: boolean;
+  final_reason?: string;
+  summary: string;
+  timeline?: DayRecapEntry[] | null;
+  actions?: MinutesAction[] | null;
+  gaps?: DayRecapGap[] | null;
+  /** The day was too long and some of it was not read. */
   partial?: boolean;
   markdown: string;
 }
@@ -589,7 +642,7 @@ export function hitView(f: Pick<KBFound, "path" | "line">, now = new Date()): { 
     return { source: t("lib-kb.hit_chat", { day: `${dayTitle(day, now)}${m.time ? ` ${m.time}` : ""}` }), text: m.sender ? t("lib-kb.hit_sender", { sender: m.sender, text: m.text }) : m.text, day };
   }
   const file = f.path.split("/").pop() ?? f.path;
-  const source = file === "summary.md" ? t("lib-kb.hit_profile") : file === "log.md" ? t("lib-kb.hit_timeline") : file === "transcript.md" ? t("lib-kb.hit_transcript") : file === "minutes.md" ? t("lib-kb.hit_minutes") : file.endsWith(".json") ? t("lib-kb.hit_data") : file;
+  const source = file === "summary.md" ? t("lib-kb.hit_profile") : file === "log.md" ? t("lib-kb.hit_timeline") : file === "transcript.md" ? t("lib-kb.hit_transcript") : file === "minutes.md" ? t("lib-kb.hit_minutes") : file === "recap.md" ? t("lib-kb.hit_recap") : file.endsWith(".json") ? t("lib-kb.hit_data") : file;
   return { source, text: hitText(f.line), day: null };
 }
 
@@ -731,14 +784,64 @@ export interface RecordingView {
   /** When its transcript expired with `recording_days` and only the minutes were kept (`meta.trimmed_at`, #3780); absent
    *  while it is whole. */
   trimmedAt?: string;
+  /** An all-day recording (`kind: day`, #4741): the date it is of and its part (1 unless the day outgrew one). */
+  allDay?: { day: string; part: number };
+  /** The zone its clock is read in: an all-day recording's `tz` when this browser knows the zone; absent: local time. */
+  tz?: string;
 }
 
-/** Local wall-clock time shared by minutes and transcript; offsets when the start is unknown. */
-export function recordingClock(startedAt: string | undefined, seconds: number): string {
+/** Wall-clock time shared by minutes, recap and transcript, in `tz` when given (else local); offsets when the start is
+ *  unknown. */
+export function recordingClock(startedAt: string | undefined, seconds: number, tz?: string): string {
   const start = Date.parse(startedAt ?? "");
   if (!Number.isFinite(start)) return formatSeconds(seconds);
-  const d = new Date(start + seconds * 1000);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const c = wallClock(new Date(start + seconds * 1000), tz);
+  return `${pad(c.h)}:${pad(c.m)}:${pad(c.s)}`;
+}
+
+// A formatter per zone, null for a zone this browser can't read (then the clock is local).
+const zoneFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+function zoneFormat(tz: string): Intl.DateTimeFormat | null {
+  let f = zoneFormats.get(tz);
+  if (f === undefined) {
+    try {
+      f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+    } catch {
+      f = null;
+    }
+    zoneFormats.set(tz, f);
+  }
+  return f;
+}
+
+/** Whether this browser can show times in `tz`, an IANA zone name. */
+export function knownZone(tz: unknown): tz is string {
+  return typeof tz === "string" && tz.trim() !== "" && zoneFormat(tz) !== null;
+}
+
+// A zone's offset changes only at quarter-hour instants, so one formatter call per zone and quarter hour serves every
+// line in it: a day's transcript has up to 20000.
+const QUARTER_HOUR = 900_000;
+const zoneOffsets = new Map<string, number>();
+
+/** An instant's hour, minute and second on the clock of `tz`, or of this browser's zone. */
+function wallClock(d: Date, tz?: string): { h: number; m: number; s: number } {
+  const f = tz ? zoneFormat(tz) : null;
+  if (!f) return { h: d.getHours(), m: d.getMinutes(), s: d.getSeconds() };
+  const quarter = Math.floor(d.getTime() / QUARTER_HOUR);
+  const key = `${tz}\u0000${quarter}`;
+  let offset = zoneOffsets.get(key);
+  if (offset === undefined) {
+    const at = quarter * QUARTER_HOUR;
+    const parts = f.formatToParts(at);
+    const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+    offset = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour") % 24, part("minute"), part("second")) - at;
+    if (zoneOffsets.size >= 4096) zoneOffsets.clear();
+    zoneOffsets.set(key, offset);
+  }
+  const wall = new Date(d.getTime() + offset);
+  return { h: wall.getUTCHours(), m: wall.getUTCMinutes(), s: wall.getUTCSeconds() };
 }
 
 /** Keep fractional seconds in anchors; bookmarks at the same time get their own identity. */
@@ -757,7 +860,9 @@ export function recordingView(kind: string, meta?: Record<string, unknown> | nul
   if (kind !== "recordings") return null;
   const started = str(meta?.started_at);
   const t0 = started ? Date.parse(started) : NaN;
-  const clock = (sec: number) => recordingClock(started, sec);
+  const day = str(meta?.kind) === "day";
+  const tz = day && knownZone(meta?.tz) ? (meta.tz as string) : undefined;
+  const clock = (sec: number) => recordingClock(started, sec, tz);
   const at: { sec: number; line: RecordingView["lines"][number] }[] = [];
   for (const s of segments ?? []) {
     const sec = Number(s?.start) || 0;
@@ -776,6 +881,7 @@ export function recordingView(kind: string, meta?: Record<string, unknown> | nul
   const attending = meta?.attending_session as { machine_id?: unknown; session_id?: unknown } | null | undefined;
   const machineId = str(attending?.machine_id), sessionId = str(attending?.session_id);
   const trimmed = str(meta?.trimmed_at);
+  const part = meta?.part;
   return {
     startedAt: Number.isFinite(t0) ? started : undefined,
     duration: Number.isFinite(secs) && secs > 0 ? durationLabel(secs) : undefined,
@@ -787,7 +893,54 @@ export function recordingView(kind: string, meta?: Record<string, unknown> | nul
     // Both ids or none: anything else names no session, and the main chat attends.
     ...(machineId && sessionId ? { attendingSession: { machineId, sessionId } } : {}),
     ...(trimmed && Number.isFinite(Date.parse(trimmed)) ? { trimmedAt: trimmed } : {}),
+    ...(day ? { allDay: { day: str(meta?.day) ?? "", part: typeof part === "number" && Number.isInteger(part) && part >= 1 && part <= 99 ? part : 1 } } : {}),
+    ...(tz ? { tz } : {}),
   };
+}
+
+export type DayPart = "morning" | "afternoon" | "evening";
+
+/** The part of the day an offset falls in on the recording's clock: morning before 12:00, afternoon before 18:00, then
+ *  evening; undefined when the start is unknown. */
+export function dayPart(startedAt: string | undefined, seconds: number, tz?: string): DayPart | undefined {
+  const start = Date.parse(startedAt ?? "");
+  if (!Number.isFinite(start)) return undefined;
+  const { h } = wallClock(new Date(start + seconds * 1000), tz);
+  return h < 12 ? "morning" : h < 18 ? "afternoon" : "evening";
+}
+
+/** "09:41", the clock a recap's ranges are in; offsets when the start is unknown. */
+export function dayClock(startedAt: string | undefined, seconds: number, tz?: string): string {
+  const clock = recordingClock(startedAt, seconds, tz);
+  return Number.isFinite(Date.parse(startedAt ?? "")) ? clock.slice(0, 5) : clock;
+}
+
+export interface RecapGroup<E extends DayRecapEntry = DayRecapEntry> {
+  /** Undefined when the start is unknown: the whole timeline is one group. */
+  part?: DayPart;
+  entries: E[];
+}
+
+/** A recap's timeline in time order (entries at the same time in the order given), cut by part of the day at each
+ *  entry's start. */
+export function recapGroups<E extends DayRecapEntry>(timeline: E[] | null | undefined, startedAt: string | undefined, tz?: string): RecapGroup<E>[] {
+  const groups: RecapGroup<E>[] = [];
+  const sorted = [...(timeline ?? [])].filter((e) => e && Number.isFinite(e.from)).sort((a, b) => a.from - b.from);
+  for (const entry of sorted) {
+    const part = dayPart(startedAt, entry.from, tz);
+    const last = groups.at(-1);
+    if (last && last.part === part) last.entries.push(entry);
+    else groups.push({ part, entries: [entry] });
+  }
+  return groups;
+}
+
+/** A recap's gaps worth naming (a minute or longer), in time order, as clock ranges with their reason. */
+export function recapGaps(gaps: DayRecapGap[] | null | undefined, startedAt: string | undefined, tz?: string): { from: string; to: string; reason: string }[] {
+  return (gaps ?? [])
+    .filter((g) => g && Number.isFinite(g.from) && Number.isFinite(g.to) && g.to - g.from >= 60)
+    .sort((a, b) => a.from - b.from)
+    .map((g) => ({ from: dayClock(startedAt, g.from, tz), to: dayClock(startedAt, g.to, tz), reason: typeof g.reason === "string" ? g.reason : "" }));
 }
 
 /** The day a trimmed recording's minutes go (#3780): `days` (the assistant's `minutes_days` in effect) after it
@@ -816,18 +969,23 @@ function formatSeconds(sec: number): string {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const monthDay = (d: Date) => formatDate(d, { month: "short", day: "numeric" });
-const yearMonthDay = (d: Date) => formatDate(d, { year: "numeric", month: "short", day: "numeric" });
-const weekday = (d: Date) => formatDate(d, { weekday: "short" });
+// `zone`: the date in that zone (an all-day recording's), else in this browser's.
+const inZone = (zone?: string) => (zone ? { timeZone: zone } : {});
+const monthDay = (d: Date, zone?: string) => formatDate(d, { month: "short", day: "numeric", ...inZone(zone) });
+const yearMonthDay = (d: Date, zone?: string) => formatDate(d, { year: "numeric", month: "short", day: "numeric", ...inZone(zone) });
+const weekday = (d: Date, zone?: string) => formatDate(d, { weekday: "short", ...inZone(zone) });
 
-/** "Fri, Oct 30 14:00" (24-hour), with the year instead of the weekday when it is not this one. */
-export function formatAt(iso: string, now = new Date()): string {
+/** "Fri, Oct 30 14:00" (24-hour), with the year instead of the weekday when it is not this one; in `tz` when given and
+ *  known (an all-day recording's zone), else local. */
+export function formatAt(iso: string, now = new Date(), tz?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const zone = tz && knownZone(tz) ? tz : undefined;
+  const c = wallClock(d, zone);
+  const hm = `${pad(c.h)}:${pad(c.m)}`;
   return d.getFullYear() === now.getFullYear()
-    ? t("lib-kb.at_this_year", { date: monthDay(d), weekday: weekday(d), time: hm })
-    : t("lib-kb.at_other_year", { date: yearMonthDay(d), time: hm });
+    ? t("lib-kb.at_this_year", { date: monthDay(d, zone), weekday: weekday(d, zone), time: hm })
+    : t("lib-kb.at_other_year", { date: yearMonthDay(d, zone), time: hm });
 }
 
 /** A span the hub sends as `start` / `end` (RFC 3339) in this app's dates, as `formatAt` says a time (#4713): "Fri, Oct 30

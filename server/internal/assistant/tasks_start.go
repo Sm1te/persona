@@ -48,11 +48,7 @@ func (s *Service) startPlan(ctx context.Context, id string, edits []PlanTask, re
 		if err := checkModelID(p.Tasks[i].Model); err != nil { // typed on the card (#1644): refused before anything starts
 			return nil, planInvalid{err}
 		}
-		// A plan saved before the rule, or edited on the card, is held to it too (task_plan checks it as it makes a plan).
 		p.Tasks[i].Permission = strings.TrimSpace(p.Tasks[i].Permission)
-		if err := p.Tasks[i].checkWritablePermission(); err != nil {
-			return nil, planInvalid{fmt.Errorf("task %d: %w. Nothing was started", i+1, err)}
-		}
 		if m, ok := s.machineByName(ctx, p.Tasks[i].Machine); ok && p.Tasks[i].Role == roleLeader && s.isWorkMachine(m.ID) {
 			return nil, planInvalid{fmt.Errorf("task %d: role \"leader\" cannot run on %s: a work-trust computer gives its agents only "+
 				"the reporting tools, so it could not supervise workers. Put the task leader on a computer you own", i+1, m.Name)}
@@ -65,6 +61,9 @@ func (s *Service) startPlan(ctx context.Context, id string, edits []PlanTask, re
 		}
 	}
 	p.State = planStarted
+	for i := range p.Tasks {
+		p.Tasks[i].OwnerStarted = ownerStarts(ctx)
+	}
 	ok, err := s.movePlan(ctx, p, planOpen)
 	if err != nil {
 		return nil, err
@@ -110,15 +109,15 @@ func (s *Service) startPlan(ctx context.Context, id string, edits []PlanTask, re
 			if t.Supervisor != "" && s.isLeader(ctx, t.Supervisor) {
 				sup = t.Supervisor
 				if t.ReuseTodo == "" {
-					s.taskCard(ctx, sup, todo.ID) // the leader sees its task's card too; the plan's stays where it was made
+					s.taskCard(ctx, sup, todo.ID, "") // the leader sees its task's card too; the plan's stays where it was made
 				}
 			}
 			s.superviseTodo(ctx, todo.ID, sup, t.DoneWhen, t.ExpectMinutes)
 		} else if sup, ok := s.defaultPlanSupervisor(ctx, p.Conversation, t.Parent); ok {
-			// Any other conversation's task is the main conversation's to supervise (#4669): its signals go there, and
-			// the planning conversation hears when it ends (taskEndedNotice). The main conversation sees its card too.
-			if t.ReuseTodo == "" {
-				s.taskCard(ctx, sup, todo.ID)
+			// Any other conversation's task is its own to supervise: its signals go to the conversation that planned it,
+			// which also sees its card and reviews it. No second card when that is the planning conversation itself.
+			if t.ReuseTodo == "" && sup != p.Conversation {
+				s.taskCard(ctx, sup, todo.ID, "")
 			}
 			s.superviseTodo(ctx, todo.ID, sup, t.DoneWhen, t.ExpectMinutes)
 		}
@@ -277,17 +276,9 @@ func (s *Service) runPlanTaskStart(planID, conversation string, i int, t PlanTas
 		s.leaderStarts.Add(1)
 		defer s.leaderStarts.Add(-1)
 	}
-	// The permission rule holds on every start of a plan task, a retry, a remedy or a recovered start included, whatever a
-	// saved plan says: nothing is started and the failure says why (task_plan, startPlan and retryTask also refuse earlier).
 	t.Permission = strings.TrimSpace(t.Permission)
-	var mid, sid string
-	var err error
-	if perr := t.checkWritablePermission(); perr != nil {
-		err = perr
-	} else {
-		mid, sid, err = s.startTaskAgent(ctx, &t, retry)
-	}
-	if err != nil && ctx.Err() == nil && !startStalled(err) && !errors.Is(err, errPermissionRule) {
+	mid, sid, err := s.startTaskAgent(ctx, &t, retry)
+	if err != nil && ctx.Err() == nil && !startStalled(err) {
 		// The machine's link dropped (a node restarting, a tunnel blinking): try once more after a moment. Any other
 		// launcher failure may move a flexible task, after verifying its directory on the destination.
 		shouldRetry := transientStartErr(err)
@@ -440,12 +431,7 @@ func (s *Service) retryTask(ctx context.Context, todoID string) (json.RawMessage
 	}
 	p.Tasks[i].normalizeReadonlyPermission()
 	t := p.Tasks[i]
-	// A plan saved before task_plan required bypassPermissions of a writable task, or edited since, is held to it here too,
-	// before anything is reopened or started.
 	t.Permission = strings.TrimSpace(t.Permission)
-	if err := t.checkWritablePermission(); err != nil {
-		return nil, fmt.Errorf("%w; nothing was started", err)
-	}
 	m, ok := s.machineByName(ctx, t.Machine)
 	if !ok {
 		return nil, i18n.Err("assistant-tasks.no_machine", i18n.Args{"machine": strconv.Quote(t.Machine)})

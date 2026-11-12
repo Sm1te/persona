@@ -32,6 +32,7 @@ vi.mock("./views/SidePanel", () => ({ SidePanel: () => null }));
 vi.mock("./views/ShortcutHelp", () => ({ ShortcutHelp: () => null }));
 vi.mock("./lib/store", async (load) => ({ ...(await load<typeof import("./lib/store")>()), connect: () => {}, disconnect: () => {} }));
 import { getState, refresh, reset, upsertSession } from "./lib/store";
+import { doneSubagentLink, useSubagentLink } from "./lib/subagent-link";
 import { setToken } from "./lib/api";
 import type { Machine, Session } from "./lib/types";
 import { App } from "./App";
@@ -52,6 +53,8 @@ const sessions: Session[] = [
   row(PREFIX_ID),
   row(TWIN_A, { activity_at: "2026-11-01T10:00:00Z" }),
   row(TWIN_B, { activity_at: "2026-11-02T10:00:00Z" }),
+  // a child session folded under s1 (#5120): a card in s1's chat, never a page of its own
+  row("kid1", { folded_under: "s1", is_subagent: true, parent_session_id: "s1" }),
 ];
 const answers: Record<string, unknown> = { "/api/v1/sessions": { sessions }, "/api/v1/machines": { machines } };
 
@@ -135,6 +138,32 @@ describe("the shell's session links", () => {
 
     await pushTitles(TWIN_A, 1);
     expect(host.textContent).toContain(`Task ${TWIN_A} (0)`);
+  });
+
+  it("opens a child session's /s link as its parent's chat, which is asked for the child's card", async () => {
+    let asked: string | undefined;
+    function Probe() {
+      asked = useSubagentLink("mac", "s1");
+      return null;
+    }
+    const probe = createRoot(document.createElement("div"));
+    act(() => probe.render(<Probe />));
+    await open("/s/mac/kid1");
+    expect(location.pathname).toBe("/s/mac/s1");
+    expect(drawn.chatSid).toBe("s1");
+    expect(asked).toBe("child:kid1");
+    act(() => doneSubagentLink("mac", "s1"));
+    act(() => probe.unmount());
+  });
+
+  it("an unlisted child opens as itself until its row says whose it is", async () => {
+    await open("/s/mac/kid2");
+    expect(drawn.chatSid).toBe("kid2");
+    act(() => upsertSession(row("kid2", { folded_under: "s2", parent_session_id: "s2" })));
+    await flush();
+    expect(location.pathname).toBe("/s/mac/s2");
+    expect(drawn.chatSid).toBe("s2");
+    act(() => doneSubagentLink("mac", "s2"));
   });
 
   it("opens the pane a /t route names, not the tab's most urgent one", async () => {

@@ -40,6 +40,37 @@ export function isSecretRun(ix: Pick<Interaction, "kind" | "tool_name">): boolea
   return ix.kind === "permission" && ix.tool_name === "secret_run";
 }
 
+/** The hand-off card (`secret_handoff`, #3962): secret values a provider holds, handed to one Agent run once the
+ *  user approves on this card (never from a quick path: docs/extensions/secret-providers.md "Who may approve a hand-off"). */
+export function isSecretHandoff(ix: Pick<Interaction, "kind" | "tool_name">): boolean {
+  return ix.kind === "permission" && ix.tool_name === "secret_handoff";
+}
+
+/** One variable a hand-off card hands over: its name, and the item as its provider describes it (never a reference). */
+export interface HandoffVariable {
+  name: string;
+  provider: string;
+  title: string;
+}
+
+/** A hand-off card's variables, the Agent, the computer, where it runs and the start of what it is asked. */
+export function secretHandoffInput(input: Record<string, unknown> | undefined): {
+  variables: HandoffVariable[];
+  agent: string;
+  machine: string;
+  cwd: string;
+  prompt: string;
+} {
+  const raw = Array.isArray(input?.variables) ? input.variables : [];
+  const variables = raw.flatMap((v): HandoffVariable[] => {
+    if (!v || typeof v !== "object") return [];
+    const o = v as Record<string, unknown>;
+    const name = s(o.name);
+    return name ? [{ name, provider: s(o.provider_name) || s(o.provider), title: s(o.title) }] : [];
+  });
+  return { variables, agent: s(input?.agent), machine: s(input?.machine_name), cwd: s(input?.cwd), prompt: s(input?.prompt) };
+}
+
 /** A password card's computer, purpose and commands, the commands exactly as sent. */
 export function secretRunInput(input: Record<string, unknown> | undefined): { machine: string; purpose: string; commands: string[] } {
   const commands = Array.isArray(input?.commands) ? input.commands.filter((c): c is string => typeof c === "string" && c.trim() !== "") : [];

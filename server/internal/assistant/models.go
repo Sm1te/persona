@@ -135,6 +135,17 @@ var modelPurposes = []ModelPurpose{
 	// assistant's conversations, on the main chat's model, not new Agents (#1544; #697 had them under Agents, plain Claude Code
 	// by default, which is not logged in on every hub machine).
 	{ID: "schedule", Group: "group_assistant", Kind: "launcher", Parent: "assistant"},
+	// The background supervisor (supervise_background.go, #4927): the main chat's model until it is given its own, which
+	// may be a cheaper or a stronger one. Not in the catalog the apps list yet (modelConfigIDs); read and set through
+	// its own purpose.
+	{ID: purposeSupervise, Group: "group_assistant", Kind: "launcher", Parent: "assistant"},
+}
+
+// ownModelRecord: a use under a category that keeps a record of its own, so it can be set apart from the category:
+// the opt-in overrides of Agents, a scheduled task's own use and the background supervisor's. With nothing saved it
+// follows its category.
+func ownModelRecord(id string) bool {
+	return agentsOverride(id) || isTaskPurpose(id) || id == purposeSupervise
 }
 
 // mc is a assistant-models text in l.
@@ -198,8 +209,8 @@ func modelRecordKey(id string) string {
 }
 
 func modelRecordID(p ModelPurpose) string {
-	// The AI twin, Lark /agent, an extension's purpose and a task's own use have records of their own.
-	if p.CategoryID != "" && !agentsOverride(p.ID) && !isExtensionPurpose(p.ID) && !isTaskPurpose(p.ID) {
+	// The AI twin, Lark /agent, an extension's purpose, a task's own use and the background supervisor's have records of their own.
+	if p.CategoryID != "" && !ownModelRecord(p.ID) && !isExtensionPurpose(p.ID) {
 		return p.CategoryID
 	}
 	return p.ID

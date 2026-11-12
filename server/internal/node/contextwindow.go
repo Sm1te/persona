@@ -36,14 +36,21 @@ func contextWindowOf(model string, recorded, used int) int {
 	return 0
 }
 
-// setContext fills a session's context fields from its transcript meta; both stay zero (and so off the wire)
-// while the transcript has no reply yet.
+// setContext copies cached title provenance and cumulative output alongside the context fields.
+// The context fields stay zero (and so off the wire) while the transcript has no reply yet.
 func setContext(s *proto.Session, m quickMeta) {
+	s.OutputTokens = m.outputTokens
+	s.TitleManual = s.TitleManual || m.titleManual
+	if m.title != "" && s.Title == m.title || m.title == "" && m.titleSource == "prompt" {
+		// A terminal's tool-only fallback still has known transcript provenance
+		// once the complete scan proves that no custom/AI title exists.
+		s.TitleSource = proto.ParseTitleSource(m.titleSource)
+	}
 	if m.contextTokens <= 0 {
 		return
 	}
-	s.ContextTokens = m.contextTokens
-	s.ContextWindow = contextWindowOf(m.model, m.contextWindow, m.contextTokens)
+	s.ContextTokens = proto.Tokens32(m.contextTokens)
+	s.ContextWindow = proto.Tokens32(contextWindowOf(m.model, m.contextWindow, m.contextTokens))
 }
 
 // setRuntimeContext is setContext for a runtime's session whose conversation is a transcript here (Paseo). The model

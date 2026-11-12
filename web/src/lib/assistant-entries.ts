@@ -5,6 +5,7 @@ import { reviewState } from "./supervision";
 import { supersededFailedStarts } from "./todo-triage";
 import { dockAgents, makeSessionLookup, openAsk, todoRank, todoStatus, type SessionLookup, type Todo, type TodoStatus } from "./todos";
 import { byTime } from "./times";
+import { homeKey } from "./folded-rows";
 import type { Interaction, Session } from "./types";
 
 /**
@@ -104,7 +105,8 @@ export function assistantEntries(input: AssistantEntriesInput): AssistantEntries
   const superseded = supersededFailedStarts(todos);
   const asksOf = new Map<string, Interaction[]>();
   for (const ix of [...interactions].sort((a, b) => byTime(a.created_at, b.created_at) || a.id.localeCompare(b.id))) {
-    const k = sessionKey(ix.machine_id, ix.session_id);
+    // a child session's card is asked under its parent (#5120): the parent's task or Agent row holds it
+    const k = homeKey(ix);
     asksOf.set(k, [...(asksOf.get(k) ?? []), ix]);
   }
 

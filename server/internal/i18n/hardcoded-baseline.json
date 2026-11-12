@@ -8,7 +8,7 @@
   "internal/assistant/agents_work.go": 10,
   "internal/assistant/agents_work_turns.go": 12,
   "internal/assistant/channels_plugin.go": 10,
-  "internal/assistant/conversations.go": 20,
+  "internal/assistant/conversations.go": 19,
   "internal/assistant/delegate.go": 9,
   "internal/assistant/delivery.go": 25,
   "internal/assistant/done.go": 3,

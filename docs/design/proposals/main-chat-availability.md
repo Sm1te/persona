@@ -1,6 +1,8 @@
 # Proposal: the main chat stays available to the owner while background work grows
 
-Status: proposal (#4757), waiting for the owner's decisions in section 7. Nothing here is built. Covers the assistant
+Status: proposal (#4757). The owner took decisions 1 to 5 of section 7 as recommended; decision 6 is open. The server
+steps M1, F1, F2, B1, Q1, R1 and R2 are in review (#4924 to #4930); B2 is built for the web (#5082) and the Apple apps
+(#5083) and Android (#5084); R3 and K1 are not started. Covers the assistant
 manager and its prompts; the clients change only where a step says so.
 
 ## 1. Goal
@@ -93,6 +95,24 @@ work out as today; it no longer receives supervision messages for it.
 - **Shown where**: its tasks stay under Persona in the direction tree (#4352), as the secretary's own. The conversation
   itself is listed with the scheduled group, not among directions or quick chats. Its rounds are never pushed, as
   supervision rounds are not today.
+- **As built (step B1, #4927)**, where it differs from the above (`docs/assistant/unified-entry.md` "Background
+  supervisor" has the whole of it): the background supervisor is not recorded as `supervision.supervisor`. The ledger
+  keeps the main chat and the signals are routed when they are sent, which keeps everything that reads the ledger
+  unchanged, lets the off switch move every open task at once and leaves no task naming a conversation that is gone.
+  Asks climb through it only with leaders configured, as today. A `needs_user` writes the `escalated` entry leaders
+  write, and that entry is a supervision message to the main chat, so it is one folded main-chat round, not none.
+- **As built (step B2 on the web, #5082)**, where it differs from "Shown where" (`docs/web/web.md` "Background
+  supervisor" has the whole of it): the web sidebar has had no group of automatic conversations since #4331, so the
+  conversation is listed under All chats › Scheduled, marked built in, not in a sidebar group. The main chat draws
+  each `review` entry marked `by: "background"` (the mark #5084 added) as one line. The model
+  purpose `assistant.supervise` stays out of the catalog `GET /api/v1/model-config` returns and is read by its own id
+  beside it.
+- **As built on Android (step B2, #5084)** (`docs/android/android.md` "The background supervisor (#5084)"): that app's
+  drawer has no group of its own for scheduled tasks' conversations (they are under All chats), so the conversation is
+  under All chats with them. The feed's `review` entry did not say who wrote it, so this step adds `by: "background"`
+  to the entry of a review the background supervisor wrote (`reviewFeedBody.By`), and the app draws exactly those as one
+  line; against a hub without the mark every review stays in the background record as before. The hub's model catalog
+  leaves `assistant.supervise` out, so the app asks for it by its ID to list it.
 
 Alternatives considered:
 
@@ -159,6 +179,14 @@ in Needs you at once, and the 24-hour default for reversible decisions applies u
 that can wait" (`docs/extensions/bots.md`) from agents' questions to supervisors' decisions; it needs a briefing
 routine with facts on, and without one every decision is pushed as today.
 
+As built (R2, #4930; `docs/assistant/todos.md` "Decisions that can wait" is authoritative): the supervisor marks the
+decision with `can_wait: true` on `task_review`. A held decision is listed under the briefing's "To verify" block, where
+every open decision already is, not under "Waiting for you" (the rows that hold an Agent up), and it stays the to-do's
+ask instead of joining the `assistant.later` queue, so its default, recheck and fixed answers are unchanged. Because
+the 24-hour default still counts from when the decision is raised, it is held only when a briefing is due within 24
+hours and at least 12 hours before its deadline, and it is pushed after all when no briefing reached the owner with it
+by 11 hours before the deadline, or within 24 hours.
+
 ### 4c. A recommended setup, said once
 
 The weekly briefing gains one block when the numbers support it: which switch in 2b would have removed how many of last
@@ -181,6 +209,11 @@ Read through `GET /api/v1/assistant/north-star` next to #4601's two numbers, and
 a value crosses its threshold in section 1. Each number has its one-line definition in `docs/assistant/assistant.md`
 (PRINCIPLES 3).
 
+As built (step M1, #4924): the four metrics are recorded and read through `GET /api/v1/assistant/availability`, a
+route of its own because the north-star read covers one day from the database alone; the reply wait starts at the
+manager's `session.user_spoke`. `docs/assistant/assistant.md` ("Availability metrics") has the definitions and their
+limits.
+
 ## 6. Steps
 
 Each step is its own issue and PR, and each is useful alone. M1 comes first so the later steps can be judged.
@@ -196,6 +229,7 @@ Each step is its own issue and PR, and each is useful alone. M1 comes first so t
 | R1 | Suggest a rule after repeated answers (4a): hub and one client first | none | On; the line appears only after 3 identical answers |
 | R2 | Decisions that can wait join the briefing (4b) | none | Off unless a briefing routine with facts is on |
 | R3 | The weekly recommended-setup block (4c) | M1 | On with the weekly briefing |
+| K1 | Model guidance by role (section 9): the documented starting tiers, the main chat's rule for a task's model, cost per accepted task in the read | M1, B1 | Guidance only; no binding changes |
 
 ## 7. Open decisions for the owner
 
@@ -213,6 +247,10 @@ Each step is its own issue and PR, and each is useful alone. M1 comes first so t
    them with numbers instead. The one exception worth weighing is automatic "continue" after a transient model error,
    for supervised tasks only, since the supervisor already sends it by hand.
 5. **Threshold for suggesting a rule** (4a): 3 identical answers in 14 days recommended.
+6. **Does the background supervisor start on the main chat's model, or one tier below it** (section 9)? Recommended:
+   it inherits, as built. A new default that picks a model for the owner would break "switching models changes no
+   feature" (PRINCIPLES 5) and needs a provider that has such a tier. The weekly block (4c) then says, with the
+   install's own numbers, what a tier down would have cost and whether its reviews held.
 
 ## 8. Principles self-check (`docs/design/PRINCIPLES.md`)
 
@@ -222,5 +260,60 @@ Each step is its own issue and PR, and each is useful alone. M1 comes first so t
 | 2 Progressive disclosure | No new control on the main chat or Agents screens. The background supervisor's model and the off switch live in Settings › Assistant; the rule suggestion appears only after repeated answers |
 | 3 User control | Every rule made from a suggestion is listed and removable where its kind already is; Not now sticks for 30 days; the owner can read the background supervisor's conversation and the main chat can still review any task. Each new number has a one-line definition |
 | 4 Consistency | Reuses the leader path (`digestTo`, the leader supervision prompt, `ask_route.go`), the relay queue, `interject_background`, `tasks.trust`, standing authorizations, the late-answer path of `ask_user`, the briefing queue and `session_work_events`. New: one built-in conversation, and a ranked queue, each with its reason above |
-| 5 Model and product separate | The background supervisor has its own model purpose and inherits by default; no model is named, and switching it changes no feature |
+| 5 Model and product separate | The background supervisor has its own model purpose and inherits by default; no model is named in code or preselected, section 9 is guidance for the owner's bindings, and switching a model changes no feature |
 | 6 Rules are checkable | A1 to A4 are measured by M1; each step has its own acceptance and default in section 6 |
+
+## 9. Models for each role
+
+Persona names no model in code (PRINCIPLES 5): every role below is bound by the owner, as a model purpose in Model Settings
+(`docs/assistant/model-config.md`, where an empty binding inherits) or per task. This section is guidance for those bindings and for
+the main chat's choice of a task's model. It follows Anthropic's two guides, [Which Claude model should you build
+with](https://claude.dev/blog/which-claude-model-should-you-build-with/) and [Choosing the right
+model](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model). Claude names stand for a tier; with
+another provider, take its model of the same tier.
+
+### 9a. What the guides say that bears on this design
+
+| Guide | Consequence here |
+| --- | --- |
+| "A lean main context matters more the bigger the main model is. Keep the expensive model's context for the decisions, and let cheaper subagents do the verbose reading." | The split in 3a is also the cost design: review evidence leaves the main chat's context, so the conversation on the strongest model resends the least on every turn |
+| "The prompt cache belongs to the model that wrote it. Your first turn on a new model pays the cache-write price on the whole conversation." A move down a tier also loses the earlier reasoning | One model per conversation. A different model for supervision is free only because the background supervisor is its own conversation. A changed binding applies from that conversation's next compaction or a new conversation, never in the middle of a long one |
+| "For replies a person waits on, start Sonnet 5.5 at `low` or `medium`." Higher effort adds latency | The main chat is the one conversation a person waits on. Its reply wait (A1) is a reason to lower its effort before anything else |
+| "Well-defined, repeated tasks rarely need a bigger model" (investigation, review, drafting: Sonnet 5.5 at `medium`) | Supervision is this kind of work: the same signals, the same checks against `done_when`, nobody waiting |
+| "Keep small models on work where a mistake is cheap to spot... Keep code edits and judgment calls on the main model." | The smallest tier does classification whose mistakes are bounded (triage, routing, the done judge). An acceptance is a judgment call: the supervisor does not go to the smallest tier, and the reviewer of a change is not weaker than the agent that wrote it |
+| "When the routing rule is simple, such as one model for each step type, let code pick the model rather than asking a model to." | The ranked queue (3b), the rule suggestion (4a) and the weekly block (4c) are computed, with no model call. The starting tier of a task comes from the table in 9b, which the main chat applies and states in `why` |
+| "Before you move models, try adjusting your effort level." Past `high`, "test the next model up at a lower effort instead" | Each purpose has an effort next to its model. Rework rounds and reply wait are answered with effort first |
+| When a model is not good enough, first "check that the model can verify its own work, with a test, a build or a script" | `done_when` with evidence per criterion is that check. A task that comes back for rework gets better criteria before it gets a bigger model |
+| A top-tier lead over cheaper parallel workers cost about a third less than the top tier alone, at about the same score; "skip it for one chain of dependent steps or for work that fits in one context window" | Leader and task leader over workers is this pattern. The main chat hands a chain of dependent steps to one agent, not to a leader with workers |
+| "Keep a multi-model setup only if it beats every single-model point on that chart" | The tiers below are where to start. M1 and K1 measure whether they hold on this install |
+
+### 9b. Starting tiers
+
+| Role | Bound by | What it does | Start with | Move when |
+| --- | --- | --- | --- | --- |
+| Main chat | `assistant` | Talks with the owner, splits and hands out work, reads outcomes from its snapshot | The daily-driver tier (Opus 5.5) at `medium` | Reply wait on idle days is over its threshold: lower the effort, then try Sonnet 5.5 at `low` or `medium`. Plans come out wrong or directions get confused: raise the effort, then the tier |
+| Background supervisor | `assistant.supervise` | Reads signals, checks evidence, nudges, reviews | Inherits the main chat (decision 6). Guidance: Sonnet 5.5 at `medium` | Accepted tasks are reopened, or `needs_user` decisions come back as `undecidable` or `owner_cannot_answer`: raise the effort, then move to the main chat's tier |
+| Leader conversation | its conversation's | Supervises one direction over days | The main chat's tier | As the background supervisor; a direction whose tasks are routine can go a tier down |
+| Task leader | the task's | Splits one large task, reviews its workers | Fable 5.2 at `medium` for a migration or a major refactor; else the worker's tier | Worker rework rounds stay high after the criteria were fixed |
+| Worker, well-scoped | the task's (`agent.new`) | A bug fix, a feature against a spec, a read-only investigation | Sonnet 5.5 at `medium` | A second rework round: raise to `high`, then to Opus 5.5 at `medium` |
+| Worker, open-ended | the task's (`agent.new`) | Debugging without a known cause, work across several PRs, computer use | Opus 5.5 at `medium` | Still short at `high`: Fable 5.2 at `medium` |
+| Independent reviewer | `agents.review` in `manager.json` | Reads a finished change cold and reports findings | The tier of the agent that wrote the change, never below it | Findings miss what the supervisor then catches |
+| Triage, routing, done judge, titles, question delegation | `agent.triage`, `assistant.route`, `kb`, `agent.delegate` | Classify, extract, name, decide who answers | The smallest tier (Haiku 5.5) at its default | A measured error rate that costs more than the tier saves; the delegate first, since a wrong answer there reaches an agent |
+
+Two notes on the table:
+
+- **The main chat's tier is not lowered to make it fast.** What made it slow was the work in section 2a; sections 3a
+  to 3c remove that. Only when A1 fails on idle days is the model the cause.
+- **A task's tier is a per-task choice the main chat already makes** (`task_plan` carries a model and `why`). K1 gives
+  it the two worker rows as its rule, so "well-scoped" and "open-ended" decide the start, and the owner's own choice
+  of a model for a task always wins.
+
+### 9c. What K1 adds
+
+- The table in 9b, kept current, in `docs/assistant/model-config.md`, and one line per purpose in Model Settings saying
+  what the purpose is for (the wording, not a preselected model).
+- The main chat's instructions gain the two worker rows as the rule for a task's model and effort.
+- The read of section 5 gains, per supervisor model and effort: tasks accepted, tasks reopened after acceptance,
+  rework rounds per task and tokens per accepted task. That is the chart the guides ask for; the weekly block (4c)
+  suggests a tier change only when a cheaper point on it did not review worse.
+

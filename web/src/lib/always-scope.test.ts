@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alwaysScope, offersAlways } from "./always-scope";
-import { cardToolName } from "./turns";
+import { cardToolName, toolDisplayName } from "./turns";
 import { t } from "../i18n";
 
 describe("always permission scope", () => {
@@ -12,6 +12,29 @@ describe("always permission scope", () => {
     expect(alwaysScope({ tool_name: "Write", always_keys: ["tool:Edit(//home/me/notes/**)"] })).toBe(t("chat-interactions.always_scope_directory"));
     expect(alwaysScope({ tool_name: "Read", always_keys: ["tool:Read"] })).toBe(t("chat-interactions.always_scope_tool", { tool: "Read" }));
     expect(alwaysScope({ tool_name: "Read" })).toBe(t("chat-interactions.always_scope_tool", { tool: "Read" }));
+  });
+  it("names an MCP tool in words, never by its raw name (#4966)", () => {
+    const scope = alwaysScope({ tool_name: "mcp__persona__report_to_supervisor", always_keys: ["tool:mcp__persona__report_to_supervisor"] });
+    expect(scope).toBe(t("chat-interactions.always_scope_tool", { tool: "Persona · report to supervisor" }));
+    expect(scope).not.toContain("mcp__");
+  });
+  it("names the tool as the manager does, without what this call does (#4966)", () => {
+    const report = {
+      tool_name: "mcp__persona__report_to_supervisor",
+      tool_title: "向督办汇报 · 完成", // i18n-ignore
+      tool_name_title: "向督办汇报", // i18n-ignore
+      always_keys: ["tool:mcp__persona__report_to_supervisor"],
+    };
+    const scope = alwaysScope(report);
+    expect(scope).toBe(t("chat-interactions.always_scope_tool", { tool: "向督办汇报" })); // i18n-ignore
+    expect(scope).not.toContain("·");
+    expect(scope).not.toContain("report to supervisor");
+    // A title that names the tool alone is the name; no title at all, the tool in words.
+    const phone = { tool_name: "mcp__persona__phone_contacts_search", tool_title: "iPhone · contacts search" };
+    expect(alwaysScope(phone)).toBe(t("chat-interactions.always_scope_tool", { tool: "iPhone · contacts search" }));
+    expect(alwaysScope({ tool_name: "mcp__github__create_issue" })).toBe(
+      t("chat-interactions.always_scope_tool", { tool: toolDisplayName("mcp__github__create_issue") }),
+    );
   });
   it("preserves runtime scope and does not promise unsupported always grants", () => {
     expect(alwaysScope({ agent: "codex", tool_name: "Bash", always_label: "npm test" })).toBe(t("chat-interactions.always_scope_named", { scope: "npm test" }));

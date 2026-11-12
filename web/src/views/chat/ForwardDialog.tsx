@@ -24,6 +24,7 @@ import { navigate } from "../../lib/router";
 import { SESSIONS_LIST_FEATURE } from "../../lib/session-list";
 import { STATE_LABEL } from "../../lib/state-labels";
 import { getState } from "../../lib/store";
+import { foldRows } from "../../lib/folded-rows";
 import { hasFinePointer } from "../../lib/viewport";
 import type { Item, Session } from "../../lib/types";
 import { SessionMark } from "../../ui/AgentMark";
@@ -43,7 +44,8 @@ const targetId = (x: Target) => (x.kind === "session" ? sessionTarget(x.s.machin
 function heldSessions(): Session[] {
   const st = getState();
   const rows = st.features.includes(SESSIONS_LIST_FEATURE) ? [...st.sessionSummaries, ...Object.values(st.sessions).flat()] : Object.values(st.sessions).flat();
-  return [...rows.filter((s) => !s.assistant), ...(st.assistant?.conversations ?? [])];
+  // a child session is no chat to forward to (#5120): it folds into its parent
+  return [...foldRows(rows).filter((s) => !s.assistant), ...(st.assistant?.conversations ?? [])];
 }
 
 /** A picture of the transcript as the composer takes it: inline, or read from the hub. */

@@ -76,6 +76,32 @@ struct ExtensionSettingsLifecycleTests {
         #expect(!ExtensionText.autoUpgradeShown(detail.plugin), "an explicitly disabled preference stays off too")
     }
 
+    /// #4747 (the web's #1828): while the manager's master switch is off, the extension's Auto-upgrade switch keeps
+    /// showing its own saved value but can't be flipped; with the master switch on it can again. A hub that does not
+    /// say (no route: an older hub) leaves it editable.
+    @Test(arguments: [true, false]) func theMasterSwitchOffGreysTheSwitchOutKeepingItsValue(own: Bool) async throws {
+        var detail = try decode()
+        detail.plugin.autoUpgrade = own
+        let policy = ExtensionSettingsPolicy(detail: detail)
+        for (auto, flips) in [(false, false), (true, true)] {
+            let hub = FakeHub()
+            hub.on("GET", "/api/v1/plugins/-/upgrades", json: #"{"auto":\#(auto),"upgrades":[]}"#)
+            let lifecycle = ExtensionSettingsLifecycle(id: "p", manager: "assistant", deps: .init(api: { hub.client }))
+            await lifecycle.loadMetadata(detail: detail)
+            #expect(lifecycle.globalAuto == auto)
+            #expect(policy.canFlipAutoUpgrade(globalAuto: lifecycle.globalAuto) == flips)
+            #expect(ExtensionText.autoUpgradeShown(detail.plugin) == own, "the saved value is shown either way")
+        }
+        let old = FakeHub()
+        let lifecycle = ExtensionSettingsLifecycle(id: "p", manager: "assistant", deps: .init(api: { old.client }))
+        await lifecycle.loadMetadata(detail: detail)
+        #expect(lifecycle.globalAuto == nil)
+        #expect(policy.canFlipAutoUpgrade(globalAuto: nil), "an unknown master switch does not lock the extension's")
+        // One that can't auto-upgrade at all stays locked whatever the master switch says.
+        detail.plugin.autoUpgrade = nil
+        #expect(!ExtensionSettingsPolicy(detail: detail).canFlipAutoUpgrade(globalAuto: true))
+    }
+
     @Test func attachedAndSandboxDecodeTheirExistingContract() throws {
         let extra = #", "attached":{"online":false,"since":"2026-11-01T00:00:00Z","error":"offline","version":"2"},"sandbox":{"enabled":true,"default":true,"chosen":false,"active":false,"why":"unsupported","detail":"Unavailable","trusted":true,"egress":{"allowed":3}}"#
         let detail = try decode(String(Self.installed.dropLast()) + extra + "}")

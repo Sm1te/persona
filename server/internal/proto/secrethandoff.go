@@ -21,17 +21,21 @@ const CodeSecretHandoffElsewhere = "secret_handoff_elsewhere"
 // record a refused approval on each.
 type SecretHandoffInput struct {
 	Variables []SecretHandoffVariable `json:"variables"`
-	// Cwd and Prompt are where the Agent runs and the start of what it is asked, for the card to show (not its
-	// summary, which is also the push's text).
-	Cwd    string `json:"cwd,omitempty"`
-	Prompt string `json:"prompt,omitempty"`
+	// Agent is the Agent's name (its tab's), MachineName the computer it starts on, Cwd and Prompt where it runs and
+	// the start of what it is asked: for the card to show (Cwd and Prompt not in its summary, which is also the push's
+	// text).
+	Agent       string `json:"agent,omitempty"`
+	MachineName string `json:"machine_name,omitempty"`
+	Cwd         string `json:"cwd,omitempty"`
+	Prompt      string `json:"prompt,omitempty"`
 }
 
 // SecretHandoffVariable is one environment variable a hand-off card hands over.
 type SecretHandoffVariable struct {
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	Title    string `json:"title,omitempty"`
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	ProviderName string `json:"provider_name,omitempty"`
+	Title        string `json:"title,omitempty"`
 }
 
 // SecretHandoffApproves reports whether r says yes to a hand-off card: allow, and neither dismiss nor cancel. Only such an

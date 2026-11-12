@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import persona.core.contracts.Machine
 import persona.core.designsystem.*
+import persona.feature.chat.UltracodeQuotaLines
+import persona.feature.chat.rememberUltracodeQuota
 import persona.core.designsystem.icons.PersonaIcons
 import persona.core.designsystem.icons.PhIcons
 import java.net.URI
@@ -275,6 +277,11 @@ private fun LazyListScope.newAgentItems(
             subtitle = blocked?.let { stringResource(R.string.agents_new_ultracode_old, it, NewAgentUltracode.MIN_VERSION.joinToString(".")) }
                 ?: stringResource(R.string.agents_new_ultracode_subtitle),
             enabled = editable && blocked == null, subtitleLines = Int.MAX_VALUE)
+        // The Claude subscription's use on this computer's hub (iOS UltracodeStartRow); no warning under a CLI too old for it.
+        val read = model.usage?.let { usage -> state.machineId.takeIf { shown && it.isNotEmpty() }?.let { id -> suspend { usage(id) } } }
+        rememberUltracodeQuota(read, state.machineId)?.let { quota ->
+            UltracodeQuotaLines(quota, blocked == null, Modifier.padding(horizontal = rowPadding).padding(bottom = Tokens.Space.m))
+        }
     }
     item("prompt") {
         JTextField(state.prompt, model::prompt, enabled = !state.locked,

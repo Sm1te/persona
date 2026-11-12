@@ -98,6 +98,14 @@ func TestWatchSignals(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
+	// #5124: a supervised agent waiting on its background work (or stopped) whose transcript stays silent is told past
+	// max(2h, 1.5 × expect), whatever its state says.
+	background := func(ago time.Duration) proto.Session {
+		return proto.Session{MachineID: "box", SessionID: "s1", State: proto.StateIdle, Status: proto.StatusInterrupted, UpdatedAt: now.Add(-ago),
+			Work: &proto.WorkState{Phase: proto.WorkBlocked, On: proto.WaitExternal, Line: "1 background task running"}}
+	}
+	long := &Supervision{Supervisor: "main", ExpectMinutes: 180} // 180 × 1.5 = 4.5 h
+	leader := proto.Session{MachineID: "box", SessionID: "s1", Assistant: true, State: proto.StateIdle, UpdatedAt: now.Add(-10 * time.Hour)}
 	done := now
 	for _, c := range []struct {
 		name   string
@@ -115,6 +123,11 @@ func TestWatchSignals(t *testing.T) {
 		{"waits for the user", Todo{ID: "t", Supervision: &Supervision{State: reviewNeedsUser}}, []proto.Session{working(time.Hour)}, ""},
 		{"done", Todo{ID: "t", Supervision: sup, DoneAt: &done}, []proto.Session{waiting(time.Hour)}, ""},
 		{"not supervised", Todo{ID: "t"}, []proto.Session{waiting(time.Hour)}, ""},
+		{"waits, transcript silent under 2h", Todo{ID: "t", Supervision: sup}, []proto.Session{background(119 * time.Minute)}, ""},
+		{"waits, transcript silent past 2h", Todo{ID: "t", Supervision: sup}, []proto.Session{background(2 * time.Hour)}, sigStalled},
+		{"waits, under 1.5 × expect", Todo{ID: "t", Supervision: long}, []proto.Session{background(4 * time.Hour)}, ""},
+		{"waits, past 1.5 × expect", Todo{ID: "t", Supervision: long}, []proto.Session{background(270 * time.Minute)}, sigStalled},
+		{"a leader conversation waits on its workers", Todo{ID: "t", Supervision: sup}, []proto.Session{leader}, ""},
 	} {
 		if got := kinds(watchSignals(c.todo, c.agents, now)); got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
@@ -171,6 +184,7 @@ func sentToAgent(f *fakeHub) []string {
 // (round 1, 2); a third rework goes to the user; accepted closes the todo by review.
 func TestSupervisedTaskRound(t *testing.T) {
 	s, f, todo := newSupervisedService(t)
+	presenceTimes(t, 0, 0) // the user speaks below; what comes after is not held for them (relay_presence.go)
 	ctx := context.Background()
 	f.mu.Lock()
 	prompt, _ := f.starts[0]["prompt"].(string)

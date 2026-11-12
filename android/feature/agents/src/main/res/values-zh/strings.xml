@@ -90,7 +90,7 @@
     <string name="agents_new_session_unavailable">这个版本的 App 还不能新建会话。</string>
     <string name="agents_close">关闭</string>
     <string name="agents_approve_blocked">这个会话不允许在手机上审批，请打开会话或到电脑上处理。</string>
-    <string name="agents_request_fields_elsewhere">这个请求要先填写内容才能允许，请到网页或 iPhone 上处理；在这里仍可以拒绝。</string>
+    <string name="agents_request_fields_elsewhere">这个请求要先填写内容才能允许，请打开它的对话填写；在这里仍可以拒绝。</string>
     <string name="agents_connection_certificate_text">hub 的证书和配对时不一样，不会自动重连。确认是自己换了证书后，请重新扫码配对。</string>
     <string name="agents_connection_revoked_text">配对已失效，请重新扫码配对。</string>
     <string name="agents_connection_local_network_text">需要本地网络权限，授权后再连接。</string>

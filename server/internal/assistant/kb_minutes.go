@@ -60,18 +60,26 @@ func recordingLink(web, id string) string {
 }
 
 func (s *Service) minutesRoutes(engine func(http.ResponseWriter, *http.Request) *kb.Engine) {
-	// Make (or make again) a recording's minutes at the knowledge base's next round, which this wakes.
+	// Make (or make again) a recording's minutes at the knowledge base's next round, which this wakes; a day
+	// recording's recap (kb_day.go), from what the hub holds now, which never makes it a meeting and never pushes.
 	s.handle("POST /api/v1/recordings/{id}/minutes", func(w http.ResponseWriter, r *http.Request) {
 		e := engine(w, r)
 		if e == nil {
 			return
 		}
+		_, day := dayRecording(e, r.PathValue("id"))
 		switch err := e.AskMinutes(r.PathValue("id")); {
 		case errors.Is(err, kb.ErrNotFound):
 			apierr.Write(w, http.StatusNotFound, i18n.Err("assistant-minutes.no_recording"))
 			return
+		case errors.Is(err, kb.ErrTranscriptExpired) && day:
+			apierr.WriteCode(w, http.StatusConflict, codeTranscriptExpired, i18n.Err("assistant-day-recap.transcript_expired"))
+			return
 		case errors.Is(err, kb.ErrTranscriptExpired):
 			apierr.WriteCode(w, http.StatusConflict, codeTranscriptExpired, i18n.Err("assistant-minutes.transcript_expired"))
+			return
+		case errors.Is(err, kb.ErrRecordingIncomplete) && day: // nothing of the day transcribed yet
+			apierr.Write(w, http.StatusConflict, i18n.Err("assistant-day-recap.no_text"))
 			return
 		case errors.Is(err, kb.ErrRecordingIncomplete):
 			apierr.Write(w, http.StatusConflict, i18n.Err("assistant-minutes.incomplete"))
@@ -105,6 +113,26 @@ func (s *Service) minutesRoutes(engine func(http.ResponseWriter, *http.Request) 
 		}
 		if len(req.Actions) == 0 {
 			apierr.Write(w, http.StatusBadRequest, i18n.Err("assistant-minutes.no_actions"))
+			return
+		}
+		if rec, ok := dayRecording(e, r.PathValue("id")); ok { // a day recording's recap: its suggested to-dos
+			todos, rc, err := s.dayRecapTodos(r.Context(), e, rec, req.Version, req.Actions)
+			var unknown unknownActionError
+			switch {
+			case errors.Is(err, kb.ErrMinutesStale):
+				apierr.WriteCode(w, http.StatusConflict, codeMinutesStale, i18n.Err("assistant-day-recap.stale"))
+				return
+			case errors.As(err, &unknown):
+				apierr.Write(w, http.StatusNotFound, i18n.Err("assistant-day-recap.unknown_action", i18n.Args{"id": string(unknown)}))
+				return
+			case errors.Is(err, kb.ErrNotFound):
+				apierr.Write(w, http.StatusNotFound, i18n.Err("assistant-day-recap.no_recap"))
+				return
+			case err != nil:
+				apierr.Write(w, http.StatusServiceUnavailable, err)
+				return
+			}
+			apierr.WriteJSON(w, map[string]any{"todos": todos, "recap": rc})
 			return
 		}
 		todos, m, err := s.minutesTodos(r.Context(), e, r.PathValue("id"), req.Version, req.Actions)
@@ -150,26 +178,46 @@ func (s *Service) minutesTodos(ctx context.Context, e *kb.Engine, id string, ver
 	if !ok {
 		return nil, nil, kb.ErrNotFound
 	}
+	note := s.minutesTodoNotes(ctx, rec, m)
+	out, made, byTask, err := s.actionTodos(ctx, m.Actions, actions, func(aid string) string { return minutesTodoID(rid, version, aid) }, note)
+	if err != nil {
+		if made != nil {
+			// Those made so far are recorded all the same: a retry after the user deleted one must not make it again.
+			if _, serr := e.SetMinutesTodos(rid, version, made, byTask); serr != nil {
+				s.logf("assistant: minutes to-dos of %s: %v", rid, serr)
+			}
+		}
+		return out, nil, err
+	}
+	// Minutes written again meanwhile get the to-dos by task, so confirming the same task there makes none twice.
+	m, err = e.SetMinutesTodos(rid, version, made, byTask)
+	return out, m, err
+}
+
+// actionTodos makes a to-do of each of the actions named (ids in list; one that has one already keeps it): the to-dos
+// (never nil without an error) and what to record (action id → to-do, MinutesTaskKey → to-do). An error while making
+// them still says what to record of those made before it; an unknown action or to-dos that can't be read make none
+// (made nil). todoID is the to-do an action without one becomes, note its notes.
+func (s *Service) actionTodos(ctx context.Context, list []kb.MinutesAction, actions []string, todoID func(aid string) string,
+	note func(kb.MinutesAction) string) (out []Todo, made, byTask map[string]string, err error) {
 	byID := map[string]kb.MinutesAction{}
-	for _, a := range m.Actions {
+	for _, a := range list {
 		byID[a.ID] = a
 	}
 	for _, a := range actions {
 		if _, ok := byID[a]; !ok {
-			return nil, nil, unknownActionError(a)
+			return nil, nil, nil, unknownActionError(a)
 		}
 	}
 	if err := s.ensureTodosLoaded(ctx); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	var out []Todo
-	made, byTask := map[string]string{}, map[string]string{}
-	note := s.minutesTodoNotes(ctx, rec, m)
+	made, byTask = map[string]string{}, map[string]string{}
 	for _, aid := range dedupe(actions) {
 		a := byID[aid]
 		tid := a.TodoID
 		if tid == "" {
-			tid = minutesTodoID(rid, version, aid)
+			tid = todoID(aid)
 		}
 		if t, ok := s.todoNow(tid); ok {
 			out, made[aid], byTask[kb.MinutesTaskKey(a)] = append(out, t), tid, tid
@@ -184,26 +232,25 @@ func (s *Service) minutesTodos(ctx context.Context, e *kb.Engine, id string, ver
 			t, err = Todo{ID: tid, Title: minutesTodoTitle(a)}, nil
 		}
 		if err != nil {
-			// Those made so far are recorded all the same: a retry after the user deleted one must not make it again.
-			if _, serr := e.SetMinutesTodos(rid, version, made, byTask); serr != nil {
-				s.logf("assistant: minutes to-dos of %s: %v", rid, serr)
-			}
-			return out, nil, err
+			return out, made, byTask, err
 		}
 		out, made[aid], byTask[kb.MinutesTaskKey(a)] = append(out, t), tid, tid
 	}
-	// Minutes written again meanwhile get the to-dos by task, so confirming the same task there makes none twice.
-	m, err = e.SetMinutesTodos(rid, version, made, byTask)
 	if out == nil {
 		out = []Todo{}
 	}
-	return out, m, err
+	return out, made, byTask, nil
 }
 
 // minutesTodoID is the to-do an action of a version of a recording's minutes becomes.
 func minutesTodoID(recording string, version int, action string) string {
+	return actionTodoID("todo_mtg_", recording, version, action)
+}
+
+// actionTodoID is the to-do (prefix, then a hash) an action of a version of a recording's minutes or recap becomes.
+func actionTodoID(prefix, recording string, version int, action string) string {
 	h := sha256.Sum256([]byte(recording + "\x00" + strconv.Itoa(version) + "\x00" + action))
-	return "todo_mtg_" + hex.EncodeToString(h[:8])
+	return prefix + hex.EncodeToString(h[:8])
 }
 
 func minutesTodoTitle(a kb.MinutesAction) string {
@@ -234,14 +281,21 @@ func (s *Service) minutesTodoNotes(ctx context.Context, rec *kb.Recording, m *kb
 // said) with what became of it, a suggestion the user has not confirmed or its to-do as it is now (open and when due,
 // done, cancelled, deleted), so "what is still open from that meeting" needs no other tool; "" without action items.
 func (s *Service) minutesActionLines(ctx context.Context, id string, m *kb.Minutes) string {
-	if len(m.Actions) == 0 {
+	return s.actionLines(ctx, "\nAction items as they stand (one becomes a to-do only when the user confirms it):\n", m.Actions,
+		func(aid string) string { return minutesTodoID(id, m.Version, aid) })
+}
+
+// actionLines is head, then a line per action of list with what became of it (minutesActionLines); todoID is the
+// to-do an action without one would have become. "" without actions.
+func (s *Service) actionLines(ctx context.Context, head string, list []kb.MinutesAction, todoID func(aid string) string) string {
+	if len(list) == 0 {
 		return ""
 	}
 	loaded := s.ensureTodosLoaded(ctx) == nil
 	now, loc := time.Now(), s.location(ctx)
 	var b strings.Builder
-	b.WriteString("\nAction items as they stand (one becomes a to-do only when the user confirms it):\n")
-	for _, a := range m.Actions {
+	b.WriteString(head)
+	for _, a := range list {
 		b.WriteString("- " + a.ID + " " + minutesTodoTitle(a))
 		switch {
 		case a.By != "" && a.DueDate != "" && a.By != a.DueDate:
@@ -251,7 +305,7 @@ func (s *Service) minutesActionLines(ctx context.Context, id string, m *kb.Minut
 		}
 		tid := a.TodoID
 		if tid == "" {
-			tid = minutesTodoID(id, m.Version, a.ID) // made, though writing it into the minutes failed
+			tid = todoID(a.ID) // made, though writing it into the minutes failed
 		}
 		t, ok := s.todoNow(tid)
 		b.WriteString(" → ")

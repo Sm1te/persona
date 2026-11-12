@@ -1,7 +1,7 @@
 // End-to-end check of the leader conversations in the sidebar (#3623, #4331, #4873, docs/web/web.md "Persona chats"): with
 // the hub's `assistant.leaders` set, a fresh browser shows Persona chats as the leaders, the 常驻 group, in the hub's order
 // under each one's name from GET /api/v1/assistant/leaders with what it has open (在做 N · 等你 N), then 最近, the newest
-// five of the user's other chats (none the hub opened by itself); every other chat is under 全部对话; New chat is the
+// 15 of the user's other chats (a fresh browser's default, #5146) (none the hub opened by itself); every other chat is under 全部对话; New chat is the
 // compose icon on the section's title; a lead's menu has 取消常驻 (no 置顶 anywhere), which ends it on the hub and takes it
 // out of 常驻; 全部对话's menu has 设为常驻, which brings it back.
 //
@@ -46,14 +46,14 @@ const assistant = await hub("/assistant");
 const leaders = assistant.leaders ?? [];
 if (leaders.length < 2) fail(`the fake hub has no leaders (start it with MOCK_LEADERS=1): ${JSON.stringify(leaders)}`);
 const names = new Map(((await hub("/assistant/leaders")).leaders ?? []).map((l) => [l.id, l.name]));
-// 常驻 then 最近 as lib/conversation-origins.ts `recentConversations` picks them: the newest five of the user's own others
+// 常驻 then 最近 as lib/conversation-origins.ts `recentConversations` picks them: the newest 15 of the user's own others
 const ms = (t) => (t ? Date.parse(t) || 0 : 0);
 const own = (c) => !c.origin || c.origin === "user" || c.origin === "channel";
 const leadsOf = (a) => (a.leaders ?? []).filter((id) => id !== a.main);
 const recentOf = (a) => a.conversations
   .filter((c) => c.session_id !== a.main && !leadsOf(a).includes(c.session_id) && !c.archived && own(c))
   .sort((x, y) => ms(y.updated_at) - ms(x.updated_at) || (x.session_id < y.session_id ? -1 : 1))
-  .slice(0, 5)
+  .slice(0, 15)
   .map((c) => c.session_id);
 const expectedRows = (a) => [...leadsOf(a).filter((id) => a.conversations.some((c) => c.session_id === id)), ...recentOf(a)];
 const recent = recentOf(assistant);
@@ -106,7 +106,7 @@ try {
       const where = `${theme} ${width}px`;
       const { ctx, page } = await open(browser, theme, width, null);
       const ids = await rowIds(page);
-      if (JSON.stringify(ids) !== JSON.stringify(expectedRows(assistant))) fail(`${where}: Persona chats are not the leaders in the hub's order then the newest five of the rest: ${ids.join(",")}`);
+      if (JSON.stringify(ids) !== JSON.stringify(expectedRows(assistant))) fail(`${where}: Persona chats are not the leaders in the hub's order then the newest 15 of the rest: ${ids.join(",")}`);
       for (const id of leaders) {
         const text = await page.locator(`aside a[href^="/persona/${id}"]`).first().textContent();
         if (!names.get(id) || !text.includes(names.get(id))) fail(`${where}: leader ${id} does not show its name ${names.get(id)}: ${text}`);

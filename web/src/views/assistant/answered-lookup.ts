@@ -5,7 +5,8 @@
 // at once, and so does a needs_you the hub sent after the answer (a second card still on its way, a TUI dialog).
 // A deny shows "Working" too until the next push: the agent goes on either way. A card handed back to the computer is not
 // an answer (the agent waits there), and a needs_you pushed before the hub withdrew the card is the old one (#4877).
-import { stateOf } from "../../lib/format";
+import { foldedState } from "../../lib/child-sessions";
+import { homeKey } from "../../lib/folded-rows";
 import { makeSessionLookup, type SessionLookup } from "../../lib/todos";
 import type { AnsweredCard } from "../../lib/store";
 import type { Interaction, Session } from "../../lib/types";
@@ -19,7 +20,9 @@ const copies = new WeakMap<Session, Session>();
 function answeredCopy(s: Session): Session {
   let c = copies.get(s);
   if (!c) {
-    c = { ...s, state: "working" };
+    // a parent waiting only through a child's card answered here works with it: its rollup's waiting child is that one
+    const children = s.children?.needs_you ? { ...s.children, needs_you: undefined } : s.children;
+    c = { ...s, state: "working", ...(children !== s.children ? { children } : {}) };
     copies.set(s, c);
   }
   return c;
@@ -37,7 +40,8 @@ function answeredBy(answered: Record<string, AnsweredCard>): Map<string, Answere
   const out = new Map<string, AnsweredMark>();
   for (const a of Object.values(answered)) {
     if (a.handedBack) continue;
-    const k = key(a.ix.machine_id, a.ix.session_id);
+    // a child session's card is its parent's to answer and to count (#5120): answered, the parent's row stops waiting
+    const k = homeKey(a.ix);
     const cur = out.get(k);
     out.set(k, { at: Math.max(cur?.at ?? 0, a.at ?? 0), pending: Boolean(cur?.pending) || !a.withdrawn });
   }
@@ -48,7 +52,7 @@ function answeredBy(answered: Record<string, AnsweredCard>): Map<string, Answere
 export function answeredHere(s: Session, waiting: ReadonlySet<string>, answered: ReadonlyMap<string, AnsweredMark>): boolean {
   const k = key(s.machine_id, s.session_id);
   const mark = answered.get(k);
-  if (mark === undefined || stateOf(s) !== "needs_you" || waiting.has(k)) return false;
+  if (mark === undefined || foldedState(s) !== "needs_you" || waiting.has(k)) return false;
   // Until the hub withdraws the card, a push saying needs_you comes from before the answer took, whatever its time:
   // the withdrawal comes on the same socket, after it. A new card makes it wait at once either way (`waiting`).
   if (mark.pending) return true;
@@ -63,7 +67,7 @@ export function answeredLookup(sessions: Session[] | Record<string, Session[]> |
   const base = typeof sessions === "function" ? sessions : makeSessionLookup(sessions);
   const done = answeredBy(answered);
   if (!done.size) return base;
-  const waiting = new Set(interactions.map((ix) => key(ix.machine_id, ix.session_id)));
+  const waiting = new Set(interactions.map(homeKey));
   return (mid, sid) => {
     const s = base(mid, sid);
     return s && answeredHere(s, waiting, done) ? answeredCopy(s) : s;
@@ -75,7 +79,7 @@ export function answeredLookup(sessions: Session[] | Record<string, Session[]> |
 export function answeredSessions(sessions: Session[], interactions: Interaction[], answered: Record<string, AnsweredCard>): Session[] {
   const done = answeredBy(answered);
   if (!done.size) return sessions;
-  const waiting = new Set(interactions.map((ix) => key(ix.machine_id, ix.session_id)));
+  const waiting = new Set(interactions.map(homeKey));
   let changed = false;
   const out = sessions.map((s) => {
     if (!answeredHere(s, waiting, done)) return s;

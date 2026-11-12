@@ -14,5 +14,20 @@
   "todo_update": "ToDo の変更",
   "todo_complete": "タスクの完了",
   "todo_reopen": "タスクの再開",
-  "todo_delete": "ToDo の削除"
+  "todo_delete": "ToDo の削除",
+  "report_to_supervisor": "監督役への報告",
+  "report_to_supervisor_progress": "進捗",
+  "report_to_supervisor_question": "質問",
+  "report_to_supervisor_blocked": "行き詰まり",
+  "report_to_supervisor_done": "完了",
+  "todo_decisions": "タスクの決定事項",
+  "todo_decision_add": "決定事項を記録",
+  "todo_bind_thread": "タスクをスレッドに関連付け",
+  "task_review": "サブタスクの検収",
+  "dispatch_start": "別のコンピュータに依頼",
+  "dispatch_read": "依頼したサブタスク",
+  "iphone_look": "iPhone の画面",
+  "iphone_status": "iPhone の状態",
+  "family_phone": "iPhone",
+  "family_mail": "メール"
 }

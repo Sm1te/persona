@@ -1,11 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { CardConversation, CardItem, LiveCard, VIEWS_FEATURE } from "./AssistantCard";
 import { applyAction, applyBlock, applyView, resetCards, updateDraft } from "../lib/assistant-views";
 import { getState } from "../lib/store";
 import { Markdown } from "./Markdown";
 import { UserBubble } from "../views/chat/SegmentView";
 import type { AssistantView } from "../lib/extension-wire";
+import { loadPages } from "../lib/lazy-page";
+
+// The cards draw the renderer through a lazy chunk (#3614); these tests draw without waiting for it.
+beforeAll(() => loadPages(), 60_000);
 
 const EXAMPLES = import.meta.glob("../../../schema/extension/examples/assistant/*.json", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const example = (name: string) => JSON.parse(Object.entries(EXAMPLES).find(([p]) => p.endsWith(`/${name}.json`))![1]);
@@ -85,6 +89,20 @@ describe("正文卡片", () => {
     expect(html).toContain("助手画的页面");
     expect(html).toContain(example("html").fallback);
     expect(html).not.toMatch(/<iframe|<script|onclick=/i);
+  });
+
+  it("a card with html runs it where the hub has the bridge and the card is kept: no fallback, the card's body instead", () => {
+    applyBlock("c1", "m-html/0");
+    Object.assign(getState(), { features: [VIEWS_FEATURE, "assistant_html_bridge"] });
+    const text = fence(example("html"));
+    const html = draw(text, { item: "m-html" });
+    expect(html).not.toContain('data-assistant-card="html-fallback"');
+    expect(html).toContain('data-assistant-card="persona-view"');
+    // without the bridge, or outside an assistant conversation (an agent's chat: no card to keep), its words as before
+    Object.assign(getState(), { features: [VIEWS_FEATURE] });
+    expect(draw(text, { item: "m-html" })).toContain('data-assistant-card="html-fallback"');
+    Object.assign(getState(), { features: [VIEWS_FEATURE, "assistant_html_bridge"] });
+    expect(draw(text, { conversation: "", item: "m-html" })).toContain('data-assistant-card="html-fallback"');
   });
 
   it("a card with a component the web does not draw shows its fallback, not an empty or partial card", () => {

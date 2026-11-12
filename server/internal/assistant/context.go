@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/connector"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
@@ -17,17 +18,22 @@ import (
 
 // Context is the <persona-context> block a message to conversation p.SessionID starts with (the node asks on every
 // message, node/assistant_context.go): who the user is, whether this is the main conversation, and the snapshot.
-// With p.Ack it only confirms the view errors a delivered message carried (context_view_errors.go).
+// With p.Ack it only confirms what a delivered message carried: its view errors (context_view_errors.go) and the
+// background supervisor's announcement.
 func (s *Service) Context(ctx context.Context, p ContextParams) ContextResult {
 	if len(p.Ack) > 0 {
-		s.ackViewErrors(ctx, p)
+		// The background supervisor's announcement is confirmed the same way (supervise_background.go).
+		if p.Ack = s.announcedBackground(ctx, p.SessionID, p.Ack); len(p.Ack) > 0 {
+			s.ackViewErrors(ctx, p)
+		}
 		return ContextResult{}
 	}
 	c := prompts.AssistantContext{Snapshot: s.contextSnapshot(ctx), Owner: s.owner(ctx),
-		Main: s.isMain(ctx, p.SessionID), Leader: s.isLeader(ctx, p.SessionID)}
+		Main: s.isMain(ctx, p.SessionID), Leader: s.isLeader(ctx, p.SessionID), Background: s.isBackground(ctx, p.SessionID)}
 	switch {
 	case c.Main:
 		cfg := s.settings(ctx)
+		c.BackgroundStarted = s.announceBackground(ctx) // until a message carrying it is delivered: its tasks are followed up in the background now (supervise_background.go)
 		names := s.leaderNames(ctx, cfg.Leaders)
 		for _, id := range cfg.Leaders {
 			if id != "" && id != cfg.Main {
@@ -39,6 +45,9 @@ func (s *Service) Context(ctx context.Context, p ContextParams) ContextResult {
 	}
 	text := prompts.RenderAssistantContext(c)
 	errs, receipts := s.viewErrors(ctx, p)
+	if c.BackgroundStarted != "" {
+		receipts = append(receipts, assistantwire.ViewErrorReceipt{ItemID: backgroundAnnounceReceipt, Digest: c.BackgroundStarted})
+	}
 	return ContextResult{Text: text, ViewErrors: errs, Receipts: receipts}
 }
 

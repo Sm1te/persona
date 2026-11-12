@@ -2,13 +2,13 @@
 // what happened in the last hours, what is to be verified), as the hub worked it out when the run started; the same
 // rows as the Lark card, with an Accept button for each task to verify and a Handled button for each question that can wait
 // (docs/extensions/bots.md "Morning and evening briefings").
+import { openTask } from "../../lib/handoff";
 import { useRef, useState } from "react";
 import { errorText } from "../../lib/api";
 import { putTodo, refreshTodos } from "../../lib/store";
 import { updateTodo } from "../../lib/todos";
 import { acceptBrief, briefBody, failedKey, handledLater, type BriefBody, type BriefRow, type FeedItem } from "../../lib/feed";
 import { shortDuration } from "../../lib/format";
-import { openPanel } from "../../lib/panel";
 import { formatDate, t } from "../../i18n";
 import { Button, cx, toast } from "../../ui/atoms";
 import { Icon, type IconName } from "../../ui/icons";
@@ -131,7 +131,7 @@ export function AcceptRow({ row, stacked = false, admission, onBusyChange, block
         {row.recommend && <div className="text-[12px] text-ink-2 [overflow-wrap:anywhere]">{t("assistant-brief.recommend", { option: row.recommend })}</div>}
         <div className="text-[12px] text-ink-2">{meta(row)}</div>
       </div>
-      <Button title={t("assistant-brief.open_row", { title: row.title })} onClick={() => openPanel({ kind: "task", todo: row.id })}>
+      <Button title={t("assistant-brief.open_row", { title: row.title })} onClick={() => openTask(row.id)}>
         {t("assistant-brief.open")}
       </Button>
       {/* Only the live Pending row can finish a task; historical brief snapshots must not end a newer run. */}
@@ -263,7 +263,7 @@ export function BriefCard({ item }: { item: FeedItem }) {
             <div key={p.id} className="flex flex-col gap-1 py-1.5" data-brief-row="progress">
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1 text-[13.5px] font-medium [overflow-wrap:anywhere]">{p.title}</div>
-                <Button onClick={() => openPanel({ kind: "task", todo: p.id })}>{t("assistant-brief.open")}</Button>
+                <Button onClick={() => openTask(p.id)}>{t("assistant-brief.open")}</Button>
               </div>
               <TodoStageBar stage={p.stage} stageKind={p.stage_kind} />
             </div>

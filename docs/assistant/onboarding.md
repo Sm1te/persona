@@ -177,7 +177,7 @@ P1: **computer initiates, phone allows**. Persona Link's first screen shows a QR
 
 #### No dependency on zsh
 
-- Do not mention "~/.zshrc" in onboarding. Move "Import from ~/.zshrc" to "Advanced" in **Settings › Model providers**; disable it with an explanation when there are no computers (today it spins forever).
+- Do not mention "~/.zshrc" in onboarding. In **Settings › Model providers** the import is a plain **Import** button beside **Add provider** (#5024, earlier under "Advanced"): the shell files are named only inside its dialog, which explains what to do when there is no computer yet instead of spinning.
 - Existing developer aliases / functions are still discovered and selectable (`mergeLaunchers` in `node/launchers.go`); the onboarding wizard does not depend on them.
 - The default `claude` launcher currently always starts through `zsh -ic` (`assistantCLICommand` in `node/assistant_start.go`), causing `command not found` for users whose PATH is in `.zprofile`. Prefer the absolute path found by `claudeExecutable()` (`node/managed.go:104`), then fall back to the shell. This overlaps with #2854 (bash launchers / bundled claude, claimed by someone else); coordinate in #2854 first rather than duplicating the work.
 

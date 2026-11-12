@@ -214,6 +214,13 @@ func (s *Service) nodeInteraction(ctx context.Context, ix proto.Interaction) (pr
 		}
 	}
 	ix = nodeCard(ix, s.fleetStore() != nil, s.ixInHealth(ctx, ix))
+	if ix.Kind == proto.IxPermission {
+		l := s.lang(ctx)
+		ix.ToolTitle = personaToolTitle(l, ix.ToolName, ix.ToolInput)
+		if name := personaToolTitle(l, ix.ToolName, nil); name != ix.ToolTitle {
+			ix.ToolNameTitle = name // the tool alone, for what Always covers: no report's kind
+		}
+	}
 	if r, ok := s.alwaysAllowed(ctx, ix); ok {
 		if ix.Resumable { // its hook's earlier attempt left the card pending: it is answered too
 			_ = s.resolveRemembered(ix.ID, r, false)
@@ -750,6 +757,10 @@ func (s *Service) finished(p *pending) {
 		how = &proto.Resolution{Dismiss: true, Reason: proto.DismissedExpired}
 	}
 	s.fleet.mu.Unlock()
+	if how != nil && s.askLaterSpokeOf(p.ix.ID) {
+		// Asked without waiting, and the owner wrote in the conversation meanwhile: it makes no to-do (ask_later.go).
+		how.Reason = proto.DismissedInChat
+	}
 	s.channelsEnded(p.ix, how)
 	// the app marks a question the assistant answered, and why (docs/assistant/assistant.md)
 	s.hub.Tell(assistantwire.EventFleetResolved, done)
@@ -873,9 +884,10 @@ const maxAlwaysKeys = 32
 // agent is given no session rule): honored when the manager will remember the keys the card names (remembering is a
 // conversation's store), not when it names keys it will not (too many, a card with fields, no store) or is a health
 // conversation's (confirmed each time). Any other node card keeps the apps' own rule (an Agents session's agent keeps
-// it itself). A node names no tool for people, and has no say in either: only the manager's own cards do.
+// it itself). A node names no tool for people, and has no say in either: only the manager does, on its own cards and
+// on a node's card for one of Persona's own MCP tools (personaToolTitle).
 func nodeCard(ix proto.Interaction, remembers, health bool) proto.Interaction {
-	ix.AlwaysHonored, ix.ToolTitle = nil, ""
+	ix.AlwaysHonored, ix.ToolTitle, ix.ToolNameTitle = nil, "", ""
 	if ix.Kind != proto.IxPermission || ix.SessionID == "" || (len(ix.AlwaysKeys) == 0 && !health) {
 		return ix
 	}
@@ -915,6 +927,41 @@ func toolTitle(l i18n.Lang, tool string) string {
 		return ""
 	}
 	return i18n.T(l, key)
+}
+
+// personaToolTitle is one of Persona's own MCP tools, called by its full name (mcp__persona__…, the compatibility
+// namespace too), by its name for people in l for the title of a node's card (#4966): the catalog's name
+// (assistant-tool_titles), a report to the supervisor with what it reports ("Report to supervisor · Done"), the
+// phone's and mail tools by their family and the rest of the name as the chat's tool rows say them ("iPhone · contacts
+// search"), any other "Persona · agent read". "" for every other tool: the apps name those themselves. Without input,
+// the tool alone ("Report to supervisor"; Interaction.ToolNameTitle).
+func personaToolTitle(l i18n.Lang, name string, input json.RawMessage) string {
+	rest, ok := strings.CutPrefix(name, "mcp__")
+	i := strings.LastIndex(rest, "__")
+	if !ok || i <= 0 || !compat.IsMCPServer(strings.TrimPrefix(rest[:i], "plugin_")) || rest[i+2:] == "" {
+		return ""
+	}
+	tool := rest[i+2:]
+	if tool == "report_to_supervisor" {
+		var a struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(input, &a)
+		key := "assistant-tool_titles.report_to_supervisor_" + a.Kind
+		if a.Kind != "" && !strings.ContainsAny(a.Kind, ". ") && i18n.Has(key) {
+			return i18n.T(l, "assistant-tool_titles.report_to_supervisor") + " · " + i18n.T(l, key)
+		}
+	}
+	if t := toolTitle(l, tool); t != "" {
+		return t
+	}
+	words := func(s string) string { return strings.ReplaceAll(s, "_", " ") }
+	for _, family := range []string{"phone", "mail"} {
+		if what, ok := strings.CutPrefix(tool, family+"_"); ok && what != "" {
+			return i18n.T(l, "assistant-tool_titles.family_"+family) + " · " + words(what)
+		}
+	}
+	return "Persona · " + words(tool)
 }
 
 func alwaysCard(ix proto.Interaction) bool {

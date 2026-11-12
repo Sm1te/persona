@@ -215,6 +215,7 @@ func TestLauncherNameFor(t *testing.T) {
 		{"builtin/deepseek", "deepseek", 1},
 		{"builtin/kimi-intl", "kimi-intl", 1},
 		{"team/My Gateway", "my-gateway", 1},
+		{"team/My -- Gateway", "my-gateway", 1}, // a run of others is one -
 		{"team/9router", "p-9router", 1},
 		{"team/智谱", "provider", 1},
 		{"team/test", "test-2", 2}, // reserved: a /api/v1/launchers/<word> route
@@ -258,12 +259,9 @@ func TestAddFromABuiltinPresetWithOnlyTheKey(t *testing.T) {
 	if v.Name != "glm-2" || v.DisplayName != "智谱（工作）" {
 		t.Fatalf("a second one: %+v", v)
 	}
-	// Without a preset the display name can be Chinese too, the name still has to be given.
+	// Without a preset the display name can be Chinese too (an empty name there: TestAddWithoutAPresetGetsAName).
 	if code, out := postLauncher(t, s, "zh-Hans", `{"name":"mine","display_name":"我的模型","base_url":"https://gw.example.com","model":"m"}`); code != 200 {
 		t.Fatalf("%d %s", code, out)
-	}
-	if code, _ := postLauncher(t, s, "zh-Hans", `{"name":"","display_name":"我的模型","base_url":"https://gw.example.com","model":"m"}`); code != 400 {
-		t.Fatalf("no preset, no name: %d", code)
 	}
 	if code, _ := postLauncher(t, s, "zh-Hans", `{"preset":"builtin/glm","display_name":"a\nb"}`); code != 400 {
 		t.Fatalf("a display name with a line break: %d", code)

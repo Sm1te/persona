@@ -82,7 +82,28 @@ func New(cfg Config) (*Client, error) {
 
 // NewWithKey uses a key already in memory (tests).
 func NewWithKey(cfg Config, key *ecdsa.PrivateKey) *Client {
-	return &Client{Cfg: cfg, key: key, http: &http.Client{Timeout: 15 * time.Second}}
+	return &Client{Cfg: cfg, key: key, http: &http.Client{Timeout: 15 * time.Second, Transport: NewTransport()}}
+}
+
+// Connection keepalive of NewTransport (#4800). APNs asks providers to keep one HTTP/2 connection open rather than
+// connect per notification, and the hub's relay client wants the same of the relay. http.DefaultTransport closed an
+// idle connection after 90 s, so most pushes paid TCP + TLS again (0.2-0.3 s to the relay). An idle connection now
+// lives for idleConnTimeout, and HTTP/2 pings sent after pingAfter without a frame keep it from looking idle to the
+// network in between and find a connection that died silently, which is closed when its pong is pingTimeout late.
+const (
+	idleConnTimeout = time.Hour
+	pingAfter       = time.Minute
+	pingTimeout     = 15 * time.Second
+)
+
+// NewTransport is a transport for one push service: http.DefaultTransport's settings (proxy from the environment,
+// dial and TLS handshake timeouts, HTTP/2), with connections kept between pushes. Each client gets its own, so no
+// other client's traffic shares or closes its connections.
+func NewTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.IdleConnTimeout = idleConnTimeout
+	t.HTTP2 = &http.HTTP2Config{SendPingTimeout: pingAfter, PingTimeout: pingTimeout}
+	return t
 }
 
 // token returns the cached provider token, signing a new one when there is none or it is tokenMaxAge old.
@@ -196,10 +217,10 @@ func (c *Client) post(ctx context.Context, r Request, jwt string) (Result, error
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// The APNs connection is one long-lived HTTP/2 connection, and Go does not notice when it dies
-		// silently (no health pings before Go 1.24): after the hub's proxy routing broke and came back,
-		// every push still timed out on the dead connection until the hub restarted. Drop it so the next
-		// push dials a new one.
+		// The APNs connection is one long-lived HTTP/2 connection. Health pings (NewTransport) close one that
+		// died silently within about a minute, but a push can still go out on it first: after the hub's proxy
+		// routing broke and came back, every push timed out on the dead connection until the hub restarted.
+		// Drop it so the next push dials a new one.
 		c.http.CloseIdleConnections()
 		return Result{}, err
 	}

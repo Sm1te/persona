@@ -300,6 +300,9 @@ func (s *Service) makeDirection(ctx context.Context, id, project, newProject, ti
 	if id == cfg.Main {
 		return nil, errors.New("the main conversation supervises already: a direction is a side conversation")
 	}
+	if id == cfg.BackgroundSupervisor {
+		return nil, errors.New("the background supervisor is built in: a direction is another side conversation")
+	}
 	c, ok := s.session(ctx, cfg.MachineID, id)
 	if !ok || !c.Assistant {
 		return nil, fmt.Errorf("%s is not a Persona conversation on the assistant's machine", id)

@@ -7,14 +7,21 @@ import Testing
 @MainActor
 struct DockAgentTests {
     private func session(_ id: String, state: String, assistant: Bool = false, todo: String? = nil, since: String? = nil,
-                         title: String? = nil, group: String? = nil) throws -> Session {
+                         title: String? = nil, group: String? = nil, extra: [String: Any] = [:]) throws -> Session {
         var o: [String: Any] = ["machine_id": "box", "session_id": id, "title": title ?? "agent \(id)", "cwd": "/code/\(id)",
                                 "status": "idle", "state": state, "started_by_persona": false, "assistant": assistant,
                                 "pending_interactions": 0]
         if let todo { o["todo"] = ["id": todo, "title": "t"] }
         if let since { o["state_since"] = since }
         if let group { o["app_hub_group"] = group }
+        o.merge(extra) { _, new in new }
         return try JSON.decoder.decode(Session.self, from: JSONSerialization.data(withJSONObject: o))
+    }
+
+    /// A runtime's session (a Paseo agent, #4494), with the agent that created it.
+    private func runtime(_ id: String, state: String, parent: String? = nil, since: String? = nil) throws -> Session {
+        try session(id, state: state, since: since, extra: parent.map { ["source_kind": "runtime", "is_subagent": true, "parent_session_id": $0] }
+                    ?? ["source_kind": "runtime"])
     }
 
     private func key(_ id: String, group: String = "") -> SessionKey { SessionKey(group: group, machineID: "box", sessionID: id) }
@@ -54,5 +61,35 @@ struct DockAgentTests {
                                     taskAgents: [key("task")], manualTodos: ["todo_hand"])
         #expect(shown.map(\.key.sessionID) == ["free", "hand"])
         #expect(Set(shown.map(\.key)).count == shown.count)
+    }
+
+    /// A subtask (an agent another agent created, a Codex subagent) is left out while a session above it is going too:
+    /// that one's pill stands for it, as the Agents list folds it (#4767). One that waits for the user is a pill of its own.
+    @Test func aSubtaskIsLeftOutWhileItsCreatorIsGoing() throws {
+        let going = DockAgent.going([
+            try runtime("lead", state: "working", since: "2026-11-04T08:00:00Z"),
+            try runtime("review", state: "working", parent: "lead", since: "2026-11-04T09:00:00Z"),
+            try runtime("deploy", state: "needs_you", parent: "lead"),
+            try session("chat", state: "working", since: "2026-11-04T07:00:00Z", extra: ["agent": "codex", "source_kind": "codex_app_server"]),
+            try session("spawned", state: "working", since: "2026-11-04T10:00:00Z",
+                        extra: ["agent": "codex", "source_kind": "codex_history", "is_subagent": true, "parent_session_id": "chat"]),
+        ])
+        #expect(going.map(\.key.sessionID) == ["deploy", "lead", "chat"])
+    }
+
+    @Test func aSubtaskWithNoCreatorGoingIsAPillOfItsOwn() throws {
+        // Its creator stopped, or is not listed.
+        #expect(DockAgent.going([try runtime("lead", state: "idle"), try runtime("review", state: "working", parent: "lead")])
+            .map(\.key.sessionID) == ["review"])
+        #expect(DockAgent.going([try runtime("review", state: "working", parent: "lead")]).map(\.key.sessionID) == ["review"])
+        // One going further up the line is enough: its pill stands for the line.
+        let line = DockAgent.going([try runtime("lead", state: "working"), try runtime("mid", state: "idle", parent: "lead"),
+                                    try runtime("leaf", state: "working", parent: "mid")])
+        #expect(line.map(\.key.sessionID) == ["lead"])
+        // Another computer's session of the same id is not its creator.
+        var remote = try runtime("lead", state: "working")
+        remote.machineID = "other-box"
+        #expect(DockAgent.going([remote, try runtime("review", state: "working", parent: "lead")]).map(\.key.sessionID)
+            .sorted() == ["lead", "review"])
     }
 }

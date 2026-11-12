@@ -64,7 +64,7 @@ describe("a Codex file change (G001)", () => {
   it("counts its patch's lines and opens it as a diff", () => {
     render(step(use("Edit", { file_path: "/w/src/a.ts", change: "update", diff: "@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+more" }), result("update /w/src/a.ts")));
     expect(host.textContent).toContain("+2");
-    expect(host.textContent).toContain("−1");
+    expect(host.textContent).toContain("-1");
     openRow();
     const lines = [...document.querySelectorAll("[data-diff-line]")].map((l) => l.getAttribute("data-diff-line"));
     expect(lines).toEqual(["same", "del", "add", "add"]);

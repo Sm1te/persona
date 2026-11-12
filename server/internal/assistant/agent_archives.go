@@ -223,10 +223,13 @@ func (svc *Service) archivedSessions(ctx context.Context, machine string, list [
 	return overlayAgentArchives(machine, list, b.records, b.pending, mark), next != nil && saveErr == nil, saveErr
 }
 
-// archivedInventory is machine's whole list with the archive applied (archivedSessions).
+// archivedInventory is machine's whole list with the archive applied (archivedSessions), its children folded under
+// their parents among the rows left listed (foldInventory).
 func (svc *Service) archivedInventory(ctx context.Context, machine string) ([]proto.Session, bool, error) {
 	mark := svc.archiveMark()
-	return svc.archivedSessions(ctx, machine, svc.decoratedUnarchived(machine), mark)
+	list, changed, err := svc.archivedSessions(ctx, machine, svc.decoratedUnarchived(machine), mark)
+	svc.foldInventory(machine, list)
+	return list, changed, err
 }
 
 func overlayAgentArchives(machine string, list []proto.Session, records map[string]agentArchive, pending map[string]bool, mark uint64) []proto.Session {
@@ -239,7 +242,7 @@ func overlayAgentArchives(machine string, list []proto.Session, records map[stri
 			// new work. The durable restore remains pending until its write succeeds.
 			active := rec.active(list[i], mark)
 			list[i].Archived = rec.Archived && !pending[key] && !active
-			list[i].ArchiveChangedAt = rec.ChangedAt
+			list[i].ArchiveChangedAt = archiveChangedAt(rec.ChangedAt)
 		}
 	}
 	keys := make([]string, 0, len(records))
@@ -253,7 +256,7 @@ func overlayAgentArchives(machine string, list []proto.Session, records map[stri
 		rec := records[key]
 		s := rec.Session
 		s.Archived = rec.Archived
-		s.ArchiveChangedAt = rec.ChangedAt
+		s.ArchiveChangedAt = archiveChangedAt(rec.ChangedAt)
 		list = append(list, s)
 	}
 	return list
@@ -447,4 +450,12 @@ func (svc *Service) agentArchiveRoutes() {
 	svc.handle("POST /api/v1/sessions/{mid}/{sid}/unarchive", func(w http.ResponseWriter, r *http.Request) {
 		svc.setAgentSessionArchive(w, r, r.PathValue("mid"), false)
 	})
+}
+
+// archiveChangedAt is a record's change time as a session carries it (proto.Session.ArchiveChangedAt): nil for none.
+func archiveChangedAt(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }

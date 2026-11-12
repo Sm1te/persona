@@ -1,0 +1,5 @@
+{
+  "err_bad_request": "リクエストの形式が正しくありません：ids はモデル ID の配列にしてください",
+  "err_too_many": "一度に調べられるモデル ID は {max} 個までです",
+  "err_id_too_long": "モデル ID は {max} バイトまでです"
+}

@@ -6,6 +6,7 @@ import persona.core.contracts.MachineBrowser
 import persona.core.contracts.api.DoctorReport
 import persona.core.contracts.api.MachineManagement
 import persona.core.contracts.api.UsageAccount
+import persona.core.domain.usage.*
 import persona.core.contracts.api.hubCodedFailure
 import persona.core.designsystem.UiText
 import persona.core.designsystem.failureReasonText

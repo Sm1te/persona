@@ -93,7 +93,7 @@ class SecretRunCardTest {
         assertEquals(Resolution(allow = true), AnswerBuilder.build(bash, AnswerAction.Allow).resolution)
         assertFalse(AnswerBuilder.build(bash, AnswerAction.Allow, AnswerDraft(password = typed)).allowed)
         assertFalse(AnswerBuilder.build(bash, AnswerAction.Deny, AnswerDraft(password = typed)).allowed)
-        // Another card with a password field still has no form here (#4987).
+        // Another card with a password field takes it in its fields form's values, not as a password card's (#4641).
         val mail = card("""{"account":"me@example.com"}""", tool = "mail_add")
         assertFalse(AnswerBuilder.build(mail, AnswerAction.Allow, AnswerDraft(password = typed)).allowed)
     }

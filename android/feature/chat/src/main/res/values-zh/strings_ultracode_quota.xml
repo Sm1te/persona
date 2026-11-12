@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ultracode's quota line (#582, iOS Ultracode.quotaLine): the account, then its windows -->
+    <string name="chat_ultracode_quota">%1$s 额度：%2$s</string>
+    <string name="chat_ultracode_quota_5h">5 小时 %1$s</string>
+    <string name="chat_ultracode_quota_week">每周 %1$s</string>
+    <string name="chat_ultracode_quota_age">已过期 · %1$s</string>
+    <string name="chat_ultracode_quota_warning">额度快用完了，开着 ultracode 会用得更快</string>
+    <!-- ultracode in the session info card (iOS Ultracode.stateWord); unknown is chat_modes_unknown -->
+    <string name="chat_ultracode_info_on">开</string>
+    <string name="chat_ultracode_info_off">关</string>
+</resources>

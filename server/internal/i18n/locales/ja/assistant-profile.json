@@ -1,7 +1,10 @@
 {
   "launcher_agent": "{launcher}は{agent}を起動します。アシスタントに使えるのは、Claude Code、Codex、またはアシスタントとして動作できるランタイムを起動するランチャーだけです。",
-  "manager_required": "既定の権限モードを変更する前に、対象のアシスタントを選んでください。",
+  "manager_required": "設定を変更する前に、対象のアシスタントを選んでください。",
   "other_manager": "別のアシスタントが指定されています。対象の設定を読み直してから再試行してください。",
   "manager_conflict": "ヘッダーとURLが異なるアシスタントを指定しています。同じ対象を指定してください。",
+  "agent_names_unavailable": "保存したAgent名を読み込めませんでした。名前は変更されていません。再試行してください。",
+  "bad_agent_naming_max": "名前の変更回数は1〜1000の整数で指定してください。",
+  "bad_agent_naming_interval": "更新間隔は1〜8760の整数時間で指定するか、定期更新をオフにしてください。",
   "bad_minutes_days": "minutes_daysは0（無期限）または1〜3650の整数日数で指定してください。"
 }

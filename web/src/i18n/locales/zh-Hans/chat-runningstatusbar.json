@@ -7,5 +7,6 @@
   "background_workflow": "后台 workflow",
   "tokens_per_second": "{n} tok/s",
   "more_workflows_other": "还有 {count} 个",
-  "more_waits_other": "还有 {count} 个"
+  "more_waits_other": "还有 {count} 个",
+  "background_subtasks": "后台子任务运行中，模型用量仍在消耗…"
 }

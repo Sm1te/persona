@@ -1,8 +1,9 @@
 {
   "kind_api": "直接API",
   "kind_launcher": "Claude Codeランチャー",
-  "name_invalid": "名前には英字、数字、_、-のみ使えます。先頭は英字か_にしてください",
+  "name_invalid": "起動IDには英字、数字、_、-のみ使えます。先頭は英字か_にしてください",
   "name_reserved": "{name}という名前は使えません",
+  "display_name_invalid": "表示名は改行なしの64文字以内にしてください",
   "purpose_assistant": "メインの会話",
   "purpose_agent_new": "新しい Agent",
   "assigned": "{purposes}で使います。",

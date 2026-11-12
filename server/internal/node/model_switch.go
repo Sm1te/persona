@@ -120,6 +120,9 @@ func (n *Node) setModel(ctx context.Context, id, model string) error {
 	if n.externalCodex(id) || n.codexPath(id) != "" || n.traexPath(id) != "" {
 		return fmt.Errorf("Codex / TRAEX 的会话不支持在手机上切换模型")
 	}
+	if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+		return err
+	}
 	// One at a time with the messages: a send in flight is typing into the same box.
 	defer n.typing.lock(id)()
 	pane, err := n.paneFor(ctx, id)

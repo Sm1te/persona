@@ -44,10 +44,13 @@ nonisolated struct SpaceGroup: Identifiable, Sendable {
     /// Nothing going on: every agent quiet and none waiting on a /loop or background work.
     var isQuiet: Bool { sessions.allSatisfy { $0.isQuiet && !$0.isWaiting } }
 
-    /// Its agents in a state as counted (`Session.countedState`: Waiting in the Background is not Working).
-    func count(_ s: AgentState) -> Int { bounded ? aggregate?.state[s.rawValue] ?? 0 : sessions.filter { $0.countedState == s }.count }
+    /// Its agents in a state as counted (`Session.countedState`: Waiting in the Background is not Working). A subtask that
+    /// is a row only because its parent is not drawn is not counted, as on Android and the hub (`Session.isNestedSubtask`).
+    func count(_ s: AgentState) -> Int {
+        bounded ? aggregate?.state[s.rawValue] ?? 0 : sessions.filter { $0.countedState == s && !$0.isNestedSubtask }.count
+    }
     /// Its agents that only wait in the background (#6045): counted apart, with a clock (`StateCounts`).
-    var waitingInBackground: Int { sessions.filter(\.waitsInBackground).count }
+    var waitingInBackground: Int { sessions.filter { $0.waitsInBackground && !$0.isNestedSubtask }.count }
 
     static func build(_ sessions: [Session]) -> [SpaceGroup] {
         var groups: [String: SpaceGroup] = [:]
@@ -410,6 +413,10 @@ struct ChatsView: View {
                     #if DEBUG
                     // `-openMachinePage <machine id>` (with `-tab dev`): that machine's projects.
                     if path.isEmpty, let m = UserDefaults.standard.string(forKey: "openMachinePage") { openFromList(MachineRoute(id: m)) }
+                    // `-openTerminalsPage all|<machine path>` (with `-tab dev`): Terminals (#4754), every computer's or one's.
+                    if path.isEmpty, let m = UserDefaults.standard.string(forKey: "openTerminalsPage") {
+                        openFromList(TerminalsRoute(machine: m == "all" ? nil : m))
+                    }
                     // `-openMonitor all|<machine id>` (with `-tab dev`): Machines, or one machine's page.
                     if path.isEmpty, let m = UserDefaults.standard.string(forKey: "openMonitor") {
                         if m == "all" { openFromList(MachineListRoute()) } else { openFromList(MachineDetailRoute(id: m)) }
@@ -667,7 +674,7 @@ private struct AgentsList: View {
     @State private var kept = Set<SessionKey>()
     @State private var expandedQuiet = Set<String>()
     @State private var expandedIdle = Set<String>()
-    /// The Codex chats whose Subtasks are open (`CodexTasks`), and, searching, those whose found subagents were folded.
+    /// The agents whose Subtasks are open (`CodexTasks`), and, searching, those whose found subtasks were folded.
     @State private var expandedTasks = Set<SessionKey>()
     @State private var foldedFound = Set<SessionKey>()
     #if os(macOS)
@@ -867,7 +874,7 @@ private struct AgentsList: View {
         let waiting = AgentsNeedsYou.rows(
             cards: AgentsNeedsYou.cards(feed.following ? feed.interactions : model.pendingInteractions, session: session,
                                         machine: machineFilter, hub: model.isMultiHub ? hubFilter : nil),
-            waiting: AgentsNeedsYou.waiting(base + projection.admittedTasks)) // a subagent waiting for you too (`CodexTasks`)
+            waiting: AgentsNeedsYou.waiting(base)) // a subtask waiting for you is a row of its own (`CodexTasks`)
         let _ = (lookup.needsYou = waiting.count)
         let needsYou = quick == .all || quick == .needsYou ? waiting : []
         let interactions = needsYou.flatMap(\.cards)
@@ -886,7 +893,8 @@ private struct AgentsList: View {
         let _ = menuActions.update(sections: sectionsForMenu,
                                    foldAll: { setFolded(folding($0, true, in: folded)); expandedQuiet = [] },
                                    unfoldAll: { setFolded(Set(Self.foldedByDefault.union(Self.foldedByChoice).map { "!" + $0 })) },
-                                   onMachines: { openFromList(MachineListRoute()) })
+                                   onMachines: { openFromList(MachineListRoute()) },
+                                   onTerminals: { openFromList(TerminalsRoute()) })
         #if os(macOS)
         let _ = macRows.update(rowsInOrder(unpinned: unpinned, pinned: pinnedAgents, active: active, quiet: quiet, tree: tree, byHost: byHost))
         #endif
@@ -2246,6 +2254,8 @@ private struct AgentsList: View {
         ForEach(buckets, id: \.key) { b in
             let rows = ordered(b.rows)
             let id = "state/" + b.key
+            // As the quick filters count: not a subtask that is a row only because its parent is not drawn.
+            let counted = rows.filter { !$0.isNestedSubtask }.count
             if !rows.isEmpty {
                 listSection {
                     if isFolded(id) {
@@ -2256,8 +2266,8 @@ private struct AgentsList: View {
                         cappedRows(rows, key: id) { s in slotRow(s, context: true, inStateSection: b.key != "muted") }
                     }
                 } header: {
-                    FoldButton(title: b.title, folded: isFolded(id), detail: String(localized: "\(stateSectionCount(b.key, loaded: rows.count)) [Chats View cb60bd]")) { toggleFold(id) } label: {
-                        SectionHeader(title: b.title, count: stateSectionCount(b.key, loaded: rows.count), tone: b.tint,
+                    FoldButton(title: b.title, folded: isFolded(id), detail: String(localized: "\(stateSectionCount(b.key, loaded: counted)) [Chats View cb60bd]")) { toggleFold(id) } label: {
+                        SectionHeader(title: b.title, count: stateSectionCount(b.key, loaded: counted), tone: b.tint,
                                       symbol: b.key == "background" ? Theme.Icon.backgroundWaiting : nil)
                     }
                     .modifier(FoldAnchor(id: id, reader: feed.reader))
@@ -2671,9 +2681,9 @@ private struct AgentsList: View {
     /// `cardLast`: a row of a quiet space's card (`quietSpaceCard`), and whether it ends the card.
     /// `depth`: levels in, under a working tree's row (By Repository).
     /// `pane`, `branch`: an agent of a tab with several, and one hanging off its starter (a level further in).
-    /// An agent's row, and a Codex chat's Subtasks under it (`CodexTasks`), as the Codex App and Android show them: the
-    /// list's rows and counts are the chats' (`AgentListProjection.tasks`). In a quiet space's card the chat's subagents
-    /// end the card, not the chat.
+    /// An agent's row, and its Subtasks under it (`CodexTasks`: a Codex chat's subagents, the agents a runtime's agent
+    /// created), as the Codex App and Android show them: the list's rows and counts are the others'
+    /// (`AgentListProjection.tasks`). In a quiet space's card the subtasks end the card, not the agent.
     @ViewBuilder private func slotRow(_ s: Session, context: Bool = false, inStateSection: Bool = false, cardLast: Bool? = nil,
                                       showHost: Bool = false, depth: Int = 0, pane: TabPanes.Role? = nil, branch: Bool = false) -> some View {
         let tasks = lookup.projection?.tasks[s.key] ?? []
@@ -4432,6 +4442,7 @@ private struct AgentsDestinations: ViewModifier {
             .navigationDestination(for: SpaceRoute.self) { r in SpaceView(spaceKey: r.id).splitDetailPage() }
             .navigationDestination(for: MachineRoute.self) { r in MachineSpacesView(ref: r.ref).splitDetailPage() }
             .navigationDestination(for: MachineListRoute.self) { _ in MachinesView().splitDetailPage() }
+            .navigationDestination(for: TerminalsRoute.self) { r in TerminalsView(only: r.machine).splitDetailPage() }
             .navigationDestination(for: MachineDetailRoute.self) { r in MachineDetailView(ref: r.ref).splitDetailPage() }
             .navigationDestination(for: PersonalAgentsRoute.self) { _ in PersonalAgentListView().splitDetailPage() }
             .navigationDestination(for: PersonalAgentSession.self) { s in PersonalAgentSessionView(session: s).id(s.id).splitDetailPage() }

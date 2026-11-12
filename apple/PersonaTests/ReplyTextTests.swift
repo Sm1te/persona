@@ -207,6 +207,19 @@ struct ReplyTextTests {
         #expect(shown(text) != text) // as a reply it would lose marks
     }
 
+    /// Sizes in em are whole points, as MarkdownUI draws them (`round(size × scale)`, #3188): inline code at 17 is 15,
+    /// the first heading 22, an agent's quiet words 15.
+    @Test func emSizesAreWholePointsAsTheChatDraws() {
+        #expect(ReplyMetrics.points(ReplyMetrics.inlineCode, of: 17) == 15)
+        #expect(ReplyMetrics.points(ReplyMetrics.heading1.size, of: 17) == 22)
+        let s = reply("以 `cb3b` 开头\n\n# 标题")
+        let code = (s.string as NSString).range(of: "cb3b").location, title = (s.string as NSString).range(of: "标题").location
+        #expect((s.attribute(.font, at: code, effectiveRange: nil) as? UIFont)?.pointSize == ReplyMetrics.points(ReplyMetrics.inlineCode, of: look.size))
+        #expect((s.attribute(.font, at: title, effectiveRange: nil) as? UIFont)?.pointSize == ReplyMetrics.points(ReplyMetrics.heading1.size, of: look.size))
+        let quiet = ReplyText.Look(.reply(quiet: true), traits: UITraitCollection(preferredContentSizeCategory: .large))
+        #expect(quiet.size == ReplyMetrics.points(ReplyMetrics.quiet, of: look.size))
+    }
+
     /// The fonts follow the text size.
     @Test func fontsFollowTheTextSize() {
         func size(_ s: NSAttributedString, _ at: Int) -> CGFloat { (s.attribute(.font, at: at, effectiveRange: nil) as? UIFont)?.pointSize ?? 0 }

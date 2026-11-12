@@ -103,6 +103,7 @@ func (n *Node) subagents(parent string) []proto.Subagent {
 			ID: id, SessionID: parent + subagentSep + id, Type: m.AgentType, Description: m.Description,
 			ToolUseID: m.ToolUseID, ParentID: m.ParentID, Fork: m.Fork, Running: running, Background: m.RequestShape == "background",
 			StartedAt: edges.started, UpdatedAt: updated, LastText: edges.last, Steps: edges.calls, LastTool: edges.latestTool,
+			Model: edges.model, Tokens: edges.tokens,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -158,8 +159,8 @@ func subagentMetaCached(path string) (subagentMeta, bool) {
 // every second for every live session's subagents of the last day and every workflow run's agents: a file is read
 // whole once, then only for the lines it gained. Its tool calls (a subagent's steps, a workflow agent's calls) are
 // counted over every line, but only the replies with a tool call are parsed, and only for their blocks' types and ids;
-// the few lines with the latest call, words and exchange are read again by offset, a workflow agent's latest usage and
-// model from its end back. Bounded like metaCache, the least recently asked for forgotten first.
+// the few lines with the latest call, words and exchange are read again by offset, the latest usage and model from
+// the end of the lines gained back. Bounded like metaCache, the least recently asked for forgotten first.
 var edgeCache = struct {
 	sync.Mutex
 	m *lru[string, *edgeEntry]
@@ -179,13 +180,12 @@ type edgeMemo struct {
 	info   os.FileInfo
 	off    int64               // where the complete lines read so far end
 	head   []byte              // detects a rewrite even if the new file is larger
-	full   bool                // read for a workflow agent: all of subagentEdge
 	tools  map[uint64]struct{} // the tool_use ids counted, hashed (toolSeed)
 	edges  subagentEdge
 }
 
-// subagentEdge is what the lists show of a subagent transcript: a subagent's all but its model and tokens (subagents:
-// its steps are calls, its updated_at lastAt, its last tool latestTool, #5602), a workflow agent's all of it (full).
+// subagentEdge is what the lists show of a subagent transcript, a subagent's (subagents: its steps are calls, its
+// updated_at lastAt, its last tool latestTool, #5602; its model and tokens, #5030) and a workflow agent's alike.
 type subagentEdge struct {
 	started, lastAt time.Time
 	last, model     string
@@ -196,9 +196,10 @@ type subagentEdge struct {
 // toolSeed hashes the tool_use ids an agent's calls are told apart by.
 var toolSeed = maphash.MakeSeed()
 
-// subagentEdgesCached is path's metadata; full for a workflow agent. A growing subagent's is re-read at most every
-// metaMinInterval; a workflow agent's whenever it changed (the workflow cache paces those, workflowReadInterval).
-func subagentEdgesCached(path string, st os.FileInfo, full bool) subagentEdge {
+// subagentEdgesCached is path's metadata, a subagent's and a workflow agent's alike; they differ only in pacing. A
+// growing subagent's is re-read at most every metaMinInterval; with everyChange (a workflow agent's) whenever it changed
+// (the workflow cache paces those, workflowReadInterval). Either way only the lines gained since the last read are read.
+func subagentEdgesCached(path string, st os.FileInfo, everyChange bool) subagentEdge {
 	edgeCache.Lock()
 	ent, ok := edgeCache.m.get(path)
 	if !ok {
@@ -209,7 +210,7 @@ func subagentEdgesCached(path string, st os.FileInfo, full bool) subagentEdge {
 	ent.mu.Lock()
 	defer ent.mu.Unlock()
 	e := &ent.edgeMemo
-	if e.current(st, full) {
+	if e.current(st, everyChange) {
 		return e.edges
 	}
 	readAt := time.Now()
@@ -221,14 +222,14 @@ func subagentEdgesCached(path string, st os.FileInfo, full bool) subagentEdge {
 	if now, err := f.Stat(); err == nil {
 		st = now // another request may have read a later state of the file while this one waited
 	}
-	if e.current(st, full) {
+	if e.current(st, everyChange) {
 		return e.edges
 	}
 	var buf [256]byte
 	n, _ := f.ReadAt(buf[:min(st.Size(), int64(len(buf)))], 0)
 	head := buf[:n]
-	if e.info == nil || full && !e.full || !os.SameFile(e.info, st) || st.Size() <= e.size || !bytes.HasPrefix(head, e.head) {
-		*e = edgeMemo{full: full}
+	if e.info == nil || !os.SameFile(e.info, st) || st.Size() <= e.size || !bytes.HasPrefix(head, e.head) {
+		*e = edgeMemo{}
 	}
 	e.read(f, st.Size())
 	// Only remember already consumed bytes: a partial first line can still be changing in place.
@@ -237,16 +238,16 @@ func subagentEdgesCached(path string, st os.FileInfo, full bool) subagentEdge {
 	return e.edges
 }
 
-// current says whether e is what a request for full (or not) metadata of the file as st has it gets.
-func (e *edgeMemo) current(st os.FileInfo, full bool) bool {
-	return e.info != nil && (e.full || !full) &&
-		(e.size == st.Size() && e.mtime.Equal(st.ModTime()) || !full && time.Since(e.readAt) < metaMinInterval)
+// current says whether e is what a request for the file as st has it gets: the file is as e read it, or, for a
+// paced request (not everyChange), e was read less than metaMinInterval ago.
+func (e *edgeMemo) current(st os.FileInfo, everyChange bool) bool {
+	return e.info != nil && (e.size == st.Size() && e.mtime.Equal(st.ModTime()) || !everyChange && time.Since(e.readAt) < metaMinInterval)
 }
 
 // read reads the complete lines the file gained past e.off, up to size, forward: all of them the first time, as tool
 // calls need them all. Only the assistant lines with a tool call are parsed, for the calls' ids; the latest tool call,
-// words and exchange are read again at the end, and a workflow agent's (full) latest usage and model from the last
-// replies back. What is not found among them stays as it was: it is still the latest.
+// words and exchange are read again at the end, and the latest usage and model from the last replies back, only as
+// far as the lines gained. What is not found among them stays as it was: it is still the latest.
 func (e *edgeMemo) read(f *os.File, size int64) {
 	lo := e.off
 	var refs edgeRefs
@@ -282,7 +283,7 @@ func (e *edgeMemo) read(f *os.File, size int64) {
 			eachLineBack(f, lo, refs.exchange.at, usageMaxLine, func(line []byte) bool { return !e.exchangeTime(line) })
 		}
 	}
-	if e.full && refs.reply {
+	if refs.reply {
 		var gotTokens, gotModel bool
 		eachLineBack(f, lo, hi, usageMaxLine, func(line []byte) bool {
 			var row edgeRow

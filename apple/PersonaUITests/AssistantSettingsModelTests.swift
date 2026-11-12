@@ -73,15 +73,40 @@ final class AssistantSettingsModelTests: XCTestCase {
         try setQuiet(true)
     }
 
-    private func hubQuiet() throws -> Bool? {
-        let data = try Data(contentsOf: URL(string: hub + "/api/v1/assistant")!)
-        return (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["main_tasks_quiet"] as? Bool
+    /// Settings › Assistant › Main Chat Supervises Its Own Tasks (#5083): off on a hub with the background supervisor, and
+    /// turning it on is sent to the hub.
+    @MainActor func testMainSupervisesOwnTasksSwitch() throws {
+        let key = "main_supervises_own_tasks"
+        try setFlag(key, false)
+        let app = launch(["-openAssistantPage", "assistant"])
+        let toggle = app.switches["assistant-main-supervises-own-tasks"].firstMatch
+        XCTAssertTrue(app.staticTexts["定时任务"].firstMatch.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertTrue(app.staticTexts["主对话自己督办它派出的任务"].firstMatch.exists)
+        shot(app, "assistant-main-supervises-own-tasks-off")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() // the switch, not the label
+        let on = expectation(for: NSPredicate { _, _ in (try? self.hubFlag(key)) == true }, evaluatedWith: nil)
+        wait(for: [on], timeout: 10)
+        XCTAssertEqual(toggle.value as? String, "1")
+        shot(app, "assistant-main-supervises-own-tasks-on")
+        try setFlag(key, false)
     }
 
-    private func setQuiet(_ on: Bool) throws {
+    private func hubQuiet() throws -> Bool? { try hubFlag("main_tasks_quiet") }
+
+    private func setQuiet(_ on: Bool) throws { try setFlag("main_tasks_quiet", on) }
+
+    private func hubFlag(_ key: String) throws -> Bool? {
+        let data = try Data(contentsOf: URL(string: hub + "/api/v1/assistant")!)
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any])?[key] as? Bool
+    }
+
+    private func setFlag(_ key: String, _ on: Bool) throws {
         var req = URLRequest(url: URL(string: hub + "/api/v1/assistant")!)
         req.httpMethod = "PUT"
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["main_tasks_quiet": on])
+        req.httpBody = try JSONSerialization.data(withJSONObject: [key: on])
         let done = expectation(description: "PUT")
         URLSession.shared.dataTask(with: req) { _, _, _ in done.fulfill() }.resume()
         wait(for: [done], timeout: 5)

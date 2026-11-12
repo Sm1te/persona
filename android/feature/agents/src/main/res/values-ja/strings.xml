@@ -90,7 +90,7 @@
     <string name="agents_new_session_unavailable">セッションの作成はまだこのアプリに接続されていません。</string>
     <string name="agents_close">閉じる</string>
     <string name="agents_approve_blocked">このセッションはスマートフォンから承認できません。セッションを開くか、コンピューターで対応してください。</string>
-    <string name="agents_request_fields_elsewhere">このリクエストは許可する前に入力が必要です。Web または iPhone で許可してください。ここでは拒否のみできます。</string>
+    <string name="agents_request_fields_elsewhere">このリクエストは許可する前に入力が必要です。会話を開いて入力してください。ここでは拒否のみできます。</string>
     <string name="agents_connection_certificate_text">ハブの証明書がペアリング時と異なるため、自動では再接続しません。ご自身で証明書を変更した場合は、もう一度コードをスキャンしてペアリングしてください。</string>
     <string name="agents_connection_revoked_text">ペアリングが無効になりました。もう一度コードをスキャンしてペアリングしてください。</string>
     <string name="agents_connection_local_network_text">ローカルネットワークへのアクセスが必要です。許可してから接続してください。</string>

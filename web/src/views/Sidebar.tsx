@@ -20,6 +20,8 @@ import { cardState } from "../lib/card-focus";
 import { agentKey, isSpacePinned, pinnedSessions } from "../lib/pins";
 import { firstAndCurrent } from "../lib/persona-nav";
 import { recentConversations } from "../lib/conversation-origins";
+import { isBackgroundSupervisor } from "../lib/background-supervisor";
+import { setRecentMore, useRecentCount, useRecentMore } from "../lib/sidebar-recent";
 import { countsLabel, directionLabel, totalCounts, useDirectionNames, useLeaderCounts } from "../lib/direction-names";
 import { groupsByDirection, useDirectionTree } from "../lib/direction-tree";
 import { buildDirectionAgentTree } from "../lib/direction-agent-tree";
@@ -254,6 +256,9 @@ function GlideHighlight({ box }: { box: ReturnType<typeof glideStore> }) {
   return <span aria-hidden data-glide className="pointer-events-none absolute inset-x-2.5 rounded-[7px] bg-hover" style={glideStyle(at, on, EASE)} />;
 }
 
+/** Recent's Show more / Show less, as the Agents block's Recent (not running) draws its own. */
+const MORE_BUTTON = "whitespace-nowrap rounded-[7px] px-2 py-1 text-left text-[12px] text-ink-3 hover:text-ink-2 [@media(pointer:coarse)]:min-h-11";
+
 export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActions }: { route: Route; onSearch: () => void; onNewAgent: () => void; onNavigate?: () => void; workspaceActions?: WorkspaceTreeActions }) {
   const bindings = useBindings();
   const searchHint = jumpHint(bindings);
@@ -265,12 +270,18 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
   const workBrowserReady = useStore((s) => s.features.includes("sessions_dimensions"));
   // Persona chats are the main conversation (its row above) and the leaders, "常驻" (#4331): making a chat one and ending
   // it is the menu's 设为常驻 / 取消常驻, on the hub for every device. Each says what it has open, Working and Waiting on
-  // you, and an open sidebar follows the hub's `directions` (lib/store.ts). Then "最近", the newest five of the user's
-  // other chats (#4873); every other chat is under 全部对话.
-  const leaders = (assistant?.leaders ?? []).filter((id) => id !== assistant?.main);
+  // you, and an open sidebar follows the hub's `directions` (lib/store.ts). Then "最近", the newest of the user's other
+  // chats (#4873): as many as the setting says, more after each Show more (#5146); every chat is under 全部对话.
+  // The background supervisor is neither: it is built in, listed with the scheduled tasks' chats under 全部对话 (#5082).
+  const leaders = (assistant?.leaders ?? []).filter((id) => id !== assistant?.main && !isBackgroundSupervisor(assistant, id));
   const isLeader = (id: string) => leaders.includes(id);
   const directions = leaders.map((id) => assistant?.conversations.find((c) => c.session_id === id)).filter((c): c is Session => !!c);
-  const recent = recentConversations(assistant?.conversations ?? [], assistant?.main, leaders);
+  const recentCount = useRecentCount();
+  const recentMore = useRecentMore();
+  const ownChats = recentConversations(assistant?.conversations ?? [], assistant?.main, leaders, assistant?.background_supervisor);
+  const recent = ownChats.slice(0, recentCount * (1 + recentMore));
+  const recentLeft = ownChats.length - recent.length;
+  const recentLess = recentMore > 0 && ownChats.length > recentCount;
   const directionNames = useDirectionNames(directions.map((c) => `${c.session_id}\u0000${c.title ?? ""}`).join("\u0001"));
   const counts = useLeaderCounts();
   const leaderTotal = totalCounts(counts, leaders);
@@ -350,6 +361,20 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
             {directions.map((c) => <SidebarDirectionRow key={c.session_id} id={c.session_id} name={directionLabel(directionNames, c.session_id, conversationTitle(c))} row={directionRow(c)} reg={reg} hover={hover} go={go} onNavigate={onNavigate} />)}
             {recent.length > 0 && <SubHeading label={t("sidebar.recent_chats")} />}
             {recent.map(recentRow)}
+            {(recentLeft > 0 || recentLess) && (
+              <div className="relative z-10 flex flex-wrap">
+                {recentLeft > 0 && (
+                  <button type="button" onClick={() => setRecentMore(recentMore + 1)} className={MORE_BUTTON}>
+                    {t("sidebar.show_more", { count: Math.min(recentCount, recentLeft) })}
+                  </button>
+                )}
+                {recentLess && (
+                  <button type="button" onClick={() => setRecentMore(0)} className={MORE_BUTTON}>
+                    {t("sidebar.show_less")}
+                  </button>
+                )}
+              </div>
+            )}
             {assistant && <NavRow k="history" reg={reg} hover={hover} active={activeKey === "history"} to={{ name: "history" }} go={go} icon="list" label={t("sidebar.all_chats")} hint={assistant.conversations.length > 0 ? String(assistant.conversations.length) : undefined} />}
           </Section>
         )}
@@ -359,7 +384,7 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
         {workBrowserReady ? <PendingAgents route={route} reg={reg} hover={hover} go={go} onNewAgent={onNewAgent} onNavigate={onNavigate} />
           : !(narrow && route.name === "agent-list") && <AgentsBlock reg={reg} hover={hover} activeKey={activeKey} go={go} onNewAgent={onNewAgent} onNavigate={onNavigate} workspaceActions={workspaceActions} foldable />}
       </div>
-      {convMenu && <ConversationRowMenu s={convMenu.s} main={convMenu.s.session_id === assistant?.main} leader={isLeader(convMenu.s.session_id)} anchor={convMenu.anchor} at={convMenu.at} onClose={() => setConvMenu(null)} />}
+      {convMenu && <ConversationRowMenu s={convMenu.s} main={convMenu.s.session_id === assistant?.main} leader={isLeader(convMenu.s.session_id)} builtIn={isBackgroundSupervisor(assistant, convMenu.s.session_id)} anchor={convMenu.anchor} at={convMenu.at} onClose={() => setConvMenu(null)} />}
       {/* subscription rate-limit windows (#2432): nothing is drawn without data */}
       <SidebarUsage />
       <NodePrompt />

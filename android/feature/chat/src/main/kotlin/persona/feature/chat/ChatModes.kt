@@ -159,6 +159,8 @@ internal object Ultracode {
     const val FEATURE = "ultracode"
     /** A proper name, never translated (docs/protocol/i18n.md). */
     const val NAME = "ultracode"
+    /** The Codex effort that does the same thing: its option carries the same mark. */
+    const val CODEX_ULTRA = "ultra"
 
     /** The chat offers it: the hub has it, a Claude Code agent of the user's (not a Persona conversation, no read-only source) that runs and takes messages. */
     fun offered(session: Session?, features: Set<String>): Boolean =
@@ -167,6 +169,20 @@ internal object Ultracode {
     /** The after-resume notice is up (iOS `lostShown`): it was on before the agent resumed and nothing turned it back on. */
     fun lostShown(session: Session?, features: Set<String>): Boolean =
         offered(session, features) && session?.ultracodeLostAt != null && session.ultracode != true
+
+    /**
+     * The info card's row (iOS `infoShown`): a Claude Code agent of the user's on a hub that has the switch, not offline
+     * (the node keeps the last value it saw, and a resume starts it off).
+     */
+    fun infoShown(session: Session, features: Set<String>): Boolean = FEATURE in features && !session.assistant &&
+        session.isClaude && !session.hasSource && session.agentState != persona.core.contracts.AgentState.Offline
+
+    /** What that row says: on, off, or unknown (no evidence yet, an older node). */
+    fun infoWord(session: Session, resources: Resources): String = resources.getString(when (session.ultracode) {
+        true -> R.string.chat_ultracode_info_on
+        false -> R.string.chat_ultracode_info_off
+        null -> R.string.chat_modes_unknown
+    })
 
     /** The node saw it on (unknown is not on) and the process still runs: a resume starts it off. */
     fun on(session: Session): Boolean = session.ultracode == true && !session.assistant && session.isClaude && session.isLive
@@ -185,6 +201,13 @@ internal object Ultracode {
         ask.answered == session && session.ultracode != ask.on && session.ultracodeNote.isNullOrBlank() -> ask.on
         else -> session.ultracode == true
     }
+
+    /**
+     * The quota warning goes with a switch that stands on, or that is off and can simply be turned on (iOS
+     * `quotaWarnShown`): not under the node's reason, not while a change waits, not while it can't be changed.
+     */
+    fun quotaWarnShown(session: Session, ask: Ask?, enabled: Boolean): Boolean =
+        shownOn(session, ask) || (enabled && !session.ultracodePending && session.ultracodeNote.isNullOrBlank())
 
     /** An ask that no longer says anything: the session moved past it. */
     fun spent(session: Session, ask: Ask): Boolean = !ask.sending && !session.ultracodePending && ask.answered != session
@@ -289,13 +312,23 @@ internal fun ChatModeBar(
                 JSectionHeader(stringResource(R.string.chat_modes_section_effort))
                 SessionModes.effortOptions(session).forEach { option ->
                     JRow(option.title(resources), subtitle = option.detail(resources), trailing = { JRadio(option.id == session.effort, null) }, enabled = editable,
-                        onClick = { open = false; if (option.id != session.effort) state.run(session, ChatAction.Modes(effort = option.id)) })
+                        onClick = { open = false; if (option.id != session.effort) state.run(session, ChatAction.Modes(effort = option.id)) },
+                        // Codex's "ultra" does what ultracode does (several subagents, a lot of quota): the same mark (#582, iOS `Ultracode.Mark.codexUltra`)
+                        titleAccessory = if (effortOnly && option.id == Ultracode.CODEX_ULTRA) {
+                            { JIcon(WorkflowIcon, null, size = Tokens.Space.m, tint = PersonaTheme.palette.ai) }
+                        } else null)
                 }
                 // Applies at once, its own request (never with the effort); the sheet stays open to show what the node says.
-                if (ultracodeOffered) UltracodeSwitchRow(session, ultracodeAsk, editable) { on ->
-                    ultracodeAsk = Ultracode.Ask(on)
-                    state.run(session, ChatAction.Modes(ultracode = on)) { ok ->
-                        ultracodeAsk = if (ok) Ultracode.Ask(on, sending = false, answered = latest) else null
+                if (ultracodeOffered) {
+                    UltracodeSwitchRow(session, ultracodeAsk, editable) { on ->
+                        ultracodeAsk = Ultracode.Ask(on)
+                        state.run(session, ChatAction.Modes(ultracode = on)) { ok ->
+                            ultracodeAsk = if (ok) Ultracode.Ask(on, sending = false, answered = latest) else null
+                        }
+                    }
+                    rememberUltracodeQuota(LocalUsageRead.current, session.key)?.let { quota ->
+                        UltracodeQuotaLines(quota, Ultracode.quotaWarnShown(session, ultracodeAsk, editable),
+                            Modifier.padding(start = rowTitleStart, end = rowPadding))
                     }
                 }
                 // /model types into Claude's pane: Claude in a terminal engine only (Codex and compatible variants pick in a menu the phone can't drive).

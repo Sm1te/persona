@@ -1,0 +1,11 @@
+🔔 你 11-08 15:04 用 ask_user 问过用户（wait: false，当时没有等回答）：
+- Merge the release PR now?
+- Tag it?
+
+用户在卡片上回答了：
+- Merge the release PR now? → Merge
+- Tag it? → No
+
+照用户的回答接着做，做了什么、还要用户做什么，简短告诉用户。
+
+（这是 Persona 的通知，不是用户在这里发的消息。）

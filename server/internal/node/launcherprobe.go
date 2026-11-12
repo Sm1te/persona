@@ -96,6 +96,8 @@ type Probe struct {
 	// Shell is the shell's environment before the launcher ran (what ~/.zshrc exports for everything); nil when it
 	// was not seen (a wrapper script read from its text).
 	Shell map[string]string
+	// Unset are the variables of Shell the agent did not get (`env -u NAME`, `unset NAME` in the launcher), sorted.
+	Unset []string
 }
 
 func parseProbe(out string) (Probe, bool) {
@@ -110,6 +112,7 @@ func parseProbe(out string) (Probe, bool) {
 			}
 		}
 	}
+	envSeen := false
 	sc := bufio.NewScanner(strings.NewReader(out))
 	sc.Buffer(make([]byte, 1<<20), 8<<20)
 	for sc.Scan() {
@@ -127,9 +130,18 @@ func parseProbe(out string) (Probe, bool) {
 			pairs(strings.TrimPrefix(rest, "base "), base)
 		case strings.HasPrefix(rest, "env "):
 			pairs(strings.TrimPrefix(rest, "env "), p.Env)
+			envSeen = true
 		case strings.HasPrefix(rest, "file "):
 			p.File = strings.TrimPrefix(rest, "file ")
 		}
+	}
+	if envSeen {
+		for k := range base {
+			if _, ok := p.Env[k]; !ok {
+				p.Unset = append(p.Unset, k)
+			}
+		}
+		sort.Strings(p.Unset)
 	}
 	for k, v := range p.Env {
 		if old, ok := base[k]; ok && old == v {

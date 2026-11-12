@@ -1,7 +1,8 @@
 // What keeps an agent going, beside the chat's title (iOS ActivityChips / ActivitySheet): a /loop (its next wakeup, a
 // way to stop it) and the background tasks (their output). Subagents are cards in the chat where they were launched
-// (SubagentCard.tsx).
-import { useState } from "react";
+// (SubagentCard.tsx); a workflow run's card there opens this dialog at its run (lib/background-dialog.ts).
+import { useEffect, useRef, useState } from "react";
+import { listenBackgroundDialog } from "../../lib/background-dialog";
 import { openPanel } from "../../lib/panel";
 import { t } from "../../i18n";
 import { goalHeadline, goalStatusLabel, goalTone, goalUsage } from "../../lib/goal";
@@ -14,10 +15,16 @@ import { Icon } from "../../ui/icons";
 
 /** "⟳ 11:57" and "Background 2" in the chat's header (on a phone one icon: ⟳, or ⚙ 2); a click opens them. The background
  *  work is a count by a neutral gear (#3956, iOS #3719): whether it works or only waits is the agent's state, which the
- *  title's line says once; a workflow's runs keep their mark.
+ *  title's line says once; a workflow's runs keep their mark. A run's card in the chat opens the dialog too, brought to
+ *  that run and lit a moment (lib/background-dialog.ts).
  *  `onJumpToCall`: a workflow card's "Show in chat" brings the call that launched it into view. */
 export function ActivityChips({ session, onStopLoop, onJumpToCall }: { session: Session; onStopLoop: () => void; onJumpToCall?: (call: string) => void }) {
   const [open, setOpen] = useState(false);
+  // the run a card in the chat opened the dialog at (a new object each time: the same run asked for again lights again),
+  // and the last one lit
+  const [focus, setFocus] = useState<{ run: string } | null>(null);
+  const lit = useRef<{ run: string } | null>(null);
+  const body = useRef<HTMLDivElement>(null);
   const loop = session.loop;
   // Workflow runs have their own cards (WorkflowCard); an older hub lists a run only as a background task (#2935). An
   // ended run keeps the chip for a day after it ended (#3434, the node's workflowKeep): what became of it.
@@ -26,9 +33,29 @@ export function ActivityChips({ session, onStopLoop, onJumpToCall }: { session: 
   const runs = recentWorkflows(session, now);
   const count = backgroundCount(session);
   const hasBg = bg.length > 0 || runs.length > 0;
+  const shown = Boolean(loop) || hasBg;
+  const listed = runs.map((w) => w.task_id).join("\n");
+  const { machine_id: mid, session_id: sid } = session;
+  useEffect(() => {
+    if (!shown) return;
+    return listenBackgroundDialog(mid, sid, listed ? listed.split("\n") : [], (run) => {
+      setOpen(true);
+      if (run) setFocus({ run });
+    });
+  }, [mid, sid, shown, listed]);
+  useEffect(() => {
+    if (!open || !focus || lit.current === focus) return;
+    // the dialog's body is in this commit (Dialog mounts with `open`): bring the run's card into view and light it once
+    const card = [...(body.current?.querySelectorAll<HTMLElement>("[data-workflow-task]") ?? [])].find((el) => el.dataset.workflowTask === focus.run);
+    if (!card) return;
+    lit.current = focus;
+    card.scrollIntoView?.({ block: "nearest" });
+    const base = getComputedStyle(card).backgroundColor;
+    card.animate?.([{ backgroundColor: "var(--accent-tint)" }, { backgroundColor: base }], { duration: 1800, easing: "ease-out" });
+  }, [open, focus]);
   // the chip speaks of workflows (the ai color, their mark) while one runs, or when ended runs are all it has
   const aboutRuns = runs.some((w) => w.running) || (runs.length > 0 && !bg.length);
-  if (!loop && !hasBg) return null;
+  if (!shown) return null;
   const label = loop && count
     ? t("chat-activity.label_loop_and_background", { loop: loopLabel(loop, now), count })
     : loop
@@ -53,7 +80,7 @@ export function ActivityChips({ session, onStopLoop, onJumpToCall }: { session: 
         )}
       </button>
       <Dialog open={open} onClose={() => setOpen(false)} title={loop && !hasBg ? t("chat-activity.title_loop") : !loop ? t("chat-activity.title_background") : t("chat-activity.title_both")} width={520}>
-        <div className="flex flex-col gap-3">
+        <div ref={body} className="flex flex-col gap-3">
           {loop && (
             <LoopCard
               loop={loop}
@@ -70,9 +97,7 @@ export function ActivityChips({ session, onStopLoop, onJumpToCall }: { session: 
                 <WorkflowCard
                   key={w.task_id}
                   run={w}
-                  mid={session.machine_id}
                   scope={`${session.machine_id}/${session.session_id}:`}
-                  onOpen={() => setOpen(false)}
                   onJump={
                     onJumpToCall &&
                     ((call) => {

@@ -370,48 +370,28 @@ func TestTaskPlanKeepsTheExplicitBypassWhateverTheDefaultsSay(t *testing.T) {
 	}
 }
 
-// A plan saved before task_plan required bypassPermissions of a writable task (none, or another mode), or a card edit that
-// took it away, does not get past the rule when it is started: Start refuses it, readably, and starts nothing; an edit
-// that sets bypassPermissions lets it start. A read-only task is not affected.
-func TestStartRefusesASavedWritablePlanWithoutBypass(t *testing.T) {
+// A saved writable plan starts without a permission, with another mode, or with a card edit that took it away: no
+// permission is required. A read-only task still starts in plan mode.
+func TestStartTakesASavedWritablePlanWithoutPermission(t *testing.T) {
 	s, f := newTaskService(t)
 	ctx := context.Background()
-	res, err := s.toolTaskPlan(ctx, "conv1", json.RawMessage(`{"tasks":[{"title":"Fix","permission":"bypassPermissions","prompt":"Fix it","machine":"box","cwd":"/code/app"}]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := s.loadPlan(ctx, regexp.MustCompile(`plan_[0-9a-f]+`).FindString(res))
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, saved := range []string{"", "default", "acceptEdits"} {
+		res, err := s.toolTaskPlan(ctx, "conv1", json.RawMessage(`{"tasks":[{"title":"Fix","permission":"bypassPermissions","prompt":"Fix it","machine":"box","cwd":"/code/app"}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := s.loadPlan(ctx, regexp.MustCompile(`plan_[0-9a-f]+`).FindString(res))
+		if err != nil {
+			t.Fatal(err)
+		}
 		plan.Tasks[0].Permission = saved
 		if err := s.savePlan(ctx, plan); err != nil {
 			t.Fatal(err)
 		}
-		_, err := s.startPlan(ctx, plan.ID, nil, false)
-		var invalid planInvalid
-		if !errors.As(err, &invalid) || !strings.Contains(err.Error(), `permission must be "bypassPermissions"`) || !strings.Contains(err.Error(), "Nothing was started") {
+		want := len(f.starts) + 1
+		if _, err := s.startPlan(ctx, plan.ID, []PlanTask{{Permission: ""}}, false); err != nil {
 			t.Fatalf("saved permission %q: %v", saved, err)
 		}
-		if _, err := s.startPlan(ctx, plan.ID, []PlanTask{{Permission: "acceptEdits"}}, false); !errors.As(err, &invalid) {
-			t.Fatalf("saved permission %q, a card edit to acceptEdits: %v", saved, err)
-		}
-		if left, _ := s.loadPlan(ctx, plan.ID); left.State != planOpen || len(f.starts) != 0 || todoCount(s) != 0 {
-			t.Fatalf("a refused Start changed something: plan %+v, starts %v, todos %d", left, f.starts, todoCount(s))
-		}
-	}
-	if _, err := s.startPlan(ctx, plan.ID, []PlanTask{{Permission: "bypassPermissions"}}, false); err != nil {
-		t.Fatalf("the edit that sets bypassPermissions: %v", err)
-	}
-	waitFor(t, "task started", func() bool {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return len(f.starts) == 1
-	})
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if got := f.starts[0]["permission_mode"]; got != "bypassPermissions" {
-		t.Fatalf("started permission = %v", got)
+		waitFor(t, "the start with permission "+saved, func() bool { return len(f.starts) == want })
 	}
 }

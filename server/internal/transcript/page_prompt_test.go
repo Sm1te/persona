@@ -47,34 +47,47 @@ func TestPagePromptProtectsRealUserProvenance(t *testing.T) {
 
 func TestPageTurnsKeepsUserQuestionsAcrossSupervisionAndCompaction(t *testing.T) {
 	defer func(w int64) { windowBytes = w }(windowBytes)
-	for _, window := range []int64{1 << 20, 8192} {
-		t.Run(fmt.Sprintf("window-%d", window), func(t *testing.T) {
+	var lines strings.Builder
+	longest := 0
+	appendLine := func(v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		longest = max(longest, len(b)+1)
+		lines.Write(b)
+		lines.WriteByte('\n')
+	}
+	message := func(id, role, text string) {
+		appendLine(map[string]any{"type": role, "uuid": id, "message": map[string]any{"role": role, "content": text}})
+	}
+	supervision := prompts.RenderSupervise(prompts.Supervise{Entries: []prompts.SuperviseEntry{{ID: "demo-task", Title: "Verify a test change", Kind: "review"}}})
+	for question := 1; question <= 3; question++ {
+		message(fmt.Sprintf("user-%d", question), "user", fmt.Sprintf("Question %d", question))
+		message(fmt.Sprintf("answer-%d", question), "assistant", "An answer")
+		if question < 3 {
+			appendLine(map[string]any{"type": "system", "uuid": fmt.Sprintf("compact-%d", question), "subtype": "compact_boundary", "compactMetadata": map[string]any{"trigger": "auto", "preTokens": 170000}})
+			appendLine(map[string]any{"type": "user", "uuid": fmt.Sprintf("summary-%d", question), "isCompactSummary": true, "message": map[string]any{"role": "user", "content": "Synthetic continuation summary"}})
+		}
+		for n := 0; n < 6; n++ {
+			message(fmt.Sprintf("supervision-%d-%d", question, n), "user", supervision)
+			message(fmt.Sprintf("review-%d-%d", question, n), "assistant", "Review recorded")
+		}
+	}
+	// The small window follows the fixture, not a fixed size: the supervision prompt grows with its template (#5063
+	// made one longer than a fixed 8 KiB window). Three of the longest lines give a page budget (3 windows) that holds
+	// the six supervision rounds after the last question, and the file stays over two windows, so the read is windowed.
+	small := int64(3 * longest)
+	if size := int64(lines.Len()); size <= 2*small {
+		t.Fatalf("fixture of %d bytes is too short for a windowed read with a %d-byte window", size, small)
+	}
+	for _, tc := range []struct {
+		name   string
+		window int64
+	}{{"full", 1 << 20}, {"windowed", small}} {
+		t.Run(tc.name, func(t *testing.T) {
+			window := tc.window
 			windowBytes = window
-			var lines strings.Builder
-			appendLine := func(v any) {
-				b, err := json.Marshal(v)
-				if err != nil {
-					t.Fatal(err)
-				}
-				lines.Write(b)
-				lines.WriteByte('\n')
-			}
-			message := func(id, role, text string) {
-				appendLine(map[string]any{"type": role, "uuid": id, "message": map[string]any{"role": role, "content": text}})
-			}
-			supervision := prompts.RenderSupervise(prompts.Supervise{Entries: []prompts.SuperviseEntry{{ID: "demo-task", Title: "Verify a test change", Kind: "review"}}})
-			for question := 1; question <= 3; question++ {
-				message(fmt.Sprintf("user-%d", question), "user", fmt.Sprintf("Question %d", question))
-				message(fmt.Sprintf("answer-%d", question), "assistant", "An answer")
-				if question < 3 {
-					appendLine(map[string]any{"type": "system", "uuid": fmt.Sprintf("compact-%d", question), "subtype": "compact_boundary", "compactMetadata": map[string]any{"trigger": "auto", "preTokens": 170000}})
-					appendLine(map[string]any{"type": "user", "uuid": fmt.Sprintf("summary-%d", question), "isCompactSummary": true, "message": map[string]any{"role": "user", "content": "Synthetic continuation summary"}})
-				}
-				for n := 0; n < 6; n++ {
-					message(fmt.Sprintf("supervision-%d-%d", question, n), "user", supervision)
-					message(fmt.Sprintf("review-%d-%d", question, n), "assistant", "Review recorded")
-				}
-			}
 			path := filepath.Join(t.TempDir(), "conversation.jsonl")
 			if err := os.WriteFile(path, []byte(lines.String()), 0o600); err != nil {
 				t.Fatal(err)

@@ -455,8 +455,19 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 cindy's model registry (`packages/model-providers/catalog/model-registry.json`): for the Claude series and the GLM,
 Kimi, DeepSeek V4, Qwen3, MiniMax, Seed and MiMo models cindy runs on Claude Code, only the id, name, context window,
 thinking levels (low, medium, high, xhigh, max) and default level, as the registry states them, reformatted to a flat
-list. The provider settings (the add-a-provider steps, the connection test and the model list it fetches) follow
-cindy's design. No code is copied.
+list. The provider settings (the add-a-provider steps, the connection test and the model list it fetches) and the web
+chat's subagent and workflow cards (`web/src/views/chat/TaskCard.tsx`, after cindy's `AgentTaskCard`: layout, states and
+wording) and the main chat's hand-off cards with the way-back strip on an Agent's page (`web/src/views/assistant/Handoff.tsx`,
+`web/src/views/chat/HandoffBack.tsx`, after cindy's `SessionHandoffCard` and its return pill: layout, states and wording)
+follow cindy's design. No code is copied for those.
+
+The web chat's work summary follows cindy's chat at the owner's request (2026-11-12): the timeline inside an opened
+summary (`web/src/lib/work-groups.ts`, after `createCompletedWorkGroup` in `messageWorkGroups.ts`), the thought rows
+(`web/src/views/chat/ThinkingRow.tsx`, after `ThinkingActivityRow` in `WorkGroupBlock.tsx`), the tool rows
+(`web/src/views/chat/ActionRow.tsx`, after `AgentActionRow` and `activityRowChrome.ts`) and the durations (`workDuration`,
+after `formatDuration`). Two files are ported from cindy's code with changes: `web/src/lib/thinking-text.ts` (from
+`packages/maker-shared/src/thinkingText.ts`) and `web/src/views/chat/ThinkingText.tsx` (from
+`apps/desktop/src/renderer/components/chat/ThinkingText.tsx`), with tests from cindy's.
 
 https://github.com/makecindy/cindy
 

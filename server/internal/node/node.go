@@ -123,6 +123,7 @@ type Node struct {
 	launches  map[string]claudeLaunch    // herdr pane -> how Persona started its Claude, for herdr's restore (herdrresume.go)
 	resumes   resumeLocks                // one resume report at a time per herdr pane (herdrresume.go reportResume)
 	panes     map[string]string          // pane id -> session id (learned from hooks)
+	idAlias   map[string]paneAlias       // fallback row id -> the session the pane turned out to run (pifamily.go)
 	layouts   map[string]layout          // host kind -> space / slot names from its last snapshot
 	procs     map[string]*assistantProc  // headless assistant conversations (assistant.go)
 	titles    map[string]string          // session id -> title given before its transcript existed (rename.go retitle)
@@ -170,6 +171,10 @@ type Node struct {
 	ups        uploads   // files arriving from the phone (upload.go)
 	sysOnce    sync.Once // system: read once (metrics.go)
 	sys        proto.System
+
+	// share: what the node keeps of launcher switches outside the state records, shared by a resident node's Nodes
+	// (switch_share.go, attach.go); nil until the first use when attach set none (switches).
+	share atomic.Pointer[switchShare]
 
 	// usageRetried: when a conversation's message was last sent again after its transcript's usage was repaired
 	// (assistant_usage.go): once in a while at most. Under mu; nil until the first.
@@ -410,6 +415,7 @@ func (n *Node) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	go n.watchPorts(ctx)
 	n.startTodoTokensReconciler(ctx)
 	defer n.starts.close()
+	defer n.switches().leave(n) // the records of a switch still running go to the next connection's Node
 	return n.peer.Serve(ctx, r)
 }
 
@@ -453,11 +459,7 @@ const stateLoadTimeout = 20 * time.Second
 func (n *Node) loadState(ctx context.Context) bool {
 	defer n.ultracodeStateLoaded()
 	n.state.mu.Lock()
-	n.state.persist = func(id string, v sessionState) {
-		if n.peer != nil {
-			_ = n.peer.Notify("state.put", map[string]any{"session_id": id, "state": v})
-		}
-	}
+	n.state.persist = n.persistState
 	n.state.mu.Unlock()
 	legacyPath := filepath.Join(n.dir, "sessions.json")
 	if legacy := legacyState(legacyPath, n.logf); len(legacy) > 0 {
@@ -498,6 +500,17 @@ func (n *Node) reloadState(ctx context.Context) bool {
 	}
 }
 
+// persistState writes session id's record v through the hub (state.put). One a launcher switch writes after this
+// connection ended (it runs on to its end) goes to the next connection's Node, which writes it (switch_share.go).
+func (n *Node) persistState(id string, v sessionState) {
+	if n.peer == nil {
+		return
+	}
+	if err := n.peer.Notify("state.put", map[string]any{"session_id": id, "state": v}); err != nil {
+		n.switches().keep(n, id, v)
+	}
+}
+
 // fetchState is one try of state.load: what it brings is merged under what this connection already has.
 func (n *Node) fetchState(ctx context.Context) bool {
 	if n.peer == nil {
@@ -513,6 +526,8 @@ func (n *Node) fetchState(ctx context.Context) bool {
 		return false
 	}
 	n.state.merge(res.Sessions)
+	// What a launcher switch that outlived the last connection wrote since, over what the hub had (switch_share.go).
+	n.switches().receive(n)
 	go n.recoverAssistantTasks(func(id, text string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -646,6 +661,18 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 			return nil, fmt.Errorf("bad params: %w", err)
 		}
 	}
+	if strings.HasPrefix(method, "session.") && p.SessionID != "" {
+		if id := n.resolveAlias(p.SessionID); id != p.SessionID { // a fallback row the pane has since named (pifamily.go)
+			p.SessionID = id
+			var m map[string]any
+			if json.Unmarshal(params, &m) == nil {
+				m["session_id"] = id
+				if raw, err := json.Marshal(m); err == nil {
+					params = raw
+				}
+			}
+		}
+	}
 	if n.codexBlocked(p.SessionID) && (strings.HasPrefix(method, "session.") || strings.HasPrefix(method, "terminal.") || method == "assistant.send" || method == "assistant.permissions.reset") {
 		return nil, refusal("identity_conflict", "会话 ID 与另一来源重复，不能判断操作目标；未读取或发送", nil)
 	}
@@ -654,6 +681,19 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 	}
 	if devicewire.IsSessionStart(method) && n.externalCodex(p.ResumeSessionID) && !n.codexResumable(withStartHost(ctx, p.Host), p.ResumeSessionID) { // codex_resume.go
 		return nil, refusal("codex_read_only", "外部 Codex 会话只能接入原 app-server，不能用启动器恢复", nil)
+	}
+	// session.modes with a launcher (launcher_switch.go): a switch to another launcher is checked and kept here, before
+	// a runtime or a Codex app-server could take the call and change the model where the session runs; the session's
+	// own launcher only drops a switch that waits, and the rest of the request goes on as without one. from: the
+	// launcher the client saw the session on.
+	if method == "session.modes" && strings.TrimSpace(p.Launcher) != "" {
+		var pick struct {
+			From string `json:"from"`
+		}
+		_ = json.Unmarshal(params, &pick)
+		if handled, err := n.launcherModes(ctx, p.SessionID, p.Launcher, pick.From, p.Model, p.PermissionMode, p.Effort); handled {
+			return ok(err)
+		}
 	}
 	if n.externalCodex(p.SessionID) {
 		switch method {
@@ -1037,6 +1077,9 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 		r := resumed{cwd: p.Cwd, launcher: p.Launcher, mode: p.PermissionMode, effort: p.Effort, tab: tab,
 			execution: modelExecution{PlanThen: p.PlanThen, Model: p.Model, Effort: p.Effort, UseEffort: p.ModelFingerprint != "", Fingerprint: p.ModelFingerprint, Ultracode: p.Ultracode, SecretTicket: p.SecretTicket}}
 		if p.ResumeSessionID != "" {
+			// A message carrying out a launcher switch quits the agent and starts it again in its terminal
+			// (launcher_switch.go): the Resume waits for it, then finds the agent running, or resumes it as it is.
+			n.awaitSwitch(ctx, p.ResumeSessionID)
 			r = n.fillResume(p.ResumeSessionID, r) // what it ran with, for what the start leaves out (retire.go)
 			// The user's Resume (the only way a stopped agent runs again, #4754): in the shell it left when that is
 			// still there (stopped.go).
@@ -1087,6 +1130,17 @@ func (n *Node) handle(ctx context.Context, method string, params json.RawMessage
 		}
 		var opts sendOpts
 		_ = json.Unmarshal(params, &opts)
+		if p.NewSessionID == "" && p.SessionID == "" && opts.ClientMsgID != "" {
+			// A new conversation's first message with its client_msg_id (one a person's own app opened, the manager's
+			// start.go humanStart): the conversation's id, the warm spare's or a new one, is known once it started, so
+			// its first line is expected from then on, as sent when it was typed (echo.go).
+			at := time.Now()
+			id, err := send()
+			if err == nil && id != "" {
+				n.expectFirstLine(id, opts.ClientMsgID, p.Text, len(p.Images), at)
+			}
+			return map[string]any{"session_id": id}, err
+		}
 		if p.NewSessionID == "" || opts.ClientMsgID == "" {
 			id, err := send()
 			return map[string]any{"session_id": id}, err

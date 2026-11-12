@@ -115,6 +115,110 @@ func TestNewMainConversation(t *testing.T) {
 	}
 }
 
+// Clearing the main conversation's context (/clear, "Clear context"): refused when the app showed another one; a turn
+// it is on does not refuse it but its process is closed; it is put away like a new main conversation (archived,
+// renamed, still listed), nothing of it is carried over, and the next message starts a new conversation with that
+// message alone.
+func TestClearMainConversation(t *testing.T) {
+	h, n := conversationsHub(t)
+	post := mainServer(t, h)
+	n.handoff = map[string]any{"summary": "示例摘要：在整理出游计划", "recent": []map[string]any{}}
+
+	if code, out := post("/api/v1/assistant/main/clear", `{"expect":"another-0009"}`); code != http.StatusConflict || out["code"] != "main_changed" {
+		t.Fatalf("another main conversation: %d %v", code, out)
+	}
+	if code, out := post("/api/v1/assistant/main/clear", `{"expect":`); code != http.StatusBadRequest {
+		t.Fatalf("a broken body: %d %v", code, out)
+	}
+	editSessions(n.m, func(list []proto.Session) []proto.Session {
+		list[0].Status = proto.StatusWorking
+		return list
+	})
+	before := n.sent()
+	code, out := post("/api/v1/assistant/main/clear", `{"expect":"main-0001"}`)
+	if code != http.StatusOK || out["archived"] != "main-0001" {
+		t.Fatalf("clear while it answers: %d %v", code, out)
+	}
+	n.mu.Lock()
+	calls := slices.Clone(n.sends[before:])
+	n.mu.Unlock()
+	if !slices.ContainsFunc(calls, func(c map[string]any) bool { return c["close"] == "main-0001" }) {
+		t.Fatalf("the running conversation was not closed: %v", calls)
+	}
+	settleAssistant(h)
+	var cfg assistant.Settings
+	assistantSetting(t, h, "assistant", &cfg)
+	if cfg.Main != "" || len(cfg.Former) != 1 || cfg.Former[0].SessionID != "main-0001" {
+		t.Fatalf("config: %+v", cfg)
+	}
+	var old proto.Session
+	for _, s := range assistantViewOf(t, h, "?archived=1").Conversations {
+		if s.SessionID == "main-0001" {
+			old = s
+		}
+	}
+	if !old.Archived || !strings.HasPrefix(old.Title, "旧主对话 · 至 ") {
+		t.Fatalf("the old one: archived %v, %q", old.Archived, old.Title)
+	}
+	// Again: nothing left to clear.
+	if code, out := post("/api/v1/assistant/main/clear", `{}`); code != http.StatusOK || out["archived"] != "" {
+		t.Fatalf("without a main conversation: %d %v", code, out)
+	}
+
+	code, out = post("/api/v1/assistant/conversations", `{"prompt":"今天有什么安排","main":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("first message: %d %v", code, out)
+	}
+	first := n.lastSend(t)
+	if text, _ := first["text"].(string); text != "今天有什么安排" {
+		t.Fatalf("the first message after a clear carries something:\n%s", text)
+	}
+	if sid, _ := first["session_id"].(string); sid != "" {
+		t.Fatalf("the first message after a clear resumes %q", sid)
+	}
+	if got := h.assistantProfile().Main; got != "s1" {
+		t.Fatalf("main: %q", got)
+	}
+}
+
+// A clear drops what an earlier "New main chat" left waiting for the next conversation: the next one starts clean.
+func TestClearMainDropsAWaitingHandoff(t *testing.T) {
+	h, n := conversationsHub(t)
+	post := mainServer(t, h)
+	n.handoff = map[string]any{"summary": "示例摘要", "recent": []map[string]any{}}
+	if code, out := post("/api/v1/assistant/main/new", `{}`); code != http.StatusOK || out["carried"] != true {
+		t.Fatalf("new main: %d %v", code, out)
+	}
+	if code, out := post("/api/v1/assistant/main/clear", `{}`); code != http.StatusOK || out["archived"] != "" {
+		t.Fatalf("clear with none: %d %v", code, out)
+	}
+	post("/api/v1/assistant/conversations", `{"prompt":"你好","main":true}`)
+	if got, _ := n.lastSend(t)["text"].(string); got != "你好" {
+		t.Fatalf("the handoff survived the clear:\n%s", got)
+	}
+}
+
+// A main conversation the user resumed in a terminal is theirs: the clear puts it away but never closes it (the node's
+// session.close would close that terminal).
+func TestClearMainLeavesATerminalOpen(t *testing.T) {
+	h, n := conversationsHub(t)
+	post := mainServer(t, h)
+	editSessions(n.m, func(list []proto.Session) []proto.Session {
+		list[0].PaneID = "w1:p3"
+		return list
+	})
+	if code, out := post("/api/v1/assistant/main/clear", `{"expect":"main-0001"}`); code != http.StatusOK || out["archived"] != "main-0001" {
+		t.Fatalf("clear: %d %v", code, out)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, c := range n.sends {
+		if _, ok := c["close"]; ok {
+			t.Fatalf("closed the user's terminal: %v", n.sends)
+		}
+	}
+}
+
 // Compacting goes to the conversation's node; its refusals come back as 409 with their code.
 func TestCompactConversation(t *testing.T) {
 	h, n := conversationsHub(t)

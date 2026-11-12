@@ -94,12 +94,14 @@ func (h *Hub) managerConnected() {
 // on (Models › Agents, the launcher / model / effort picked for this start over it) and, from nameFrom when it is not
 // "", its tab's name. An error is the start's refusal (*startRefused, the app's to see: 400), errManagerOffline (the
 // manager is not connected after waiting for it while the hub starts, and without it nothing reaches the machine:
-// 503), or the manager's failure to answer (502).
-func (h *Hub) agentStartParams(ctx context.Context, m *Machine, params map[string]any, nameFrom string) error {
+// 503), or the manager's failure to answer (502). note is the manager's word that a default the computer lacks gave
+// way to another launcher (#4661), for the app.
+func (h *Hub) agentStartParams(ctx context.Context, m *Machine, params map[string]any, nameFrom string) (note string, err error) {
 	var res struct {
-		Params map[string]any `json:"params"`
+		Params       map[string]any `json:"params"`
+		LauncherNote string         `json:"launcher_note"`
 	}
-	err := errBusOffline
+	err = errBusOffline
 	if owner := h.machineOwner(m.cfg.ID); h.waitManagerOf(ctx, owner) {
 		err = h.asstOf(owner).call(ctx, assistantwire.MethodAgentStartParams, assistantwire.AgentStartParams{MachineID: m.cfg.ID,
 			Params: params, NameFrom: nameFrom, Lang: string(h.contextLang(ctx))}, &res)
@@ -113,13 +115,13 @@ func (h *Hub) agentStartParams(ctx context.Context, m *Machine, params map[strin
 				params[k] = v
 			}
 		}
-		return nil
+		return res.LauncherNote, nil
 	case errors.As(err, &re) && re.Code == assistantwire.CodeBadRequest:
-		return &startRefused{re.Message}
+		return "", &startRefused{re.Message}
 	case errors.Is(err, errBusOffline):
-		return fmt.Errorf("%s: %w", m.cfg.ID, errManagerOffline)
+		return "", fmt.Errorf("%s: %w", m.cfg.ID, errManagerOffline)
 	}
-	return err
+	return "", err
 }
 
 // startRefused is the manager's refusal of a start (the request itself is wrong: 400).

@@ -1,15 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Item, Subagent } from "../../lib/types";
+import type { Item } from "../../lib/types";
 import type { Step } from "../../lib/turns";
 import { planProgress, type ToolStep, type WorkGroupNode } from "../../lib/work-groups";
 import { ActionRow, argumentLines, DIFF_FOLD_LINES, diffStats, editDiffs, foldDiffs, inlineInput, lineDiff, presentAction, truncateParam } from "./ActionRow";
-import { ChatContext } from "./chat-context";
-import { emptyTaskIndex } from "../../lib/tasks";
 import { latestPlan, PlanCard, PlanList, PlanPill, planSummary } from "./PlanCard";
 import { Answer, bubbleLines, SegmentView, UserBubble } from "./SegmentView";
-import { reportOf, SubagentCard, subagentLine } from "./SubagentCard";
-import { ThinkingCard } from "./ThinkingCard";
+import { SubagentCard } from "./SubagentCard";
+import { LiveThinking } from "./ThinkingCard";
+import { ThinkingRow } from "./ThinkingRow";
 import { WorkGroup, type WorkProps } from "./WorkGroup";
 
 const T0 = Date.parse("2026-11-04T10:00:00Z");
@@ -17,7 +16,7 @@ const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 const use = (id: string, name: string, input: Record<string, unknown>, ts = 0): Item => ({ id: `${id}#0`, seq: Number(id.replace(/\D/g, "")) || 1, role: "assistant", kind: "tool_use", tool_name: name, tool_use_id: `c-${id}`, tool_input: input, ts: at(ts) });
 const res = (id: string, text = "ok", ts = 1): Item => ({ id: `${id}-r#0`, seq: 1, role: "user", kind: "tool_result", tool_use_id: `c-${id}`, text, ts: at(ts) });
 const tool = (id: string, name: string, input: Record<string, unknown>, done = true): ToolStep => ({ kind: "tool", id: `${id}#0`, use: use(id, name, input), result: done ? res(id) : undefined, images: [] });
-const props: WorkProps = { mid: "m", sid: "s", scope: "t:", expandFold: async () => {}, agentStatus: () => "completed", thinking: new Map() };
+const props: WorkProps = { mid: "m", sid: "s", scope: "t:", expandFold: async () => {}, agentStatus: () => "completed" };
 const group = (children: Step[], live: boolean, durationMs?: number): WorkGroupNode => ({ kind: "group", id: `work-${live}`, children: children.map((step) => ({ kind: "step", step })), live, durationMs, startedAt: T0 });
 
 describe("WorkGroup", () => {
@@ -34,7 +33,7 @@ describe("WorkGroup", () => {
     const html = renderToStaticMarkup(<WorkGroup g={group([tool("t1", "Bash", { command: "ls", description: "看目录" }, false)], true)} p={props} />);
     expect(html).toContain('data-work-group="live"');
     expect(html).toContain(">正在工作…<");
-    expect(html).toMatch(/font-mono text-\[12px\][^>]*>[\d秒分钟小时天 ]+</);
+    expect(html).toMatch(/font-mono text-\[12px\][^>]*>(\d+[smh]? ?)+<|font-mono text-\[12px\][^>]*>[\d天小时分 ]+</);
     expect(html).not.toContain("data-live-preview");
     expect(html).not.toContain(">看目录<");
     expect(html).toContain('aria-expanded="false"');
@@ -43,7 +42,7 @@ describe("WorkGroup", () => {
 
   it("done: layers and 已工作 Xs, folded", () => {
     const html = renderToStaticMarkup(<WorkGroup g={group([tool("t1", "Bash", { command: "ls" })], false, 65_000)} p={props} />);
-    expect(html).toContain(">已工作 1 分 5 秒<");
+    expect(html).toContain(">已工作 1m 5s<");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("data-live-preview");
   });
@@ -122,12 +121,12 @@ describe("ActionRow", () => {
     expect(presentAction(use("p", "mcp__github__create_issue", {})).verb).toBe("调用");
   });
 
-  it("an edit shows its +N −N from a line diff; a running call a spinner in its 16 px slot", () => {
+  it("an edit shows its +N -N from a line diff (cindy's ASCII minus); a running call a spinner in its 16 px slot", () => {
     const edit = tool("e1", "Edit", { file_path: "/a.ts", old_string: "a\nb\nc", new_string: "a\nB\nc\nd" });
     expect(diffStats(editDiffs(edit.use)!)).toEqual({ add: 2, del: 1 });
     const html = renderToStaticMarkup(<ActionRow step={edit} mid="m" sid="s" />);
     expect(html).toContain(">+2<");
-    expect(html).toContain(">−1<");
+    expect(html).toContain(">-1<");
     expect(renderToStaticMarkup(<ActionRow step={tool("r", "Bash", { command: "sleep 9" }, false)} running mid="m" sid="s" />)).toMatch(/h-\[18px\] w-4[^>]*><span[^>]*animation:spin/);
   });
 
@@ -155,64 +154,56 @@ describe("ActionRow", () => {
   });
 });
 
-describe("ThinkingCard", () => {
-  it("an empty thought only says how long it took and does not open", () => {
-    const html = renderToStaticMarkup(<ThinkingCard item={{ id: "th#0", seq: 1, role: "assistant", kind: "thinking", text: "" }} durationMs={3000} />);
-    expect(html).toContain(">思考 3 秒<");
-    expect(html).toContain('disabled=""');
+describe("thought rows (cindy's ThinkingActivityRow, #5155)", () => {
+  const thought = (text: string): Item => ({ id: "th#1", seq: 1, role: "assistant", kind: "thinking", text });
+
+  it("a thought without words is no row at all", () => {
+    expect(renderToStaticMarkup(<ThinkingRow item={thought("")} />)).toBe("");
+    expect(renderToStaticMarkup(<ThinkingRow item={thought("  \n ")} />)).toBe("");
+  });
+
+  it("one with words is one row: the sparkle in the 16 px slot, its words italic on one line, the whole as its title", () => {
+    const html = renderToStaticMarkup(<ThinkingRow item={thought("先看测试，  再看实现")} />);
+    expect(html).toContain('data-thinking="words"');
+    expect(html).toMatch(/h-\[18px\] w-4[^>]*><svg/);
+    expect(html).toMatch(/class="[^"]*truncate[^"]*"[^>]*>先看测试， 再看实现</);
+    expect(html).toContain('title="先看测试， 再看实现"');
+    expect(html).toContain("text-thinking-ink italic");
+    expect(html).toContain("text-[length:var(--chat-secondary)]");
+    // the tool rows' chrome: the same radius, padding and chevron slot
+    expect(html).toContain("rounded-[8px] px-2 py-[3px]");
+    expect(html).toContain("size-[18px]");
+    // it fits: nothing to open (measured once drawn), so no chevron and no toggle
+    expect(html).not.toContain('role="button"');
     expect(html).not.toContain("aria-expanded");
+    expect(html).toContain("cursor-default");
   });
 
-  it("one with words opens to them, 14 px italic on a rail", () => {
-    const html = renderToStaticMarkup(<ThinkingCard item={{ id: "th#1", seq: 1, role: "assistant", kind: "thinking", text: "先看测试" }} durationMs={12_000} />);
-    expect(html).toContain(">思考 12 秒<");
+  it("a thought with a line break opens in place", () => {
+    const html = renderToStaticMarkup(<ThinkingRow item={thought("先看测试\n再看实现")} />);
     expect(html).toContain('aria-expanded="false"');
+    // a div with the button role, not a <button>: opened, its words can be selected
+    expect(html).toMatch(/<div role="button" tabindex="0" aria-expanded="false"/);
+    expect(html).not.toContain("<button");
+    expect(html).toContain(">先看测试 再看实现<");
   });
 
-  it("live: Thinking with three dots while the status line says it thinks, nothing otherwise", () => {
-    const html = renderToStaticMarkup(<ThinkingCard live={{ thinking: true }} />);
-    expect(html).toContain(">Thinking<");
+  it("reads **strong** and backtick code as cindy does, on the row and opened, and nothing else", () => {
+    const html = renderToStaticMarkup(<ThinkingRow item={thought("**Inspecting files** with `git status` and [docs](https://example.com)")} />);
+    expect(html).toMatch(/<span class="font-medium" data-thinking-markup="strong">Inspecting files<\/span>/);
+    expect(html).toMatch(/<code class="font-mono not-italic" data-thinking-markup="code">git status<\/code>/);
+    expect(html).not.toContain("**");
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("[docs](https://example.com)");
+    // the hover text is the words without the markers
+    expect(html).toContain('title="Inspecting files with git status and [docs](https://example.com)"');
+  });
+
+  it("live: Thinking with three dots and a clock", () => {
+    const html = renderToStaticMarkup(<LiveThinking />);
+    expect(html).toContain(">正在思考<");
     expect(html.match(/size-1 rounded-full/g)).toHaveLength(3);
-    expect(renderToStaticMarkup(<ThinkingCard live={{ thinking: false }} />)).toBe("");
-    expect(renderToStaticMarkup(<ThinkingCard live={null} />)).toBe("");
-  });
-});
-
-describe("SubagentCard", () => {
-  const sub: Subagent = { id: "sa1", session_id: "s@sa1", type: "general-purpose", tool_use_id: "c-a1", running: true };
-  const card = (status: "running" | "completed" | "failed") =>
-    renderToStaticMarkup(
-      <ChatContext.Provider value={{ tasks: emptyTaskIndex(), subagents: [sub, { id: "sa2", session_id: "s@sa2", parent_id: "sa1" }], scope: "" }}>
-        <SubagentCard step={tool("a1", "Agent", { description: "回归：结算", prompt: "跑结算回归", subagent_type: "general-purpose" })} status={status} mid="m" />
-      </ChatContext.Provider>,
-    );
-
-  it("says what it is and how it is going, folded", () => {
-    const html = card("running");
-    expect(html).toContain('data-subagent-card="running"');
-    expect(html).toContain(">回归：结算<");
-    // running with no call yet: starting (#5602); with one: what it does now
-    expect(html).toContain("启动中…");
-    expect(html).toContain(">general-purpose<");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("查看完整过程");
-    expect(card("failed")).toContain(">失败");
-  });
-
-  it("says what it does now while it runs, its outcome and steps once it ended (#5602)", () => {
-    const meta = { id: "sa1", session_id: "s@sa1", running: true, steps: 4, last_tool: { id: "t9", name: "Bash", summary: "跑结算回归" } };
-    expect(subagentLine("running", meta)).toEqual({ text: "跑结算回归", live: true });
-    expect(subagentLine("running", { ...meta, last_tool: undefined })).toEqual({ text: "启动中…", live: true });
-    expect(subagentLine("completed", meta)).toEqual({ text: "已完成 · 4 步", live: false });
-    expect(subagentLine("failed", { ...meta, steps: 0 })).toEqual({ text: "失败", live: false });
-  });
-
-  it("takes a background subagent's report from its notice, not its launch receipt", () => {
-    const receipt: Item = { id: "r#0", seq: 2, role: "user", kind: "tool_result", tool_use_id: "c", text: "Async agent launched successfully." };
-    const notes = [{ kind: "agent", status: "completed", detail: "120 个用例都过了。" }];
-    expect(reportOf(receipt, notes)).toBe("120 个用例都过了。");
-    expect(reportOf({ ...receipt, text: "done" }, notes)).toBe("");
-    expect(reportOf(receipt, [])).toBe("");
+    expect(html).toMatch(/tabular-nums">1s</);
   });
 });
 
@@ -295,7 +286,7 @@ describe("the user's bubble and the answer", () => {
     const seg = { id: "s", user: { id: "u1#0", text: "看一下", images: [], contexts: [], ts: at(0) }, steps: [tool("t2", "Read", { file_path: "/a.ts" })], answer: { id: "a3#0", seq: 3, role: "assistant", kind: "text", text: "看完了。", ts: at(9) } as Item, tools: 1, thoughts: 0, replies: 0, folds: [], start: user.ts };
     const html = renderToStaticMarkup(<SegmentView seg={seg} live={false} mid="m" sid="s" expandFold={async () => {}} />);
     expect(html).toContain("[&amp;_.prose-j]:text-[length:var(--chat-body)]!");
-    expect(html).toContain(">已工作 9 秒 · 读取 1 个文件<");
+    expect(html).toContain(">已工作 9s · 读取 1 个文件<");
     expect(html.indexOf("已工作")).toBeLessThan(html.indexOf("看完了。"));
   });
 

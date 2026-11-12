@@ -107,9 +107,9 @@ fun ChatComposer(
     // A photo taken here waits in cache/chat-captures until it leaves this draft: removed, or sent and cleared. Only the
     // draft's own captures go; the folder is never swept (another conversation's draft may still hold one).
     LaunchedEffect(state) {
-        var before = state.attachments
-        snapshotFlow { state.attachments }.collect { now ->
-            val gone = leftCaptures(before, now, context.packageName)
+        var before = state.attachments to state.photoEdits.values.map { it.sourceUri }
+        snapshotFlow { state.attachments to state.photoEdits.filterKeys { id -> state.attachments.any { it.id == id } }.values.map { it.sourceUri } }.collect { now ->
+            val gone = leftCaptures(before.first, now.first, context.packageName, before.second, now.second)
             before = now
             if (gone.isNotEmpty()) withContext(Dispatchers.IO) { gone.forEach { deleteCapture(context, it) } }
         }
@@ -174,7 +174,11 @@ fun ChatComposer(
         editOpening = true
         scope.launch {
             try {
-                editing = ComposerPhotoEdit(photo, withContext(Dispatchers.IO) { decodePhoto(context, Uri.parse(photo.uri)) })
+                // An edited photo opens from its source with its edits, still undoable; its source gone, it starts over on itself.
+                val prior = state.photoEdits[photo.id]
+                val source = prior?.let { runCatching { withContext(Dispatchers.IO) { decodePhoto(context, Uri.parse(it.sourceUri)) } }.getOrNull() }
+                editing = if (prior != null && source != null) ComposerPhotoEdit(photo, source, prior.sourceUri, prior)
+                    else ComposerPhotoEdit(photo, withContext(Dispatchers.IO) { decodePhoto(context, Uri.parse(photo.uri)) })
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { onNotice(resources.getString(R.string.chat_attach_edit_unreadable)) }
             finally { editOpening = false }
@@ -182,14 +186,15 @@ fun ChatComposer(
     }
     // "Done": the editor spins while the new photo is written (JPEG like a picked photo) and uploaded, then closes. Only an
     // upload that worked replaces the original; the old path leaves the message with it.
-    fun finishEdit(edit: ComposerPhotoEdit, result: Bitmap) {
-        if (result === edit.source) { editing = null; return } // nothing drawn
+    fun finishEdit(edit: ComposerPhotoEdit, result: Bitmap, done: ImageEditState) {
+        if (result === edit.source && edit.prior == null) { editing = null; return } // nothing done to a photo never edited
         scope.launch {
             var edited: ComposerAttachment? = null
             var kept = false
             try {
                 edited = MediaShare.writeEditedPhoto(context, result)
-                val outcome = state.replaceWithEdited(edit.original, edited) { photo ->
+                val carried = PhotoEdits(edit.sourceUri, done).takeUnless { done.edits.isEmpty }
+                val outcome = state.replaceWithEdited(edit.original, edited, carried) { photo ->
                     uploadAttachment(context, checkNotNull(service), session, photo)
                 }
                 kept = outcome == PhotoEditOutcome.Replaced
@@ -241,7 +246,9 @@ fun ChatComposer(
 
     LaunchedEffect(visible) { if (!visible) { menu = false; confirmClear = false; cameraDenied = false; editing = null; expandedEditor = false } }
     editing?.let { edit ->
-        key(edit) { ImageEditor(edit.source, onCancel = { if (editing === edit) editing = null }, onDone = { finishEdit(edit, it) }) }
+        var done by remember(edit) { mutableStateOf(ImageEditState()) }
+        key(edit) { ImageEditor(edit.source, onCancel = { if (editing === edit) editing = null }, onDone = { finishEdit(edit, it, done) },
+            start = edit.prior?.state ?: ImageEditState(), onEdited = { done = it }) }
     }
     // Voice input: what the phone's recognizer heard goes at the end of the draft, to edit before sending.
     val dictation = rememberDictation(onHeard = { state.appendDictation(it) }, onError = onNotice)

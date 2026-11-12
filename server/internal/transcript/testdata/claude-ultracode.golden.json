@@ -22,7 +22,8 @@
       "ts": "2026-01-01T08:01:02Z",
       "role": "assistant",
       "kind": "text",
-      "text": "The parser looks good."
+      "text": "The parser looks good.",
+      "model": "claude-sonnet-4-6"
     },
     {
       "id": "ultra-6#0",
@@ -38,7 +39,8 @@
       "ts": "2026-01-01T08:02:02Z",
       "role": "assistant",
       "kind": "text",
-      "text": "The notices are consistent."
+      "text": "The notices are consistent.",
+      "model": "claude-sonnet-4-6"
     },
     {
       "id": "ultra-10#0",

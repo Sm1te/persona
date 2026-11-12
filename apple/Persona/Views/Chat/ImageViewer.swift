@@ -97,8 +97,8 @@ struct ImageViewer: View {
         }
         .sheet(item: $openedFile) { ref in FileViewer(ref: ref) }
         .fullScreenCover(item: Binding(get: { editing.map(EditTarget.init) }, set: { if $0 == nil { editing = nil } })) { t in
-            ImageEditor(image: t.image, doneTitle: String(localized: "Add to Message")) { edited in
-                attach?(edited)
+            ImageEditor(EditedImage(source: t.image), doneTitle: String(localized: "Add to Message")) { edited in
+                attach?(edited.result)
                 Haptics.success()
                 AppModel.shared.toast = Toast(String(localized: "Added to the message. Add a few words and send."), style: .success)
                 dismiss()

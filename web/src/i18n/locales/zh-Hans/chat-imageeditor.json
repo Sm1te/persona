@@ -13,5 +13,18 @@
   "box": "框选",
   "pen": "画笔",
   "undo": "撤销（⌘Z）",
-  "clear": "清除"
+  "clear": "清除",
+  "redo": "重做（⇧⌘Z）",
+  "crop": "裁剪",
+  "rotate": "旋转",
+  "reset": "还原",
+  "aspect_ratio": "比例",
+  "shape_free": "自由",
+  "shape_original": "原始比例",
+  "shape_square": "正方形",
+  "line_width": "粗细",
+  "width_thin": "细",
+  "width_medium": "中",
+  "width_thick": "粗",
+  "named_value": "{label}：{value}"
 }

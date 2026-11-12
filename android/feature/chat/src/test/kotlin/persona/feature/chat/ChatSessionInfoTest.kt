@@ -99,4 +99,18 @@ class ChatSessionInfoTest {
         assertTrue("实时接入" in approvalBlockedReason(res, live))
         assertFalse("实时接入" in approvalBlockedReason(res, history))
     }
+
+    /** #582 (iOS `infoShown` / `stateWord`): the ultracode row says on, off or unknown, for the user's running Claude Code on a hub that has it. */
+    @Test fun ultracodeRowSaysOnOffOrUnknown() {
+        val claude = Session(machineId = "m", sessionId = "s1", agent = "claude", status = "idle")
+        fun row(s: Session, features: Set<String> = setOf("ultracode")) = sessionInfoSections(res, s, SessionInfo(sessionId = "s1"), zone, features = features)
+            .flatMap { it.rows }.firstOrNull { it.label == "ultracode" }?.value
+        assertEquals("开", row(claude.copy(ultracode = true)))
+        assertEquals("关", row(claude.copy(ultracode = false)))
+        assertEquals("未知", row(claude))
+        assertEquals(null, row(claude, emptySet()))
+        assertEquals("not a Persona conversation", null, row(claude.copy(assistant = true)))
+        assertEquals("not Codex", null, row(claude.copy(agent = "codex")))
+        assertEquals("not offline", null, row(claude.copy(state = "offline")))
+    }
 }

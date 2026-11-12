@@ -63,7 +63,8 @@ struct WorkspaceSidebarCard<AgentContent: View, Actions: View>: View {
     var selectAgent: (SessionKey) -> Void = { _ in }
     var appeared: (Session) -> Void = { _ in }
     var agentIdentifier = "agents.row"
-    /// A Codex chat's subagents (`CodexTasks`): listed under it, a level in. The list's rows are the chats'.
+    /// An agent's subtasks (`CodexTasks`: a Codex chat's subagents, the agents a runtime's agent created): listed under
+    /// it, a level in. The list's rows are the others'.
     var subtasks: (Session) -> [Session] = { _ in [] }
     var ordered: ([Session]) -> [Session]
     @ViewBuilder var agent: (Session) -> AgentContent

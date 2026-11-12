@@ -22,8 +22,9 @@ export interface HerdrFailure {
   detail: string;
 }
 
-/** How often the list asks while it is shown. */
-export const HERDR_POLL_MS = 10_000;
+/** How often the list asks while it is shown: once a minute, as on Apple (#4685). Each read is a node round trip on the hub,
+ *  and the list asks again at once when a watched machine comes online or changes engine, or the tab is shown (#5060). */
+export const HERDR_POLL_MS = 60_000;
 
 /** A machine the row can be about: online, on classic herdr. */
 export function herdrWatched(m: Pick<Machine, "online" | "engine">): boolean {

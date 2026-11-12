@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nwverse/persona/server/internal/assistantwire"
+	"github.com/nwverse/persona/server/internal/compat"
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
@@ -28,9 +30,22 @@ func startHerdr(f *fakeHerdr, pane, status string) {
 // startCmd is the command a Claude start types into its herdr pane (and herdr's resume of it evals): the node's
 // directory in front and the assistant's environment left out (agentenv.go), herdr told the agent is Claude
 // (HERDR_AGENT), then the launcher with Persona's flags.
-func startCmd(launcher, args, dir string) string {
-	return inAgentEnv(dir, "HERDR_AGENT=claude "+launcher+" "+args+" --settings "+shellQuote(filepath.Join(dir, "claude-settings.json"))+
-		" --mcp-config "+shellQuote(filepath.Join(dir, "mcp.json")), shellQuote)
+func startCmd(launcher, args, dir string) string { return claudeCmd(launcher, args, dir, shellQuote) }
+
+// resumeCmd is startCmd as herdr's resume_argv says it (claudeResumeArgv): quoted without apostrophes.
+func resumeCmd(launcher, args, dir string) string { return claudeCmd(launcher, args, dir, dquote) }
+
+func claudeCmd(launcher, args, dir string, q func(string) string) string {
+	return inAgentEnv(dir, "HERDR_AGENT=claude "+launcher+" "+args+" --settings "+q(filepath.Join(dir, "claude-settings.json"))+
+		" --mcp-config "+q(filepath.Join(dir, "mcp.json"))+" --allowedTools "+q(ownToolsRule), q)
+}
+
+// ownToolsRule is the --allowedTools of a Claude Agent Persona starts without its plugin: the Agent's own Persona tools
+// under both registered names (agentAllowedTools); with the plugin the office rule follows (pluginToolsRule).
+var ownToolsRule = strings.Join(compat.MCPAllowedToolNames(assistantwire.AgentOwnTools, true), ",")
+
+func pluginToolsRule(dir string) string {
+	return ownToolsRule + ",Bash(sh " + filepath.Join(dir, "agent-plugin", "skills", "persona-office", "scripts", "office.sh") + " *)"
 }
 
 // resumeHeld are the two reports that give herdr the pane's resume command (herdrresume.go): the pane held as
@@ -128,8 +143,8 @@ func TestHerdrStartInTheProjectsWorkspace(t *testing.T) {
 		readVisible("w1:p2"), agentGet("w1:p2"), // ready once…
 		readVisible("w1:p2"), agentGet("w1:p2"), // …and twice
 		call("agent.rename", map[string]any{"target": "w1:p2", "name": "j-0e0000"}),
-		resumeHeld("w1:p2", startID, startCmd("claude", "--resume "+startID, personaDir(home)))[0],
-		resumeHeld("w1:p2", startID, startCmd("claude", "--resume "+startID, personaDir(home)))[1],
+		resumeHeld("w1:p2", startID, resumeCmd("claude", "--resume "+startID, personaDir(home)))[0],
+		resumeHeld("w1:p2", startID, resumeCmd("claude", "--resume "+startID, personaDir(home)))[1],
 		call("agent.prompt", map[string]any{"target": "w1:p2", "text": "fix the build"}),
 		call("session.snapshot", nil), // sessionFor
 	})
@@ -177,8 +192,8 @@ func TestHerdrStartCreatesTheWorkspaceAndResumes(t *testing.T) {
 		readVisible("w7:p1"), agentGet("w7:p1"),
 		readVisible("w7:p1"), agentGet("w7:p1"),
 		call("agent.rename", map[string]any{"target": "w7:p1", "name": "j-0e0000"}),
-		resumeHeld("w7:p1", startID, startCmd("work_claude", "--resume "+startID, personaDir(home)))[0],
-		resumeHeld("w7:p1", startID, startCmd("work_claude", "--resume "+startID, personaDir(home)))[1],
+		resumeHeld("w7:p1", startID, resumeCmd("work_claude", "--resume "+startID, personaDir(home)))[0],
+		resumeHeld("w7:p1", startID, resumeCmd("work_claude", "--resume "+startID, personaDir(home)))[1],
 		call("session.snapshot", nil),
 	})
 }
@@ -236,16 +251,16 @@ func TestHerdrStartIntoAGivenWorkspaceReturnsOnABlockedClaude(t *testing.T) {
 		call("pane.send_input", map[string]any{"pane_id": "w2:p5", "keys": []string{"Enter"},
 			"text": inAgentEnv(personaDir(home), "HERDR_AGENT=claude /tmp/persona-test/personad launch work_gw --session-id "+startID+" --settings "+
 				shellQuote(filepath.Join(personaDir(home), "launcher-settings", "work_gw-claude-settings.json"))+
-				" --mcp-config "+shellQuote(filepath.Join(personaDir(home), "mcp.json")), shellQuote)}),
+				" --mcp-config "+shellQuote(filepath.Join(personaDir(home), "mcp.json"))+" --allowedTools "+shellQuote(ownToolsRule), shellQuote)}),
 		readVisible("w2:p5"), agentGet("w2:p5"),
 		call("agent.rename", map[string]any{"target": "w2:p5", "name": "j-0e0000"}),
 		// herdr's restore resumes it through the launcher too, not with a bare `claude --resume` (#1879).
 		resumeHeld("w2:p5", startID, inAgentEnv(personaDir(home), "HERDR_AGENT=claude /tmp/persona-test/personad launch work_gw --resume "+startID+" --settings "+
 			filepath.Join(personaDir(home), "launcher-settings", "work_gw-claude-settings.json")+
-			" --mcp-config "+filepath.Join(personaDir(home), "mcp.json"), dquote))[0],
+			" --mcp-config "+filepath.Join(personaDir(home), "mcp.json")+" --allowedTools "+ownToolsRule, dquote))[0],
 		resumeHeld("w2:p5", startID, inAgentEnv(personaDir(home), "HERDR_AGENT=claude /tmp/persona-test/personad launch work_gw --resume "+startID+" --settings "+
 			filepath.Join(personaDir(home), "launcher-settings", "work_gw-claude-settings.json")+
-			" --mcp-config "+filepath.Join(personaDir(home), "mcp.json"), dquote))[1],
+			" --mcp-config "+filepath.Join(personaDir(home), "mcp.json")+" --allowedTools "+ownToolsRule, dquote))[1],
 		call("session.snapshot", nil),
 	})
 	f.reply("session.snapshot", snapshot(nil, nil, []any{claudeAgent(startID, proto.StatusIdle, "w2:p5", "w2:t5", "w2", home, "")}, nil))
@@ -288,8 +303,8 @@ func TestHerdrStartNamesTheTabOnceItExists(t *testing.T) {
 		readVisible("w2:p6"), agentGet("w2:p6"),
 		readVisible("w2:p6"), agentGet("w2:p6"),
 		call("agent.rename", map[string]any{"target": "w2:p6", "name": "j-0e0000"}),
-		resumeHeld("w2:p6", startID, startCmd("claude", "--resume "+startID, personaDir(home)))[0],
-		resumeHeld("w2:p6", startID, startCmd("claude", "--resume "+startID, personaDir(home)))[1],
+		resumeHeld("w2:p6", startID, resumeCmd("claude", "--resume "+startID, personaDir(home)))[0],
+		resumeHeld("w2:p6", startID, resumeCmd("claude", "--resume "+startID, personaDir(home)))[1],
 		call("session.snapshot", nil),
 	})
 }
@@ -632,8 +647,8 @@ func TestHerdrSendResumesAnOfflineSession(t *testing.T) {
 		readVisible("w7:p1"), agentGet("w7:p1"),
 		readVisible("w7:p1"), agentGet("w7:p1"),
 		call("agent.rename", map[string]any{"target": "w7:p1", "name": "j-0d0000"}),
-		resumeHeld("w7:p1", sidA, startCmd("claude", "--resume "+sidA, personaDir(home)))[0],
-		resumeHeld("w7:p1", sidA, startCmd("claude", "--resume "+sidA, personaDir(home)))[1],
+		resumeHeld("w7:p1", sidA, resumeCmd("claude", "--resume "+sidA, personaDir(home)))[0],
+		resumeHeld("w7:p1", sidA, resumeCmd("claude", "--resume "+sidA, personaDir(home)))[1],
 		call("session.snapshot", nil),
 		readANSI("w7:p1"), // the pane checked again
 		call("agent.prompt", map[string]any{"target": "w7:p1", "text": "go on"}),

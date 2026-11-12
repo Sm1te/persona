@@ -94,13 +94,14 @@ describe("the markup editor", () => {
     expect(document.activeElement).toBe(editor);
 
     const cancel = button(t("common.cancel"))!;
-    const pen = button(t("chat-imageeditor.pen"))!;
+    const crop = button(t("chat-imageeditor.crop"))!;
     expect(button(t("chat-imageeditor.done"))!.disabled).toBe(false);
-    // from the dialog itself Tab lands on the first control, Shift+Tab on the last (undo / clear are disabled: nothing drawn)
+    // from the dialog itself Tab lands on the first control, Shift+Tab on the last (undo / redo / clear are disabled:
+    // nothing drawn)
     press("Tab");
     expect(document.activeElement).toBe(cancel);
     press("Tab", true);
-    expect(document.activeElement).toBe(pen);
+    expect(document.activeElement).toBe(crop);
     press("Tab");
     expect(document.activeElement).toBe(cancel);
 
@@ -108,6 +109,31 @@ describe("the markup editor", () => {
     await flush();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+});
+
+describe("the markup editor's names", () => {
+  it("keeps its own name, and names every button that shows only an icon, Aspect ratio with the shape chosen", async () => {
+    // no room for the words anywhere: every row drops to its icons
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(500);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    act(() => root.render(<ImageEditor src={SRC} onDone={() => {}} onCancel={() => {}} />));
+    await flush();
+    // Undo and Redo took the title's place in the bar; the dialog keeps it as its name
+    expect(document.querySelector('[role="dialog"]')!.getAttribute("aria-label")).toBe(t("chat-imageeditor.title"));
+    const iconOnly = () => {
+      const list = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].filter((b) => !b.textContent!.trim());
+      for (const b of list) {
+        expect(b.getAttribute("aria-label"), b.outerHTML).toBeTruthy();
+        expect(b.getAttribute("title"), b.outerHTML).toBe(b.getAttribute("aria-label"));
+      }
+      return list.map((b) => b.getAttribute("aria-label"));
+    };
+    expect(iconOnly()).toEqual(expect.arrayContaining([t("chat-imageeditor.box"), t("chat-imageeditor.pen"), t("chat-imageeditor.crop"), t("chat-imageeditor.undo")]));
+    act(() => button(t("chat-imageeditor.crop"))!.click());
+    await flush();
+    const shape = t("chat-imageeditor.named_value", { label: t("chat-imageeditor.aspect_ratio"), value: t("chat-imageeditor.shape_free") });
+    expect(iconOnly()).toEqual(expect.arrayContaining([t("chat-imageeditor.rotate"), shape]));
   });
 });
 
