@@ -118,6 +118,16 @@ type Settings struct {
 	// them (Claude Code 2.1.139 or later, node/assistant_interject.go). nil is off (the default). A round the
 	// user did not start is moved to the background by their message either way (owner_preempt.go).
 	InterjectBackground *bool `json:"interject_background,omitempty"`
+	// MainSupervisesOwnTasks: the main conversation follows up the tasks no leader supervises itself. nil is off (the
+	// default, #4927): the background supervisor does (supervise_background.go).
+	MainSupervisesOwnTasks *bool `json:"main_supervises_own_tasks,omitempty"`
+	// BackgroundSupervisor is the background supervisor's conversation, on BackgroundSupervisorMachineID, started at
+	// BackgroundSupervisorAt: made on first use, "" until then. BackgroundSupervisorAnnounced: the main conversation
+	// was told once that it follows up its tasks. The assistant writes these itself; PUT /api/v1/assistant does not.
+	BackgroundSupervisor          string     `json:"background_supervisor,omitempty"`
+	BackgroundSupervisorMachineID string     `json:"background_supervisor_machine_id,omitempty"`
+	BackgroundSupervisorAt        *time.Time `json:"background_supervisor_at,omitempty"`
+	BackgroundSupervisorAnnounced bool       `json:"background_supervisor_announced,omitempty"`
 }
 
 // FormerMain is a main conversation that was replaced, and until when it was the main one.
@@ -413,6 +423,8 @@ func keptSessions(v Settings, tasks []TaskView, links []TodoLink) []SessionRef {
 	for _, l := range links {
 		add(l.MachineID, l.SessionID)
 	}
+	// The background supervisor: quiet between tasks, still the one their signals go to (supervise_background.go).
+	add(v.BackgroundSupervisorMachineID, v.BackgroundSupervisor)
 	return out
 }
 
@@ -478,6 +490,9 @@ type assistantView struct {
 	AgentAutoNamingIntervalHours int  `json:"agent_auto_naming_interval_hours"`
 	// InboxSignals is in effect, like DoneNeedsDelivery.
 	InboxSignals bool `json:"inbox_signals"`
+	// MainSupervisesOwnTasks is in effect, like DoneNeedsDelivery: false means the background supervisor follows up
+	// the tasks no leader supervises.
+	MainSupervisesOwnTasks bool `json:"main_supervises_own_tasks"`
 }
 
 // view is GET /api/v1/assistant; withArchived lists archived conversations too (flagged `archived`). It lists the
@@ -506,7 +521,7 @@ func (s *Service) view(ctx context.Context, withArchived bool, space ...string) 
 		AgentAutoNaming:              quietOn(v.AgentAutoNaming),
 		AgentAutoNamingMax:           agentNamingLimit(v),
 		AgentAutoNamingIntervalHours: agentNamingInterval(v),
-		InboxSignals:                 v.InboxSignals != nil && *v.InboxSignals}
+		InboxSignals:                 v.InboxSignals != nil && *v.InboxSignals, MainSupervisesOwnTasks: !s.backgroundOn(v)}
 	if d, ok := s.device(ctx, v.MachineID); ok {
 		out.Cwd = s.spaceCwd(d, sp)
 		var list []proto.Session

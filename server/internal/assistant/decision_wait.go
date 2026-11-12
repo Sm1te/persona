@@ -150,10 +150,24 @@ func (s *Service) sweepWaitingDecisions(now time.Time) {
 			continue
 		}
 		s.logf("task %s: its decision could wait, but %s: pushed", id, why)
-		if t.Supervision != nil && s.isLeader(ctx, t.Supervision.Supervisor) { // held back when it was raised (supervise_review.go)
+		if s.heldEscalates(ctx, t, &a) { // held back when it was raised (supervise_review.go)
 			s.escalateToMain(t, t.Supervision.Round, a.Reason, a.Recommend)
 		}
 	}
+}
+
+// heldEscalates: the main conversation is told of task t's held decision a now that it is pushed: a leader conversation
+// or the background supervisor raised it (RaisedBy; the background supervisor's tasks name the main conversation in
+// their ledgers, so the ledger alone does not say). One kept by a manager from before RaisedBy is told when its task
+// is a leader's, as it was then.
+func (s *Service) heldEscalates(ctx context.Context, t Todo, a *acceptAsk) bool {
+	if t.Supervision == nil {
+		return false
+	}
+	if a.RaisedBy != "" {
+		return !s.isMain(ctx, a.RaisedBy)
+	}
+	return s.isLeader(ctx, t.Supervision.Supervisor)
 }
 
 // heldForBriefing: a is a decision that waits for a briefing to bring it to the owner.
@@ -179,7 +193,7 @@ func (s *Service) endWait(ctx context.Context, id string, asked, pushed time.Tim
 	if !heldForBriefing(cur) || !cur.AskedAt.Equal(asked) {
 		return false
 	}
-	cur.ForBriefing = false
+	cur.ForBriefing, cur.RaisedBy = false, ""
 	if !pushed.IsZero() {
 		cur.PushedAt, cur.NoCard = pushed.UTC(), false
 	}

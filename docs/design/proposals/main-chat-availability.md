@@ -94,6 +94,12 @@ work out as today; it no longer receives supervision messages for it.
 - **Shown where**: its tasks stay under Persona in the direction tree (#4352), as the secretary's own. The conversation
   itself is listed with the scheduled group, not among directions or quick chats. Its rounds are never pushed, as
   supervision rounds are not today.
+- **As built (step B1, #4927)**, where it differs from the above (`docs/assistant/unified-entry.md` "Background
+  supervisor" has the whole of it): the background supervisor is not recorded as `supervision.supervisor`. The ledger
+  keeps the main chat and the signals are routed when they are sent, which keeps everything that reads the ledger
+  unchanged, lets the off switch move every open task at once and leaves no task naming a conversation that is gone.
+  Asks climb through it only with leaders configured, as today. A `needs_user` writes the `escalated` entry leaders
+  write, and that entry is a supervision message to the main chat, so it is one folded main-chat round, not none.
 
 Alternatives considered:
 

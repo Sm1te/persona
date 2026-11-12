@@ -198,6 +198,8 @@ type conclusionInput struct {
 	Decision reviewDecision
 	// ForBriefing: the decision can wait and is held for the next briefing: no card now (#4930, decision_wait.go).
 	ForBriefing bool
+	// RaisedBy: the leader conversation or background supervisor that raised it, kept while it is held (acceptAsk).
+	RaisedBy string
 	// Verified: the supervisor checked the evidence (supervisorVerified): a done or cannot conclusion tells the owner and
 	// is not left for them to acknowledge (#3240).
 	Verified bool
@@ -238,6 +240,9 @@ func (s *Service) askConclusion(ctx context.Context, t Todo, in conclusionInput)
 		a.WhyOwner, a.Options, a.CostOfWaiting = in.Decision.WhyOwner, in.Decision.Options, in.Decision.CostOfWaiting
 		a.From, a.Stands = s.decisionBackground(ctx, t) // the hub's, not the model's: where it came from, where it stands
 		a.ForBriefing = in.ForBriefing
+		if a.ForBriefing {
+			a.RaisedBy = in.RaisedBy
+		}
 	}
 	if a.Reason == "" && in.Outcome == outcomeDone {
 		a.Reason = i18n.T(l, "assistant-reports.verdict_done_default")

@@ -55,6 +55,7 @@ var startOptOuts = map[string]string{
 	"runTask":          "a scheduled task's own conversation: its runs report through notify_user, and the schedule follows them",
 	"runAutoReview":    "an independent reviewer of a supervised task: the review is part of that task's supervision",
 	"startRepairAgent": "a launcher repair Agent: the launcher health checks follow it (launcher_repair.go)",
+	"startBackground":  "the background supervisor's own conversation: it is the supervisor of the tasks no leader supervises (supervise_background.go)",
 }
 
 // supervisionCalls make or keep a ledger.

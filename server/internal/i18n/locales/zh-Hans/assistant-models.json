@@ -23,6 +23,7 @@
   "name_subscription_recipe": "订阅方式起草",
   "name_meeting_answer": "会议中的回答",
   "name_schedule": "定时任务",
+  "name_assistant_supervise": "后台督办",
   "group_default": "默认模型",
   "group_agents": "Agents",
   "group_triage": "信息筛选",

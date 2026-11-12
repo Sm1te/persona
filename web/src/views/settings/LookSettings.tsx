@@ -1,4 +1,5 @@
-// Settings › General › Appearance's "Theme color" and "Text size" (ui/look.ts; the app's ThemeColorPicker and StyleSettingsPage's "Text size").
+// Settings › General › Appearance's "Theme color" and "Text size" (ui/look.ts; the app's ThemeColorPicker and StyleSettingsPage's "Text size"),
+// and the web's own "Recent chats in the sidebar" (lib/sidebar-recent.ts).
 import { useSyncExternalStore } from "react";
 import { t } from "../../i18n";
 import { cx } from "../../ui/atoms";
@@ -9,6 +10,7 @@ import {
   ACCENT_PRESETS, accentTokens, PRESET_COLORS, setAccentChoice, setTextSize, TEXT_SIZES, useAccentChoice, usePersonaAccent, useTextSize,
   type AccentChoice, type TextSize,
 } from "../../ui/look";
+import { RECENT_COUNTS, setRecentCount, useRecentCount } from "../../lib/sidebar-recent";
 import { usePersona } from "../assistant/Persona";
 import { Segmented } from "../assistant/parts";
 import { Row } from "./SettingsParts";
@@ -82,6 +84,16 @@ export function TextSizeRow() {
   return (
     <Row label={t("ui-look.text_size")} hint={t("ui-look.text_size_hint")}>
       <Segmented<TextSize> label={t("ui-look.text_size")} value={size} options={TEXT_SIZES.map((v) => ({ v, label: t(`ui-look.${v}`) }))} onChange={setTextSize} />
+    </Row>
+  );
+}
+
+/** "Recent chats in the sidebar": how many Persona chats › Recent lists before Show more (lib/sidebar-recent.ts, #5146). */
+export function RecentChatsRow() {
+  const count = useRecentCount();
+  return (
+    <Row label={t("ui-look.recent_chats")} hint={t("ui-look.recent_chats_hint")} wrapHint>
+      <Segmented label={t("ui-look.recent_chats")} value={String(count)} options={RECENT_COUNTS.map((n) => ({ v: String(n), label: String(n) }))} onChange={(v) => setRecentCount(Number(v))} />
     </Row>
   );
 }

@@ -128,9 +128,8 @@ func (a assistantRemote) SendParams(ctx context.Context, machine, session string
 		Params       map[string]any `json:"params"`
 		LauncherNote string         `json:"launcher_note"` // the main chat ran on another launcher, and why (#4659)
 	}
-	who := principalOf(ctx) // a person's own app: a full device's credential (secret_handoff.go)
 	err := a.call(ctx, assistantwire.MethodSendParams, assistantwire.SendParams{MachineID: machine, SessionID: session, Params: params,
-		Lang: string(a.h.contextLang(ctx)), Human: who.Role == roleFull && who.ID != ""}, &res)
+		Lang: string(a.h.contextLang(ctx)), Human: personSent(ctx)}, &res)
 	if err != nil {
 		return nil, err
 	}

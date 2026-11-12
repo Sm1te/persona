@@ -206,8 +206,7 @@ func (s *Service) handoffApprove(ctx context.Context, convMachine, self string, 
 	expires := now.Add(handoffCardWait)
 	ix := proto.Interaction{ID: "ix_" + randomHex(6), MachineID: convMachine, SessionID: self, SessionTitle: "Persona",
 		Kind: proto.IxPermission, ToolName: proto.SecretHandoffTool, ToolInput: raw, ToolTitle: i18n.T(l, "assistant-secret_handoff.title"),
-		Summary: i18n.T(l, "assistant-secret_handoff.summary", i18n.Args{"items": strings.Join(items, "; "), "agent": agent,
-			"machine": h.machineName}),
+		Summary:     handoffSummary(l, strings.Join(items, "; "), agent, h.machineName),
 		AlwaysLabel: i18n.T(l, "assistant-secret_handoff.always", i18n.Args{"launcher": h.launcher, "machine": h.machineName}),
 		CreatedAt:   now, ExpiresAt: expires}
 	r, err := s.ask(ctx, ix)
@@ -245,6 +244,15 @@ func (s *Service) handoffApprove(ctx context.Context, convMachine, self string, 
 		}
 	}
 	return approvedBy, "", nil
+}
+
+// handoffSummary is the card's one line: which items go to which Agent on which computer; an Agent without a name yet
+// (a conversation not titled yet) is "an Agent", as the cards say.
+func handoffSummary(l i18n.Lang, items, agent, machine string) string {
+	if strings.TrimSpace(agent) == "" {
+		return i18n.T(l, "assistant-secret_handoff.summary_unnamed", i18n.Args{"items": items, "machine": machine})
+	}
+	return i18n.T(l, "assistant-secret_handoff.summary", i18n.Args{"items": items, "agent": agent, "machine": machine})
 }
 
 // handoffUserTurn reports whether the user asked for this start themselves, the only case an Always rule may spare the
@@ -286,7 +294,7 @@ func (s *Service) handoffUserTurn(ctx context.Context, machine, self string) boo
 		if it.Kind == proto.KindImage { // a picture of the user's message: tied to it by the id alone
 			words = ""
 		}
-		if !s.humanSent.has(self, it.ClientMsgID, words, it.Kind == proto.KindImage) {
+		if !s.humanSent.has(self, it.ClientMsgID, words, it.Kind == proto.KindImage, handoffLine(it.ID)) {
 			return false
 		}
 	}
@@ -297,8 +305,10 @@ func (s *Service) handoffUserTurn(ctx context.Context, machine, self string) boo
 const handoffTurnMost = 2000
 
 // humanSends are the messages a person's own app sent into each conversation, by client_msg_id, as the hub vouched
-// (SendParams.Human), with the start of their words: the node ties an id to the first line that begins like the text
-// sent, so a line is the user's only when it holds those words too. Kept a day, at most humanSendsMost per
+// (SendParams.Human, and a conversation's first message, StartParams.Human), with the start of their words: the node
+// ties an id to the first line that begins like the text sent, so a line is the user's only when it holds those words
+// too. An id counts once: for the first transcript line it was read on, never another line carrying it; and a send of
+// it the hub did not vouch for, or a second one with other words, voids it. Kept a day, at most humanSendsMost per
 // conversation, in memory only (a restart forgets them, and the card is shown).
 type humanSends struct {
 	mu sync.Mutex
@@ -308,6 +318,24 @@ type humanSends struct {
 type humanSend struct {
 	words string // the text sent, its words joined by single spaces, at most humanWordsMost bytes
 	at    time.Time
+	line  string // the transcript line it counted for (handoffLine), once one was read
+	void  bool   // sent again by someone else, or with other words: it counts for nothing
+}
+
+// withoutContext is a vouched message's words, or its line's, compared without any context block: the ones the
+// transcript drops from every user line, and the workspace mentions, which the app wrote one way and the manager sent
+// filled in (a vouched message holds no other block, workspace_mention.go fillWorkspaces).
+func withoutContext(text string) string {
+	return transcript.ViewErrorsRe.ReplaceAllString(contextBlockRe.ReplaceAllString(text, ""), "")
+}
+
+// handoffLine is the transcript line an item belongs to: its id before the last "#", as the node ties a send to a line
+// (node echo.go echoLineKey); "" for an item without an id.
+func handoffLine(id string) string {
+	if i := strings.LastIndexByte(id, '#'); i >= 0 {
+		return id[:i]
+	}
+	return id
 }
 
 // humanWordsMost bounds the words kept of a send: enough that another's line cannot hold them by chance.
@@ -335,14 +363,67 @@ func (h *humanSends) note(session, id, text string) {
 	if session == "" || id == "" {
 		return
 	}
+	words := humanWords(withoutContext(text), humanWordsMost)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	ids := h.sessionLocked(session)
+	if sent, ok := ids[id]; ok { // the same id again: the same message (the node sends it once), else nothing
+		if sent.words != words {
+			sent.void = true
+			ids[id] = sent
+		}
+		return
+	}
+	makeRoomLocked(ids, true)
+	ids[id] = humanSend{words: words, at: time.Now()}
+}
+
+// voidSend: a send into session carried id, and it is not one that counts (the hub did not vouch for it, or it carries
+// someone else's words). Were id one a person's app sent, it no longer counts (another author's line may carry it
+// now); in a conversation with vouched sends, one not known yet is kept void while there is room, so a later vouched
+// send of it does not count either. A conversation with none keeps nothing, and void ids never push out vouched ones.
+func (h *humanSends) voidSend(session, id string) {
+	if session == "" || id == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.m[session]) == 0 {
+		return
+	}
+	ids := h.sessionLocked(session)
+	sent, ok := ids[id]
+	if !ok {
+		if len(ids) == 0 || !makeRoomLocked(ids, false) {
+			return
+		}
+		sent.at = time.Now()
+	}
+	sent.void = true
+	ids[id] = sent
+}
+
+// sessionLocked is session's sends, the stale ones dropped; a conversation not known yet first drops the
+// conversations all of whose sends are stale. h.mu held.
+func (h *humanSends) sessionLocked(session string) map[string]humanSend {
 	now := time.Now()
 	if h.m == nil {
 		h.m = map[string]map[string]humanSend{}
 	}
 	ids := h.m[session]
 	if ids == nil {
+		for k, other := range h.m {
+			fresh := false
+			for _, sent := range other {
+				if now.Sub(sent.at) <= humanSendsKeep {
+					fresh = true
+					break
+				}
+			}
+			if !fresh {
+				delete(h.m, k)
+			}
+		}
 		ids = map[string]humanSend{}
 		h.m[session] = ids
 	}
@@ -351,33 +432,61 @@ func (h *humanSends) note(session, id, text string) {
 			delete(ids, k)
 		}
 	}
-	if len(ids) >= humanSendsMost {
-		oldest, oldestAt := "", now
+	return ids
+}
+
+// makeRoomLocked makes room for one more in ids, which holds at most humanSendsMost: the oldest void id goes first,
+// then, when vouched ones may (vouched), the oldest of all; false when there is no room. h.mu held.
+func makeRoomLocked(ids map[string]humanSend, vouched bool) bool {
+	if len(ids) < humanSendsMost {
+		return true
+	}
+	oldest, oldestAt := "", time.Time{}
+	for _, voidOnly := range []bool{true, false} {
+		if !voidOnly && !vouched {
+			break
+		}
 		for k, sent := range ids {
-			if !sent.at.After(oldestAt) {
+			if voidOnly && !sent.void {
+				continue
+			}
+			if oldest == "" || sent.at.Before(oldestAt) {
 				oldest, oldestAt = k, sent.at
 			}
 		}
-		delete(ids, oldest)
+		if oldest != "" {
+			delete(ids, oldest)
+			return true
+		}
 	}
-	// The words as the transcript shows the line: without the context blocks it drops from every user line.
-	text = transcript.ViewErrorsRe.ReplaceAllString(transcript.ContextRe.ReplaceAllString(text, ""), "")
-	ids[id] = humanSend{words: humanWords(text, humanWordsMost), at: now}
+	return false
 }
 
-// has: id is a send the hub vouched for into session, and text (the line the node tied to it) holds its words; a
-// picture of it (picture) is tied by the id alone.
-func (h *humanSends) has(session, id, text string, picture bool) bool {
-	if session == "" || id == "" {
+// has: id is a send the hub vouched for into session, text (the line the node tied to it) holds its words, and line is
+// the transcript line it counts for: the first one it was read on (a picture of it, picture, is tied by the id alone,
+// on the same line).
+func (h *humanSends) has(session, id, text string, picture bool, line string) bool {
+	if session == "" || id == "" || line == "" {
 		return false
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	sent, ok := h.m[session][id]
-	if !ok || time.Since(sent.at) > humanSendsKeep {
+	if !ok || sent.void || time.Since(sent.at) > humanSendsKeep {
 		return false
 	}
-	return picture || strings.Contains(humanWords(text, 1<<20), sent.words)
+	if !picture && !strings.Contains(humanWords(withoutContext(text), 1<<20), sent.words) {
+		return false
+	}
+	switch sent.line {
+	case "":
+		sent.line = line
+		h.m[session][id] = sent
+	case line:
+	default:
+		return false // the id on a second line: it counted for its first already
+	}
+	return true
 }
 
 // userOpened: conversation id is one the user opened, as noted when it was started (never a backfill's guess), and no

@@ -1,5 +1,14 @@
 # Lessons: web UI and interactions
 
+## A size budget over built files must not count their content hashes (#5164)
+
+The first-screen budget added up the brotli copies of files that import and preload each other by content-hashed name.
+A change to a lazy chunk, or to strings off the first screen, renames those chunks, and every first-screen file that
+names them gets eight new near-random characters per reference, which brotli cannot shrink: #5145, a strings-only
+change, measured 34 B more for ja (19 B over the budget) while the first screen's code was unchanged. Count a fixed
+string in place of each built file's hash (`firstScreenBytes` in `web/src/startup-preload.ts`), so only a change to what
+the code does moves the number. Any other compressed-size check over Vite's output needs the same.
+
 ## A menu opened from a layer above the menus' own goes inside that layer (#4991)
 
 - `Menu` portals to `document.body` at `z-50`. The image editor is a full-screen `z-[60]` layer, so a menu opened from it

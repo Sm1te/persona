@@ -1,6 +1,7 @@
-// "New agent"'s model picker (#794): the models a launcher's agent lists in its own /model menu
-// (GET /machines/{mid}/launchers/{name}/models, node/launcher_models.go), which launcher the picker asks, searching the
-// list, the thinking efforts a pick allows, and what a start sends. A pick is for one start only: nothing is saved.
+// A launcher's models (#794): what its agent lists in its own /model menu (GET /machines/{mid}/launchers/{name}/models,
+// node/launcher_models.go), read by New Agent's model panel (#5104), the chat's and the model settings' pickers; which
+// launcher a picker asks, searching the list, the thinking efforts a pick allows, and what a start sends. A New Agent
+// pick is for one start only: nothing about it is saved on the hub.
 import { MANAGER_HEADER } from "./manager-choice";
 import { t } from "../i18n";
 import { api, ApiError, enc, pastHub } from "./api";

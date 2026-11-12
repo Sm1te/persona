@@ -81,6 +81,10 @@ type acceptAsk struct {
 	// PushedAt: its card is due from then (retryAcceptance).
 	ForBriefing bool      `json:"for_briefing,omitempty"`
 	PushedAt    time.Time `json:"pushed_at,omitzero"`
+	// RaisedBy: while a decision is held for a briefing, the conversation that raised it when the main conversation is
+	// to hear of it once it is pushed after all: the task's leader conversation, or the background supervisor, whose
+	// tasks' ledgers name the main conversation (heldEscalates, supervise_background.go).
+	RaisedBy string `json:"raised_by,omitempty"`
 }
 
 // acceptPostWindow is how long after an ask its card that did not go out (the bot's status could not be read, the send

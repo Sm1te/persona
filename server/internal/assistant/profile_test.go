@@ -380,6 +380,7 @@ func TestSettingsTool(t *testing.T) {
 func TestBoolSettingsSet(t *testing.T) {
 	ctx := context.Background()
 	s := newTestService(t, newFakeHub().withMachine())
+	s.noBackground = false // assistant.main_supervises_own_tasks is the setting's own, as on a hub
 	tool := func(args string) (string, bool) {
 		r := s.Tool(ctx, ToolCall{Name: "persona_settings", Arguments: json.RawMessage(args), MachineID: "server", SessionID: "c1"})
 		return r.Content[0].Text, r.IsError
@@ -403,7 +404,7 @@ func TestBoolSettingsSet(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		def  bool
-	}{{"main_tasks_quiet", true}, {"start_requested_tasks", true}, {"done_needs_delivery", false}, {"interject_background", false}, {"agent_tasks", false}, {"main_background_folded", true}, {"inbox_signals", false}} {
+	}{{"main_tasks_quiet", true}, {"start_requested_tasks", true}, {"done_needs_delivery", false}, {"interject_background", false}, {"agent_tasks", false}, {"main_background_folded", true}, {"inbox_signals", false}, {"main_supervises_own_tasks", false}} {
 		key := "assistant." + c.name
 		get := func() string { out, _ := tool(`{"action":"get","key":"` + key + `"}`); return out }
 		set := func(value string) (string, bool) {

@@ -26,6 +26,8 @@
   "change_agent_tasks": "「Persona が開始した Agent はすべて監督付きタスクにする」：{before} → {after}",
   "title_inbox_signals": "監督付きタスクについての受信トレイの新着メッセージを監督者に知らせる",
   "change_inbox_signals": "「監督付きタスクについての受信トレイの新着メッセージを監督者に知らせる」：{before} → {after}",
+  "title_main_supervises_own_tasks": "メインチャットが自分のタスクを監督する",
+  "change_main_supervises_own_tasks": "「メインチャットが自分のタスクを監督する」：{before} → {after}",
   "title_model_tiers": "Agent プリセット",
   "change_model_tier": "{profile} · {tier}：{before} → {after}",
   "title_review_sample_percent": "抜き取りで確認する完了タスクの割合",

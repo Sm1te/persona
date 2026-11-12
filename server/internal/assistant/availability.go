@@ -162,6 +162,27 @@ func (s *Service) availInput(machine, session, source string, now time.Time) {
 	b.inputs[k] = availInput{source: source, until: now.Add(availInputFor)}
 }
 
+// availStartedBy: the manager itself started machine's assistant conversation session for source (the background
+// supervisor, supervise_background.go). Its first round is that source's, not roundOther as a new conversation's
+// is: the id is known only once the start answered, by when the round may already have been seen starting.
+func (s *Service) availStartedBy(machine, session, source string, now time.Time) {
+	if machine == "" || session == "" || source == "" {
+		return
+	}
+	b := &s.avail
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.init()
+	k := [2]string{machine, session}
+	b.known[k] = true
+	if r, open := b.rounds[k]; open && r.source == roundOther {
+		r.source = source
+		b.rounds[k] = r
+		return
+	}
+	b.inputs[k] = availInput{source: source, until: now.Add(availInputFor)}
+}
+
 // relayKind is what a queued message counts as: its message source, else a notice.
 func relayKind(msg relayMsg) string {
 	if src := msg.source(); src != nil {

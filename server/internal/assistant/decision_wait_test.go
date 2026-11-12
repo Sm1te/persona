@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/i18n"
+	"github.com/nwverse/persona/server/internal/proto"
 )
 
 // Decisions that can wait (#4930, decision_wait.go). All names, ids and texts are placeholders.
@@ -456,4 +457,63 @@ func TestOnlyABriefingThatReachedTheOwnerEndsTheWait(t *testing.T) {
 			t.Fatalf("after the card: shown %q, ask %+v", shown, a)
 		}
 	})
+}
+
+// The background supervisor's held decision is told to the main conversation once it is pushed after all, as a
+// leader's is: its task's ledger names the main conversation, so who raised it is kept with the held decision.
+func TestBackgroundSupervisorsHeldDecisionEscalatesWhenItIsPushed(t *testing.T) {
+	s, f, todo := newBackgroundService(t)
+	briefingOn(s, true)
+	agentTurn(s, f, proto.StatusWorking, "", 0)
+	agentTurn(s, f, proto.StatusDone, "两种走法。", 0)
+	bg := backgroundID(t, s)
+	listBackground(t, s, f, bg)
+	waitFor(t, "the background supervisor's message", func() bool { return len(f.noticesTo(bg)) == 1 })
+	args := waitingDecision()
+	args["todo_id"] = todo.ID
+	res, err := runJSON(t, s, bg, "task_review", args)
+	if err != nil || !strings.Contains(res, "can wait (can_wait)") {
+		t.Fatalf("the background supervisor's needs_user: %s %v", res, err)
+	}
+	if a := askOf(s, todo.ID); a == nil || !a.ForBriefing || a.RaisedBy != bg {
+		t.Fatalf("the held decision does not say who raised it: %+v", a)
+	}
+	if n := f.noticesTo("conv1"); len(n) != 0 {
+		t.Fatalf("the main conversation is told of a held decision: %q", n)
+	}
+	s.sweepWaitingDecisions(time.Now().Add(decisionWaitFor))
+	if n := deadlinePushes(f, todo.ID); n != 1 {
+		t.Fatalf("%d pushes, want 1", n)
+	}
+	waitFor(t, "the main conversation's message", func() bool { return len(f.noticesTo("conv1")) == 1 })
+	n := f.noticesTo("conv1")[0]
+	for _, want := range []string{"跟进它的后台督办对话判断要用户决定", "后台督办对话推荐：先灰度 10%"} {
+		if !strings.Contains(n, want) {
+			t.Errorf("the main conversation's message lacks %q:\n%s", want, n)
+		}
+	}
+	if a := askOf(s, todo.ID); a.ForBriefing || a.RaisedBy != "" {
+		t.Errorf("the pushed decision is still kept as held: %+v", a)
+	}
+}
+
+// The main conversation's own held decision on a task of its own is not told back to it when it is pushed.
+func TestMainConversationsHeldDecisionIsNotEscalated(t *testing.T) {
+	s, f, todo, _, _ := conclusionService(t, false)
+	briefingOn(s, true)
+	waitsForReview(t, s, f, todo.ID, "两种走法。")
+	reviewTask(t, s, todo.ID, waitingDecision())
+	if a := askOf(s, todo.ID); a == nil || !a.ForBriefing || a.RaisedBy != "" {
+		t.Fatalf("ask %+v", a)
+	}
+	s.sweepWaitingDecisions(time.Now().Add(decisionWaitFor))
+	if n := deadlinePushes(f, todo.ID); n != 1 {
+		t.Fatalf("%d pushes, want 1", n)
+	}
+	id := superviseSignal{Todo: todo.ID, Kind: sigEscalated}.id()
+	s.supervise.mu.Lock()
+	defer s.supervise.mu.Unlock()
+	if _, waits := s.supervise.pending[id]; waits || s.supervise.sent[id] != "" {
+		t.Fatal("the main conversation is told of its own decision")
+	}
 }

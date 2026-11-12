@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The effort slider (#5032): keys move one level (Home / End to the ends), a drag changes the level once, when it is let
-// go, the colors are the level's own, and the default level's bubble says it is recommended.
+// go, the colors are the level's own, the default level's bubble says it is recommended, and no level set is said so.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,5 +72,18 @@ describe("the effort slider", () => {
     expect(slider.tabIndex).toBe(-1);
     key(slider, "ArrowRight");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("with no level set (#5104) says so, draws no fill, and a key lands on the lowest or the highest", () => {
+    const onChange = vi.fn();
+    act(() => root.render(<EffortSlider stops={STOPS} value="" labelOf={(e) => e.toUpperCase()} unsetLabel="Model default" onChange={onChange} />));
+    const slider = host.querySelector<HTMLElement>('[role="slider"]')!;
+    expect(slider.getAttribute("aria-valuetext")).toBe("Model default");
+    expect(slider.getAttribute("aria-valuenow")).toBeNull();
+    expect(host.querySelector<HTMLElement>("[data-effort-fill]")!.style.width).toBe("0%");
+    expect(host.querySelector("[data-effort-thumb]")!.hasAttribute("data-unset")).toBe(true);
+    key(slider, "ArrowRight");
+    key(slider, "End");
+    expect(onChange.mock.calls).toEqual([["low"], ["max"]]);
   });
 });

@@ -18,6 +18,8 @@
   "extension_over": "扩展主题「{name}」的颜色叠在主题色上面；选「默认」扩展主题才看得出主题色。",
   "text_size": "字号",
   "text_size_hint": "整个网页的文字一起变大变小，浏览器的缩放照常叠在上面",
+  "recent_chats": "侧栏的最近对话",
+  "recent_chats_hint": "侧栏「最近」列出几条最新的 Persona 对话，点「再显示」每次再加这么多。只存在这个浏览器里。",
   "small": "小",
   "standard": "标准",
   "large": "大",

@@ -7,10 +7,12 @@
 //   (cd web && PERSONA_HUB_URL=http://127.0.0.1:18795 npx vite --port 5195 --strictPort &)
 //   node web/e2e/launcher-health.mjs http://127.0.0.1:5195 [--shots <dir>] [--locale zh-CN|en-US|ja-JP]
 //
-// Runs wide (1280) and phone width (390), light and dark: the dialog with work_gw (not in the terminal) and team_gw (its key
-// rejected) grayed out and said under the launchers (every line whole, none cut off), work_gw's "How to fix", the failed
-// chat (in MOCK_LANG's words), and the Run agent here menu of a free shell with the blocked ones last, with why. Prints
-// one line per check and a verdict; exits 1 on a failure.
+// Runs wide (1280) and phone width (390), light and dark: New agent's model panel (#5104) with work_gw (not in the
+// terminal) and team_gw (its key rejected) listed as groups whose rows are off, each with its reason and How to fix
+// (every line whole, none cut off), work_gw's "How to fix", the failed chat (in MOCK_LANG's words), and the Run agent
+// here menu of a free shell with the blocked ones last, with why. With MOCK_LAUNCHER_HEALTH=default (Model settings run
+// work_gw) the follow row carries work_gw's warning and the line under the first message says work_gw runs this time.
+// Prints one line per check and a verdict; exits 1 on a failure.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -33,9 +35,9 @@ const FAILED = "/s/macbook/f1643000-0000-4000-8000-000000000001"; // MOCK_LAUNCH
 const lang = locale.startsWith("en") ? "en" : locale.startsWith("ja") ? "ja" : "zh";
 // words of the hub's sentence (MOCK_LANG matching --locale), the help's link and the menu's names, per language
 const WORDS = {
-  zh: { reason: "这台电脑的终端里用不了", provider: "模型供应商", actions: (n) => `${n} 的操作`, runHere: "在这里运行 Agent…", legacy: "详情缓存" },
-  en: { reason: "Not available in this computer's terminal", provider: "model provider", actions: (n) => `Actions for ${n}`, runHere: "Run agent here…", legacy: "no cached details" },
-  ja: { reason: "このコンピューターのターミナルでは使えません", provider: "モデルプロバイダー", actions: (n) => `${n}の操作`, runHere: "ここでエージェントを実行…", legacy: "キャッシュがありません" },
+  zh: { reason: "这台电脑的终端里用不了", auth: "Key 或登录被拒绝了", fix: "怎么修好", provider: "模型供应商", actions: (n) => `${n} 的操作`, runHere: "在这里运行 Agent…", legacy: "详情缓存" },
+  en: { reason: "Not available in this computer's terminal", auth: "Its key or sign-in was rejected", fix: "How to fix", provider: "model provider", actions: (n) => `Actions for ${n}`, runHere: "Run agent here…", legacy: "no cached details" },
+  ja: { reason: "このコンピューターのターミナルでは使えません", auth: "キーまたはサインインが拒否されました", fix: "直し方", provider: "モデルプロバイダー", actions: (n) => `${n}の操作`, runHere: "ここでエージェントを実行…", legacy: "キャッシュがありません" },
 }[lang];
 const SIZES = { wide: { width: 1280, height: 860 }, narrow: { width: 390, height: 844 } };
 const RUNS = [["wide", "light"], ["wide", "dark"], ["narrow", "light"], ["narrow", "dark"]];
@@ -70,6 +72,23 @@ async function openNewAgent(page, tag, narrow) {
   await page.locator('[role="dialog"]').waitFor({ timeout: 8000 }).catch(() => fail(`${tag}: the New agent dialog did not open`));
 }
 
+// New agent's model panel (#5104), from the model pill at the right of the first message box, once every launcher's list
+// is read (each group's spinner gone)
+async function openPanel(page, tag) {
+  const pill = page.locator('[data-testid="new-agent-model"] [data-model-pill]');
+  for (let i = 0; i < 60 && ((await pill.getAttribute("data-model-pill")) !== "ready" || (await pill.isDisabled())); i++) await page.waitForTimeout(150);
+  await pill.click({ timeout: 8000 }).catch(() => fail(`${tag}: no model pill in New agent`));
+  const panel = page.locator("[data-model-panel]");
+  await panel.waitFor({ timeout: 8000 }).catch(() => fail(`${tag}: the model panel did not open`));
+  for (let i = 0; (await panel.locator('[role="status"]').count()) > 0; i++) {
+    if (i === 60) fail(`${tag}: the panel's lists did not load`);
+    await page.waitForTimeout(150);
+  }
+  return panel;
+}
+
+const group = (panel, name) => panel.locator(`[data-panel-section="provider"][aria-label="${name}"]`);
+
 async function run(browser, size, theme) {
   const tag = `${size}-${theme}`;
   const ctx = await browser.newContext({ viewport: SIZES[size], deviceScaleFactor: 2, hasTouch: size === "narrow", colorScheme: theme, locale });
@@ -81,33 +100,63 @@ async function run(browser, size, theme) {
   await page.waitForSelector("main textarea", { timeout: 15000 });
 
   await openNewAgent(page, tag, size === "narrow");
-  const blocked = page.locator('[data-testid="new-agent-blocked"]');
-  await blocked.waitFor({ timeout: 8000 }).catch(() => fail(`${tag}: no line under the launchers for the grayed-out ones`));
-  const lines = await blocked.locator("li").count();
-  if (lines !== 2) fail(`${tag}: ${lines} grayed-out launchers said, want work_gw and team_gw`);
-  ok(`${tag}: work_gw and team_gw are said under the launchers`);
-  const disabled = await page.locator('button[aria-disabled="true"]').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
-  if (!disabled.includes("work_gw") || !disabled.includes("team_gw")) fail(`${tag}: grayed-out chips ${JSON.stringify(disabled)}`);
-  const picked = await page.locator('button[aria-pressed="true"][aria-disabled="true"]').count();
-  if (picked) fail(`${tag}: a grayed-out launcher is picked by default`);
-  ok(`${tag}: both chips are grayed out and neither is picked`);
-  if ((await sideways(page)) > 0) fail(`${tag}: the page scrolls sideways`);
-  // each line wraps instead of ending in an ellipsis: a phone has no hover for the chip's tooltip
-  const clipped = await blocked.locator("li, li *").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
-  if (clipped.length) fail(`${tag}: a line under the launchers is cut off: ${JSON.stringify(clipped)}`);
-  ok(`${tag}: every line under the launchers is whole`);
-  // MOCK_LAUNCHER_HEALTH=default: Model settings' default runs work_gw, so the Default chip is marked (still the choice)
-  // and work_gw's line comes first, tagged as the one this start uses
-  if (await page.locator('[data-testid="new-agent-default-blocked"]').count()) {
-    const first = blocked.locator("li").first();
-    if (!(await first.getAttribute("data-runs")) || !((await first.textContent()) ?? "").includes("work_gw")) fail(`${tag}: the Default chip is marked but work_gw's line is not first and tagged`);
-    const pressed = await page.locator('[data-testid="new-agent-default-blocked"]').locator("xpath=ancestor::button[1]").getAttribute("aria-pressed");
-    if (pressed !== "true") fail(`${tag}: the marked Default chip is not the choice`);
-    ok(`${tag}: Default is marked, still chosen, and work_gw's line is first`);
+  // #5104: the launcher chips and the list of grayed-out ones under them are gone. Each launcher is a group of the model
+  // panel: one this computer can't run says why under its name, once, with How to fix, and its rows can't be picked.
+  let panel = await openPanel(page, tag);
+  for (const [name, why] of [["work_gw", WORDS.reason], ["team_gw", WORDS.auth]]) {
+    const g = group(panel, name);
+    if (!(await g.count())) fail(`${tag}: no ${name} group in the model panel`);
+    if (!((await g.textContent()) ?? "").includes(why)) fail(`${tag}: ${name}'s group doesn't say ${why}`);
+    if (!(await g.getByRole("button", { name: WORDS.fix }).count())) fail(`${tag}: ${name}'s group has no How to fix`);
   }
+  ok(`${tag}: work_gw and team_gw are listed in the model panel with why and How to fix`);
+  // every row of theirs is blocked (its reason is its tooltip) and announced as off, except the row that runs, which
+  // stays reachable for its flyout (ui/model-panel/Row.tsx)
+  const rows = await panel.locator('[data-panel-section="provider"][aria-label$="_gw"] [data-panel-row]')
+    .evaluateAll((els) => els.map((e) => ({ row: e.dataset.panelRow, off: e.getAttribute("aria-disabled") === "true", why: e.getAttribute("title") ?? "", lit: e.hasAttribute("data-current") })));
+  if (rows.length < 2 || rows.some((r) => !r.why || (!r.off && !r.lit))) fail(`${tag}: a grayed-out launcher's row can be picked: ${JSON.stringify(rows)}`);
+  const lit = rows.filter((r) => r.lit).map((r) => r.row);
+  ok(`${tag}: both groups' rows are off`);
+  if ((await sideways(page)) > 0) fail(`${tag}: the page scrolls sideways`);
+  // each reason wraps instead of ending in an ellipsis: a phone has no hover for a tooltip
+  const notes = panel.locator('[data-panel-section="provider"][aria-label$="_gw"] div').filter({ has: page.getByRole("button", { name: WORDS.fix }) });
+  const clipped = await notes.locator("*").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+  if (clipped.length) fail(`${tag}: a launcher's reason is cut off: ${JSON.stringify(clipped)}`);
+  ok(`${tag}: every reason in the panel is whole`);
+  const follow = panel.locator("[data-follow-row]");
+  const blocked = page.locator('[data-testid="new-agent-blocked"]');
+  const followSays = (await follow.locator("[title]").count()) ? ((await follow.locator("[title]").first().getAttribute("title")) ?? "") : "";
+  if (await blocked.count()) {
+    // MOCK_LAUNCHER_HEALTH=default: Model settings' default runs work_gw, so following them (still the choice) carries
+    // its warning, and the line under the box says what runs this time (was: the Default chip marked, work_gw's line first)
+    if ((await follow.getAttribute("aria-selected")) !== "true") fail(`${tag}: the follow row is not the choice`);
+    if (!followSays.includes(WORDS.reason)) fail(`${tag}: the follow row doesn't carry work_gw's warning: ${followSays}`);
+    if (JSON.stringify(lit) !== JSON.stringify(["model:work_gw\ndefault"])) fail(`${tag}: the row lit is ${JSON.stringify(lit)}, want work_gw's Default (it runs)`);
+    await page.keyboard.press("Escape");
+    await blocked.waitFor({ timeout: 4000 }).catch(() => fail(`${tag}: nothing under the box says work_gw runs this time`));
+    const line = (await blocked.textContent()) ?? "";
+    if (!line.includes("work_gw") || !line.includes(WORDS.reason)) fail(`${tag}: the line under the box says ${line}`);
+    ok(`${tag}: the follow row is still the choice with work_gw's warning, and the line under the box says work_gw runs`);
+    await shot(page, "web-newagent-default", tag);
+    // its How to fix opens the help under it, and closes it again
+    const fix = blocked.getByRole("button", { name: new RegExp(`${WORDS.fix}`) });
+    await fix.click();
+    await page.locator('[data-testid="launcher-blocked-help"]').filter({ hasText: "work_gw" }).waitFor({ timeout: 4000 }).catch(() => fail(`${tag}: the line's How to fix did not open the help`));
+    if ((await fix.getAttribute("aria-expanded")) !== "true") fail(`${tag}: the line's How to fix doesn't say it is open`);
+    await fix.click();
+    await page.locator('[data-testid="launcher-blocked-help"]').waitFor({ state: "detached", timeout: 4000 }).catch(() => fail(`${tag}: the line's How to fix did not close the help`));
+    ok(`${tag}: the line's How to fix opens and closes work_gw's help`);
+    panel = await openPanel(page, tag);
+  } else {
+    if (followSays.includes(WORDS.reason)) fail(`${tag}: the follow row warns of work_gw, but Model settings run claude: ${followSays}`);
+    if (lit.length) fail(`${tag}: a grayed-out launcher is the one that runs by default: ${JSON.stringify(lit)}`);
+    ok(`${tag}: neither runs by default, and nothing under the box warns`);
+  }
+  await group(panel, "work_gw").scrollIntoViewIfNeeded();
   await shot(page, "web-newagent", tag);
 
-  await blocked.locator("li").first().locator("button").click();
+  // How to fix in work_gw's group: the panel closes and the help opens under the box
+  await group(panel, "work_gw").getByRole("button", { name: WORDS.fix }).click();
   const help = page.locator('[data-testid="launcher-blocked-help"]');
   await help.waitFor({ timeout: 4000 }).catch(() => fail(`${tag}: How to fix did not open`));
   const text = (await help.textContent()) ?? "";
@@ -116,7 +165,8 @@ async function run(browser, size, theme) {
   await help.scrollIntoViewIfNeeded();
   await shot(page, "web-newagent-help", tag);
   // team_gw's (its key rejected): the cause itself is said in the help, whole, under its title
-  await blocked.locator("li").filter({ hasText: "team_gw" }).locator("button").click();
+  panel = await openPanel(page, tag);
+  await group(panel, "team_gw").getByRole("button", { name: WORDS.fix }).click();
   const reason = page.locator('[data-testid="launcher-blocked-reason"]');
   await reason.waitFor({ timeout: 4000 }).catch(() => fail(`${tag}: team_gw's help does not say its cause`));
   ok(`${tag}: team_gw's help says its cause: ${await reason.textContent()}`);

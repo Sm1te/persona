@@ -260,7 +260,7 @@ func (s *Service) toolInteractionAnswer(ctx context.Context, self string, args j
 		return "", err
 	}
 	// A card handed to this conversation before the user (ask_route.go): its answer is the task's decision.
-	todo, routed := s.routedTo(ix.ID, self)
+	todo, routed := s.routedTo(ix.ID, self, s.isMain(ctx, self))
 	var res struct {
 		OK     bool   `json:"ok"`
 		Status string `json:"status"`

@@ -80,7 +80,7 @@ func otherNoReader(agent string) string {
 // otherAgent: an agent herdr reports that no branch of setAgents reads (gemini, amp…): listed with its terminal only.
 func otherAgent(a host.Agent) bool {
 	switch a.Agent {
-	case "", "claude", "codex", traexAgent, piAgent, opencodeAgent:
+	case "", "claude", "codex", traexAgent, piAgent, ompAgent, opencodeAgent:
 		return false
 	}
 	return host.ParsePane(a.PaneID).Kind != host.Botmux
@@ -113,8 +113,8 @@ func (n *Node) terminalOnly(id string) (reader terminalReader, ok bool) {
 		return terminalReader{}, false
 	}
 	switch {
-	case a.Agent == piAgent:
-		return terminalReader{kind: piAgent, notice: piNoExtension, code: "pi_no_extension"}, true
+	case piFamily(a.Agent):
+		return terminalReader{kind: a.Agent, notice: piFamilyNoExtension(a.Agent), code: piFamilyCode(a.Agent)}, true
 	case a.Agent == opencodeAgent:
 		return terminalReader{kind: opencodeAgent, notice: opencodeNoPlugin, code: "opencode_no_extension"}, true
 	case otherAgent(a):

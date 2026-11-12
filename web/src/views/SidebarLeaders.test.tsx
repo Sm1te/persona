@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // The leader conversations in the sidebar (#3623, #4331): Persona chats are the main one (its row above) and the hub's
 // `assistant.leaders`, "常驻", in the hub's order under each one's name with what it has Working and Waiting on you
-// (the direction tree, GET /api/v1/assistant/directions/tree, #4352), then "最近", the newest five of the user's other
-// chats (#4873); every other chat is under 全部对话. The hub's `directions` message makes an open sidebar read the tree
+// (the direction tree, GET /api/v1/assistant/directions/tree, #4352), then "最近", the newest of the user's other chats
+// (#4873; 15 by default, a setting, with Show more, #5146); every chat is under 全部对话. The hub's `directions` message makes an open sidebar read the tree
 // again (a leader made or ended anywhere).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,6 +13,7 @@ vi.hoisted(() => {
 });
 import { t } from "../i18n";
 import { resetDirectionNames } from "../lib/direction-names";
+import { setRecentCount } from "../lib/sidebar-recent";
 import { connect, refresh, reset } from "../lib/store";
 import type { Session } from "../lib/types";
 import { Sidebar } from "./Sidebar";
@@ -138,20 +139,60 @@ describe("the leader conversations in the sidebar", () => {
     expect(headings()).toEqual([t("sidebar.directions")]);
   });
 
-  it("list in 最近 the newest five of the user's own other chats; the rest and the hub's own are under 全部对话", async () => {
-    const day = (d: number) => `2026-11-${String(d).padStart(2, "0")}T00:00:00Z`;
-    conversations = [
-      ...base,
-      { ...conversation("twin", "Inbox reply", "2026-11-10T08:30:00Z"), origin: "inbox" },
-      { ...conversation("task", "Morning brief", "2026-11-10T08:40:00Z"), origin: "task" },
-      { ...conversation("wx", "From a channel", day(9)), origin: "channel" },
-      conversation("c8", "Eight", day(8)),
-      conversation("c7", "Seven", day(7)),
-      conversation("c6", "Six", day(6)),
-    ];
-    await renderSidebar();
-    expect(rowIds()).toEqual(["lead-a", "lead-b", "newest", "wx", "c8", "c7", "c6"]);
-    expect(host.querySelector('a[href="/history"]')!.textContent).toContain(String(conversations.length));
+  describe("最近 (#5146)", () => {
+    const pad = (d: number) => String(d).padStart(2, "0");
+    // 20 older chats of the user's own, c20 the newest of them
+    const older = Array.from({ length: 20 }, (_, i) => conversation(`c${pad(i + 1)}`, `Chat ${i + 1}`, `2026-10-${pad(i + 1)}T00:00:00Z`));
+    const own = ["newest", "wx", "mine", ...older.map((c) => c.session_id).reverse()];
+    const button = (text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === text);
+    const showMore = () => Array.from({ length: 15 }, (_, i) => button(t("sidebar.show_more", { count: i + 1 }))).find(Boolean);
+    beforeEach(() => {
+      conversations = [
+        ...base,
+        { ...conversation("twin", "Inbox reply", "2026-11-10T08:30:00Z"), origin: "inbox" },
+        { ...conversation("task", "Morning brief", "2026-11-10T08:40:00Z"), origin: "task" },
+        { ...conversation("wx", "From a channel", "2026-11-09T00:00:00Z"), origin: "channel" },
+        ...older,
+      ];
+    });
+
+    it("lists the newest 15 of the user's own other chats; the hub's own are only under 全部对话", async () => {
+      await renderSidebar();
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own.slice(0, 15)]);
+      expect(host.querySelector('a[href="/history"]')!.textContent).toContain(String(conversations.length));
+    });
+
+    it("shows 15 more for each Show more until none are left, Show less goes back, and a reload keeps what was open", async () => {
+      await renderSidebar();
+      expect(button(t("sidebar.show_less"))).toBeUndefined();
+      act(() => button(t("sidebar.show_more", { count: 8 }))!.click());
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own]);
+      expect(button(t("sidebar.show_more", { count: 8 }))).toBeUndefined();
+      // a reload
+      act(() => root.unmount());
+      root = createRoot(host);
+      await renderSidebar();
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own]);
+      act(() => button(t("sidebar.show_less"))!.click());
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own.slice(0, 15)]);
+      expect(button(t("sidebar.show_less"))).toBeUndefined();
+    });
+
+    it("lists as many as the setting says, and Show more adds as many again", async () => {
+      setRecentCount(5);
+      await renderSidebar();
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own.slice(0, 5)]);
+      act(() => button(t("sidebar.show_more", { count: 5 }))!.click());
+      expect(rowIds()).toEqual(["lead-a", "lead-b", ...own.slice(0, 10)]);
+    });
+
+    it("has no Show more when there are 15 or fewer", async () => {
+      conversations = [...base, ...older.slice(0, 13)];
+      await renderSidebar();
+      expect(rowIds()).toHaveLength(2 + 15);
+      expect(showMore()).toBeUndefined();
+      expect(button(t("sidebar.show_less"))).toBeUndefined();
+    });
   });
 
   it("have New chat as the compose icon on the section's title, not a row of its own", async () => {

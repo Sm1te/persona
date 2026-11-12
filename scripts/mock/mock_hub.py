@@ -10568,6 +10568,12 @@ LAUNCHER_MODELS = {
     ]},
 }
 LAUNCHER_MODELS["sonnetcc"] = dict(LAUNCHER_MODELS["claude"], locked="启动器固定了模型参数，不能覆盖具体模型")
+# MOCK_NEW_AGENT_PANEL=1 (#5104, web/e2e/new-agent-model.mjs): the gateway behind claude's glm-5.3 also serves Codex, so
+# codex lists the same model ID and New Agent's flyout offers that model under both engines; and the Mac Studio has no
+# codex launcher, so a Codex pick made on another computer falls back to the default there.
+NEW_AGENT_PANEL = os.environ.get("MOCK_NEW_AGENT_PANEL") == "1"
+if NEW_AGENT_PANEL:
+    LAUNCHER_MODELS["codex"]["models"].append({"id": "gateway/glm-5.3", "name": "glm-5.3", "description": "From gateway", "efforts": ["low", "medium", "high"], "default_effort": "medium"})
 
 # Typing a model ID (#1644, docs/assistant/model-config.md "Typing a model ID"): MOCK_CUSTOM_MODELS=1 lists the IDs typed
 # before after a Claude Code / Codex launcher's own models (`custom: true`, none for a locked one), takes Forget
@@ -10801,10 +10807,13 @@ def auto_named(b):
     return name, b
 
 
-def machine_launchers():
-    """GET /api/v1/machines/{mid}/launchers's launchers: claude, sonnetcc and codex ("Create from the phone"), and under
-    MOCK_PROVIDERS the managed providers Agents can start, each with its display name."""
+def machine_launchers(mid=""):
+    """GET /api/v1/machines/{mid}/launchers's launchers: claude, sonnetcc and codex ("Create from the phone"; not on the
+    Mac Studio under MOCK_NEW_AGENT_PANEL), and under MOCK_PROVIDERS the managed providers Agents can start, each with its
+    display name."""
     out = [{"name": "claude", "model": "opus"}, {"name": "sonnetcc", "model": "sonnet"}, codex_launcher()]
+    if NEW_AGENT_PANEL and mid == "studio":
+        out = [l for l in out if l["name"] != "codex"]
     if MOCK_PROVIDERS:
         out += [{k: l[k] for k in ("name", "display_name", "base_url", "model", "source") if l.get(k)}
                 for l in LAUNCHERS if l["source"] == "persona" and l.get("kind") != "api"]
@@ -18483,7 +18492,7 @@ def model_defaults_launchers(h, p, q):
         default = {"provider": b.get("provider", "").removeprefix("launcher."), "model": b.get("model", ""), "effort": b.get("effort", "")}
         if purpose.get("runtimes"):
             default["runtime"] = b.get("runtime") or "cli"
-    out = {"launchers": machine_launchers(), "default": default}
+    out = {"launchers": machine_launchers(p.split("/")[4]), "default": default}
     if pid == "agent.new":
         # "New agent"'s presets (#2225): the tiers of the profile in use whose launcher this machine starts
         out["tiers"] = [{"name": name, **tier} for name, tier in sorted(MOCK_PRESETS.items())]
@@ -19419,7 +19428,7 @@ class H(BaseHTTPRequestHandler):
             return self.send_json(listing)
         if doctor_route(self, p, "GET"): return
         if p.startswith("/api/v1/machines/") and p.endswith("/launchers"):
-            return self.send_json({"launchers": machine_launchers()})
+            return self.send_json({"launchers": machine_launchers(p.split("/")[4])})
         if p.startswith("/api/v1/machines/") and p.endswith("/claude-settings"):
             return self.send_json({"settings": CLAUDE_SETTINGS.setdefault(p.split("/")[4], _claude_settings())})
         if p.startswith("/api/v1/machines/") and p.endswith("/claude-dirs"):

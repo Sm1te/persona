@@ -3,5 +3,6 @@
   "guard_no_record": "Couldn’t record the message ID, so nothing was sent to this session",
   "lost_before": "The connection dropped while this message was being sent earlier",
   "lost_during": "The connection to the computer dropped while sending",
+  "reserved_id": "This message ID is reserved for Persona. Send the message again.",
   "unknown": "{why}: it may have reached the computer already. Check the chat before sending it again"
 }

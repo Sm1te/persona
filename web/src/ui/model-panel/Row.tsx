@@ -60,7 +60,9 @@ interface RowProps {
 
 export function Row({ row, second, describes, blocked, customizable, flyoutOpen, starred, starRemoves, frozen, onPick, onStar, onCustomize, onCustomizeKey, onForget }: RowProps) {
   const { model, provider } = row;
-  const name = row.kind === "typed" ? t("ui-modelpanel.use_typed", { id: model.id }) : model.name;
+  const name = row.kind === "typed" ? t("ui-modelpanel.use_typed", { id: model.id }) : row.preset ? row.preset.name : model.name;
+  // a typed ID's "Use “…”" and a preset (a setup of the profile's, not a copy of one's own) have no star
+  const stars = row.kind !== "typed" && row.kind !== "preset";
   const effort = model.efforts.length ? shownEffort(row.setup, model) : "";
   // what the right side says, in words: "Claude Code · High · Fast"
   const setupTitle = [agentName(provider.engine), effort && effortTitle(effort), row.setup.fast && t("ui-modelpanel.fast_short")].filter(Boolean).join(" · ");
@@ -112,8 +114,8 @@ export function Row({ row, second, describes, blocked, customizable, flyoutOpen,
         <span className="flex size-[18px] shrink-0 items-center justify-center text-ink-2">
           <ProviderMark name={provider.name} />
         </span>
-        <span title={row.kind === "typed" ? model.id : name} className={cx("min-w-0 truncate leading-5 font-medium", model.custom && row.kind !== "typed" && "font-mono")}>{name}</span>
-        {row.kind !== "typed" && (
+        <span title={row.kind === "typed" ? model.id : name} className={cx("min-w-0 truncate leading-5 font-medium", model.custom && stars && "font-mono")}>{name}</span>
+        {stars && (
           <RowButton
             icon="star"
             filled={starred}

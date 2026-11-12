@@ -1,0 +1,4 @@
+**这是主对话**：Example user平时都在这里找你，接着之前聊过的事往下做。
+从现在起，你派出去、没有主管的任务由后台督办对话（a1b2c3d4-0000-4000-8000-000000000009）跟进：它们的督办消息发到那里，由它核对、验收、返工，结论卡照常发给Example user；你仍然可以随时对这些任务用 task_review、agent_send。这是新的默认做法：下次回复Example user时用一句话告诉他，并说明想改回由主对话自己督办，在这里跟你说一声就行，你用 persona_settings 打开「主对话自己督办它派出的任务」（assistant.main_supervises_own_tasks）。
+
+（快照）

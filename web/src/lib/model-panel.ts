@@ -25,6 +25,9 @@ export interface PanelModel {
   context?: number;
   /** A model ID typed before for this provider (#1644): listed after the provider's own models, can be forgotten. */
   custom?: boolean;
+  /** It stands for whatever its provider runs when no model is given (New Agent's "Default" row), not a model of its
+   *  own: no other provider's row is the same model. */
+  providerDefault?: boolean;
 }
 
 /** One provider: a launcher (rc-file alias, PATH wrapper, built-in claude, Persona-managed) or a hosted provider. */
@@ -46,6 +49,9 @@ export interface PanelProvider {
   unavailable?: string;
   /** It takes a model ID typed by hand: a search that names no listed model offers "Use “…”" in this group. */
   typable?: boolean;
+  /** The startup ID under a display name (#5029, lib/provider-names.ts providerIdNote): the group's header shows it small
+   *  in monospace, the rail's tooltip after the name. */
+  idNote?: string;
 }
 
 /** A setup: what a pick applies, what a favorite or a recent entry keeps. */
@@ -68,6 +74,9 @@ export interface PanelState {
   busy?: string;
   /** A warning line on top of the list (a pending switch's consequence). */
   note?: string;
+  /** The choice is for an Agent that hasn't started yet (New Agent): no Recommended group, as Cindy's new task has none;
+   *  the model picked stays in its provider's group. */
+  starting?: boolean;
 }
 
 /** Where favorites, recent setups and customizations are kept apart: an Agent's providers are not a Persona chat's. */
@@ -167,13 +176,14 @@ const takes = (model: Pick<PanelModel, "efforts">, effort: string | undefined) =
 
 /**
  * The setup a model's row stands for, and what picking it sends. The model that runs now shows what runs (its effort,
- * then its override's; its Fast as it runs). Any other: its override's effort, else the effort running now when this model takes it,
- * else none (the model's own default); Fast only from its override, and only where the model has it.
+ * then its override's, except for an Agent not started yet, whose form holds the whole setup; its Fast as it runs). Any
+ * other: its override's effort, else the effort running now when this model takes it, else none (the model's own
+ * default); Fast only from its override, and only where the model has it.
  */
-export function rowSetup(provider: Pick<PanelProvider, "id" | "models">, model: PanelModel, state: Pick<PanelState, "current">, override?: PanelOverride): PanelConfig {
+export function rowSetup(provider: Pick<PanelProvider, "id" | "models">, model: PanelModel, state: Pick<PanelState, "current" | "starting">, override?: PanelOverride): PanelConfig {
   const current = state.current;
   const now = runsNow(provider, model, current);
-  const effort = now ? (takes(model, current?.effort) ?? takes(model, override?.effort)) : (takes(model, override?.effort) ?? takes(model, current?.effort));
+  const effort = now ? (takes(model, current?.effort) ?? (state.starting ? undefined : takes(model, override?.effort))) : (takes(model, override?.effort) ?? takes(model, current?.effort));
   // what runs is what runs: an unset Fast on the running model is Standard, not "unknown, take the override"
   const fast = model.fast ? (now ? current?.fast : override?.fast) : undefined;
   return cleanSetup({ provider: provider.id, model: model.id, effort, fast });
@@ -203,7 +213,7 @@ export function rowBlock(provider: PanelProvider, state: Pick<PanelState, "busy"
  *  chat applies flyout edits at once (`live`), even while picks are off (busy, or a Codex session that changes only its
  *  effort and Fast); any other row only while it can be picked. */
 export function rowCustomizable(row: Pick<PanelRow, "kind" | "current" | "provider">, state: Pick<PanelState, "busy">, live: boolean): boolean {
-  if (row.kind === "recent" || row.kind === "typed") return false;
+  if (row.kind === "recent" || row.kind === "typed" || row.kind === "preset") return false;
   if (row.kind === "model" && row.current && live) return true;
   return !rowBlock(row.provider, state);
 }
@@ -218,11 +228,21 @@ export type PanelView = { kind: "recent" } | { kind: "favorites" } | { kind: "al
 
 export const sameView = (a: PanelView, b: PanelView) => a.kind === b.kind && (a.kind !== "provider" || (b.kind === "provider" && a.provider === b.provider));
 
+/** A ready-made setup offered as one row of its own (New Agent's Agent presets, #2225): a name and what it is for. */
+export interface PanelPreset {
+  /** Unique among the presets; what the panel's `onPreset` gets. */
+  key: string;
+  name: string;
+  description?: string;
+  setup: PanelConfig;
+}
+
 export interface PanelRow {
   /** Unique in the list. */
   key: string;
-  /** A model of a provider's list (also in Recommended), a favorite's copy, a recent setup, or "Use “…”" for a typed ID. */
-  kind: "model" | "favorite" | "recent" | "typed";
+  /** A model of a provider's list (also in Recommended), a favorite's copy, a recent setup, "Use “…”" for a typed ID, or
+   *  a preset. */
+  kind: "model" | "favorite" | "recent" | "typed" | "preset";
   provider: PanelProvider;
   model: PanelModel;
   /** What picking it sends. */
@@ -235,11 +255,13 @@ export interface PanelRow {
   current: boolean;
   /** A model row with an override of its own. */
   customized: boolean;
+  /** A preset row's preset (its name is the row's name). */
+  preset?: PanelPreset;
 }
 
 export interface PanelSection {
   key: string;
-  kind: "favorites" | "recent" | "recommended" | "provider";
+  kind: "favorites" | "recent" | "recommended" | "presets" | "provider";
   provider?: PanelProvider;
   rows: PanelRow[];
   /** The provider's list is still being read: its header and a spinner. */
@@ -254,6 +276,8 @@ export interface SectionsInput {
   favorites: PanelFavorite[];
   recent: PanelConfig[];
   overrides: PanelOverrides;
+  /** Ready-made setups listed after the favorites (New Agent's presets). */
+  presets?: PanelPreset[];
 }
 
 /** A saved copy's model among the providers: undefined when its provider is gone, or its list is read and lacks it
@@ -269,13 +293,14 @@ function resolveCopy(providers: PanelProvider[], copy: PanelConfig): { provider:
 }
 
 /**
- * The list for a view (Cindy's buildUnifiedListSections). All: Favorites, Recommended (the model that runs now, then the
- * other models of the providers in `state.recommended`; those leave their own group), then one group per provider (an
- * emptied group is left out; one whose list is being read shows a spinner). A provider's view: its favorites, then its
- * models. Favorites: the favorites only. Recent: the last setups applied. A search searches every provider, and a typed
- * model ID none of whose models answers is offered as "Use “…”" in the group of each recommended provider that takes typed IDs.
+ * The list for a view (Cindy's buildUnifiedListSections). All: Favorites, the presets, Recommended (the model that runs
+ * now, then the other models of the providers in `state.recommended`; those leave their own group; none for an Agent not
+ * started yet), then one group per provider (an emptied group is left out; one whose list is being read shows a spinner).
+ * A provider's view: its favorites and presets, then its models. Favorites: the favorites only. Recent: the last setups
+ * applied. A search searches every provider, and a typed model ID none of whose models answers is offered as "Use “…”" in
+ * the group of each provider that takes a pick here and takes typed IDs.
  */
-export function panelSections({ providers, state, view: chosen, query, favorites, recent, overrides }: SectionsInput): PanelSection[] {
+export function panelSections({ providers, state, view: chosen, query, favorites, recent, overrides, presets }: SectionsInput): PanelSection[] {
   const q = query.trim();
   const view: PanelView = q ? { kind: "all" } : chosen;
   const inView = (p: PanelProvider) => view.kind !== "provider" || p.id === view.provider;
@@ -305,6 +330,15 @@ export function panelSections({ providers, state, view: chosen, query, favorites
   if (favRows.length) out.push({ key: "favorites", kind: "favorites", rows: favRows });
   if (view.kind === "favorites") return out;
 
+  // the presets (a copy of a setup each, like a favorite: never lit, the model they run is lit in its own group)
+  const presetRows: PanelRow[] = [];
+  for (const x of presets ?? []) {
+    const r = resolveCopy(providers, x.setup);
+    if (!r || !inView(r.provider) || !matches([x.name, x.description, r.model.name, r.model.id, r.model.resolved, r.provider.name], q)) continue;
+    presetRows.push({ key: `preset:${x.key}`, kind: "preset", provider: r.provider, model: r.model, setup: cleanSetup(x.setup), preset: x, current: false, customized: false });
+  }
+  if (presetRows.length) out.push({ key: "presets", kind: "presets", rows: presetRows });
+
   const shown = providers.filter(inView);
   const groups = new Map<string, PanelRow[]>();
   for (const p of shown) {
@@ -315,7 +349,7 @@ export function panelSections({ providers, state, view: chosen, query, favorites
     }));
   }
 
-  if (view.kind === "all") {
+  if (view.kind === "all" && !state.starting) {
     const promoted: PanelRow[] = [];
     const now = state.current ? groups.get(state.current.provider)?.find((r) => r.current) : undefined;
     if (now) promoted.push(now);
@@ -337,9 +371,10 @@ export function panelSections({ providers, state, view: chosen, query, favorites
       continue;
     }
     const rows = [...(groups.get(p.id) ?? [])];
+    // only in a provider that takes a pick here (an Agent's other launchers too, with the in-session switch, #5035), and
     // only when none of its models answers the search (by the model's own words, not the provider's name): a word that
     // names a listed model is a search, not an ID
-    if (typed && p.typable && state.recommended.includes(p.id) && validModelId(typed) && !p.models.some((m) => matchesQuery({ name: "" }, m, q))) {
+    if (typed && p.typable && !p.unavailable && !p.locked && validModelId(typed) && !p.models.some((m) => matchesQuery({ name: "" }, m, q))) {
       const model: PanelModel = { id: typed, name: typed, efforts: [], custom: true };
       rows.push({ key: `typed:${p.id}\n${typed}`, kind: "typed", provider: p, model, setup: { provider: p.id, model: typed }, current: false, customized: false });
     }
@@ -347,6 +382,47 @@ export function panelSections({ providers, state, view: chosen, query, favorites
     if (rows.length) out.push({ key: `provider:${p.id}`, kind: "provider", provider: p, rows, ...(p.loading ? { loading: true } : {}) });
   }
   return out;
+}
+
+// ── engines ───────────────────────────────────────────────────────────────────
+
+/** One engine a model can run with, as a flyout lists it: the provider (launcher) that runs the model with it. */
+export interface EngineChoice {
+  engine: string;
+  provider: PanelProvider;
+  model: PanelModel;
+  /** The row's own engine. */
+  own: boolean;
+  /** Why this provider can't take the pick here (its rows are off); undefined: it can. */
+  blocked?: string;
+}
+
+/**
+ * The engines `row`'s model can run with among `providers` (Cindy's engine pills): a provider runs one engine in
+ * Persona, so another engine is another provider listing the same model ID (exactly, or the model an alias stands
+ * for); its own first, then one per other engine, the first provider of that engine that can take the pick (else the
+ * first of that engine). Only a model row's; a model no other engine lists has its own alone.
+ */
+export function engineChoices(providers: PanelProvider[], row: Pick<PanelRow, "kind" | "provider" | "model">, state: Pick<PanelState, "busy">): EngineChoice[] {
+  const own: EngineChoice = { engine: row.provider.engine, provider: row.provider, model: row.model, own: true };
+  if (row.kind !== "model" || row.model.custom || row.model.providerDefault) return [own];
+  const ids = [row.model.id, row.model.resolved].filter((x): x is string => Boolean(x)).map((x) => x.toLowerCase());
+  const byEngine = new Map<string, EngineChoice>();
+  for (const p of providers) {
+    if (p.id === row.provider.id || p.engine === row.provider.engine || !p.models) continue;
+    const m = p.models.find((x) => !x.custom && !x.providerDefault && [x.id, x.resolved].some((v) => v && ids.includes(v.toLowerCase())));
+    if (!m) continue;
+    const blocked = rowBlock(p, state)?.reason;
+    const had = byEngine.get(p.engine);
+    if (!had || (had.blocked !== undefined && blocked === undefined)) byEngine.set(p.engine, { engine: p.engine, provider: p, model: m, own: false, ...(blocked !== undefined ? { blocked } : {}) });
+  }
+  return [own, ...byEngine.values()];
+}
+
+/** What choosing another engine in a row's flyout applies: that provider's model, with the effort `from` has when the
+ *  model takes it (Cindy keeps the effort in use when only the engine changes). */
+export function engineSetup(choice: Pick<EngineChoice, "provider" | "model">, from: PanelConfig): PanelConfig {
+  return cleanSetup({ provider: choice.provider.id, model: choice.model.id, effort: takes(choice.model, from.effort) });
 }
 
 // ── geometry ──────────────────────────────────────────────────────────────────

@@ -8,7 +8,8 @@ import { Icon } from "../icons";
 import { ProviderMark } from "./ProviderMark";
 
 export function Rail({ providers, view, onView, disabled }: { providers: PanelProvider[]; view: PanelView; onView: (v: PanelView) => void; disabled?: boolean }) {
-  const cell = (v: PanelView, label: string, icon: React.ReactNode) => {
+  // `tip`: the tooltip when it says more than the name (a provider's startup ID, #5029)
+  const cell = (v: PanelView, label: string, icon: React.ReactNode, tip = label) => {
     const on = sameView(v, view);
     return (
       <button
@@ -17,7 +18,7 @@ export function Rail({ providers, view, onView, disabled }: { providers: PanelPr
         disabled={disabled}
         aria-label={label}
         aria-pressed={on}
-        title={label}
+        title={tip}
         data-rail-cell={v.kind === "provider" ? v.provider : v.kind}
         onClick={() => onView(v)}
         className={cx(
@@ -36,7 +37,7 @@ export function Rail({ providers, view, onView, disabled }: { providers: PanelPr
       {cell({ kind: "favorites" }, t("ui-modelpanel.favorites"), <Icon name="star" size={16} className={view.kind === "favorites" ? "fill-current" : undefined} />)}
       <div aria-hidden className="my-[3px] w-[22px] shrink-0 border-t border-line" />
       {cell({ kind: "all" }, t("ui-modelpanel.all"), <Icon name="grid" size={16} />)}
-      {providers.map((p) => cell({ kind: "provider", provider: p.id }, p.name, <ProviderMark name={p.name} />))}
+      {providers.map((p) => cell({ kind: "provider", provider: p.id }, p.name, <ProviderMark name={p.name} />, p.idNote ? `${p.name} (${p.idNote})` : p.name))}
     </div>
   );
 }

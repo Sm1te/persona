@@ -946,6 +946,9 @@ func withSettings(t *testing.T, f *fakeHub, s *Service) *Service {
 	// These tests are about what a plan does once it exists; what task_plan requires of a brief is task_brief_test.go's,
 	// which turns this off.
 	s.briefsOptional = true
+	// And about what a supervisor does with its tasks, told to the main conversation: the background supervisor that
+	// takes them by default is supervise_background_test.go's, which turns this off.
+	s.noBackground = true
 	if f.settings != nil {
 		setSettings(t, s, func(v *Settings) { *v = *f.settings })
 	}

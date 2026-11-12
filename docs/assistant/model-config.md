@@ -16,6 +16,8 @@ The home page has five category rows and separate **AI twin runs** and **Lark /a
 | Information screening | `inbox.triage` | Inbox triage and summaries, importance assessment, deciding whether a reply or Agent handoff is needed, automatic Agent session-name corrections and periodic refreshes (#4812, `docs/assistant/agent-work.md` "Automatic session names (#4812)") |
 | Question delegation | `agent.delegate` | First assesses whether to answer an Agent's question on the user's behalf (#3029, `docs/assistant/assistant.md`, “Assistant answers questions first”). Added as the fifth category on 2026-11-05: this assessment must be more accurate than triage and must not follow information screening's cheap model. If never selected, it uses information screening's connection with the model changed to Opus 5.5 (`claude-opus-5-5`; if that connection is not for Claude models, it keeps its own model). Change the provider or model here. “Inherited From” shows the actual connection name and model (`inheritedLabel`; before 2026-11-06 it always said “Model uses Opus 5.5,” which was wrong for non-Claude connections or a manually changed model). Explicitly selecting a connection hides the inheritance source |
 
+The background supervisor (`docs/assistant/unified-entry.md` "Background supervisor") runs under the purpose `assistant.supervise`: it follows Main chat until it is given its own launcher, model or effort with `PATCH /api/v1/model-config/purposes/assistant.supervise` (sparse, revision-checked, a record of its own under `model_config.assistant.supervise`), so it can run on a cheaper or a stronger model than the main chat. The purpose is read and set through its own ID only: the catalog `GET /api/v1/model-config` returns does not list it, and no client has a row for it yet. It applies when the background supervisor's conversation starts and on every message sent to it.
+
 “Triage and summary” currently runs as one call, entirely under information screening; categories do not split it into two calls. persona gets no separate model override. A voice plugin's upstream audio model stays within that plugin's scope, outside the four launcher / text-API categories; text tasks handed from voice to the main chat use the main-chat model. This does not take over external Claude Code Skills or users' existing external sessions.
 
 ## Providers and execution methods
@@ -35,7 +37,7 @@ It is returned by the model-configuration list and detail endpoints, never store
 
 | Purpose | `kind` | `launch` | Execution |
 | --- | --- | --- | --- |
-| `assistant`, `schedule`, `task.*`, `inbox.agent`, `lark.agent` | `launcher` | `headless` | Background process, without a terminal panel |
+| `assistant`, `schedule`, `task.*`, `assistant.supervise`, `inbox.agent`, `lark.agent` | `launcher` | `headless` | Background process, without a terminal panel |
 | `agent.new` | `launcher` | `engine` | Interactive Agent in the target computer's terminal host |
 | `kb`, `inbox.triage`, `agent.delegate`, other API purposes, `extension.*` | `api` | omitted | HTTP requests sent directly by the assistant |
 | `plugin.*` | `plugin` | omitted | The plugin's own model service |

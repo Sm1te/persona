@@ -153,9 +153,9 @@ func (s *Service) toolAgentSupervise(ctx context.Context, self string, args json
 			criteriaWords(nil, todo.Supervision)), nil
 	}
 	s.taskCard(ctx, self, todo.ID, wakeActive)
-	return fmt.Sprintf("%s on %s is now your task %s (%q, its card is in the conversation): you get a supervision message (📋) when it needs you, "+
-		"and close it with task_review. done_when %s. The agent was not told: if it should work to these criteria or report to you "+
-		"(report_to_supervisor), tell it with agent_send.", agentLabel(c), am.Name, todo.ID, todo.Title, criteriaWords(nil, todo.Supervision)), nil
+	return fmt.Sprintf("%s on %s is now your task %s (%q, its card is in the conversation): %s. done_when %s. The agent was not told: "+
+		"if it should work to these criteria or report to its supervisor (report_to_supervisor), tell it with agent_send.",
+		agentLabel(c), am.Name, todo.ID, todo.Title, s.followUpWords(ctx, self), criteriaWords(nil, todo.Supervision)), nil
 }
 
 // adoptAgent puts agent c of machine am under conversation self's supervision (agent_supervise, agent_send with a
@@ -312,13 +312,14 @@ func exitText(text string) bool {
 
 // supervisedElsewhere is the task agent c works for when a conversation other than self supervises it: a reply to it
 // goes as a side conversation, and /exit to it is refused (exitAllowed). Ownership that cannot be read is an error, so
-// a reply never goes without its provenance.
+// a reply never goes without its provenance. The background supervisor speaks to the tasks no leader supervises as
+// their supervisor (supervise_background.go).
 func (s *Service) supervisedElsewhere(ctx context.Context, self string, am Device, c proto.Session) (Todo, bool, error) {
 	if err := s.ensureTodosLoaded(ctx); err != nil {
 		return Todo{}, false, err
 	}
 	t, ok := s.taskOf(ctx, am.ID, c.SessionID)
-	return t, ok && t.Supervision != nil && t.Supervision.Supervisor != self, nil
+	return t, ok && t.Supervision != nil && t.Supervision.Supervisor != self && !s.backgroundSupervises(ctx, self, t), nil
 }
 
 // exitAllowed refuses /exit or /quit to an agent on a task another conversation supervises (#3537): a plain
@@ -421,8 +422,8 @@ func (h *handedTask) sent(ctx context.Context, s *Service, text string) string {
 		return fmt.Sprintf(" It already works for your task %s (%q): no new task was made, done_when %s.", h.todo.ID, h.todo.Title,
 			criteriaWords(nil, h.todo.Supervision)) + refused
 	}
-	return fmt.Sprintf(" It is now your task %s (%q, its card is in the conversation): you get a supervision message (📋) when it needs you, "+
-		"and close it with task_review. done_when %s.", h.todo.ID, h.todo.Title, criteriaWords(nil, h.todo.Supervision))
+	return fmt.Sprintf(" It is now your task %s (%q, its card is in the conversation): %s. done_when %s.", h.todo.ID, h.todo.Title,
+		s.followUpWords(ctx, h.self), criteriaWords(nil, h.todo.Supervision))
 }
 
 // sendFailed: the send did not go, so a task made for it is taken back (deleted, its link with it: a closed task's

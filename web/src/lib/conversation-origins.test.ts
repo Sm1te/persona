@@ -90,8 +90,8 @@ describe("the sidebar's Recent (#4873)", () => {
     conv("never"),
   ];
 
-  it("is the newest five of the user's own chats, never the main one, a leader, an archived or an automatic one", () => {
-    expect(recentConversations(list, "main", ["lead"]).map((c) => c.session_id)).toEqual(["a", "b", "wx", "d", "e1"]);
+  it("is the user's own chats newest first, never the main one, a leader, an archived or an automatic one", () => {
+    expect(recentConversations(list, "main", ["lead"]).map((c) => c.session_id)).toEqual(["a", "b", "wx", "d", "e1", "e2", "never"]);
   });
 
   it("takes an ended leader back, and is empty when nothing else is left", () => {

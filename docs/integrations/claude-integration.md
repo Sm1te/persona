@@ -42,6 +42,21 @@ Claude Code starts in it when no `--permission-mode` is given: an Agent started 
 through the hub, a planned task the assistant left unset (`docs/assistant/todos.md`, "Permission of a planned task").
 A mode picked when starting an Agent, and the assistant's default permission mode, still come first.
 
+## Model variables and the 1M marker (tested 2.1.322)
+
+A Persona-managed provider names its models through `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` /
+`_HAIKU_` / `_FABLE_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` (`providerEnv` in
+`node/launcherenv.go`). A model Claude Code does not know itself (a gateway's own ID) gets the 1M context window only
+when its name ends in `[1m]`, in each of these variables alike: Claude Code strips the marker before calling the
+gateway, adds the `context-1m-2025-08-07` beta, and counts the window as 1,000,000 (the result's
+`modelUsage[…].contextWindow`); without the marker the same model counts 200,000 (Claude's current IDs, such as
+`claude-sonnet-5-5`, count 1,000,000 either way). Measured with `claude -p` against a local fake gateway that logs each
+request's model and betas: a tier through `--model opus|sonnet|haiku|fable`, the sub-Agent model through an Agent tool
+call the gateway returns, the small model (and the Haiku tier when there is none) through the page summary of a WebFetch
+call. `ANTHROPIC_SMALL_FAST_MODEL` wins over the Haiku tier for those background requests. So the node adds `[1m]` to
+every one of these variables whose model the provider's `models` gives a window over 200K (#5149), as it always did for
+the session's model; an ID already ending in `[1m]` is left alone, and one with no known window is passed as it is.
+
 ## Persona tools Agents call without a card
 
 An Agent Persona starts has Persona's MCP tools (`~/.persona/mcp.json`) and, in Claude Code's default mode, would ask

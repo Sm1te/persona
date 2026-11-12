@@ -93,10 +93,16 @@ func (s *Service) isArchived(id string) bool {
 
 var errArchiveMain = i18n.Err("assistant-conversations.archive_main")
 
+// errArchiveBackground: the background supervisor is built in and stays listed (supervise_background.go).
+var errArchiveBackground = i18n.Err("assistant-conversations.archive_background_supervisor")
+
 // setArchived archives (on) or brings back a conversation; by is who did it. It reports whether anything changed.
 func (s *Service) setArchived(ctx context.Context, machine, id string, on bool, by string) (bool, error) {
 	if on && s.settings(ctx).Main == id {
 		return false, errArchiveMain
+	}
+	if on && s.isBackground(ctx, id) {
+		return false, errArchiveBackground
 	}
 	st := s.store()
 	if st == nil {
@@ -164,7 +170,7 @@ func (s *Service) archiveRoutes() {
 			machine := s.settings(r.Context()).MachineID
 			if _, err := s.setArchived(r.Context(), machine, id, op.on, titleByUser); err != nil {
 				status := http.StatusInternalServerError
-				if errors.Is(err, errArchiveMain) {
+				if errors.Is(err, errArchiveMain) || errors.Is(err, errArchiveBackground) {
 					status = http.StatusBadRequest
 				}
 				apierr.Write(w, status, err)
@@ -425,7 +431,11 @@ func (s *Service) deliverRelay(ctx context.Context, machine, to string, msg rela
 		// Register before dispatch: a fast MCP call can arrive before assistant.send returns.
 		s.holdPushes(ctx, to)
 	}
-	if err := s.call(ctx, machine, DeviceAssistantSend, map[string]any{"session_id": to, "text": text, "message_source": msg.source(), "resume_only": true, holdPushesParam: msg.Tool == superviseTool}, nil); err != nil {
+	params := map[string]any{"session_id": to, "text": text, "message_source": msg.source(), "resume_only": true, holdPushesParam: msg.Tool == superviseTool}
+	if s.isBackground(ctx, to) {
+		s.backgroundModel(ctx, params) // its own model purpose, on every message as the main chat's is (supervise_background.go)
+	}
+	if err := s.call(ctx, machine, DeviceAssistantSend, params, nil); err != nil {
 		if msg.Tool == superviseTool {
 			s.releasePushes(ctx, to)
 		}

@@ -96,6 +96,37 @@ func (s *Service) reserveSupervision(ctx context.Context, entries []prompts.Supe
 	}, nil
 }
 
+// forgetSupervision takes the signals' fingerprints out of the deduplication history: their message was queued for a
+// conversation that is gone and was never read, so they are told again. dedupMu is held.
+func (s *Service) forgetSupervision(ctx context.Context, signals []superviseSignal, web string) {
+	b := &s.supervise
+	history := b.dedup
+	st := s.store()
+	if st != nil {
+		if _, err := st.Setting(ctx, superviseDedupKey, &history); err != nil {
+			s.logf("supervise: could not read the deduplication history: %v", err)
+			return
+		}
+	}
+	next := maps.Clone(history)
+	for _, g := range signals {
+		if e, ok := s.digestEntry(ctx, g, web); ok {
+			key, _ := digestFingerprint(e, g)
+			delete(next, key)
+		}
+	}
+	if len(next) == len(history) {
+		return
+	}
+	if st != nil {
+		if err := st.PutSetting(ctx, superviseDedupKey, next); err != nil {
+			s.logf("supervise: could not release deduplication entries: %v", err)
+			return
+		}
+	}
+	b.dedup = next
+}
+
 func (s *Service) restoreDigest(signals []superviseSignal, at, prev time.Time) {
 	b := &s.supervise
 	b.mu.Lock()

@@ -123,7 +123,7 @@ describe("Claude Code tiers on Choose models", () => {
     // the Opus tier is the default model already: left empty, said so
     expect(summary()).toContain(t("settings-providerwizard.tier_is_default"));
     expect(hasButton(t("settings-providerwizard.tiers_apply"))).toBe(false);
-    // the default model is offered as "the session's model", not again by name (by name it would lose its 1M marker)
+    // the default model is offered as "the session's model", not again by name (empty already runs it)
     click(t("settings-providerwizard.tiers_adjust"));
     expect([...tierSelect("Opus").querySelectorAll("option")].map((o) => o.value)).toEqual(["", SONNET, HAIKU]);
     await save();

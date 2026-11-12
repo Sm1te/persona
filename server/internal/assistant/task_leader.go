@@ -749,7 +749,12 @@ func (s *Service) leaderOpen(t Todo) bool { return t.ID != "" && t.DoneAt == nil
 // worker (a decision the leader sent up). The worker's supervisor stays the leader's agent: this never takes it over.
 func (s *Service) mayReviewForLeader(ctx context.Context, self string, t Todo) bool {
 	up, _ := s.supervisorAboveTask(ctx, t)
-	return up != "" && up == self
+	if up == "" {
+		return false
+	}
+	// The background supervisor stands in for the main conversation above a task leader no leader conversation
+	// supervises: the leader's decisions come to it (digestTo).
+	return up == self || s.isBackground(ctx, self) && !s.isLeader(ctx, up)
 }
 
 // leaderTaskOf is the open task leader agent lead leads.

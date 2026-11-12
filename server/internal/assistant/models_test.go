@@ -522,7 +522,7 @@ func TestModelUsesAreReadOnlyAndIgnoreDeprecatedOverrides(t *testing.T) {
 	}
 	ids := []string{}
 	for _, p := range modelPurposes {
-		if p.Parent != "" && !agentsOverride(p.ID) {
+		if p.Parent != "" && !ownModelRecord(p.ID) { // the uses with a record of their own are set apart on purpose
 			ids = append(ids, p.ID)
 		}
 	}

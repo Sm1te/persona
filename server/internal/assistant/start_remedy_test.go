@@ -280,3 +280,25 @@ func TestARetryThatFailsWithoutATabFailsForGood(t *testing.T) {
 	})
 	waitFor(t, "the supervisor told", func() bool { return len(f.notices()) == 2 })
 }
+
+// Another held conversation's turn ends (a leader's, or the background supervisor's, which is held on every
+// supervision message, #4927): it never saw the failed start, so the start the main conversation is still remedying
+// is not given up under it. The main conversation's own turn end then ends it as ever.
+func TestRemedyIsNotEndedByAnotherConversationsTurn(t *testing.T) {
+	s, f := newQuietService(t)
+	ctx := context.Background()
+	todo, p := remedyingTask(t, s, f, keptRefusal(proto.CodeShellWaiting))
+	waitFor(t, "the supervision message", func() bool { return len(f.notices()) == 1 })
+	s.holdPushes(ctx, "s900") // a supervision message went into another conversation after the failure was told
+	s.remedyTurnEnded(ctx, "s900")
+	if got := todoNow(s, todo.ID); got.DoneAt != nil {
+		t.Fatalf("given up by a turn that never saw the failure: %+v", got)
+	}
+	if r := remedyState(t, s, p.ID); r == nil || r.State != remedying {
+		t.Fatalf("start %+v", r)
+	}
+	s.remedyTurnEnded(ctx, "conv1")
+	if got := todoNow(s, todo.ID); got.DoneAt == nil || got.StartError == "" {
+		t.Fatalf("not ended by the turn that saw it: %+v", got)
+	}
+}

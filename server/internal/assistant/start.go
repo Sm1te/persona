@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/apierr"
+	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
@@ -56,7 +57,8 @@ var errWorkAssistant = i18n.Err("assistant-start.work_machine")
 func (s *Service) claudeMD(ctx context.Context, here string, larkCLI bool) string {
 	hello := s.hello(ctx)
 	d := prompts.AssistantClaudeMD{Owner: strings.TrimSpace(hello.Owner), Notes: s.notes(ctx), ExtraDirs: s.kbExtraDirs(ctx),
-		KnowledgeDir: s.kb.dir, LarkCLI: larkCLI, PersonaView: hello.PersonaView, Language: answerLanguage(hello.Locale)}
+		KnowledgeDir: s.kb.dir, LarkCLI: larkCLI, PersonaView: hello.PersonaView, Language: answerLanguage(hello.Locale),
+		BackgroundSupervisor: s.backgroundOn(s.settings(ctx))}
 	devices := s.devices(ctx)
 	if i := slices.IndexFunc(devices, func(d Device) bool { return d.ID == here }); i >= 0 {
 		d.OnHub = devices[i].Kind == "local"
@@ -263,8 +265,9 @@ func (s *Service) startOn(ctx context.Context, machine string, p StartParams, ma
 	if p.NewSessionID != "" {
 		params["new_session_id"] = p.NewSessionID // node/assistant_guest.go: under this id, once
 	}
+	// Its first message's (node/node.go assistant.send).
 	if p.ClientMsgID != "" {
-		params["client_msg_id"] = p.ClientMsgID // its first message's (node/node.go assistant.send)
+		params["client_msg_id"] = p.ClientMsgID
 	}
 	purpose := p.Purpose
 	if purpose == "" {
@@ -383,14 +386,31 @@ func (s *Service) Start(ctx context.Context, p StartParams) (proto.Session, erro
 	if p.Origin == "" || p.Origin == OriginUser {
 		p.Text = prompts.ProtectUserMessage(p.Text)
 	}
+	human := s.humanStart(&p)
 	sess, err := s.start(ctx, p)
 	if err != nil {
 		return proto.Session{}, err
+	}
+	if human != "" { // the hub's word: a person's own app sent its first message (secret_handoff.go handoffUserTurn)
+		s.humanSent.note(sess.SessionID, human, p.Text)
 	}
 	if !p.Untitled {
 		s.titleNew(sess.MachineID, sess.SessionID, time.Now())
 	}
 	return sess, nil
+}
+
+// humanStart gives the first message of a conversation a person's own app opens (p.Human, the hub's word) a
+// client_msg_id of its own, which the node ties to the conversation's first line, so that message counts as theirs as
+// a send the hub vouched for does; the id ("" for any other start, and for one that names its session or its first
+// message's id already: a meeting's, Just me's).
+func (s *Service) humanStart(p *StartParams) string {
+	if !p.Human || p.Origin != "" && p.Origin != OriginUser || p.OpenedBy != "" || p.GuestTools != nil ||
+		p.NewSessionID != "" || p.ClientMsgID != "" {
+		return ""
+	}
+	p.ClientMsgID = assistantwire.FirstMessageIDPrefix + randomHex(16)
+	return p.ClientMsgID
 }
 
 // ---- the main conversation ----
@@ -450,6 +470,11 @@ func (s *Service) startMain(ctx context.Context, p StartParams) (proto.Session, 
 	empty := strings.TrimSpace(p.Text) == "" && len(p.Images) == 0
 	if handoff.From != "" && !empty {
 		p.Text = s.renderHandoff(ctx, handoff, p.Text)
+		if strings.HasPrefix(p.ClientMsgID, assistantwire.FirstMessageIDPrefix) {
+			// What the old one left is not the user's words (it may hold a mail handed on there): the node is not given
+			// the id a person's own start got, so no line counts as theirs (secret_handoff.go handoffUserTurn).
+			p.ClientMsgID = ""
+		}
 	}
 	p.MachineID, p.Purpose, p.Main = "", "", false
 	p.Origin, p.OriginRef, p.OpenedBy = OriginUser, "", "" // the main conversation is the user's, whatever channel opened it
@@ -739,14 +764,15 @@ func (s *Service) startRoutes() {
 		}
 		origin, ref := requestOrigin(r, in.Purpose)
 		sentence := in.Prompt // as the owner wrote it, for the route (route.go)
+		own := false          // only the user's words in it, as filled in (workspace_mention.go fillWorkspaces)
 		if in.Guest == nil {
-			in.Prompt = s.withWorkspaces(ctx, in.Prompt) // as SendParams does for the next messages
+			in.Prompt, own = s.fillWorkspaces(ctx, in.Prompt) // as SendParams does for the next messages
 		}
 		// The main conversation is the assistant's, on its machine.
 		ctx, note := withLauncherNote(ctx)
 		sess, err := s.Start(ctx, StartParams{Text: in.Prompt, Images: in.Images, Launcher: in.Launcher, PermissionMode: in.PermissionMode,
 			Effort: in.Effort, Purpose: in.Purpose, MachineID: in.MachineID, Main: in.Main, Space: in.Space, Origin: origin, OriginRef: ref,
-			OpenedBy: requestOpener(r), GuestTools: guestTools})
+			OpenedBy: requestOpener(r), GuestTools: guestTools, Human: own && assistantwire.HumanStartOf(r.Context())})
 		if err != nil {
 			apierr.Call(w, err)
 			return
@@ -871,9 +897,13 @@ func (s *Service) messageParams(ctx context.Context, p SendParams, owner bool) (
 		_, said = p.Params["images"] // the node asking what its own message runs on carries neither (NodeAnswer)
 	}
 	sent, _ := p.Params["text"].(string)
-	params, err := s.sendParams(ctx, p)
-	if err == nil && p.Human { // the hub's word: a person's own app sent it (secret_handoff.go handoffUserTurn)
-		id, _ := p.Params["client_msg_id"].(string)
+	id, _ := p.Params["client_msg_id"].(string)
+	params, own, err := s.sendParamsOwn(ctx, p)
+	switch {
+	case !p.Human || !own: // anyone else's id, or a person's carrying another's words (a mail handed on, the old main
+		// conversation's), never counts, nor does a person's id once another sent it (secret_handoff.go)
+		s.humanSent.voidSend(p.SessionID, id)
+	case err == nil: // the hub's word: a person's own app sent it (handoffUserTurn)
 		s.humanSent.note(p.SessionID, id, sent)
 	}
 	if err == nil && said && owner {
@@ -894,13 +924,24 @@ func (s *Service) ownerInterjects(id string, params map[string]any) {
 // sendParams also serves manager-generated notices, which must not be marked as
 // user-authored merely because they share the app's model-selection path.
 func (s *Service) sendParams(ctx context.Context, p SendParams) (map[string]any, error) {
+	params, _, err := s.sendParamsOwn(ctx, p)
+	return params, err
+}
+
+// sendParamsOwn is sendParams, and whether the message's text holds only the sender's own words as it goes (own,
+// workspace_mention.go fillWorkspaces): no context block an app put in it, workspace mentions aside where they were
+// filled in, and not what the old main conversation left (handoffFor). A text that is not filled in (a guest's, a
+// conversation the manager does not list) is the sender's only with no context block at all.
+func (s *Service) sendParamsOwn(ctx context.Context, p SendParams) (map[string]any, bool, error) {
 	params := p.Params
 	if params == nil {
 		params = map[string]any{}
 	}
+	text, _ := params["text"].(string)
+	own := !contextTagRe.MatchString(text)
 	params["is_main"] = false
 	if err := s.roomRefusesSend(ctx, p.MachineID, p.SessionID, p.Lang); err != nil {
-		return nil, err // an ended room: 409 meeting_ended (meeting_room.go)
+		return nil, false, err // an ended room: 409 meeting_ended (meeting_room.go)
 	}
 	if s.isGuest(ctx, p.MachineID, p.SessionID) {
 		// A guest conversation keeps what it started on: no launcher, model, runtime or mode picked for a message
@@ -908,30 +949,32 @@ func (s *Service) sendParams(ctx context.Context, p SendParams) (map[string]any,
 		for _, k := range []string{"launcher", "model", "effort", "model_fingerprint", "runtime", "permission_mode"} {
 			delete(params, k)
 		}
-		return params, nil
+		return params, own, nil
 	}
 	cfg := s.settings(ctx)
 	main := cfg.Main != "" && cfg.Main == p.SessionID && cfg.mainRouteMachine() == p.MachineID
 	if !main {
 		if _, known := s.session(ctx, p.MachineID, p.SessionID); !known {
-			return params, nil
+			return params, own, nil
 		}
 	}
 	if err := s.sendModel(ctx, p.MachineID, p.SessionID, params); err != nil {
 		var other *launcherOtherKind
 		if errors.As(err, &other) {
-			return nil, other.rpcError(s.appLang(ctx, p.Lang)) // 409 launcher_other_kind, with the kinds for the app
+			return nil, false, other.rpcError(s.appLang(ctx, p.Lang)) // 409 launcher_other_kind, with the kinds for the app
 		}
-		return nil, badRequest(err, s.appLang(ctx, p.Lang)) // a typed model that is no id is the app's user's to read
+		return nil, false, badRequest(err, s.appLang(ctx, p.Lang)) // a typed model that is no id is the app's user's to read
 	}
 	if text, ok := params["text"].(string); ok {
-		text = s.withWorkspaces(ctx, text) // an @-mentioned workspace: where it is and what worked there (workspace_mention.go)
+		text, own = s.fillWorkspaces(ctx, text) // an @-mentioned workspace: where it is and what worked there (workspace_mention.go)
 		if main {
-			text = s.handoffFor(ctx, p.SessionID, text)
+			left := s.handoffFor(ctx, p.SessionID, text)
+			own = own && left == text // what the old main conversation left is not the sender's words
+			text = left
 		}
 		params["text"] = text
 	}
-	return params, nil
+	return params, own, nil
 }
 
 // sendModel puts into p (a message for one of the assistant's conversations, sid on machine) which launcher and model

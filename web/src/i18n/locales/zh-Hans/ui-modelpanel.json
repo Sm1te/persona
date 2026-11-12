@@ -30,5 +30,9 @@
   "forget": "忘记「{id}」",
   "loading": "正在读取模型…",
   "retry": "重试",
-  "configure": "配置模型"
+  "configure": "配置模型",
+  "presets": "预设",
+  "how_to_fix": "怎么修好",
+  "engine_via": "通过 {provider} 运行",
+  "effort_unset": "模型默认"
 }

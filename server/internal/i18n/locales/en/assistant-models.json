@@ -23,6 +23,7 @@
   "name_subscription_recipe": "Subscription recipes",
   "name_meeting_answer": "Answers in attended meetings",
   "name_schedule": "Scheduled tasks",
+  "name_assistant_supervise": "Background supervisor",
   "group_default": "Default models",
   "group_agents": "Agents",
   "group_triage": "Sorting",

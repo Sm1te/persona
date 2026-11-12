@@ -99,6 +99,31 @@ const (
 
 type handoffApproverKey struct{}
 
+// personSent: ctx's credential is a person's own app, a full device's (never the hub's own token, which names no
+// device, an extension's, a computer link's or an answer-only device's). What it sends is what an Always rule may take
+// as the user's own words: a message (SendParams.Human) and a conversation's first one (HTTPRequest.Human, on POST
+// /api/v1/assistant/conversations only). The same test for both; the card's feature is not part of it.
+func personSent(ctx context.Context) bool {
+	p := principalOf(ctx)
+	return p.Role == roleFull && p.ID != ""
+}
+
+type humanStartKey struct{}
+
+// withHumanStart marks r, a new conversation's start, as a person's own app's when it is (HTTPRequest.Human).
+func withHumanStart(r *http.Request) *http.Request {
+	if !personSent(r.Context()) {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), humanStartKey{}, true))
+}
+
+// humanStartOf reports whether withHumanStart marked ctx.
+func humanStartOf(ctx context.Context) bool {
+	human, _ := ctx.Value(humanStartKey{}).(bool)
+	return human
+}
+
 // handoffApprover is the device r comes from when it may approve a hand-off card, else why not.
 func (h *Hub) handoffApprover(r *http.Request) (assistantwire.HandoffApprover, string) {
 	p := principalOf(r.Context())

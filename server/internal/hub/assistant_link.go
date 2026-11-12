@@ -128,7 +128,7 @@ func (h *Hub) startConversationOnce() http.HandlerFunc {
 		if !ok {
 			return
 		}
-		r = withManager(r, id)
+		r = withManager(withHumanStart(r), id) // a person's own app: its first message is theirs (secret_handoff.go)
 		if h.busConnOf(id) == nil {
 			writeErrCode(w, http.StatusServiceUnavailable, assistantwire.CodeAssistantOffline, errAssistantOffline)
 			return

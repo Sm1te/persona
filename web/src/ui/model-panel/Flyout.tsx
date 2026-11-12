@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import { t } from "../../i18n";
 import { agentName } from "../../lib/agent-kind";
-import { contextSize, flyoutPlace, shownEffort, type PanelConfig, type PanelRow } from "../../lib/model-panel";
+import { contextSize, flyoutPlace, shownEffort, type EngineChoice, type PanelConfig, type PanelRow } from "../../lib/model-panel";
 import { effortTitle } from "../../lib/session-actions";
 import { AgentMark } from "../AgentMark";
 import { cx } from "../atoms";
@@ -19,7 +19,7 @@ const FLYOUT_WIDTH = 264;
 
 export type FlyoutMode = "recommended" | "customized" | "favorite";
 
-export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, focusOnOpen, extra, reposition, onEffort, onFast, onReset, onStar, onClose }: {
+export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, focusOnOpen, extra, reposition, engines, onEngine, onEffort, onFast, onReset, onStar, onClose }: {
   /** The row it belongs to, and the panel it sits beside. */
   rowEl: HTMLElement;
   panelEl: HTMLElement;
@@ -35,6 +35,10 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
   extra?: ReactNode;
   /** Changes when the list's rows do (a favorite saved adds a group above the row): placed again. */
   reposition?: unknown;
+  /** The engines the model runs with here (lib/model-panel.ts engineChoices), its own first: more than one draws them as
+   *  small pills, the others picked on a click; absent or one: the row's engine as a static block. */
+  engines?: EngineChoice[];
+  onEngine?: (choice: EngineChoice) => void;
   onEffort: (effort: string) => void;
   onFast: (on: boolean) => void;
   onReset: () => void;
@@ -93,7 +97,8 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
   }, [row.key]);
 
   const slider = model.efforts.length > 1;
-  const effort = shownEffort(setup, model) || model.efforts[0] || "";
+  // none set and no default known (a Claude Code model for a new Agent): the slider says so rather than sit on the lowest
+  const effort = shownEffort(setup, model);
   const name = model.name;
   const star = mode === "favorite" ? t("ui-modelpanel.remove_favorite") : t("ui-modelpanel.save_favorite");
 
@@ -126,7 +131,7 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
       </div>
       {(slider || model.fast) && (
         <div className="flex items-center gap-2 pt-3.5">
-          {slider && <EffortSlider stops={model.efforts} value={effort} recommended={model.defaultEffort} labelOf={effortTitle} onChange={onEffort} disabled={disabled} />}
+          {slider && <EffortSlider stops={model.efforts} value={effort} recommended={model.defaultEffort} labelOf={effortTitle} unsetLabel={t("ui-modelpanel.effort_unset")} onChange={onEffort} disabled={disabled} />}
           {model.fast && (
             <button
               type="button"
@@ -148,15 +153,42 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
       )}
       {extra && <div className="pt-2">{extra}</div>}
       <div role="group" aria-label={t("ui-modelpanel.engine")} className="pt-2">
-        <div className="flex min-h-7 items-center gap-1 rounded-control bg-hover-2 pr-1">
-          <span className="flex min-h-7 min-w-0 flex-1 items-center gap-1.5 px-1 text-ink">
-            <span aria-hidden className="inline-flex size-4 shrink-0 items-center justify-center">
-              <AgentMark agent={provider.engine} size={12} decorative className="text-ink-2" />
+        {engines && engines.length > 1 ? (
+          // Cindy's engine pills: 26 px, no border, mark and name, wrapping; the row's own one is the chosen one
+          <div className="flex flex-wrap gap-1">
+            {engines.map((c) => (
+              <button
+                key={`${c.engine}\n${c.provider.id}`}
+                type="button"
+                data-engine-choice={c.engine}
+                aria-pressed={c.own}
+                disabled={disabled || c.own || c.blocked !== undefined}
+                title={c.own ? agentName(c.engine) : c.blocked || t("ui-modelpanel.engine_via", { provider: c.provider.name })}
+                onClick={() => onEngine?.(c)}
+                className={cx(
+                  "flex h-[26px] max-w-full min-w-0 items-center gap-1.5 rounded-control px-2 text-[12px] leading-4 transition-colors duration-150",
+                  c.own ? "bg-hover-2 text-ink" : "text-ink-2 enabled:hover:bg-hover-2 enabled:hover:text-ink",
+                  c.blocked !== undefined && "opacity-50",
+                  !c.own && "disabled:cursor-not-allowed",
+                )}
+              >
+                <AgentMark agent={c.engine} size={12} decorative className="shrink-0 text-ink-2" />
+                <span className="min-w-0 truncate">{agentName(c.engine)}</span>
+                {c.own && <Icon name="check" size={12} stroke={2.5} className="shrink-0 text-ink" />}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-7 items-center gap-1 rounded-control bg-hover-2 pr-1">
+            <span className="flex min-h-7 min-w-0 flex-1 items-center gap-1.5 px-1 text-ink">
+              <span aria-hidden className="inline-flex size-4 shrink-0 items-center justify-center">
+                <AgentMark agent={provider.engine} size={12} decorative className="text-ink-2" />
+              </span>
+              <span className="min-w-0 truncate text-[12px] leading-4">{agentName(provider.engine)}</span>
             </span>
-            <span className="min-w-0 truncate text-[12px] leading-4">{agentName(provider.engine)}</span>
-          </span>
-          <Icon name="check" size={12} stroke={2.5} className="shrink-0 text-ink" />
-        </div>
+            <Icon name="check" size={12} stroke={2.5} className="shrink-0 text-ink" />
+          </div>
+        )}
       </div>
       <div className="mt-2 flex min-h-[22px] items-center justify-between gap-2 border-t border-line pt-2 text-[11px]">
         <span className={cx("min-w-0 truncate", mode === "recommended" ? "text-ink-3" : "text-ink-2")}>

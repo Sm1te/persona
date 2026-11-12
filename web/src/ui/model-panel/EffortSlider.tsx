@@ -12,11 +12,14 @@ import { cx } from "../atoms";
 const MOVE = "var(--effort-move) var(--effort-ease)";
 const RESIZE = "var(--effort-resize) var(--effort-ease)";
 
-export function EffortSlider({ stops, value, recommended, labelOf, onChange, disabled = false }: {
+export function EffortSlider({ stops, value, recommended, labelOf, unsetLabel, onChange, disabled = false }: {
   /** The levels, weakest first; two at least (one level is no choice: the flyout draws no slider). */
   stops: string[];
-  /** The level now; one not among the stops sits at the first. */
+  /** The level now; one not among the stops sits at the first, or with `unsetLabel` "" is none at all. */
   value: string;
+  /** What no level set is called ("Model default"): the bar has no fill and the thumb is a hollow ring at the start
+   *  until a level is chosen. */
+  unsetLabel?: string;
   /** The model's default level: its bubble says "Recommended". */
   recommended?: string;
   labelOf: (effort: string) => string;
@@ -32,10 +35,11 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
   const pointer = useRef<number | null>(null);
   const last = Math.max(0, stops.length - 1);
   const valueIndex = Math.max(0, stops.indexOf(value));
+  const unset = Boolean(unsetLabel) && !value && drag === null;
   const index = drag === null ? valueIndex : Math.round(drag);
   const level = stops[Math.min(last, Math.max(0, index))] ?? stops[0] ?? "";
-  const percent = last > 0 ? ((drag ?? valueIndex) / last) * 100 : 0;
-  const color = drag === null ? effortColor(level) : effortColorAt(stops, drag);
+  const percent = unset ? 0 : last > 0 ? ((drag ?? valueIndex) / last) * 100 : 0;
+  const color = unset ? "var(--line-strong)" : drag === null ? effortColor(level) : effortColorAt(stops, drag);
 
   const at = useCallback((clientX: number) => {
     const r = track.current?.getBoundingClientRect();
@@ -47,6 +51,8 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
     const next = stops[Math.min(last, Math.max(0, i))];
     if (next && next !== value) onChange(next);
   }, [last, onChange, stops, value]);
+  // from none, → lands on the lowest and End on the highest (← and Home on the lowest too)
+  const from = unsetLabel && !value ? -1 : valueIndex;
 
   // the pointer is followed on the document: a drag let go outside the track still lands
   useEffect(() => {
@@ -94,7 +100,7 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
     if (!step) return;
     e.preventDefault();
     e.stopPropagation();
-    commit(valueIndex + step);
+    commit(e.key === "Home" ? 0 : e.key === "End" ? last : Math.max(0, from + step));
   };
 
   return (
@@ -106,8 +112,8 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
         aria-label={t("ui-modelpanel.effort")}
         aria-valuemin={0}
         aria-valuemax={last}
-        aria-valuenow={index}
-        aria-valuetext={labelOf(level)}
+        aria-valuenow={unset ? undefined : index}
+        aria-valuetext={unset ? unsetLabel : labelOf(level)}
         aria-disabled={disabled || undefined}
         data-dragging={dragging || undefined}
         onPointerDown={down}
@@ -123,11 +129,12 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
         )}
         <div
           data-effort-thumb
-          className={cx("absolute z-[3] -translate-x-1/2 rounded-full border-[2.5px] border-surface", dragging && !disabled ? "h-[21px] w-[27px]" : cx("size-[21px]", !disabled && "hover:size-[23px]"))}
+          data-unset={unset || undefined}
+          className={cx("absolute z-[3] -translate-x-1/2 rounded-full border-[2.5px]", unset ? "border-line-strong" : "border-surface", dragging && !disabled ? "h-[21px] w-[27px]" : cx("size-[21px]", !disabled && "hover:size-[23px]"))}
           style={{
             left: `${percent}%`,
-            backgroundColor: color,
-            boxShadow: `0 0 0 4px color-mix(in srgb, ${color} 22%, transparent)`,
+            backgroundColor: unset ? "var(--surface)" : color,
+            boxShadow: unset ? "none" : `0 0 0 4px color-mix(in srgb, ${color} 22%, transparent)`,
             transition: `${live ? "" : `left ${MOVE}, background-color ${MOVE}, `}width ${RESIZE}, height ${RESIZE}, box-shadow ${RESIZE}`,
           }}
         >
@@ -138,9 +145,9 @@ export function EffortSlider({ stops, value, recommended, labelOf, onChange, dis
               dragging && "opacity-100",
             )}
           >
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: effortColor(level) }} />
-            <span>{labelOf(level)}</span>
-            {recommended && level === recommended && <span className="opacity-70">· {t("ui-modelpanel.recommended")}</span>}
+            {!unset && <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: effortColor(level) }} />}
+            <span>{unset ? unsetLabel : labelOf(level)}</span>
+            {!unset && recommended && level === recommended && <span className="opacity-70">· {t("ui-modelpanel.recommended")}</span>}
           </div>
         </div>
       </div>

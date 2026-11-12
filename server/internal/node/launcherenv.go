@@ -220,6 +220,13 @@ func sdkModel(m string, pm proto.ProviderModel) string {
 	return m
 }
 
+// runAs is the name Claude Code runs l's model m as (sdkModel, by the window l's models give m). Claude Code drops the
+// marker before it calls the gateway, in a tier, the small model and the subagent model as in the session's (#5149).
+func runAs(l proto.ManagedLauncher, m string) string {
+	pm, _ := providerModel(l, m)
+	return sdkModel(m, pm)
+}
+
 // providerShaped: a provider as #2455 models it (an API provider, or any of its fields set), which gets a gateway's
 // extras (no nonessential traffic, a long timeout). A launcher from before gets exactly the env it always had.
 func providerShaped(l proto.ManagedLauncher) bool {
@@ -236,7 +243,8 @@ func providerShaped(l proto.ManagedLauncher) bool {
 //
 // Kept as it was for a launcher from before #2455 (managedEnvOrder): the gateway URL always (empty for none); no key
 // stored (or the hub could not open it), neither credential, so Claude uses whatever sign-in it has; no model, none of
-// the model variables. The Haiku tier is HaikuModel, else SmallModel (what it was), else the model.
+// the model variables. The Haiku tier is HaikuModel, else SmallModel (what it was), else the model. Every model variable
+// gets [1m] by its model's window (runAs).
 func providerEnv(l proto.ManagedLauncher, model, effort string, mainConversation bool) map[string]string {
 	// Claude Code adds /v1/messages: a provider stored with a trailing /v1, from a hub before it dropped it, would
 	// otherwise call /v1/v1/messages though Test connection passed.
@@ -262,14 +270,21 @@ func providerEnv(l proto.ManagedLauncher, model, effort string, mainConversation
 	m := cmp.Or(model, l.Model)
 	pm, _ := providerModel(l, m)
 	run := sdkModel(m, pm)
+	// A tier, the small model or the subagent model set explicitly runs by its own window, else as the session's model.
+	tier := func(explicit ...string) string {
+		if e := cmp.Or(explicit...); e != "" {
+			return runAs(l, e)
+		}
+		return run
+	}
 	set("ANTHROPIC_MODEL", run)
-	set("ANTHROPIC_DEFAULT_OPUS_MODEL", cmp.Or(l.OpusModel, run))
-	set("ANTHROPIC_DEFAULT_SONNET_MODEL", cmp.Or(l.SonnetModel, run))
-	set("ANTHROPIC_DEFAULT_FABLE_MODEL", cmp.Or(l.FableModel, run))
-	set("ANTHROPIC_DEFAULT_HAIKU_MODEL", cmp.Or(l.HaikuModel, l.SmallModel, run))
-	set("ANTHROPIC_SMALL_FAST_MODEL", cmp.Or(l.SmallModel, run))
+	set("ANTHROPIC_DEFAULT_OPUS_MODEL", tier(l.OpusModel))
+	set("ANTHROPIC_DEFAULT_SONNET_MODEL", tier(l.SonnetModel))
+	set("ANTHROPIC_DEFAULT_FABLE_MODEL", tier(l.FableModel))
+	set("ANTHROPIC_DEFAULT_HAIKU_MODEL", tier(l.HaikuModel, l.SmallModel))
+	set("ANTHROPIC_SMALL_FAST_MODEL", tier(l.SmallModel))
 	// Subagents follow the model unless the provider says otherwise (workflows, multi-agent runs).
-	set("CLAUDE_CODE_SUBAGENT_MODEL", cmp.Or(l.SubagentModel, run))
+	set("CLAUDE_CODE_SUBAGENT_MODEL", tier(l.SubagentModel))
 	if l.SubagentForce {
 		env["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"] = "1"
 	}

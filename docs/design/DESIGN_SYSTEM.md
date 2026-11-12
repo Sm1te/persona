@@ -1216,3 +1216,36 @@ it). Reason: the ID is an engineering detail that a person should not have to in
 rule for every place keeps a provider recognizable wherever it is picked (principle 4). This reuses the wizard's
 fields and More options disclosure and the existing row and chip styles; it adds no setting, style or motion. The chat
 page's composer chip and model panel adopt the same module in their own change; iOS and Android have not caught up yet.
+
+## New Agent's model choice (#5104)
+
+New Agent picks its model with the chat's model pill and unified model panel ("Model pill and unified model panel" in
+3.8), at the user's request (2026-11-12) to match Cindy's new task: the user picks a model and the launcher and its
+engine follow; the engine's mark stays on the pill and on every row. Who it serves: people starting coding Agents (the
+Agents side). The pill sits at the right of the first message box's bottom row; the Preset, Launcher, Model and Thinking
+effort fields are gone. What the panel gained for it, each part optional and absent from the chat's panel:
+
+- Follow row (`follow`): on top of the list in no group, a 1 px `--line` rule under it; a two-line row (its label, then
+  what the default runs in 12 px `ink-2`, after a 11 px `warning` icon in `--orange` when that can't start here), with
+  the selected fill and a 14 px check while followed. Keys and the hover glide as on a model row.
+- Presets (`presets`, `onPreset`): a group after Favorites, "Presets"; one row per preset named by the preset, its
+  description as the second line, the launcher's tile and the `[engine] effort` setup on the right; no star, no Customize,
+  never lit (a copy of a setup, like a favorite).
+- `state.starting`: no Recommended group, and the row lit shows the form's setup rather than a saved customization.
+- Engine pills in the flyout (`engines`): when the model runs with more than one engine on this computer, Cindy's engine
+  pills replace the static engine block: 26 px tall, no border, a 12 px `AgentMark` and the engine's name at 12 px, the
+  row's own on `--hover-2` with a check; another is a quiet pill that picks that launcher's row of the model, at 50 % with
+  its reason when that launcher can't start here.
+- "How to fix" (`onHelp`, a provider's `help`): after a launcher's reason under its group's name, 11 px medium
+  `--accent-ink`.
+- Effort with no level set (`EffortSlider` `unsetLabel`): no fill, the thumb a hollow ring (`--surface` with a
+  `--line-strong` border, no glow) at the start, the bubble and accessible value "Model default"; a click or key picks a
+  level.
+- Lines under the first message box: one 11.5 px line each, a 12 px icon first: a pick dropped on another computer
+  (`info`, `ink-3`), a list that couldn't be read (`warning`, `--orange`), what runs this time can't start here (`warning`,
+  `--orange`, the "Used this time" pill, How to fix), the preset picked (`layers`, `ink-3`; `warning` in `--orange` when
+  something of it can't be applied).
+
+Reason: one place to choose a model for chats and new Agents (principle 4), the engine visible without a field of its
+own (principle 2), the default as one row that can always be gone back to (principles 1 and 3). The deviations from
+Cindy are listed in `docs/web/web.md` "New Agent's model choice (#5104)"; iOS and Android follow in #5117.

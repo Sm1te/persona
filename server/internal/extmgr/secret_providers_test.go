@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nwverse/persona/sdk/go/wire"
 	"github.com/nwverse/persona/server/internal/extension"
@@ -50,6 +51,9 @@ func serveSecretProviderExtensionForTest() {
 				case "used":
 					return nil, nil
 				case "describe":
+					if last == "long" { // a detail on several lines, longer than a card's line
+						return wire.SecretsDescribeResult{Title: "Item › long", Detail: "vault Example\n" + strings.Repeat("and more words ", 10)}, nil
+					}
 					return wire.SecretsDescribeResult{Title: "Item › " + last, Detail: "vault Example"}, nil
 				case "resolve":
 				default:
@@ -154,6 +158,12 @@ func TestSecretProviders(t *testing.T) {
 	if _, err := h.DescribeSecret(ctx, "exv://Example/item/ok"); err != nil {
 		t.Fatal(err)
 	}
+	// A provider's detail is cut by the host, whatever it sent: one line of secretDetailMost characters and "…".
+	d, err = h.DescribeSecret(ctx, "exv://Example/item/long")
+	if err != nil || strings.ContainsAny(d.Detail, "\n\t") || !strings.HasPrefix(d.Detail, "vault Example and more words") ||
+		!strings.HasSuffix(d.Detail, "…") || utf8.RuneCountInString(d.Detail) != secretDetailMost+1 {
+		t.Fatalf("a long detail: %q %v", d.Detail, err)
+	}
 
 	// What the provider was told, and what the hub recorded: never the value.
 	waitLong(t, "the used event", func() bool {
@@ -164,7 +174,7 @@ func TestSecretProviders(t *testing.T) {
 	if strings.Contains(string(raw), secretValueForTest) {
 		t.Fatal("the provider is never handed a value")
 	}
-	if n := strings.Count(string(raw), `"method":"describe"`); n != 1 {
+	if n := strings.Count(string(raw), `"method":"describe"`); n != 2 { // the ok item once (asked twice), the long one once
 		t.Fatalf("a description is kept a while: asked %d times", n)
 	}
 	var used struct {

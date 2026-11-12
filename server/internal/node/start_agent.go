@@ -20,10 +20,6 @@ type agentLauncher struct {
 	AgentType string `json:"agent_type,omitempty"`
 }
 
-// ompAgent is Oh My Pi, a pi fork. It takes its own flags only, never Claude Code's, so it starts through
-// startOtherAgent.
-const ompAgent = "omp"
-
 // ompOptionsRefusal: omp's model and thinking level come from its own config.yml, not from a start's arguments.
 const ompOptionsRefusal = "omp 的模型和思考强度由 omp 自己的配置决定，这次没有启动。"
 
@@ -114,6 +110,7 @@ func (n *Node) startOtherAgent(ctx context.Context, launch host.Launcher, cwd, l
 	defer done()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	var grace time.Time // when a family start gives up on the extension reporting the session (pifamily.go)
 	for {
 		select {
 		case <-ctx.Done():
@@ -137,6 +134,15 @@ func (n *Node) startOtherAgent(ctx context.Context, launch host.Launcher, cwd, l
 		n.mu.Unlock()
 		if id == "" {
 			continue
+		}
+		if piFamily(kind) && id == otherSession(agent) {
+			// The host knows the pane but not its session yet: the extension may report it in a moment.
+			if grace.IsZero() {
+				grace = time.Now().Add(piFamilyIDGrace)
+			}
+			if time.Now().Before(grace) {
+				continue
+			}
 		}
 		n.state.put(id, sessionState{Pane: pane, Launcher: launcher, Cwd: cwd, StartedAt: time.Now().UTC()})
 		n.bindPane(pane, id)

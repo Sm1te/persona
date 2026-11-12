@@ -38,15 +38,24 @@ const IDLE_EVERY = 5000 // ms: how often to look whether the process is idle eno
  * @param {PiDeps} deps
  * @param {{ socketPath?: string, answerFirst?: 'auto'|'phone'|'local', approve?: string[], listDays?: number,
  *   maxSessions?: number, retryMs?: number, pushDelayMs?: number, listDisk?: boolean, runtime?: string,
+ *   agent?: string, name?: string, instancePrefix?: string, interactionPrefix?: string, resumeCommand?: string[],
  *   instance?: string, update?: { name: string, hash: string, store: string, exit?: (hash: string) => void } }} [options]
  *   listDisk: list the recent sessions on disk too, and start new ones (the companion; needs web). update: this code
  *   runs from a version in a store (selfPackage), so it takes the node's version (docs/integrations/pi.md "Automatic updates"): installs it
  *   as the store's current, then — exit given (the companion) — calls exit for its supervisor to start the new code,
  *   or reloads this process's sessions onto it once they are all idle and no card of theirs is on the phone.
  *   instance: this process's identity on the node, kept by the next version's host in the same process.
+ *   agent: the agent this host serves (pi; omp for the pi fork of the same extension API). name: the agent's name in
+ *   the apps. instancePrefix: the `<prefix>-<pid>` the runtime and, when instance is not given, the instance take.
+ *   interactionPrefix: what a card's id starts with. resumeCommand: how its terminal resumes a session on disk.
  */
 export function createPiHost(deps, options = {}) {
   const web = deps.web
+  const agent = options.agent ?? 'pi'
+  const instancePrefix = options.instancePrefix ?? 'pi'
+  const interactionPrefix = options.interactionPrefix ?? 'pi'
+  const resumeCommand = options.resumeCommand ?? ['pi', '--session']
+  const pid = deps.pid ?? process.pid
   const listDisk = options.listDisk === true && web !== undefined
   const log = deps.log ?? (() => {})
   const doFetch = deps.fetch ?? globalThis.fetch
@@ -76,16 +85,16 @@ export function createPiHost(deps, options = {}) {
     rename,
     hasLocalClient: () => true, // a terminal, or pi-web's browser tabs (they cannot be counted from here)
   }, {
-    runtime: options.runtime ?? (listDisk ? 'pi-files' : web ? 'pi-web' : `pi-${deps.pid ?? process.pid}`),
-    name: web ? 'Pi Web' : 'pi',
-    agent: 'pi',
+    runtime: options.runtime ?? (listDisk ? 'pi-files' : web ? 'pi-web' : `${instancePrefix}-${pid}`),
+    name: options.name ?? (web ? 'Pi Web' : 'pi'),
+    agent,
     version: RUNTIME_VERSION,
     ...(listDisk ? { launcher: 'pi-web', launcherModel: 'pi' } : {}),
     socketPath: options.socketPath,
     answerFirst: options.answerFirst ?? 'auto',
     log,
     connect: deps.connect,
-    instance: options.instance,
+    instance: options.instance ?? (options.instancePrefix ? `${instancePrefix}-${pid}` : undefined),
     ...(update ? { package: { name: update.name, hash: update.hash }, onUpdate: (offer) => void takeUpdate(offer) } : {}),
     retryMs: options.retryMs,
     pushDelayMs: options.pushDelayMs,
@@ -190,7 +199,7 @@ export function createPiHost(deps, options = {}) {
           space_id: d.cwd ?? '',
           space_name: basename(d.cwd || ''),
           // It ran in a terminal (herdr): the node resumes it there (`pi --session`), not here in pi-web.
-          ...(resume ? { resume_argv: ['pi', '--session', d.path] } : {}),
+          ...(resume ? { resume_argv: [...resumeCommand, d.path] } : {}),
         })
       }
     }
@@ -410,7 +419,7 @@ export function createPiHost(deps, options = {}) {
     /** The phone's answer: { out } when it answered (out undefined = allowed), undefined when nobody did there. */
     const askPhone = async () => {
       const res = await rt.ask({
-        id: interactionId('pi', s.id, 'permission', e.toolCallId), kind: 'permission', session_id: s.id,
+        id: interactionId(interactionPrefix, s.id, 'permission', e.toolCallId), kind: 'permission', session_id: s.id,
         tool_name: toolName(name), tool_use_id: e.toolCallId, tool_input: toolInput(name, input), summary,
         // Offered only where it can be kept: the grant is written into the session (ALLOW_ENTRY).
         ...(typeof s.pi.appendEntry === 'function' ? { always_label: `本会话不再问 ${toolName(name)}` } : {}),
@@ -520,7 +529,7 @@ export function createPiHost(deps, options = {}) {
         let answer
         const askPhone = async () => {
           const res = await rt.ask({
-            id: interactionId('pi', s.id, 'question', toolCallId), kind: 'question', session_id: s.id,
+            id: interactionId(interactionPrefix, s.id, 'question', toolCallId), kind: 'question', session_id: s.id,
             tool_name: 'AskUserQuestion', tool_use_id: toolCallId,
             questions: [{ question: params.question, header: '', multi_select: false, options: options.map((label) => ({ label, description: '' })) }],
           }, { signal })

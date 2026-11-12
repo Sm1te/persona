@@ -4,9 +4,10 @@ panel's flyout of the model that runs (#5032: the composer's model pill, then th
 turn, by this page or elsewhere / the node's reason in orange with the switch still usable, the Claude quota under it),
 the workflow mark on the model pill, on the sidebar's agent row (not on an offline one) and on a Codex thread's pill at
 "ultra", the line above the composer after a resume ("Turn back on", x), a message sent while a change is queued (held
-back by the node, sent again once it is through), "New agent"'s switch (off each time, grayed on a computer whose Claude
-Code is too old), and in English and Japanese at 360 / 390 px the composer row (session info, the pill and Interrupt
-apart) and the resume line (not cut). Light / dark x wide / 390 px.
+back by the node, sent again once it is through), "New agent"'s switch (#5104: in the flyout of the model that runs, in
+the model pill's panel; off each time, grayed on a computer whose Claude Code is too old), and in English and Japanese
+at 360 / 390 px the composer row (session info, the pill and Interrupt apart) and the resume line (not cut). Light /
+dark x wide / 390 px.
 
 Needs the fake hub's ultracode scenario (with one manager, MOCK_MANAGERS=1: by default the MacBook, where these agents
 run, is another manager's and its agents are not in the sidebar), a web page against it and Playwright for Python:
@@ -269,11 +270,36 @@ def check_sidebar(page, base, where, theme, shots, narrow):
 
 
 def pick_machine(page, dialog, name):
-    """Chooses the computer and waits out its launchers and models loading (the effort field hides meanwhile)."""
+    """Chooses the computer and waits out its launchers and models loading (the model pill is off meanwhile)."""
     # exact: once an agent was started, a recent setup's card ("weather · MacBook …") names the computer too
     dialog.get_by_role("button", name=name, exact=True).click()
     page.wait_for_timeout(1200)
-    expect(dialog.get_by_text("思考强度", exact=True)).to_be_visible(timeout=10000)
+    pill = dialog.locator('[data-testid="new-agent-model"] [data-model-pill]')
+    expect(pill).to_have_attribute("data-model-pill", "ready", timeout=10000)
+    expect(pill).to_be_enabled(timeout=10000)
+
+
+def new_agent_dialog(page):
+    # the model panel and its flyout are dialogs too: New agent is the one with its title
+    return page.get_by_role("dialog", name="新建 Agent", exact=True)
+
+
+def new_agent_flyout(page, dialog):
+    """New agent's switch (#5104): in the flyout of the model that runs, in the model panel of the pill at the right of
+    the first message box (it was a row under 思考强度, which is now that flyout's effort slider)."""
+    dialog.locator('[data-testid="new-agent-model"] [data-model-pill]').click()
+    panel = page.locator("[data-model-panel]")
+    expect(panel).to_be_visible()
+    current = panel.locator('[data-panel-row^="model:"][data-current]').first
+    expect(current).to_be_visible()
+    current.hover()
+    current.locator("[data-row-customize]").click()
+    fly = page.locator("[data-model-flyout]")
+    expect(fly).to_be_visible()
+    box = fly.locator('[data-testid="new-agent-ultracode"]')
+    expect(box).to_be_visible(timeout=10000)
+    page.wait_for_timeout(300)
+    return fly, box
 
 
 def check_new_agent(page, base, hub_url, where, theme, shots, narrow, start):
@@ -281,36 +307,41 @@ def check_new_agent(page, base, hub_url, where, theme, shots, narrow, start):
     if narrow:
         page.locator("main").get_by_role("button", name="侧边栏").first.click()
     page.locator('aside button[aria-label="新建 Agent"]').first.click()
-    dialog = page.locator('[role="dialog"]').last
+    dialog = new_agent_dialog(page)
     pick_machine(page, dialog, "MacBook")
-    box = dialog.locator('[data-testid="new-agent-ultracode"]')
-    expect(box).to_be_visible(timeout=10000)
+    fly, box = new_agent_flyout(page, dialog)
     switch = box.get_by_role("switch", name="ultracode")
     expect(switch).to_have_attribute("aria-checked", "false")
     expect(box.locator("[data-ultracode-line]")).to_have_text(SUBTITLE)
     expect(box.locator("[data-ultracode-quota]")).to_contain_text("5 小时 86%")
-    effort = dialog.get_by_text("思考强度", exact=True).bounding_box()
-    assert box.bounding_box()["y"] > effort["y"], "under 思考强度"
+    effort = fly.locator('[role="slider"]').bounding_box()
+    assert box.bounding_box()["y"] >= effort["y"] + effort["height"] - 1, "under the effort slider"
     switch.click()
     expect(switch).to_have_attribute("aria-checked", "true")
-    box.scroll_into_view_if_needed()
-    ok(f"{where} {theme}: New agent's switch is under 思考强度, off, flips on, quota under it")
+    expect(dialog.locator('[data-testid="new-agent-model"] [data-ultracode-mark]')).to_have_count(1)
+    ok(f"{where} {theme}: New agent's switch is in the flyout of the model that runs, under its effort, off, flips on "
+       f"(the pill's mark), quota under it")
     shot(page, shots, f"new-agent-{where}-{theme}.png")
+    close_panel(page)
     pick_machine(page, dialog, "Mac Studio")
-    box = dialog.locator('[data-testid="new-agent-ultracode"]')
+    _, box = new_agent_flyout(page, dialog)
     expect(box.get_by_role("switch", name="ultracode")).to_be_disabled(timeout=10000)
     expect(box.locator("[data-ultracode-line]")).to_have_text("这台电脑的 Claude Code 是 2.1.250，要 2.1.284 或更新才能开 ultracode")
-    box.scroll_into_view_if_needed()
+    expect(dialog.locator('[data-testid="new-agent-model"] [data-ultracode-mark]')).to_have_count(0)
     ok(f"{where} {theme}: on a computer whose Claude Code is too old it is grayed and says why")
     shot(page, shots, f"new-agent-old-{where}-{theme}.png")
+    close_panel(page)
     pick_machine(page, dialog, "MacBook")
-    expect(dialog.locator('[data-testid="new-agent-ultracode"]').get_by_role("switch", name="ultracode")).to_be_enabled(timeout=10000)
+    _, box = new_agent_flyout(page, dialog)
+    switch = box.get_by_role("switch", name="ultracode")
+    expect(switch).to_be_enabled(timeout=10000)
     if not start:
+        close_panel(page)
         page.keyboard.press("Escape")
         return
-    switch = dialog.locator('[data-testid="new-agent-ultracode"]').get_by_role("switch", name="ultracode")
     if switch.get_attribute("aria-checked") != "true":
         switch.click()
+    close_panel(page)
     folder = dialog.locator("input").first
     folder.fill("/Users/me/code/weather")
     dialog.get_by_role("button", name="启动", exact=True).click()
@@ -323,10 +354,12 @@ def check_new_agent(page, base, hub_url, where, theme, shots, narrow, start):
     if narrow:
         page.locator("main").get_by_role("button", name="侧边栏").first.click()
     page.locator('aside button[aria-label="新建 Agent"]').first.click()
-    dialog = page.locator('[role="dialog"]').last
+    dialog = new_agent_dialog(page)
     pick_machine(page, dialog, "MacBook")
-    expect(dialog.locator('[data-testid="new-agent-ultracode"]').get_by_role("switch", name="ultracode")).to_have_attribute("aria-checked", "false", timeout=10000)
+    _, box = new_agent_flyout(page, dialog)
+    expect(box.get_by_role("switch", name="ultracode")).to_have_attribute("aria-checked", "false", timeout=10000)
     ok(f"{where} {theme}: opened again it is off: the last choice is not remembered")
+    close_panel(page)
     page.keyboard.press("Escape")
 
 

@@ -105,16 +105,21 @@ const (
 
 // HTTPRequest is http.request's params: an app's request on one of Routes, with an escaped URL path (header without
 // the hub's credentials and hop-by-hop headers, the asking device's role in RoleHeader; body as base64).
-// HandoffApprover is set by the hub on a card's answer from a device that may approve a hand-off card.
+// HandoffApprover is set by the hub on a card's answer from a device that may approve a hand-off card; Human on a new
+// conversation a person's own app opens.
 type HTTPRequest struct {
 	Caller          *devicewire.Caller         `json:"caller,omitempty"`
 	ShareAuthority  *devicewire.ShareAuthority `json:"share_authority,omitempty"`
 	HandoffApprover *HandoffApprover           `json:"handoff_approver,omitempty"`
-	Method          string                     `json:"method"`
-	Path            string                     `json:"path"`
-	Query           string                     `json:"query,omitempty"`
-	Header          map[string][]string        `json:"header,omitempty"`
-	Body            []byte                     `json:"body,omitempty"`
+	// Human is the hub's word that a person's own app opens this conversation (POST /api/v1/assistant/conversations
+	// with a full device's credential, decided as for SendParams.Human): its first message counts as theirs
+	// (WithHumanStart). Set by the hub on that route only, never from the request; an older hub never sends it.
+	Human  bool                `json:"human,omitempty"`
+	Method string              `json:"method"`
+	Path   string              `json:"path"`
+	Query  string              `json:"query,omitempty"`
+	Header map[string][]string `json:"header,omitempty"`
+	Body   []byte              `json:"body,omitempty"`
 }
 
 // HTTPResponse is http.request's answer, written back to the app unchanged.

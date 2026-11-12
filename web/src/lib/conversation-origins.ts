@@ -93,16 +93,13 @@ export function autoConversations(conversations: readonly Session[], main: strin
   return { total: tally(auto), groups };
 }
 
-/** How many chats the sidebar's "Recent" lists (#4873); the rest are in "All chats". */
-export const RECENT_LIMIT = 5;
-
-/** The sidebar's "Recent" under Persona chats (#4873): the newest `limit` of the user's own conversations that are not the
- *  main one and not a leader (常驻, listed above it), by last activity (equal times by id, as iOS). The ones the hub opened
- *  by itself stay in "All chats", as "Recent" left them out before #4331. */
-export function recentConversations(conversations: readonly Session[], main: string | undefined, leaders: readonly string[], limit = RECENT_LIMIT): Session[] {
+/** The sidebar's "Recent" under Persona chats (#4873), newest first: the user's own conversations that are not the main
+ *  one and not a leader (常驻, listed above it), by last activity (equal times by id, as iOS). The sidebar shows the first
+ *  ones (lib/recent-chats.ts, #5146). The ones the hub opened by itself stay in "All chats", as "Recent" left them out
+ *  before #4331. */
+export function recentConversations(conversations: readonly Session[], main: string | undefined, leaders: readonly string[]): Session[] {
   const lead = new Set(leaders);
   return conversations
     .filter((c) => c.session_id !== main && !lead.has(c.session_id) && !c.archived && !isAutoConversation(c))
-    .sort((a, b) => byTime(b.updated_at, a.updated_at) || (a.session_id < b.session_id ? -1 : a.session_id > b.session_id ? 1 : 0))
-    .slice(0, limit);
+    .sort((a, b) => byTime(b.updated_at, a.updated_at) || (a.session_id < b.session_id ? -1 : a.session_id > b.session_id ? 1 : 0));
 }

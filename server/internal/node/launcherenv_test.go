@@ -202,6 +202,72 @@ func TestProviderEnv(t *testing.T) {
 	}
 }
 
+// An explicit tier, small or subagent model gets [1m] by its own window in the provider's models, as the session's
+// model does: Claude Code runs it with the 1M window only then, and drops the marker before calling the gateway (#5149).
+func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
+	models := []proto.ProviderModel{
+		{ID: "std", ContextWindow: 200000}, {ID: "small", ContextWindow: 128000},
+		{ID: "wide", ContextWindow: 1000000}, {ID: "wider", ContextWindow: 2000000},
+	}
+	vars := []struct {
+		key string
+		set func(*proto.ManagedLauncher, string)
+	}{
+		{"ANTHROPIC_DEFAULT_OPUS_MODEL", func(l *proto.ManagedLauncher, m string) { l.OpusModel = m }},
+		{"ANTHROPIC_DEFAULT_SONNET_MODEL", func(l *proto.ManagedLauncher, m string) { l.SonnetModel = m }},
+		{"ANTHROPIC_DEFAULT_FABLE_MODEL", func(l *proto.ManagedLauncher, m string) { l.FableModel = m }},
+		{"ANTHROPIC_DEFAULT_HAIKU_MODEL", func(l *proto.ManagedLauncher, m string) { l.HaikuModel = m }},
+		{"ANTHROPIC_SMALL_FAST_MODEL", func(l *proto.ManagedLauncher, m string) { l.SmallModel = m }},
+		{"CLAUDE_CODE_SUBAGENT_MODEL", func(l *proto.ManagedLauncher, m string) { l.SubagentModel = m }},
+	}
+	for _, c := range []struct{ name, model, want string }{
+		{"1M window", "wide", "wide[1m]"},
+		{"over 1M", "wider", "wider[1m]"},
+		{"marked already", "wide[1m]", "wide[1m]"},
+		{"marked, listed without a window", "other[1m]", "other[1m]"},
+		{"200K", "std", "std"},
+		{"under 200K", "small", "small"},
+		{"no window known", "other", "other"},
+	} {
+		for _, v := range vars {
+			for _, session := range []string{"std", "wide"} {
+				l := proto.ManagedLauncher{Name: "p", Kind: "api", BaseURL: "https://gw.example.com", APIKey: "sk-test-k",
+					Model: session, Models: models}
+				v.set(&l, c.model)
+				env := providerEnv(l, "", "", false)
+				if got := env[v.key]; got != c.want {
+					t.Errorf("%s, session model %s: %s=%q, want %q", c.name, session, v.key, got, c.want)
+				}
+				if want := map[string]string{"std": "std", "wide": "wide[1m]"}[session]; env["ANTHROPIC_MODEL"] != want {
+					t.Errorf("%s, %s set: ANTHROPIC_MODEL=%q, want %q", c.name, v.key, env["ANTHROPIC_MODEL"], want)
+				}
+			}
+		}
+	}
+	// The Haiku tier follows an explicit small model by that model's window, and a tier left empty the session's model.
+	l := proto.ManagedLauncher{Name: "p", Kind: "api", BaseURL: "https://gw.example.com", APIKey: "sk-test-k", Model: "std",
+		Models: models, SmallModel: "wide", SonnetModel: "small"}
+	env := providerEnv(l, "", "", false)
+	for k, want := range map[string]string{
+		"ANTHROPIC_MODEL": "std", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "wide[1m]", "ANTHROPIC_SMALL_FAST_MODEL": "wide[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL": "small", "ANTHROPIC_DEFAULT_OPUS_MODEL": "std", "CLAUDE_CODE_SUBAGENT_MODEL": "std",
+	} {
+		if env[k] != want {
+			t.Errorf("small model wide: %s=%q, want %q", k, env[k], want)
+		}
+	}
+	// A session started on another model: the empty tiers follow it, the explicit ones keep their own.
+	env = providerEnv(l, "wider", "", false)
+	for k, want := range map[string]string{
+		"ANTHROPIC_MODEL": "wider[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "wider[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "small",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "wide[1m]",
+	} {
+		if env[k] != want {
+			t.Errorf("session on wider: %s=%q, want %q", k, env[k], want)
+		}
+	}
+}
+
 func TestProviderEnvClear(t *testing.T) {
 	in := []string{"ANTHROPIC_BASE_URL=x", "ANTHROPIC_CUSTOM_HEADERS=h", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1",
 		"CLAUDE_CODE_EFFORT_LEVEL=max", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=1", "CLAUDE_CODE_AUTO_COMPACT_WINDOW=1",

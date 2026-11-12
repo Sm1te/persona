@@ -126,9 +126,13 @@ type Service struct {
 	supervise  superviseBook   // supervise_signals.go
 	preempt    preemptBook     // owner_preempt.go
 	tbriefs    taskBriefBook   // task_brief.go
+	// noBackground: there is no background supervisor whatever the setting says, so the main conversation gets its
+	// own tasks' signals. Only the tests of what the main conversation's own supervision does set it; the hub never does.
+	noBackground bool
 	// briefsOptional: task_plan takes a task without done_when / expect_minutes (briefRequired). Only the tests of
 	// what a plan does once it exists set it; the hub never does.
 	briefsOptional bool
+	background     backgroundBook // supervise_background.go
 	autoRuns       autoReviewBook // supervise_autoreview.go
 	reports        reportBook     // reports.go
 	upReports      reportRate     // agent_control.go: report_to_supervisor

@@ -208,3 +208,18 @@ export function pillView(s: Session, e: ModelList): PillView {
   if (s.service_tier === "priority") out.fast = true;
   return out;
 }
+
+/** Forgets every list and read kept (tests: each starts with nothing read). */
+export function resetModelListsForTests(): void {
+  lists.clear();
+  machines.clear();
+  reads.clear();
+  machineReads.clear();
+  forgetting.clear();
+  queue.length = 0;
+  running = 0;
+  changed();
+}
+
+/** Subscribes to every change of what was read (views/NewAgentModel.tsx useModelList follows one list with it). */
+export const subscribeModelLists = subscribe;

@@ -22,7 +22,7 @@ Namespace `secrets.`, types in `schema/extension/protocol.schema.json`. Only the
 
 | Method | Parameters → answer | Notes |
 | --- | --- | --- |
-| `secrets.describe` | `{contribution, reference}` → `{title, detail?}` | Words for people (the item and field, its vault), never a value. Kept by the manager for 10 minutes per reference, so settings pages and cards do not ask each time. |
+| `secrets.describe` | `{contribution, reference}` → `{title, detail?}` | Words for people (the item and field, its vault), never a value. The manager keeps each on one line, its words joined by single spaces, and cuts a longer one with "…": the title at 200 characters, the detail at 40 (what fits after the item in a card's line on a phone; `secretDetailMost`), whatever the provider sent. Kept by the manager for 10 minutes per reference, so settings pages and cards do not ask each time. |
 | `secrets.resolve` | `{contribution, reference, purpose}` → `{value}` | `purpose` is `{kind, id, machine?, session?}`: `extension` (an extension's secret; `id` its id), `launcher` (a launcher's or model provider's key; `id` its name, `machine` where it goes) or `agent_run` (handed to one Agent run after the user approved it; `id` the variable, `machine` and `session` the Agent's). The value is 1 byte to 16 KB. |
 | `secrets.used` (event) | `{contribution, reference, purpose, at, approved_by}` | Sent after each successful resolution, so the provider can keep the usage record its own page shows. `approved_by`: `settings` (a reference saved in Settings), `rule` (an Always rule) or the approving device's id. Never a value. |
 
@@ -139,24 +139,40 @@ covers nothing, and a provider whose id changes takes them along. A provider's d
 
 A rule spares the card only when the user asked for the start themselves (the decision on #3962; `handoffUserTurn`): the
 conversation calling `agent_start` is one the user opened (its origin, noted when it was started, is `user`, and no extension's
-token opened it), and every message of the turn is one a person's own app sent, as the hub vouched: the hub marks a message
-for an assistant chat `human` only when a full device's credential sent it (`assistant.send_params`), and the manager keeps
-those messages' `client_msg_id`s, with the start of their words, for a day, in memory; a line counts only when it holds those
-words (the node ties an id to a line by its first words), and the transcript's window must open with the turn's prompt. A
-`client_msg_id` alone proves nothing (channels, the inbox, extensions and Persona's own sends carry one too, and the hub never
-types an id it has delivered once). Conversations an inbox item, a channel (Feishu and others, `/new` included), a scheduled
-task, another conversation or an extension opened, and turns another author's message started, always get the card; so does
-whatever cannot be told (an origin the backfill guessed or none, a transcript that cannot be read or that the node cut, a
-message the hub did not vouch for, an older hub, a manager restarted since). The first message of a conversation started with
-its prompt (`POST /api/v1/assistant/conversations`, Siri with no main chat), a main chat an agent runtime hosts (its node gives
-each message an id of its own) and voice turns (the voice extension's token) always get it too. A start a rule spared the card
-is recorded with `approved_by: "rule"`.
+token opened it), and every message of the turn is one a person's own app sent, as the hub vouched. The hub decides that
+with one test, a full credential with a device (`personSent` in `server/internal/hub/secret_handoff.go`; never the hub's own
+token, an extension's, a computer link's or the watch's), for two requests: a message for an assistant chat
+(`assistant.send_params` marked `human`) and a new conversation's start with its first message (`POST
+/api/v1/assistant/conversations`, the relayed request's own `human` field, never a header). The manager keeps those messages'
+`client_msg_id`s, with the start of their words, for a day, in memory; a start's first message gets an id from the manager
+(`humanStart`, beginning `start:`, which the hub refuses on any app's send), which the node ties to the new conversation's
+first line (`assistant.send` with `client_msg_id` and no `new_session_id`). A message that carries a context block an app put
+in it is not the user's own words, whoever sent it (`fillWorkspaces`): a mail or Lark message handed on from the Inbox to a new or
+an existing chat, a page's selection used as context or for an AI edit, another conversation's message, a document, a to-do's
+decisions. Only a workspace mention the manager resolves is theirs: at the start of the message, every `kind` it names is
+`workspace` and its computer and folder are known, so the manager writes the block anew and the app's words in it never reach
+the model. Text an app sends
+without such a block counts as typed: the iPhone's share sheet and Siri / Shortcuts ("Ask Persona") send what they carry that
+way today, and are to mark it (#3962 step 4b). A line counts only when it holds those words (the node ties an id to a line by its first words), and the
+transcript's window must open with the turn's prompt. An id counts once: for the first line it is read on, never for another
+line that carries it; a send the hub did not vouch for that carries it, or a second vouched send of it with other words, voids
+it. A `client_msg_id` alone proves nothing (channels, the inbox, extensions and Persona's own sends carry one too, and the hub
+never types an id it has delivered once). Conversations an inbox item, a channel (Feishu and others, `/new` included), a
+scheduled task, another conversation or an extension opened, and turns another author's message started, always get the
+card; so does whatever cannot be told (an origin the backfill guessed or none, a transcript that cannot be read or that the
+node cut, a message the hub did not vouch for, an older hub or node, a manager restarted since, and a start's first line after
+the node restarted, since the hub keeps the ties of sends only). A main chat an agent runtime hosts (its node gives each
+message an id of its own) and voice turns (the voice extension's token) always get it too. A start a rule spared the card is
+recorded with `approved_by: "rule"`.
 
 "A person's own app" means any full credential with a device: the iPhone, web and other apps, and also a full token the user
 made for a script or an integration, and a Shortcuts automation that runs Ask Persona with text from elsewhere; whoever holds
-the hub's own token (the hub machine's `hub.json`) can make one. What the rule still trusts in such a turn is everything that is
-not a message: the tools' results (a mail or a page the model read at the user's request), the context and earlier turns can
-still steer what the Agent is told. A main chat an inbox item started (when there was none) is the user's own: its first turn,
+the hub's own token (the hub machine's `hub.json`) can make one. Words someone else wrote that ride in the turn's messages never
+count: a context block an app put in a message (above), and what the old main conversation left before the first message of a
+new main one (it may hold a mail handed on there), whether that message started the conversation or was the first sent to one
+started empty; such a turn gets the card. What the rule still trusts is what is not in a message: the tools' results (a mail or
+a page the model read at the user's request), the live snapshot the node adds to every message, and earlier turns can still
+steer what the Agent is told. A main chat an inbox item started (when there was none) is the user's own: its first turn,
 the inbox's message, gets the card, the user's later turns do not.
 
 ## Who may approve a hand-off
@@ -208,4 +224,5 @@ holds every answer to it before it reaches the manager:
 1. The iPhone app: "Use a reference" in secret fields, the hand-off card, and the provider's page listing who uses its
    references and its Always rules; then launcher keys as references in both apps. Android's part is #3986, which lists the interfaces it needs; until then an Android phone
    shows the card as the hub sends it and cannot approve it.
-2. The 1Password extension's side (`secrets.used` on its own page).
+2. The 1Password extension's side (`secrets.used` on its own page; `secrets.describe` names the item and field as the title
+   and only the vault as the detail, which the host cuts at 40 characters anyway).

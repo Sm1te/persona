@@ -112,9 +112,12 @@ func (s *Service) toolTaskReview(ctx context.Context, self string, args json.Raw
 	}
 	// The main conversation may review any supervised task: after the main conversation changes, the old tasks'
 	// supervision messages come to the new one, which has to be able to close them (#4262).
+	// The background supervisor reviews the tasks no leader supervises, whose ledgers name the main conversation
+	// (supervise_background.go); the main conversation may still review them, as it may a leader's.
 	isMain := s.isMain(ctx, self)
+	background := s.backgroundSupervises(ctx, self, t)
 	if t.Origin == "" || t.Origin != self && (t.Supervision == nil || t.Supervision.Supervisor != self && !isMain) {
-		if !s.mayReviewForLeader(ctx, self, t) {
+		if !background && !s.mayReviewForLeader(ctx, self, t) {
 			return "", fmt.Errorf("task %s was not handed out from this conversation", t.ID)
 		}
 	}
@@ -325,16 +328,21 @@ func (s *Service) toolTaskReview(ctx context.Context, self string, args json.Raw
 		}
 		// One that can wait is held for the next briefing: no card and no push now (#4930, decision_wait.go).
 		held, notHeld := false, ""
+		escalates := !isMain && (background || s.isLeader(ctx, v.Supervisor)) // the main conversation hears of it too
 		if a.CanWait {
 			held, notHeld = s.decisionWaits(ctx, decision.WhyOwner, deadline, reversible, time.Now())
 			conclusion.ForBriefing = held
+			if held && escalates {
+				conclusion.RaisedBy = self // told when it is pushed, whoever the task's ledger names by then
+			}
 		}
 		carded := s.askConclusion(ctx, t, conclusion)
 		if held && !s.waitsForBriefing(t.ID) { // the ask was not kept as held: nothing would push it later
 			held, notHeld = false, waitNotKept
 		}
-		// A leader's: the main conversation hears of it too (supervise_leader.go); of one that is held, when it is pushed.
-		if !held && !isMain && s.isLeader(ctx, v.Supervisor) {
+		// A leader's or the background supervisor's: the main conversation hears of it too (supervise_leader.go); of one
+		// that is held, when it is pushed.
+		if !held && escalates {
 			s.escalateToMain(t, v.Round, cmp.Or(conclusion.Reason, note), decision.Recommend)
 		}
 		// A recommendation is also pushed to their phone, whose OK takes it (todo_ask.go), with the bot on or off. The hub

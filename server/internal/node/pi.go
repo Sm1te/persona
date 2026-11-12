@@ -21,8 +21,6 @@ import (
 // A pi session that ran in herdr and has stopped is resumed in herdr (`pi --session`, the runtime's resume_argv),
 // never in pi-web.
 
-const piAgent = "pi"
-
 // piResumeWait is how long a resume in the engine waits for the pi it started to list the session (its extension).
 var piResumeWait = 30 * time.Second
 
@@ -49,13 +47,13 @@ func (n *Node) piSession(a host.Agent) string {
 	return n.panes[a.PaneID]
 }
 
-// mergePiRow completes a herdr pi row with what the extension serving it lists: the title, the last thing said, the
-// model, a revision that moves with the conversation, and "needs you" while it waits for the phone. Without one the
-// row says what is missing.
+// mergePiRow completes a herdr row of the family (pi, omp) with what the extension serving it lists: the title, the
+// last thing said, the model, a revision that moves with the conversation, and "needs you" while it waits for the
+// phone. Without one the row says what is missing.
 func (n *Node) mergePiRow(s *proto.Session) {
 	r, _, ok := n.runtimes.rowOf(s.SessionID)
 	if !ok {
-		s.ReadOnlyReason = piNoExtension
+		s.ReadOnlyReason = piFamilyNoExtension(s.Agent)
 		return
 	}
 	if r.Title != "" {

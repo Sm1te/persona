@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """End-to-end check of the launcher defaults and the main chat's "Runtime" in the web (#2455): model config's main chat offers
-Claude Code CLI / Agent SDK, a switch is saved and still there after a reload; "New agent"'s launcher picker and the
-conversation's launcher menu open with "Default: <provider> · <model>" from the hub's `default`, and a launcher picked over it
-says "This time only"; the main conversation that fell back to the CLI says so above the composer.
+Claude Code CLI / Agent SDK, a switch is saved and still there after a reload; "New agent"'s model pill and panel (#5104)
+start at "Follow Model settings" with "<provider> · <model>" from the hub's `default`, and a launcher picked over it
+unchecks it (the pill names that launcher) until the follow row is picked again; the conversation's launcher menu opens
+with "Default: <provider> · <model>", and a launcher picked over it says "This time only"; the main conversation that fell
+back to the CLI says so above the composer.
 
 Needs a running web page against the fake hub with MOCK_MODEL_DEFAULTS=1 and Playwright for Python (it drives the
 installed Chrome):
@@ -16,6 +18,7 @@ widths; --shots saves each state there.
 """
 import argparse
 import os
+import re
 import sys
 
 from playwright.sync_api import expect, sync_playwright
@@ -23,6 +26,7 @@ from playwright.sync_api import expect, sync_playwright
 SIZES = {"wide": {"width": 1280, "height": 900}, "narrow": {"width": 390, "height": 844}}
 MAIN = "b2e4d6f8-0000-4000-8000-000000000001"  # the fake hub's main conversation
 DEFAULT = "默认：claude · model-chat"  # the fake hub's model config default for the main chat and "New agent"
+FOLLOWED = "claude · model-chat"  # the same default under New agent's "Follow Model settings" row
 FALLBACK = "已退回 CLI：这台电脑没有 Node.js 22+"
 
 
@@ -93,22 +97,48 @@ def runtime(p):
 
 
 def new_agent(p):
+    """New agent's launcher chips (Default marked, another one "This time only") are its model pill and panel now (#5104):
+    the follow row stands for the default, and a launcher picked over it unchecks it."""
     p.go("/agents")
     p.page.get_by_role("button", name="新建 Agent").first.click()
-    d = p.page.get_by_role("dialog")
-    default = d.get_by_role("button", name=DEFAULT)
-    expect(default).to_be_visible()
-    expect(default).to_have_attribute("aria-pressed", "true")
-    expect(d.get_by_text("仅这一次")).to_have_count(0)
-    ok(f"{p.tag}: 新建 Agent's launcher picker starts at 「{DEFAULT}」")
+    d = p.page.get_by_role("dialog", name="新建 Agent", exact=True)
+    pill = d.locator('[data-testid="new-agent-model"] [data-model-pill]')
+    expect(pill).to_have_attribute("data-model-pill", "ready")
+    expect(pill).to_be_enabled()
+    expect(pill).to_contain_text("model-chat")
+
+    def panel():
+        pill.click()
+        panel = p.page.locator("[data-model-panel]")
+        expect(panel).to_be_visible()
+        expect(panel.locator('[role="status"]')).to_have_count(0)  # every launcher's list read
+        return panel
+
+    def pick(row):
+        # by its name: the middle of a row can be its star or Customize (always shown on a touch screen)
+        row.click(position={"x": 48, "y": 12})
+        expect(p.page.locator("[data-model-panel]")).to_have_count(0)
+
+    m = panel()
+    follow = m.locator("[data-follow-row]")
+    expect(follow).to_have_attribute("aria-selected", "true")
+    expect(follow).to_contain_text("跟随模型配置")
+    expect(follow).to_contain_text(FOLLOWED)
+    ok(f"{p.tag}: 新建 Agent's model panel starts at 「跟随模型配置」 with 「{FOLLOWED}」")
     p.shot("new-agent-default")
-    d.get_by_role("button", name="sonnetcc", exact=True).click()
-    expect(d.get_by_text("仅这一次", exact=True)).to_be_visible()
-    expect(default).to_have_attribute("aria-pressed", "false")
-    ok(f"{p.tag}: another launcher is marked 仅这一次")
+    pick(m.locator('[data-panel-row="model:sonnetcc\\a default"]'))
+    expect(pill).to_have_attribute("title", re.compile(r"· sonnetcc"))
+    m = panel()
+    expect(m.locator("[data-follow-row]")).to_have_attribute("aria-selected", "false")
+    expect(m.locator('[data-panel-row="model:sonnetcc\\a default"]')).to_have_attribute("data-current", "true")
+    ok(f"{p.tag}: another launcher picked unchecks 「跟随模型配置」 and is the one lit, the pill names it")
     p.shot("new-agent-once")
-    default.click()
-    expect(d.get_by_text("仅这一次", exact=True)).to_have_count(0)
+    m.locator("[data-follow-row]").click()
+    expect(p.page.locator("[data-model-panel]")).to_have_count(0)
+    expect(pill).to_contain_text("model-chat")
+    expect(pill).not_to_have_attribute("title", re.compile(r"sonnetcc"))
+    p.page.keyboard.press("Escape")
+    expect(d).to_have_count(0)
 
 
 def conversation(p):

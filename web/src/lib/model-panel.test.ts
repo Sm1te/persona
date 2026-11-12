@@ -140,12 +140,15 @@ describe("the search", () => {
     expect(shape({ view: { kind: "favorites" }, query: "gpt" })).toEqual(["provider:claude [typed:gpt]", "provider:codex [gpt-5.5]"]);
   });
 
-  it("offers a typed model ID as “Use …” in each recommended provider that takes typed IDs", () => {
+  it("offers a typed model ID as “Use …” in each provider that takes typed IDs and a pick here", () => {
     expect(shape({ query: "vendor/new-model" })).toEqual(["provider:claude [typed:vendor/new-model]"]);
-    // not a valid ID, already listed, or a provider that isn't recommended: nothing to offer
+    // not a valid ID, already listed, or a provider that can't take a pick here: nothing to offer
     expect(shape({ query: "two words" })).toEqual([]);
     expect(shape({ query: "vendor/model-x" })).toEqual(["recommended [vendor/model-x]"]);
-    expect(shape({ query: "vendor/new-model", state: state({ recommended: [] }) })).toEqual([]);
+    expect(shape({ query: "vendor/new-model", providers: [claude({ unavailable: "another engine" })] })).toEqual([]);
+    expect(shape({ query: "vendor/new-model", providers: [claude({ locked: "--model" })] })).toEqual([]);
+    // a provider that isn't recommended (an Agent's other launcher, switched to with the next message) offers it too
+    expect(shape({ query: "vendor/new-model", state: state({ recommended: [] }) })).toEqual(["provider:claude [typed:vendor/new-model]"]);
     const [s] = panelSections(input({ query: "vendor/new-model" }));
     expect(s.rows[0].setup).toEqual({ provider: "claude", model: "vendor/new-model" });
     // a word that names a listed model is a search: no "Use" row beside its match

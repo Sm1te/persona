@@ -1157,7 +1157,8 @@ function Advanced({ f, setF, set, hadHeaders, hadEnv }: {
 
 /** A tier's model: empty (the session's model, `def` unless the session picks another; `empty` names what else it
  *  follows) or one of the checked models; a stored one that is not checked stays on the list. The default model is not
- *  offered again by name: set by name the node runs it without its 1M marker. "Auto" when it filled itself in (#4975). */
+ *  offered again by name: empty already runs it, and follows the session when it picks another. "Auto" when it filled
+ *  itself in (#4975). */
 function TierSelect({ label, hint, value, ids, def, auto, empty, onChange }: { label: string; hint?: string; value: string; ids: string[]; def: string; auto: boolean; empty?: string; onChange: (v: string) => void }) {
   const id = useId();
   const options = [...ids.filter((m) => m !== def || m === value), ...(value && !ids.includes(value) ? [value] : [])];

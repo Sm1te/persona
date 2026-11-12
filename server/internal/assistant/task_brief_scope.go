@@ -197,8 +197,9 @@ func (s *Service) toolTaskScope(ctx context.Context, self string, args json.RawM
 	if t.Supervision != nil && t.Supervision.Supervisor != "" {
 		supervisor = t.Supervision.Supervisor
 	}
-	// Its supervisor only; the main conversation also for a task an earlier main conversation supervised (as task_review).
-	if supervisor != self && !(s.isMain(ctx, self) && !s.isLeader(ctx, supervisor)) {
+	// Its supervisor only; the main conversation also for a task an earlier main conversation supervised (as task_review),
+	// and the background supervisor for the tasks no leader supervises (supervise_background.go).
+	if supervisor != self && !(s.isMain(ctx, self) && !s.isLeader(ctx, supervisor)) && !s.backgroundSupervises(ctx, self, t) {
 		return "", fmt.Errorf("task %s is supervised by another conversation: only its supervisor changes its scope", t.ID)
 	}
 	c := scopeChange{By: self, Change: a.Change, Why: a.Why, Expect: a.ExpectMinutes}

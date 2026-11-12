@@ -14,10 +14,13 @@ import { createPortal } from "react-dom";
 import { t } from "../../i18n";
 import {
   alignedScrollTop,
+  engineChoices,
+  engineSetup,
   panelSections,
   rowBlock,
   rowCustomizable,
   type PanelConfig,
+  type PanelPreset,
   type PanelOverride,
   type PanelProvider,
   type PanelRow,
@@ -57,7 +60,22 @@ export interface ModelPanelProps {
   currentExtra?: ReactNode;
   /** A strip above the search (a Persona chat's "Following the default" / "Picked for this chat", #5033). */
   header?: ReactNode;
+  /** A row on top of the list, in no group (Cindy's "follow" row): following a default instead of a model of one's own
+   *  (New Agent: Model settings › New agent). Checked while `active`; a click applies it, and the panel closes once it did. */
+  follow?: { active: boolean; label: string; detail?: string; warning?: string; onFollow: () => boolean | Promise<boolean> };
+  /** Ready-made setups listed as a group after the favorites (New Agent's presets); a pick of one goes to `onPreset`. */
+  presets?: PanelPreset[];
+  onPreset?: (key: string) => boolean | Promise<boolean>;
+  /** The flyout lists the other engines its model runs with here (other providers listing it) and picks one on a click. */
+  engines?: boolean;
+  /** "How to fix" after the reason under a provider that can't take a pick (New Agent's launcher that failed its check). */
+  onHelp?: (provider: string) => void;
+  /** "Configure models" instead of opening Settings › Model providers from here (a dialog that closes first). */
+  onConfigure?: () => void;
 }
+
+/** The headers of the groups that are not a provider's. */
+const GROUP_LABELS = { favorites: "ui-modelpanel.favorites", recent: "ui-modelpanel.recent", recommended: "ui-modelpanel.recommended", presets: "ui-modelpanel.presets" } as const;
 
 /** The body's height (rail and list) when the window has room; the panel's own cap (Cindy's max-h). */
 const BODY = 428;
@@ -79,7 +97,7 @@ interface Geometry {
 
 const rowsOf = (list: HTMLElement | null) => (list ? [...list.querySelectorAll<HTMLElement>("[data-panel-row]")] : []);
 
-export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, onApplyCurrent, onReload, onForget, currentExtra, header }: ModelPanelProps): ReactNode {
+export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, onApplyCurrent, onReload, onForget, currentExtra, header, follow, presets, onPreset, engines, onHelp, onConfigure }: ModelPanelProps): ReactNode {
   const store = usePanelStore(scope);
   const listId = useId();
   const [view, setView] = useState<PanelView>({ kind: "all" });
@@ -87,8 +105,8 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
   const searching = query.trim() !== "";
   const shown: PanelView = searching ? { kind: "all" } : view;
   const sections = useMemo(
-    () => panelSections({ providers, state, view, query, favorites: store.favorites, recent: store.recent, overrides: store.overrides }),
-    [providers, state, view, query, store.favorites, store.recent, store.overrides],
+    () => panelSections({ providers, state, view, query, favorites: store.favorites, recent: store.recent, overrides: store.overrides, presets }),
+    [providers, state, view, query, store.favorites, store.recent, store.overrides, presets],
   );
   const rows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
 
@@ -296,20 +314,23 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
   }, [sections, fly]);
 
   // ── what a row does ──
-  const pick = async (row: PanelRow) => {
+  // a pick of a row, a preset, an engine in a flyout or the follow row: everything waits for it; once applied, the setup
+  // (not the follow row's: it is no model of its own) goes into Recent and the panel closes
+  const apply = async (run: () => boolean | Promise<boolean>, setup: PanelConfig | null) => {
     if (picking) return;
     setPicking(true);
     let ok = false;
     try {
-      ok = await onPick(row.setup);
+      ok = await run();
     } catch {
       ok = false;
     }
-    if (ok) store.pushRecent(row.setup);
+    if (ok && setup) store.pushRecent(setup);
     if (!mounted.current) return;
     setPicking(false);
     if (ok) onClose();
   };
+  const pick = (row: PanelRow) => apply(() => (row.kind === "preset" && row.preset && onPreset ? onPreset(row.preset.key) : onPick(row.setup)), row.setup);
 
   const star = (row: PanelRow) => {
     if (row.kind === "favorite" && row.favorite) store.removeFavorite(row.favorite.uid);
@@ -346,6 +367,8 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
       const patch: PanelOverride = {};
       const d = row.model.defaultEffort;
       if (d && row.setup.effort && row.setup.effort !== d) patch.effort = d;
+      // no default known: back to none, the model's own (an Agent not started yet; a running one sends nothing for it)
+      else if (!d && row.setup.effort) patch.effort = "";
       if (row.setup.fast) patch.fast = false;
       if (Object.keys(patch).length && !(await applyLive(row, patch))) return;
     }
@@ -394,11 +417,11 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
     setView(v);
   };
 
-  const label = (s: PanelSection) =>
-    s.kind === "favorites" ? t("ui-modelpanel.favorites") : s.kind === "recent" ? t("ui-modelpanel.recent") : s.kind === "recommended" ? t("ui-modelpanel.recommended") : (s.provider?.name ?? "");
+  const label = (s: PanelSection) => (s.kind === "provider" ? (s.provider?.name ?? "") : t(GROUP_LABELS[s.kind]));
 
   const second = (row: PanelRow): { text: string; describes?: boolean } => {
     if (row.kind === "typed") return { text: t("ui-modelpanel.use_typed_note") };
+    if (row.kind === "preset") return { text: row.preset?.description || `${row.provider.name} · ${row.model.name}` };
     if (row.model.custom) return { text: t("ui-modelpanel.typed_before") };
     if (shown.kind === "provider") return { text: row.model.description ?? "", describes: true };
     return { text: row.provider.name };
@@ -472,6 +495,7 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain p-2 pb-3 [scrollbar-gutter:stable]"
               >
                 <div ref={glide} aria-hidden className="pointer-events-none absolute top-0 left-0 z-0 rounded-control bg-hover-2 opacity-0 transition-[transform,height,opacity] duration-(--model-panel-glide) ease-out" />
+                {follow && <FollowRow follow={follow} frozen={picking} onPick={() => void apply(follow.onFollow, null)} />}
                 {notes.map((n) => (
                   <div key={n.icon} role="note" className={cx("flex w-0 min-w-full items-start gap-1.5 px-2.5 pt-1.5 pb-1 text-[11px] leading-[1.5]", n.tone)}>
                     <Icon name={n.icon} size={12} className="mt-[2.5px] shrink-0" />
@@ -486,8 +510,11 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
                   sections.map((s) => (
                     <div key={s.key} role="group" aria-label={label(s)} data-panel-section={s.kind}>
                       {/* the group's name is its aria-label: the heading is for the eye only */}
-                      <div aria-hidden className="truncate px-2.5 pt-2 pb-1 text-[12px] leading-[1.33] font-medium text-ink-2">{label(s)}</div>
-                      {s.kind === "provider" && s.provider && <GroupNotes provider={s.provider} onReload={onReload} />}
+                      <div aria-hidden className="truncate px-2.5 pt-2 pb-1 text-[12px] leading-[1.33] font-medium text-ink-2">
+                        {label(s)}
+                        {s.kind === "provider" && s.provider?.idNote && <span className="ml-1.5 font-mono text-[11px] font-normal text-ink-3">{s.provider.idNote}</span>}
+                      </div>
+                      {s.kind === "provider" && s.provider && <GroupNotes provider={s.provider} onReload={onReload} onHelp={onHelp} />}
                       {s.loading && (
                         <div role="status" className="flex items-center gap-2 px-3 py-2 text-[12px] text-ink-3">
                           <Spinner size={12} />
@@ -503,7 +530,7 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
                             key={row.key}
                             row={row}
                             second={two.text}
-                            describes={two.describes}
+                            describes={two.describes || row.kind === "preset"}
                             blocked={rowBlock(row.provider, state)}
                             customizable={customizable}
                             flyoutOpen={fly?.key === row.key}
@@ -529,7 +556,8 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
               type="button"
               onClick={() => {
                 onClose();
-                navigate(settingsHref("models", null, phone, null, "providers"));
+                if (onConfigure) onConfigure();
+                else navigate(settingsHref("models", null, phone, null, "providers"));
               }}
               className="flex min-w-0 items-center gap-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-150 hover:text-ink"
             >
@@ -551,6 +579,11 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
           focusOnOpen={fly.keyboard}
           reposition={sections}
           extra={flyRow.kind === "model" && flyRow.current ? currentExtra : undefined}
+          engines={engines ? engineChoices(providers, flyRow, state) : undefined}
+          onEngine={(choice) => {
+            const setup = engineSetup(choice, flyRow.setup);
+            void apply(() => onPick(setup), setup);
+          }}
           onEffort={(effort) => void edit(flyRow, { effort })}
           onFast={(on) => void edit(flyRow, { fast: on })}
           onReset={() => void reset(flyRow)}
@@ -563,12 +596,23 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
   );
 }
 
-/** Under a provider's header: why its rows can't be picked here (once), or why its list couldn't be read, with Retry. */
-function GroupNotes({ provider, onReload }: { provider: PanelProvider; onReload?: (provider: string) => void }) {
+/** Under a provider's header: why its rows can't be picked here (once, with "How to fix" where there is one), or why its
+ *  list couldn't be read, with Retry. */
+function GroupNotes({ provider, onReload, onHelp }: { provider: PanelProvider; onReload?: (provider: string) => void; onHelp?: (provider: string) => void }) {
   const why = provider.unavailable || provider.locked;
+  const help = provider.unavailable && onHelp;
   return (
     <>
-      {why && <div className="w-0 min-w-full px-2.5 pb-1 text-[11px] leading-[1.45] break-words text-ink-3">{why}</div>}
+      {why && (
+        <div className="flex w-0 min-w-full flex-wrap items-baseline gap-x-2 px-2.5 pb-1 text-[11px] leading-[1.45] text-ink-3">
+          <span className="min-w-0 break-words">{why}</span>
+          {help && (
+            <button type="button" onClick={() => onHelp(provider.id)} className="shrink-0 font-medium whitespace-nowrap text-accent-ink hover:underline">
+              {t("ui-modelpanel.how_to_fix")}
+            </button>
+          )}
+        </div>
+      )}
       {provider.error && (
         <div role="alert" className="flex w-0 min-w-full flex-wrap items-baseline gap-x-2 px-2.5 pb-1 text-[11px] leading-[1.45] text-ink-3">
           <span className="min-w-0 break-words">{provider.error}</span>
@@ -583,3 +627,46 @@ function GroupNotes({ provider, onReload }: { provider: PanelProvider; onReload?
   );
 }
 
+
+/** The follow row (Cindy's "follow session" row): on top of the list in no group, its label and, under it, what the
+ *  default runs; checked while it is followed. A row like the model rows for the keys (↑↓, Enter). */
+function FollowRow({ follow, frozen, onPick }: { follow: NonNullable<ModelPanelProps["follow"]>; frozen: boolean; onPick: () => void }) {
+  return (
+    <>
+      <div
+        role="option"
+        aria-selected={follow.active}
+        aria-disabled={frozen || undefined}
+        tabIndex={0}
+        data-panel-row="follow"
+        data-follow-row
+        // followed: the list opens at the top, where this row is (the panel scrolls to the first row marked current)
+        data-current={follow.active || undefined}
+        onClick={() => !frozen && onPick()}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget || e.nativeEvent.isComposing || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          if (!frozen) onPick();
+        }}
+        className={cx(
+          "group/row relative z-[1] flex w-full items-center gap-2 rounded-control px-3 py-2 text-[14px] leading-[1.43] text-ink outline-none select-none",
+          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+          follow.active && "bg-hover-2 data-[glide]:bg-transparent",
+          frozen ? "cursor-not-allowed" : "cursor-pointer",
+        )}
+      >
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate leading-5 font-medium">{follow.label}</span>
+          {(follow.detail || follow.warning) && (
+            <span title={[follow.detail, follow.warning].filter(Boolean).join(" · ")} className="flex min-w-0 items-center gap-1 pt-px text-[12px] leading-[1.4] text-ink-2">
+              {follow.warning && <Icon name="warning" size={11} className="shrink-0 text-orange" />}
+              <span className="truncate">{follow.detail || follow.warning}</span>
+            </span>
+          )}
+        </span>
+        {follow.active && <Icon name="check" size={14} stroke={2.5} className="shrink-0 text-ink" />}
+      </div>
+      <div aria-hidden className="mx-1 my-1 h-px bg-line" />
+    </>
+  );
+}
