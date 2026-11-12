@@ -11,6 +11,12 @@ describe("subagent report loading", () => {
     expect(source).toMatch(/lazy\(\(\) => import\("\.\/SubagentCard"\)/);
   });
 
+  it("loads a child session's card the same way (#5120)", () => {
+    expect(source).not.toMatch(/^import[^;]*from\s+["']\.\/ChildSessionCard["']/m);
+    expect(source).toMatch(/lazy\(\(\) => import\("\.\/ChildSessionCard"\)/);
+    expect(source).toMatch(/<Suspense fallback=\{null\}><ChildSessionCard /);
+  });
+
   it("preserves the existing card and its props behind Suspense", () => {
     expect(source).toMatch(/<Suspense fallback=\{null\}><SubagentCard step=\{step\} status=\{p\.agentStatus\(step\)\}/);
   });

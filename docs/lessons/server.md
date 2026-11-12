@@ -69,6 +69,12 @@ The web production build typechecks test files. A JSON fixture imported from `sp
 whole checkout and can pass while the Docker build fails with TS2307. The Docker entrypoint suite now checks
 shared JSON imports, including globs, against both files, catching new fixture groups before an image build.
 
+Checking was not enough (2026-11-12, #5197): PRs run no hosted CI, so #4968 merged a test reading
+`spec/fixtures/forward/` with neither line, and every image build from `main` failed, the fourth time after #2666,
+#2517 and #4260. The image now carries all of `spec/fixtures/` (about 2 MB, web stage only) with one exception and one
+`COPY`, and the guard checks that no per-folder lines come back. A fixture-only change now rebuilds the web stage; that
+cost is smaller than a broken image. When something has to be listed by hand in two files, prefer a rule that needs no list.
+
 ## Sharing frontiers and migration lanes (#3604)
 
 - Migration numbers are global across the hub and manager sets, even though their

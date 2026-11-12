@@ -371,6 +371,10 @@ func fullIndexItems(mid string, list []proto.Session, encoded []sentSession) []s
 		full[row.id] = row.raw
 	}
 	var items []sessionlist.Item
+	indexed := map[string]bool{} // the rows indexed: those a row can be folded under
+	for _, row := range list {
+		indexed[row.SessionID] = row.SessionID != "" && len(full[row.SessionID]) > 0
+	}
 	seen := map[string]bool{}
 	for _, row := range list {
 		if row.SessionID == "" || seen[row.SessionID] || len(full[row.SessionID]) == 0 {
@@ -379,10 +383,16 @@ func fullIndexItems(mid string, list []proto.Session, encoded []sentSession) []s
 		seen[row.SessionID] = true
 		id, _ := json.Marshal([2]string{mid, row.SessionID})
 		summary, _ := json.Marshal(runtimeSummary(row))
+		root := ""
+		if indexed[row.FoldedUnder()] {
+			root = row.FoldedUnder()
+		}
+		kids := row.Children()
+		foldedWaiting := row.BackgroundWaiting && kids.Working == 0 && kids.NeedsYou == 0
 		items = append(items, sessionlist.Item{
 			ID: string(id), Machine: mid, Project: cmp.Or(row.RepoRoot, row.WorkspaceCwd, row.Cwd), Group: cmp.Or(row.SpaceID, row.WorkspaceID),
 			PaneSource: sessionorigin.Of(row), State: row.State, BackgroundWaiting: row.BackgroundWaiting, Source: row.SourceKind,
-			Provider: row.Agent, UpdatedAt: row.UpdatedAt,
+			Provider: row.Agent, UpdatedAt: row.UpdatedAt, Root: root, FoldedState: row.FoldedState(), FoldedBackgroundWaiting: foldedWaiting,
 			SearchText: strings.Join([]string{row.Title, row.Cwd, row.RepoRoot, row.Branch, row.SpaceName, row.SlotName, row.AgentName, row.LastText}, "\n"),
 			Summary:    json.RawMessage(summary),
 			Full: runtimeListFields(full[row.SessionID], struct {
@@ -465,6 +475,9 @@ func TestIndexRowReuseMatchesFullPath(t *testing.T) {
 		},
 		func(r *proto.Session, n int) { r.Rev++ },
 		func(r *proto.Session, n int) { r.Archived = n%2 == 0 }, // hidden from the lists while archived
+		func(r *proto.Session, n int) { // folded under a row listed or not, a rollup of its own (#5120)
+			r.SetFold(cycle(n, "", "s01", "s02", "missing"), []*proto.SessionChildren{nil, {Total: 2, Working: 1}, {Total: 1, NeedsYou: 1}}[n%3])
+		},
 	}
 	listEdits := []func(list []proto.Session, n int) []proto.Session{
 		func(list []proto.Session, n int) []proto.Session {
@@ -500,14 +513,18 @@ func TestIndexRowReuseMatchesFullPath(t *testing.T) {
 		epoch := strings.Split(i.Revision(), ".")[1]
 		var out []any
 		for _, o := range []sessionlist.Options{{Limit: 200}, {Limit: 200, Summary: true}, {Limit: 200, Q: "needle"}, {Limit: 200, Since: since[0]},
-			{Limit: 200, Summary: true, Since: since[1]}} {
+			{Limit: 200, Summary: true, Since: since[1]}, {Limit: 200, Roots: true}, {Limit: 200, Roots: true, Since: since[0]},
+			{Limit: 200, Machine: "demo", Under: "s01", Summary: true}} {
 			p, err := i.Query(o)
 			p.Revision = strings.Replace(p.Revision, epoch, "E", 1)
 			out = append(out, p, fmt.Sprint(err))
 		}
-		c, err := i.Counts(sessionlist.Options{})
-		c.Revision = strings.Replace(c.Revision, epoch, "E", 1)
-		return append(out, c, fmt.Sprint(err))
+		for _, o := range []sessionlist.Options{{}, {Roots: true}, {Roots: true, State: "working"}} {
+			c, err := i.Counts(o)
+			c.Revision = strings.Replace(c.Revision, epoch, "E", 1)
+			out = append(out, c, fmt.Sprint(err))
+		}
+		return out
 	}
 	first := [2]string{got.Revision(), ref.Revision()}
 	prev := first

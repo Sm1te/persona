@@ -358,7 +358,11 @@ nonisolated enum ChatBlock: Identifiable, Hashable, Sendable {
                     reopenedAt = lastIndex
                     current = raw
                 }
-                if item.wake == true, current != nil {
+                if item.modelRefusal != nil {
+                    // An upstream refusal (#4489): a line of its own after the exchange, never folded into the work row.
+                    if current == nil { current = Turn(id: row.id) }
+                    current!.trailing.append(row)
+                } else if item.wake == true, current != nil {
                     // A background task woke the idle agent: still the same exchange (the answer is picked at close).
                     current!.wakes.append(item)
                     current!.process.append(row)
@@ -571,6 +575,7 @@ final class ChatStore {
     /// cache, several exchanges behind). Without a span (an older hub) batches are trusted, as before.
     @discardableResult
     func apply(_ new: [Item], span: ItemSpan, backlog: Bool = false, hasMore: Bool? = nil, moreAfter: Bool = false) -> Gap {
+        let new = new.publicRefusals()
         arrivedAt = .now
         defer { newestArrived() }
         if let h = span.history, let mine = history, h != mine {
@@ -622,6 +627,7 @@ final class ChatStore {
     }
 
     func merge(_ new: [Item], backlog: Bool = false, hasMore: Bool? = nil) {
+        let new = new.publicRefusals()
         if backlog || !new.isEmpty { error = nil } // data arrived: a stale "machine is offline" no longer applies
         // A replayed disk cache can hold an id twice. Keep the newest copy before indexing, but only after collecting
         // promotion evidence; ids is already a Set, so a count mismatch finds this without scanning every ordinary merge.
@@ -1044,6 +1050,7 @@ final class ChatStore {
 
     /// Starts over from the latest page: what came in between was too much to fetch, and a hole would never fill.
     func replace(with latest: [Item], hasMore: Bool, span: ItemSpan = ItemSpan()) {
+        let latest = latest.publicRefusals()
         arrivedAt = .now
         defer { newestArrived() }
         // Pushes that came in while the page was on its way, past what it holds, stay (the next push finds the hole
@@ -1496,10 +1503,12 @@ nonisolated enum ChatCache {
     /// v14: injected supervision levels and folded promotion are retained, including client evidence on replaced folds.
     /// v16: tool results carry `outcome` (docs/protocol/protocol.md "Tool outcomes", #4303); older copies have none, and
     /// their denied or interrupted calls would stay red.
+    /// v17: refusal notices carry `model_refusal` and their text is the refusal's words (#4489); an older hub made it the
+    /// record's whole line, which v16's copies would keep showing.
     /// Bump it whenever the item structure or the text the hub gives an item changes.
-    static let folder = "chats-v16"
+    static let folder = "chats-v17"
     /// The folder before, removed on the first launch with this one.
-    private static let previous = "chats-v15"
+    private static let previous = "chats-v16"
 
     /// Once per launch, before the first copy is read or written (a static let runs once, on whichever thread asks first).
     private static let dropOlder: Void = {

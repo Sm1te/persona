@@ -107,6 +107,14 @@ export interface Subagent {
   tokens?: number;
 }
 
+/** Session.pending_switch (#5035). */
+export interface PendingSwitch {
+  launcher: string;
+  model?: string;
+  effort?: string;
+  at?: string;
+}
+
 export interface SessionCapabilities {
   read?: boolean;
   send?: boolean;
@@ -235,6 +243,11 @@ export interface Session {
   /** The client the agent runs in: "desktop" (its desktop app) or "cli" (its command line); absent when unknown (#6390). */
   agent_surface?: string;
   launcher?: string;
+  /** A switch of this running Claude Code Agent to another launcher (feature `launcher_switch`, #5035) that its next
+   *  message carries out: the launcher, the model and effort picked (absent: the launcher's default, the effort it runs
+   *  with now). `launcher` above stays the one it runs on until then (docs/protocol/protocol.md "Switching a running Agent
+   *  to another provider"). */
+  pending_switch?: PendingSwitch;
   model?: string;
   permission_mode?: string;
   effort?: string;
@@ -333,6 +346,14 @@ export interface Session {
   parent_session_id?: string;
   root_session_id?: string;
   is_subagent?: boolean;
+  /** The listed session this child folds under (an Agent another Agent started: a Codex subagent, an Agent a Paseo Agent
+   *  created), set by the hub's manager (docs/protocol/protocol.md "Session hierarchy", #5120): the web never lists or
+   *  counts it on its own, and draws it as a card in that session's chat. */
+  folded_under?: string;
+  /** On a session other sessions fold under: how many, and how many of them work or need the user (by their own state). */
+  children?: SessionChildren;
+  /** When the session began, where the node knows it (child sessions at least). */
+  started_at?: string;
   /** Claude Code workflow runs it launched in the last day, newest first (#2935); older hubs leave it out. */
   workflows?: Workflow[];
   /** Working only because of background work: its turn is over, workflows / background commands / subagents run on
@@ -660,6 +681,13 @@ export interface Elicitation {
   elicitation_id?: string;
 }
 
+/** Session.children: the sessions folded under one, counted by their own state (docs/protocol/protocol.md "Session hierarchy"). */
+export interface SessionChildren {
+  total: number;
+  working?: number;
+  needs_you?: number;
+}
+
 export interface Interaction {
   id: string;
   /** The manager it belongs to (docs/protocol/protocol.md "Per-manager routing"); none: the default one. */
@@ -702,6 +730,8 @@ export interface Interaction {
   mcp_config_source?: string;
   agent_id?: string;
   agent_type?: string;
+  /** The session the card's session folds under (Session.folded_under, #5120): the card's home is that session's page. */
+  folded_under?: string;
   elicitation?: Elicitation;
   /** What a permission card needs filled in before it is approved (a password): such a card is never approved in one tap. */
   fields?: { key: string; label: string; secret?: boolean }[];
@@ -767,6 +797,9 @@ export interface AssistantInfo {
   leaders?: string[];
   /** "Fold background rounds" in effect (#4314, docs/assistant/assistant.md "Background rounds"); absent from an older hub, which means on. */
   main_background_folded?: boolean;
+  /** The background supervisor's conversation (#4927, lib/background-supervisor.ts): its session id once the hub made
+   *  it; absent before that and from an older hub. Read-only. */
+  background_supervisor?: string;
   conversations: Session[];
 }
 

@@ -9,6 +9,15 @@ change, measured 34 B more for ja (19 B over the budget) while the first screen'
 string in place of each built file's hash (`firstScreenBytes` in `web/src/startup-preload.ts`), so only a change to what
 the code does moves the number. Any other compressed-size check over Vite's output needs the same.
 
+## A new list of sessions folds child sessions too (#5120)
+
+Child sessions (`folded_under`) are left out of lists and counts in one place, `foldRows` (`lib/folded-rows.ts`), which
+`useAgentSessions` / `useFullAgentSessions` apply. A view that reads the store's `sessions[mid]` or `sessionSummaries`
+itself (a space's page, a computer's page, the chat header's same-space menu, Forward's list) bypasses it and lists every
+child as an Agent of its own: pass the rows through `foldRows` in its selector (it keeps row identities, so memos hold).
+A count of cards goes by the card's home (`requestHome`, `homeKey`), not its `session_id`. The paged list folds on the
+hub: send `roots=1` on every page and count read while hello lists `sessions_hierarchy`.
+
 ## A menu opened from a layer above the menus' own goes inside that layer (#4991)
 
 - `Menu` portals to `document.body` at `z-50`. The image editor is a full-screen `z-[60]` layer, so a menu opened from it

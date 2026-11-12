@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end check of how the web chat draws an agent's work (#1963, the design's grammar): "Worked for Xs" groups that open and
-fold, a command opening in place, an edit's diff over the page, delivered prose staying out of the fold, subagent cards
+fold, a command opening in place, an edit's diff over the page, a report between steps as narration in the opened
+summary's timeline (#5155), subagent cards
 (#5030: one card each in the folded summary, opened in place, an old subagent link landing on its card, the bar while
 background subagents run after the turn), and the "Jump to bottom" / "New messages" pill.
 
@@ -68,8 +69,9 @@ def groups_page(page, tag, shot):
     detail = first.locator("[data-work-detail]")
     expect(detail).to_be_visible()
     expect(detail.locator("[data-action-row]").first).to_be_visible()
-    expect(detail.locator('[data-thinking="empty"]').first).to_contain_text("思考")
-    ok(f"{tag}: opening it shows its steps on the rail: tool rows, thoughts as 「思考 Ns」")
+    expect(detail.locator('[data-thinking="words"]').first).to_contain_text("刷新策略在 Provider 里")
+    expect(detail.locator('[data-thinking="empty"]')).to_have_count(0)
+    ok(f"{tag}: opening it shows its steps on the rail: tool rows, a thought with words as one row, none without (#5155)")
     shot("groups-open")
 
     # the command without a description opens in place: what went in, a line, what came out
@@ -92,7 +94,7 @@ def groups_page(page, tag, shot):
     dialog = page.get_by_role("dialog")
     expect(dialog.locator('[data-diff-line="add"]').first).to_be_visible()
     expect(dialog.locator('[data-diff-line="del"]').first).to_be_visible()
-    ok(f"{tag}: an edit shows +N −N and opens its diff, whole lines on green and red")
+    ok(f"{tag}: an edit shows +N -N and opens its diff, whole lines on green and red")
     shot("diff")
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
@@ -108,11 +110,14 @@ def groups_page(page, tag, shot):
     reading.locator("button").first.click()
     expect(reading.locator("button").first).to_contain_text("读取 3 个文件 · 搜索 2 次")
     ok(f"{tag}: a group that only read and searched says so in its title")
+    # super rule 2 folds a report between two steps with the work; opened, it is narration in the timeline (#5155)
     brief = main.get_by_role("heading", name="小组件改动简报")
+    expect(brief).to_have_count(0)
+    main.locator("[data-segment]").filter(has_text="出一份小组件改动的简报").locator("[data-work-group] > button").first.click()
     expect(brief).to_be_visible()
-    if brief.evaluate("(n) => !!n.closest('[data-work-group]')"):
-        fail(f"{tag}: the delivered brief was folded into a group")
-    ok(f"{tag}: a delivered report between two steps stays in the open")
+    if not brief.evaluate("(n) => !!n.closest('[data-work-detail]')"):
+        fail(f"{tag}: the report is not in the opened summary")
+    ok(f"{tag}: a report between two steps is narration in the opened summary's timeline")
     no_overflow(page, tag, "work groups")
 
     # away from the end: "Jump to bottom"; back at the end; a reply coming in while away: "New messages"

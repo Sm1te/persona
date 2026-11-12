@@ -1201,6 +1201,28 @@ final class AppModel {
         }
     }
 
+    /// Whether conversation `id` is the hub's built-in background supervisor (#5083, docs/assistant/unified-entry.md
+    /// "Background supervisor"): its row has no Archive, End or Pin (the hub refuses the first and the last).
+    func isBackgroundSupervisor(_ id: String) -> Bool { assistantConfig?.isBackgroundSupervisor(id) ?? false }
+
+    /// Settings › Assistant › Main Chat Supervises Its Own Tasks (#5083): on, the main conversation follows up the
+    /// tasks no leader supervises instead of the background supervisor. Shown at once, put back if the hub says no;
+    /// supervision messages already sent stay where they went.
+    func setMainSupervisesOwnTasks(_ on: Bool) async {
+        guard let api, var shown = assistantConfig else { return }
+        let was = shown.mainSupervisesOwnTasks
+        shown.mainSupervisesOwnTasks = on
+        assistantConfig = shown
+        do {
+            let st = try await api.setAssistant(mainSupervisesOwnTasks: on)
+            guard showsPage(of: api) else { return }
+            assistantConfig = st
+        } catch {
+            if showsPage(of: api) { assistantConfig?.mainSupervisesOwnTasks = was }
+            show(error)
+        }
+    }
+
     /// Settings › Meetings (#2981): the role every meeting recording starts with. Shown at once, put back if the hub says no.
     func setMeetingAttendanceDefault(_ role: MeetingAttendance) async {
         guard let api else { return }
@@ -1829,6 +1851,35 @@ final class AppModel {
             notifyTransitions(old: old, new: new)
             AgentSync.shared.sessions(new)
         }
+        readSettingsForNewTaskConversations(olds)
+    }
+
+    /// Conversations the assistant settings were read again for (`readSettingsForNewTaskConversations`): once each.
+    @ObservationIgnored private var taskConversationsAskedFor: Set<String> = []
+
+    /// The hub makes its background supervisor on first use, usually while the app is open (#5083): its conversation
+    /// arrives as any other, and only the assistant settings say it is the built-in one. A task's conversation the
+    /// settings held do not list has them read again, once, so its row never offers Archive, Pin or End for longer
+    /// than that request takes. Nothing is read before the settings were read at all, or for another hub's sessions.
+    private func readSettingsForNewTaskConversations(_ changes: [(old: [Session], new: [Session])]) {
+        guard let held = assistantConfig, let group = hub?.group, assistantShows(nil) else { return }
+        var unread: [String] = []
+        for (old, new) in changes where new.first?.machineRef.group == group {
+            unread += Self.unreadTaskConversations(old: old, new: new, held: held)
+        }
+        unread.removeAll { taskConversationsAskedFor.contains($0) }
+        guard !unread.isEmpty else { return }
+        taskConversationsAskedFor.formUnion(unread)
+        Task { await refreshAssistant() }
+    }
+
+    /// The assistant's task conversations (`origin: "task"`) new in `new` that `held` neither lists nor names as the
+    /// background supervisor: the ones the settings may have something to say about.
+    static func unreadTaskConversations(old: [Session], new: [Session], held: APIClient.AssistantState) -> [String] {
+        let tasks = new.filter { $0.assistant && $0.origin == "task" && !held.isBackgroundSupervisor($0.sessionID) }
+        guard !tasks.isEmpty else { return [] }
+        let had = Set(old.map(\.sessionID)).union(held.conversations.map(\.sessionID))
+        return tasks.map(\.sessionID).filter { !had.contains($0) }
     }
 
     /// The complete fallback is authoritative on a list-negotiated hub. Older delta sockets retain their live rows

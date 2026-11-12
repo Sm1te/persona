@@ -1031,6 +1031,9 @@ nonisolated struct APIClient: Sendable {
         return try await get(sp(k) + "/screen", query: q)
     }
     func close(_ k: SessionKey) async throws { try await post(sp(k) + "/close") }
+    /// Closes a headless Persona conversation so its next start uses the configured model (#4489, docs/protocol/protocol.md
+    /// 「Going back to the configured model」). Claims nothing: the session's `model_restore` says it is pending.
+    func restoreModel(_ k: SessionKey) async throws { try await post(sp(k) + "/restore-model") }
     private struct ForkBody: Encodable { var at_item_id: String }
     private struct Forked: Decodable { var session_id: String }
     /// Branch to New Chat (#2137): a new session with the conversation up to the end of item's turn; its id.
@@ -1161,11 +1164,25 @@ nonisolated struct APIClient: Sendable {
         /// conversations"), in the hub's order; nil when there are none or from an older hub. The sidebar shows them as
         /// the Directions group, under the names `assistantLeaders()` gives.
         var leaders: [String]?
+        /// The Main Chat Supervises Its Own Tasks (#4927, docs/assistant/unified-entry.md "Background supervisor"): the
+        /// value in effect. Off (the default) means the built-in background supervisor follows up the tasks no leader
+        /// supervises; nil from a hub without the background supervisor, which hides the switch.
+        var mainSupervisesOwnTasks: Bool?
+        /// The background supervisor's session id once the hub has made it (read-only); nil until then and from an
+        /// older hub.
+        var backgroundSupervisor: String?
         enum CodingKeys: String, CodingKey {
             case launcher, cwd, conversations, timezone, main, leaders
             case machineID = "machine_id", notes = "notes_effective", mainTasksQuiet = "main_tasks_quiet"
             case mainBackgroundFolded = "main_background_folded"
             case meetingAttendanceDefault = "meeting_attendance_default", timezonePicked = "timezone_picked"
+            case mainSupervisesOwnTasks = "main_supervises_own_tasks", backgroundSupervisor = "background_supervisor"
+        }
+
+        /// Whether conversation `id` is the built-in background supervisor (#5083): listed with the scheduled tasks'
+        /// conversations, never archived, ended or made a direction. Never the main conversation, as on the hub.
+        func isBackgroundSupervisor(_ id: String) -> Bool {
+            !id.isEmpty && id == backgroundSupervisor && id != main
         }
 
         /// Whether the main conversation folds its background rounds: on unless the hub says off (an older hub omits it).
@@ -1285,18 +1302,20 @@ nonisolated struct APIClient: Sendable {
         var mainTasksQuiet: Bool?
         var mainBackgroundFolded: Bool?
         var meetingAttendanceDefault: String?
+        var mainSupervisesOwnTasks: Bool?
         enum CodingKeys: String, CodingKey {
             case launcher, timezone, notes
             case machineID = "machine_id", mainTasksQuiet = "main_tasks_quiet", meetingAttendanceDefault = "meeting_attendance_default"
-            case mainBackgroundFolded = "main_background_folded"
+            case mainBackgroundFolded = "main_background_folded", mainSupervisesOwnTasks = "main_supervises_own_tasks"
         }
     }
     func setAssistant(machine: String? = nil, launcher: String? = nil, timezone: String? = nil, notes: String? = nil,
                       mainTasksQuiet: Bool? = nil, mainBackgroundFolded: Bool? = nil,
-                      meetingAttendanceDefault: String? = nil) async throws -> AssistantState {
+                      meetingAttendanceDefault: String? = nil, mainSupervisesOwnTasks: Bool? = nil) async throws -> AssistantState {
         owned(try JSON.decoder.decode(AssistantState.self, from: try await request("PUT", "/api/v1/assistant",
             body: AssistantConfigBody(machineID: machine, launcher: launcher, timezone: timezone, notes: notes, mainTasksQuiet: mainTasksQuiet,
-                                      mainBackgroundFolded: mainBackgroundFolded, meetingAttendanceDefault: meetingAttendanceDefault))))
+                                      mainBackgroundFolded: mainBackgroundFolded, meetingAttendanceDefault: meetingAttendanceDefault,
+                                      mainSupervisesOwnTasks: mainSupervisesOwnTasks))))
     }
     /// The Chat tab is open: the hub gets a claude process ready so the first message starts at once. With no launcher
     /// chosen the field is omitted and the hub warms its own default (#4200: the client never sends a made-up name).

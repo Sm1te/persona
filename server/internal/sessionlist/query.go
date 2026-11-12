@@ -105,7 +105,8 @@ func (f filters) matches(r *record) bool {
 	}
 	v := r.item
 	return (f.ID == "" || f.ID == v.ID) &&
-		(f.State == "" || f.State == v.State) &&
+		(!f.Roots || v.Root == "") && (f.Under == "" || f.Under == v.Root) &&
+		(f.State == "" || f.State == stateOf(v, f.Roots)) &&
 		(f.Machine == "" || f.Machine == v.Machine) &&
 		(f.Project == "" || f.Project == v.Project) &&
 		(f.Group == "" || f.Group == v.Group) &&
@@ -155,7 +156,16 @@ func emptyCounts(revision string) Counts {
 	return Counts{Machine: make(map[string]int), Project: make(map[string]int), Group: make(map[string]int), State: make(map[string]int), PaneSource: make(map[string]int), Revision: revision}
 }
 
-func addCount(c *Counts, v Item, delta int) {
+// stateOf is the state v is filtered and counted by: its folded state for Options.Roots (Item.FoldedState, its own
+// state when the adapter gives none).
+func stateOf(v Item, roots bool) string {
+	if roots && v.FoldedState != "" {
+		return v.FoldedState
+	}
+	return v.State
+}
+
+func addCount(c *Counts, v Item, roots bool, delta int) {
 	c.Total += delta
 	if v.PaneSource != "" {
 		c.PaneSource[v.PaneSource] += delta
@@ -163,14 +173,14 @@ func addCount(c *Counts, v Item, delta int) {
 			delete(c.PaneSource, v.PaneSource)
 		}
 	}
-	if v.BackgroundWaiting {
+	if v.BackgroundWaiting && (!roots || v.FoldedBackgroundWaiting) {
 		c.BackgroundWaiting += delta
 	}
 	for _, pair := range []struct {
 		m   map[string]int
 		key string
 	}{
-		{c.Machine, v.Machine}, {c.Project, v.Project}, {c.Group, v.Group}, {c.State, v.State},
+		{c.Machine, v.Machine}, {c.Project, v.Project}, {c.Group, v.Group}, {c.State, stateOf(v, roots)},
 	} {
 		pair.m[pair.key] += delta
 		if pair.m[pair.key] == 0 {
@@ -184,7 +194,7 @@ func addCount(c *Counts, v Item, delta int) {
 func (i *Index) exactResult(f filters) *result {
 	r := &result{counts: emptyCounts(i.revisionToken()), ordered: true}
 	if item := i.items[f.ID]; f.matches(item) {
-		addCount(&r.counts, item.item, 1)
+		addCount(&r.counts, item.item, f.Roots, 1)
 		r.events = []event{{id: f.ID, updated: item.item.UpdatedAt, value: item}}
 	}
 	return r
@@ -208,7 +218,7 @@ func (i *Index) countsResult(f filters) *result {
 		counts = emptyCounts(i.revisionToken())
 		for _, item := range i.items {
 			if f.matches(item) {
-				addCount(&counts, item.item, 1)
+				addCount(&counts, item.item, f.Roots, 1)
 			}
 		}
 	}

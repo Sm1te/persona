@@ -35,6 +35,9 @@ import { ariaKeyshortcuts, formatChord } from "../lib/shortcuts";
 import { PagedSessionList } from "./agents/PagedSessionList";
 import { runtimeIdentity } from "../lib/runtime-list";
 import { heldSeen } from "../lib/seen-outbox";
+import { runningChildren } from "../lib/child-sessions";
+import { childCards, foldedRow } from "../lib/folded-rows";
+import { backgroundWork } from "../lib/background-work";
 import { SESSIONS_LIST_FEATURE } from "../lib/session-list";
 import { personalHideDeps, personalOrder, personalSessions, removeAgentSession, useGoingIds } from "../lib/agents";
 import { BADGE_CLASS, CURRENT_ROW, type GoFn, GroupCount, type RegFn, ROW_TITLE_MIN, type RowMenuFn, Section } from "./SidebarParts";
@@ -232,9 +235,17 @@ function sameProps<P extends { to: Route }>(a: P, b: P): boolean {
   return keys.every((key) => (key === "to" ? routePath(a.to) === routePath(b.to) : Object.is(a[key], b[key])));
 }
 
-export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, active, to, go, tab, label, prefix, prefixClass, hint, hintFull, host, showState = true, showTodoTag, onMenu, menuLabel = t("sidebar.agent_actions"), endRoom, icon = "chat" }: SessionRowProps) {
-  // what it asks you, or what it did, under its title (#3195): no hover or click needed to see why it is red or green
-  const ix = useStore((st) => st.interactions.find((i) => i.machine_id === given.machine_id && i.session_id === given.session_id));
+export const SessionRow = memo(function SessionRow({ s: row, k, reg, hover, active, to, go, tab, label, prefix, prefixClass, hint, hintFull, host, showState = true, showTodoTag, onMenu, menuLabel = t("sidebar.agent_actions"), endRoom, icon = "chat" }: SessionRowProps) {
+  // a parent of child sessions in its folded state (#5120): one of them waiting makes it need you, one working makes it
+  // work; the rows of the paged list come as the hub sends them, the other lists' folded already (lib/folded-rows.ts)
+  const given = foldedRow(row);
+  // what it asks you, or what it did, under its title (#3195): no hover or click needed to see why it is red or green;
+  // its own card first, else what one of its child sessions asks (the card's home is this row's page)
+  const own = useStore((st) => st.interactions.find((i) => i.machine_id === given.machine_id && i.session_id === given.session_id));
+  // its child sessions' cards wait here too: the row's count holds them (one count per session, DESIGN_SYSTEM 4.8)
+  const kidCards = useStore((st) => childCards(st.interactions, given.machine_id, given.session_id));
+  const ix = own ?? kidCards[0];
+  const pendingCount = (given.pending_interactions ?? 0) + kidCards.length;
   // a card answered here takes its red dot and "Has a question" line away at once, not at the hub's next push (#4286)
   const justAnswered = useStore((st) => lastAnsweredAt(st.answered, given.machine_id, given.session_id));
   const pending = useStore((st) => answerPending(st.answered, given.machine_id, given.session_id));
@@ -277,6 +288,10 @@ export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, ac
   const workflowTitle = workflow ? workflowLine(s, now) : "";
   // its own task list (#5302): 3/5 · the step in progress
   const plan = showState && !s.assistant && st !== "offline" && planInRow(s, st === "working") ? planLine(s) : "";
+  // its child sessions at work (#5120): how many subagents run, counted as the assistant's In progress counts them
+  // (lib/background-work.ts, so the ones a parent also lists as its own background agents count once)
+  const children = showState && !s.assistant ? runningChildren(s) : 0;
+  const childLine = children ? t("assistant-tasks.subagents_count_running", { count: backgroundWork(s)?.subagents ?? children }) : "";
   // what sits at the row's end steps aside for the hover ⋯; the open row leaves room for its ⋯ instead
   const aside = active ? undefined : "group-hover/row:invisible";
   // behind a prefix (a tab's name, a pane's agent) the title keeps room for a few characters: the prefix shrinks first
@@ -295,7 +310,7 @@ export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, ac
     <a
       ref={regRow}
       href={href(to)}
-      onClick={(event) => { rememberSessionRow(given); go(to)(event); }}
+      onClick={(event) => { rememberSessionRow(row); go(to)(event); }}
       // right click (at the pointer), the menu key and Shift+F10 (beside the row): the row's menu, the same as its ⋯
       {...(onMenu ? contextMenuProps((at, el) => onMenu(s, el, at)) : {})}
       onMouseEnter={() => hover(k)}
@@ -315,7 +330,7 @@ export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, ac
       {prefix && <span className={prefixClass}>{prefix}</span>}
       {/* with the mark, the title sits in the column whether a second line shows or not: the same element through a
           workflow's start and end, so the mark does not fade in again */}
-      {ultra || detail.length > 0 || workflow || line || plan ? (
+      {ultra || detail.length > 0 || workflow || line || childLine || plan ? (
         <span className={cx("flex flex-1 flex-col", titleMin, titleFirst)}>
           {ultra ? (
             <span className="flex min-w-0 items-center gap-1">
@@ -330,6 +345,12 @@ export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, ac
             </span>
           )}
           {line && <SecondLine line={line} draft={!!draft} />}
+          {childLine && (
+            <span data-children-line title={childLine} className="flex h-4 min-w-0 items-center gap-1 text-[11px] leading-4 text-ink-3">
+              <Icon name="agent" size={10} stroke={2.2} className="shrink-0" />
+              <span className="truncate tabular-nums">{childLine}</span>
+            </span>
+          )}
           {plan && (
             <span data-plan-line title={planLabel(s)} aria-label={planLabel(s)} className="flex h-4 min-w-0 items-center gap-1 text-[11px] leading-4 text-ink-3">
               <Icon name="list" size={10} stroke={2.2} className="shrink-0" />
@@ -373,7 +394,7 @@ export const SessionRow = memo(function SessionRow({ s: given, k, reg, hover, ac
       {/* the row's ⋯ takes the end on hover: what is there steps aside instead of showing half under it */}
       {tailShown && <span className={cx(hintFull ? "shrink-0 whitespace-nowrap tabular-nums" : "max-w-[72px] min-w-6 shrink-[20] truncate", "text-[11px] text-ink-3", aside)}>{tail}</span>}
       {ageAtEnd && <span data-row-age className={cx("shrink-0 text-[11px] text-ink-3", aside)}>{ago(s.updated_at, Date.now(), "narrow")}</span>}
-      {(s.pending_interactions ?? 0) > 0 && <span className={cx("flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-field px-1 text-[10px] font-semibold text-attention tabular-nums", aside)}>{s.pending_interactions}</span>}
+      {pendingCount > 0 && <span className={cx("flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-field px-1 text-[10px] font-semibold text-attention tabular-nums", aside)}>{pendingCount}</span>}
     </a>
   );
   if (!onMenu) return link;

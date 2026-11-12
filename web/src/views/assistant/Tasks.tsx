@@ -56,6 +56,7 @@ import { StatusMark } from "../../ui/StatusMark";
 import { useClamped } from "../../ui/use-clamped";
 import { Icon, type IconName } from "../../ui/icons";
 import { ReportLine, ReviewBadge, ReviewLine } from "./Supervision";
+import { reviewedInBackground } from "../../lib/background-supervisor";
 import { AcceptRow, BriefCard } from "./Brief";
 
 // A plan task's brief (#3822) comes with the first plan card that has one, as the decision row does.
@@ -87,6 +88,7 @@ import type { TaskWorkspace } from "../../lib/feed";
 import { machineStartBlocked, todoUltracode, ULTRACODE_FEATURE } from "../../lib/ultracode";
 import { UltraMark, UltracodeChip } from "../chat/Ultracode";
 import { byTime } from "../../lib/times";
+import { requestHome } from "../../lib/child-sessions";
 import { stateName } from "../../lib/state-labels";
 
 // ── what a task is now ──
@@ -261,8 +263,10 @@ export function progressOf(lead: Session | undefined) {
 
 /** The card a task's agents wait on: its lead agent's first, else any of its other active agents'. */
 export function taskInteraction(todo: Todo, interactions: Interaction[], lead?: Session): Interaction | undefined {
-  const mine = (ix: Interaction) => (todo.agents ?? []).some((a) => !a.released_at && a.machine_id === ix.machine_id && a.session_id === ix.session_id);
-  return (lead && interactions.find((ix) => ix.machine_id === lead.machine_id && ix.session_id === lead.session_id)) ?? interactions.find(mine);
+  // a card of a child session one of its agents started is that agent's (#5120)
+  const mine = (ix: Interaction) => (todo.agents ?? []).some((a) => !a.released_at && a.machine_id === ix.machine_id && a.session_id === requestHome(ix));
+  return (lead && (interactions.find((ix) => ix.machine_id === lead.machine_id && ix.session_id === lead.session_id)
+    ?? interactions.find((ix) => ix.machine_id === lead.machine_id && requestHome(ix) === lead.session_id))) ?? interactions.find(mine);
 }
 
 /** What a waiting task needs, in a line (#3301): "Has a question: which framework?", "Waiting for your approval: swift test", "Plan awaiting approval", the words
@@ -664,6 +668,19 @@ export function TaskLine({ todoId }: { todoId: string }) {
 
 // ── the hub's lines ──
 
+/** A review the background supervisor made (#5082, lib/background-supervisor.ts), in one line: who, the task (which it
+ *  opens), the verdict. A task the page no longer lists keeps the title the entry was written with. */
+function BackgroundReviewLine({ item, title, known }: { item: FeedItem; title: string; known: boolean }) {
+  return (
+    <ReviewLine
+      item={item}
+      title={known ? title : field(item, "title") || title}
+      by={t("assistant-conversations.background_supervisor")}
+      onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined}
+    />
+  );
+}
+
 // Memoized: the chat re-renders on every streamed item and session push, while an item keeps its identity until its body
 // changes (mergeInto); the plan, todo and "Later" it shows come through its own selectors.
 export const FeedLineView = memo(function FeedLineView({ item, simplified = false }: { item: FeedItem; simplified?: boolean }) {
@@ -682,6 +699,8 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
     if (item.kind === "task") return planned ? null : <TaskHandoffs item={item} />;
     // an interrupted receipt the hub worked out stays as its record (#3834): one card for a batch, a grey line once handled
     if (item.kind === "receipt" && interruptLook(item)) return <ReceiptCard item={item} />;
+    // a review the background supervisor made took no turn of this chat, so its line is what says it happened (#5082)
+    if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
     if (item.kind === "review" || item.kind === "receipt" || item.kind === "report") return null;
     if (item.kind === "message" && !cardSent(item) && !cardFiled(item)) return null;
   }
@@ -695,6 +714,7 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
     case "receipt":
       return <ReceiptCard item={item} />;
     case "review":
+      if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
       return <ReviewLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;
     case "report":
       return <ReportLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;

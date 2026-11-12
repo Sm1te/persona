@@ -15,6 +15,9 @@ struct RecordingsSection: View {
     @State private var transcription = RecordingTranscription.shared
     @State private var sync = RecordingSync.shared
     @State private var capture = RecordingCapture.shared
+    /// The recording a swipe asked to delete (its row shows the confirmation), and why a delete failed.
+    @State private var pendingDelete: UUID?
+    @State private var failure: String?
 
     var body: some View {
         // The recording being made is the now-recording card, not a row of the list below it.
@@ -37,6 +40,22 @@ struct RecordingsSection: View {
             ForEach(recents) { entry in
                 NavigationLink { RecordingDetailView(id: entry.id) } label: { RecordingRow(entry: entry) }
                     .accessibilityIdentifier("recording-row")
+                    // Only the swiped row's dialog shows, so its popover points at that row.
+                    .confirmationDialog("Delete This Recording?", isPresented: Binding(get: { pendingDelete == entry.id }, set: { if !$0, pendingDelete == entry.id { pendingDelete = nil } }),
+                                        titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) { failure = RecordingDeletion.run(entry.id) }
+                    } message: { Text("The audio on this device will be deleted now. Its text in Knowledge is removed after sync succeeds; if Knowledge is off or read-only, that deletion stays pending.") }
+                    .swipeActions(edge: .trailing) {
+                        // A recording the watch is still making has no Delete, as on its page.
+                        if !entry.active {
+                            // No `.destructive` role: it takes the row off the screen at once, before the confirmation (red comes from the tint).
+                            Button { pendingDelete = entry.id } label: {
+                                Label("Delete", systemImage: Theme.Icon.delete)
+                            }
+                            .tint(Theme.danger)
+                            .accessibilityIdentifier("recording-row-delete")
+                        }
+                    }
             }
         } header: {
             if !recents.isEmpty {
@@ -44,6 +63,9 @@ struct RecordingsSection: View {
                     Text("Recent Recordings")
                     CountBadge(count: recents.count)
                 }
+                .alert("Couldn't Finish", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                    Button("OK [Recordings Section de32e2]") { failure = nil }.lineLimit(1)
+                } message: { Text(failure ?? "") }
             }
         } footer: {
             if let problem = sync.problem ?? library.error {
@@ -57,6 +79,16 @@ struct RecordingsSection: View {
             sync.kick(reconcile: true)
             RecordingRollingKeeper.shared.schedule()
         }
+    }
+}
+
+/// Deleting a recording, the one way for the list's swipe and the recording's page: stop its transcription, then delete it here
+/// and (once sync allows) in Knowledge.
+enum RecordingDeletion {
+    /// nil: deleted; otherwise the words for the alert.
+    @MainActor static func run(_ id: UUID) -> String? {
+        RecordingTranscription.shared.cancel(id)
+        do { try RecordingSync.shared.delete(id); return nil } catch { return String(localized: "The recording wasn't deleted. Try again later.") }
     }
 }
 
@@ -242,7 +274,10 @@ struct RecordingCaptureControls: View {
             Button { startMeeting() } label: {
                 HStack(spacing: Theme.Space.s) {
                     // At accessibility sizes the icon goes: the words never truncate, they scale down a little instead.
-                    if size.isAccessibilitySize { Text("Meeting Recording") } else { Label("Meeting Recording", systemImage: Theme.Icon.recording) }
+                    if size.isAccessibilitySize { Text("Meeting Recording") } else {
+                        // White like the title: the symbol took the tint, drew in the button's own blue and pushed the title off-center.
+                        Label("Meeting Recording", systemImage: Theme.Icon.recording).foregroundStyle(Theme.onSolid)
+                    }
                     if busy { ProgressView() }
                 }
                 .font(Theme.Font.bodyStrong)
@@ -585,8 +620,7 @@ struct RecordingDetailView: View {
         #endif
         .confirmationDialog("Delete This Recording?", isPresented: $deleting, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                transcription.cancel(id)
-                do { try sync.delete(id); dismiss() } catch { failure = String(localized: "The recording wasn't deleted. Try again later.") }
+                if let message = RecordingDeletion.run(id) { failure = message } else { dismiss() }
             }
         } message: { Text("The audio on this device will be deleted now. Its text in Knowledge is removed after sync succeeds; if Knowledge is off or read-only, that deletion stays pending.") }
         .confirmationDialog("Erase the last 10 minutes?", isPresented: $erasing, titleVisibility: .visible) {

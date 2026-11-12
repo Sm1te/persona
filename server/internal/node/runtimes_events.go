@@ -1,6 +1,7 @@
 package node
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -125,6 +126,12 @@ func normalizeRuntimeSessions(h *runtimeConn, list []proto.Session) []proto.Sess
 		seen[s.SessionID] = true
 		s.MachineID, s.State, s.PendingInteractions = "", "", 0 // the hub's to fill
 		s.StartedByPersona, s.Assistant = false, false
+		// Of the hierarchy (docs/protocol/protocol.md "Session hierarchy") the runtime says when the session began
+		// (started_at); what it folds under and the rollup are the manager's, the parent a blocked child asks for the
+		// node's (below), from what a daemon's own node named (daemons.go) when the row names no other.
+		asking := s.AskingParentSessionID()
+		s.SetFold("", nil)
+		s.SetAskingParentSessionID("")
 		if s.Agent == "" {
 			s.Agent = agent
 		}
@@ -158,8 +165,15 @@ func normalizeRuntimeSessions(h *runtimeConn, list []proto.Session) []proto.Sess
 		case proto.StatusWorking, proto.StatusDone, proto.StatusIdle, proto.StatusOffline:
 		case proto.StatusBlocked:
 			// A session another one started (is_subagent, parent_session_id) that waits for the user is a row of its
-			// own while it does (#4494): no app leaves out a session that needs the user, whatever it folds under a
-			// parent and whichever rows it counts. Its parent is named again once it was answered.
+			// own while it does (#4494): the apps that fold every child away (iOS, Android, older web) leave out no
+			// session that needs the user, whichever rows they count. Its parent is named again once it was answered.
+			// Meanwhile asking_parent_session_id names it (#5120): the apps that show children as cards in their
+			// parent's chat keep the card, and its question, there.
+			parent := s.ParentSessionID
+			if parent == "" && s.RootSessionID != s.SessionID {
+				parent = s.RootSessionID
+			}
+			s.SetAskingParentSessionID(cmp.Or(parent, asking))
 			s.IsSubagent, s.ParentSessionID, s.RootSessionID = false, "", ""
 		default:
 			s.Status = proto.StatusUnknown

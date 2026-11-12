@@ -68,17 +68,17 @@ describe("status-line pushes", () => {
     const [seg] = segments(items);
     act(() => root.render(<SegmentView seg={seg} live mid="m" sid="s" expandFold={async () => {}} />));
     expect(titles.n).toBeGreaterThan(0);
-    expect(host.textContent).not.toContain("Thinking");
+    expect(host.querySelector('[data-thinking="live"]')).toBeNull();
     titles.n = 0;
     for (let s = 1; s <= 5; s++) act(() => receiveLive({ machine_id: "m", session_id: "s", live: { verb: "Frosting", thinking: true, elapsed_s: s } }));
     expect(titles.n).toBe(0);
-    expect(host.textContent).not.toContain("Thinking");
+    expect(host.querySelector('[data-thinking="live"]')).toBeNull();
     act(() => (host.querySelector("[data-work-group] > button") as HTMLButtonElement).click());
-    expect(host.textContent).toContain("Thinking");
+    expect(host.querySelectorAll('[data-thinking="live"]')).toHaveLength(1); // once, in the live inner group (#5155)
     titles.n = 0;
     act(() => receiveLive({ machine_id: "m", session_id: "s", live: { verb: "Frosting", thinking: false, elapsed_s: 6 } }));
     expect(titles.n).toBe(0);
-    expect(host.textContent).not.toContain("Thinking");
+    expect(host.querySelector('[data-thinking="live"]')).toBeNull();
   });
 
   it("keeps narration through new tool calls, replaces it on new words, and folds it when the turn ends", () => {

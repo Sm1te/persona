@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { api, ApiError, enc, pastHub } from "./api";
 import { cleanModelId, validModelId } from "./model-id";
 import type { ModelBinding } from "./model-config";
+import type { PanelPrice } from "./model-panel";
 import { EFFORTS } from "./session-actions";
 import { launcherTitle, type Named } from "./provider-names";
 import type { Launcher } from "./types";
@@ -26,6 +27,8 @@ export interface AgentModel {
   /** An ID the user typed before that ran here, remembered on the hub for this computer and launcher (#1644): listed
    *  after the agent's own, most recent first, with no efforts (not known). It can be forgotten. */
   custom?: boolean;
+  /** Exact catalog reference price in USD per one million tokens, when the hub knows it. */
+  price?: PanelPrice;
 }
 
 export interface LauncherModels {

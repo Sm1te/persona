@@ -21,6 +21,7 @@ import { useStore } from "../../lib/store";
 import type { Interaction } from "../../lib/types";
 import { t } from "../../i18n";
 import { requestRoute } from "../../lib/card-focus";
+import { requestHome } from "../../lib/child-sessions";
 import { Button, Collapse, cx, Dialog, IconButton, Loading, Menu, toast, useMenu, type MenuItem } from "../../ui/atoms";
 import { errorText } from "../../lib/api";
 import { contextMenuProps } from "../../ui/context-menu";
@@ -833,7 +834,8 @@ const IX_GLYPH: Record<Interaction["kind"], GlyphName | "list" | "terminal"> = {
  * only when one of those changed.
  */
 const AgentRow = memo(function AgentRow({ ix, off = false }: { ix: Interaction; off?: boolean }) {
-  const to = useStore((s) => ix.session_id === "" ? requestRoute(ix) : conversationRoute(ix.machine_id, ix.session_id, s.sessions, s.assistant));
+  // a child session's card opens its parent's page, where it is answered (#5120)
+  const to = useStore((s) => ix.session_id === "" ? requestRoute(ix) : conversationRoute(ix.machine_id, requestHome(ix), s.sessions, s.assistant));
   const persona = to.name === "persona";
   const where = useStore((s) => (persona ? "Persona" : machineWithHub(ix.machine_id, s.machines)));
   const ask = interactionAsk(ix);

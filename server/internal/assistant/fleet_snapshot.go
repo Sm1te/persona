@@ -162,7 +162,8 @@ func (s *Service) quietSession(mid, sid string) bool {
 	return r.quiet[[2]string{mid, sid}]
 }
 
-// withTask names, on an interaction sent to clients, the task its agent works for (the watch and the cards show it).
+// withTask names, on an interaction sent to clients, the task its agent works for (the watch and the cards show it),
+// and the session its agent is folded under, whose chat shows the card (fleet_fold.go).
 func (s *Service) withTask(ix proto.Interaction) proto.Interaction {
 	r := &s.fleet.rep
 	r.mu.RLock()
@@ -171,6 +172,7 @@ func (s *Service) withTask(ix proto.Interaction) proto.Interaction {
 	if ok && l.Task {
 		ix.TaskTitle = l.Title
 	}
+	ix.FoldedUnder = s.foldedUnder(ix.MachineID, ix.SessionID)
 	return ix
 }
 

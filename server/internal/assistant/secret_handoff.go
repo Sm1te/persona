@@ -305,7 +305,7 @@ func (s *Service) handoffUserTurn(ctx context.Context, machine, self string) boo
 const handoffTurnMost = 2000
 
 // humanSends are the messages a person's own app sent into each conversation, by client_msg_id, as the hub vouched
-// (SendParams.Human, and a conversation's first message, StartParams.Human), with the start of their words: the node
+// (SendParams.Human; a new conversation's first message is not one, #5200), with the start of their words: the node
 // ties an id to the first line that begins like the text sent, so a line is the user's only when it holds those words
 // too. An id counts once: for the first transcript line it was read on, never another line carrying it; and a send of
 // it the hub did not vouch for, or a second one with other words, voids it. Kept a day, at most humanSendsMost per

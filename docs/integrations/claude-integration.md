@@ -53,9 +53,15 @@ gateway, adds the `context-1m-2025-08-07` beta, and counts the window as 1,000,0
 `claude-sonnet-5-5`, count 1,000,000 either way). Measured with `claude -p` against a local fake gateway that logs each
 request's model and betas: a tier through `--model opus|sonnet|haiku|fable`, the sub-Agent model through an Agent tool
 call the gateway returns, the small model (and the Haiku tier when there is none) through the page summary of a WebFetch
-call. `ANTHROPIC_SMALL_FAST_MODEL` wins over the Haiku tier for those background requests. So the node adds `[1m]` to
-every one of these variables whose model the provider's `models` gives a window over 200K (#5149), as it always did for
-the session's model; an ID already ending in `[1m]` is left alone, and one with no known window is passed as it is.
+call. `ANTHROPIC_SMALL_FAST_MODEL` wins over the Haiku tier for those background requests.
+
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` is one value for the whole process: it sets the window of every unmarked model Claude
+Code does not know (`400000` makes it count 400,000, and the session's `1000000` makes a 128K sub-Agent model count
+1,000,000 too), while a marked model counts 1,000,000 whatever it says. So the node marks the session's model when its
+window is over 200K and sets the compact window to that window (#3066); a tier, the small model or the sub-Agent model
+set to a model of its own is marked only when that model's window is 1M or more (#5149), since nothing per model would
+hold a smaller one to its size. An ID already ending in `[1m]` is left alone, and one with no known window is passed as
+it is.
 
 ## Persona tools Agents call without a card
 
@@ -96,6 +102,104 @@ Read-back chooses the latest evidence by its timestamp, never substitutes the re
 Persona launch / resume, or `SessionStart` with `startup` / `resume`, establishes a new process boundary and invalidates earlier evidence. Session creation time is not process start time; `clear` / `compact` do not create a new process. A previously enabled resumed session is recorded off with `ultracode_lost_at` until explicitly re-enabled or the notice dismissed. For sessions Persona started, process boundaries, read-back state, and restoration notices persist in the `ultracode_process` field of their existing node state in hub Postgres (only that field is written, and only once the state has loaded), continuing to filter old-process records after node reconnect; they are not next-launch preferences. Sessions the user started by hand are only observed in node memory: a node state record would make them count as Persona's, and global report-only hooks would be dropped (#5510). Records an older node (#3782) wrote for them are ignored when the state loads. After a node restart, a toggle or dismissal request waits for the state to load before it changes anything. If the initial large-file scan is unfinished, start off and asynchronously recover the notice from the pre-resume file range. Dismissing the notice or re-enabling prevents late scans from resurrecting it. Model refusal reasons are tracked per model and cleared on model change. Dynamic workflows can be enabled through `enableWorkflows` in Claude Code Settings. If unspecified, the account plan determines the default (`default:null`); this does not guarantee bypassing organization policy or feature-availability restrictions.
 
 Protocol, notice-dismissal requests, and old-node `409 node_outdated`: [protocol.md](../protocol/protocol.md), “Claude Code ultracode”. This delivery covers the server only: web #3428, Android #3429, and Apple #3430 add controls and restoration notices. The assistant's `agent_start` / `task_plan` already take `ultracode` per Agent (#12); the web and iOS / Mac show and change it on plan cards and to-dos, and the Android controls are still to come there. Apple's `ChatCache` version bump also belongs to #3430. Status text and attachment keys were checked against static code in the installed `2.1.318` CLI. Tests use synthetic screen / transcript fixtures; no real session was started. Workflow sub-Agent approval counts under default permissions, actual terminal echoes with fixed `CLAUDE_CODE_EFFORT_LEVEL`, and the complete toggle / resume flow still require acceptance in isolated sessions.
+
+## Switching a running Agent to another provider (#5035)
+
+Who it serves: someone in an Agent's chat who wants it to go on with another model provider (a cheaper gateway, a
+provider whose quota is not used up) without starting over. Claude Code reads its gateway, key and model from the
+environment it starts with, and `/model` only picks among the current provider's models, so there is nothing to type:
+the node quits the agent and resumes the same conversation (`--resume <id>`) through the other launcher, in the same
+terminal. Code: `server/internal/node/launcher_switch.go`; wire: [protocol.md](../protocol/protocol.md), "Switching a
+running Agent to another provider".
+
+- **Picking is not switching.** `POST …/modes {launcher, from, model?, effort?}` (node `session.modes`) checks the pick
+  (`planSwitch`, outside the session's typing lock: the checks run a login shell and may ask the hub for a provider's
+  secrets) and keeps it as the session's pending switch (`pending_switch` on its row); nothing is quit or typed, so a
+  pick never cuts into a turn. The session's own launcher drops a pending switch. Recording takes the typing lock, so a
+  pick made while a switch is being carried out is taken against the launcher the agent runs on afterwards; with
+  `from` (the launcher the client saw) it is refused as `switch_stale` when that changed.
+- **Only the user's own message carries it out**: a `session.send` with `apply_switch`, which the web sends from the
+  chat of a session that shows the switch. The assistant's messages, a task's supervision, channels and the phone apps
+  send without it: their message goes on the launcher the agent runs on, and the switch keeps waiting. A switch picked
+  more than a day ago is no longer shown on the row and is dropped when a message comes.
+- **A busy agent is not switched**: one that works, waits for the user, is starting, or has background work a quit
+  would end gets the message on its launcher as always, and the switch waits for a later message. Background work is the
+  row's (running subagents and workflows, a `/loop`) and every background command or monitor of its claude process,
+  however old: the session list leaves out the ones started over a day ago, the switch counts them from the process's
+  start (its ultracode process boundary; a day when that is not known). A transcript whose first read is still running
+  counts as busy.
+- **Everything is worked out before the quit** (`applySwitch`, inside the message's turn, after the usual draft and dialog
+  checks, at most a minute): the launcher's checks below, the conversation's folder, the model to start with, the
+  launcher and model to come back with. Then a last look (the agent's state, background work, a draft or dialog in the
+  box: a turn may have started meanwhile), the session is listed as starting (messages and the user's Resume wait for it),
+  and only then Ctrl+C until the agent leaves its pane (`quitAgent`, the pane kept, never
+  `stop`, which would take the typing lock again), a wait until only a shell is in front and no claude has the
+  conversation open any more (Claude Code still writes its transcript as it exits), and the launcher's command typed into
+  that shell with `--resume`, the current permission mode (and the plan's next mode, so `--allow-dangerously-skip-permissions`
+  stays), the picked effort (else the current one) and the picked model. No model picked: what a new session of that
+  launcher runs (`resumeModelOf`), since `--resume` alone would bring back the old provider's model (#2487); when that
+  cannot be seen (a provider that names no model, a wrapper script) the pick is refused as `switch_pick_model`.
+- **In the conversation's folder**: `claude --resume` finds a conversation by the project folder named after the
+  directory it started in. The folder is the first of the record's directory, the agent's and the transcript's whose name
+  is the transcript's project folder (the transcript's own `cwd` may follow a Bash `cd`); none of them: refused. A shell
+  that is elsewhere gets `cd <folder> &&` in front of the command (`cd <folder>;` in nu and elvish, which have no `&&`);
+  the record keeps its folder.
+- **Nothing else restarts it meanwhile**: from the moment the message takes the switch up (before its checks) until it
+  ends, a pick or cancel is refused at once as `switch_stale`, and a stop or archive at once as still starting, rather
+  than held for the minutes the message holds the session's typing lock. Whatever else would type into the pane or
+  press its keys (a model, mode or effort change, a rewind, a dialog answer, keys, an interrupt, a close) is refused as
+  `switch_under_way`: on a resident node's next connection the switch may run on the last connection's Node, whose
+  typing lock this one does not hold.
+- **From the first Ctrl+C on, on its own clock** (`context.WithoutCancel`, at most 5 minutes): a hub redeploy that ends
+  the connection does not leave the agent quit and not started again. The start on the new launcher gets 90 seconds.
+  The hub waits 7 minutes for a message with `apply_switch`. A resident node (`personad node --attach`, Persona Link)
+  makes a new Node for each connection; what the node keeps of switches outside the records is shared by its Nodes
+  (`switch_share.go`, handed over as the background scans are): the next connection's Node lists a switch still under
+  way as starting, its messages and the user's Resume wait for it, picks and stops are refused; the records the switch
+  writes once its connection is gone go to the next Node, over the copy it loaded from the hub, and through it to the
+  hub, in the order the switch wrote them, and only the fields the switch owns (launcher, model, folder, start time, plan
+  mode, pane, pending switch), so what the new claude's hooks recorded on the new connection stays. When the switch
+  ends the serving Node pushes its list (the row leaves starting) and shows the model and modes it started with. After
+  the quit the switch needs nothing from the hub (the launchers' secrets were fetched by the checks before it). The
+  computer stays reachable meanwhile: nothing waits for the old Node.
+- **A failed switch is dropped and rolled back.** Whatever fails (the checks when the message comes, an agent that does
+  not quit, a start that does not come up), the pending switch is cleared, so nothing tries it again on every message,
+  and the message is refused with nothing typed. After a start that did not come up, the record goes back to what it was
+  (launcher, model, folder, start time, plan mode); a claude that start left in front (stopped on a sign-in screen of the
+  new launcher's directory) is quit with Ctrl+C until the shell is back, and when the own launcher still passes the
+  checks (worked out before the quit) the agent is resumed on it in the same shell with the model it last switched to
+  from the app, else the record's (`switch_failed`). When that fails too, the agent has stopped (`switch_failed_stopped`):
+  Resume on its terminal page brings it back on its own launcher. An agent that does not quit runs on
+  (`switch_not_stopped`). Every refusal says `delivered: none`, so the client keeps the words in the box.
+- **What is refused** (when picking, and again when the message comes, since things change): not a Claude Code Agent
+  running in a terminal Persona can type into (`switch_unsupported`: Codex and other CLIs, runtimes, assistant
+  conversations, which switch in their own chip, botmux, hosts that cannot say what runs in a pane); a session on a
+  launcher Persona cannot tell (one it did not start whose environment names no launcher: it could not be brought back on
+  it); a launcher not on the computer (`switch_launcher_missing`) or of another agent (`switch_other_agent`); a model
+  with a launcher that fixes its own `--model` (`switch_model_locked`); no model, and a default that cannot be seen
+  (`switch_pick_model`); and a launcher whose Claude config directory does not hold the conversation at its latest copy
+  (`switch_config_dir`). The last one is the main risk: `--resume` looks only in the config directory claude runs with,
+  so a launcher of another profile would answer "No conversation found", or resume an older copy and lose the turns
+  since; and the sign-in lives in that directory too, so forcing the conversation's directory on the launcher could run
+  it on another account (`docs/lessons/agents.md`). The directory is the one the launcher sets (a managed provider's
+  environment, `claude_start_dir` for plain claude, what the probe saw a shell launcher export, `~/.claude` when it unsets
+  the variable with `env -u`), else the login shell's `$CLAUDE_CONFIG_DIR`, else `~/.claude`; it must hold the newest copy
+  of the transcript (a symlinked `projects/` counts). One that cannot be told (a launcher the probe cannot follow or that
+  is a script on PATH, a login shell that did not answer) is let through: a resume that finds nothing ends the start,
+  and the switch rolls back. The pane's own shell environment is taken to be the login shell's.
+- **Where the pending switch lives.** In the session's state record (`pending_switch`, persisted with the model in the
+  hub's Postgres), so a node restart neither drops it nor carries it out by itself; a message right after a restart
+  waits for the record to load first. A session Persona did not start has no record and gets none for this (a record
+  means "Persona started it"): its switch waits in the node's memory (a resident node's reconnect keeps it), and a node
+  restart forgets it, so its row shows none and nothing is switched behind the user's back. A switch carried out writes a record, as a Resume does, and so
+  does one that failed: a session Persona did not start keeps a record of its own launcher after a failed switch, the
+  one a Resume brings it back on once no process of it is left to name it.
+- **Not carried over**, as with any resume: the ultracode switch (its resume notice says so), "allow for this session"
+  rules, a running `/loop` (it holds the switch back), and bypass availability, which follows the new launcher's own
+  flags. The new provider starts with a cold prompt cache. The row's `model` shows the picked model until a reply names
+  one.
+- A stopped agent with a pending switch stays as it is: Resume brings it back on the launcher it ran on, and the next
+  message from the chat carries the switch out then.
 
 ## Session IDs and transcripts
 

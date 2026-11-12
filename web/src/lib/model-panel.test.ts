@@ -13,6 +13,8 @@ import {
   matchesQuery,
   overrideKey,
   panelSections,
+  priceAmount,
+  priceTier,
   pushRecent,
   RECENT_MAX,
   removeFavorite,
@@ -285,6 +287,19 @@ describe("geometry and colors", () => {
     expect(effortColor("someday")).toBe("var(--effort-medium)");
     expect(effortColorAt(["low", "medium", "high"], 1)).toBe("var(--effort-medium)");
     expect(effortColorAt(["low", "medium", "high"], 1.25)).toBe("color-mix(in srgb, var(--effort-high) 25%, var(--effort-medium))");
+  });
+
+  it("maps known output prices to tiers and writes small prices without losing them", () => {
+    expect(priceTier({ input: 1, output: 3 })).toBe(1);
+    expect(priceTier({ input: 2, output: 10 })).toBe(2);
+    expect(priceTier({ input: 4, output: 20 })).toBe(3);
+    expect(priceTier({ input: 4, output: Number.NaN })).toBeUndefined();
+    expect(priceTier({ input: -1, output: 20 })).toBeUndefined();
+    expect(priceTier({ input: 4, output: 20, cache_read: -0.1 })).toBeUndefined();
+    expect(priceAmount(20)).toBe("20");
+    expect(priceAmount(0.2)).toBe("0.2");
+    expect(priceAmount(0.0036)).toBe("0.0036");
+    expect(priceAmount(1.23456)).toBe("1.23");
   });
 
   it("writes context windows short", () => {

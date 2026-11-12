@@ -1,7 +1,8 @@
 # Proposal: the main chat stays available to the owner while background work grows
 
 Status: proposal (#4757). The owner took decisions 1 to 5 of section 7 as recommended; decision 6 is open. The server
-steps M1, F1, F2, B1, Q1, R1 and R2 are in review (#4924 to #4930); B2, R3 and K1 are not started. Covers the assistant
+steps M1, F1, F2, B1, Q1, R1 and R2 are in review (#4924 to #4930); B2 is built for the web (#5082) and the Apple apps
+(#5083) and Android (#5084); R3 and K1 are not started. Covers the assistant
 manager and its prompts; the clients change only where a step says so.
 
 ## 1. Goal
@@ -100,6 +101,18 @@ work out as today; it no longer receives supervision messages for it.
   unchanged, lets the off switch move every open task at once and leaves no task naming a conversation that is gone.
   Asks climb through it only with leaders configured, as today. A `needs_user` writes the `escalated` entry leaders
   write, and that entry is a supervision message to the main chat, so it is one folded main-chat round, not none.
+- **As built (step B2 on the web, #5082)**, where it differs from "Shown where" (`docs/web/web.md` "Background
+  supervisor" has the whole of it): the web sidebar has had no group of automatic conversations since #4331, so the
+  conversation is listed under All chats › Scheduled, marked built in, not in a sidebar group. The main chat draws
+  each `review` entry marked `by: "background"` (the mark #5084 added) as one line. The model
+  purpose `assistant.supervise` stays out of the catalog `GET /api/v1/model-config` returns and is read by its own id
+  beside it.
+- **As built on Android (step B2, #5084)** (`docs/android/android.md` "The background supervisor (#5084)"): that app's
+  drawer has no group of its own for scheduled tasks' conversations (they are under All chats), so the conversation is
+  under All chats with them. The feed's `review` entry did not say who wrote it, so this step adds `by: "background"`
+  to the entry of a review the background supervisor wrote (`reviewFeedBody.By`), and the app draws exactly those as one
+  line; against a hub without the mark every review stays in the background record as before. The hub's model catalog
+  leaves `assistant.supervise` out, so the app asks for it by its ID to list it.
 
 Alternatives considered:
 

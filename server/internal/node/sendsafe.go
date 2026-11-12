@@ -114,6 +114,10 @@ type sendOpts struct {
 	Model            string `json:"model"`
 	Effort           string `json:"effort"`
 	ModelFingerprint string `json:"model_fingerprint"`
+	// ApplySwitch: the user's own message from the chat of a session with a pending launcher switch, which carries the
+	// switch out before it is typed (launcher_switch.go). Without it (any other sender) the message goes on the launcher
+	// the agent runs on and the switch keeps waiting.
+	ApplySwitch bool `json:"apply_switch"`
 	// readBox: a screen that cannot be read refuses (unreadBoxMessage) instead of passing for an empty box. After a
 	// command that may still sit in the box (ultracode.go), not knowing is not enough to type after it.
 	readBox bool

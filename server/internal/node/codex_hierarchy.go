@@ -80,6 +80,9 @@ func (n *Node) decorateCodexSession(s *proto.Session, src codexSource, legacy st
 	if s.IsSubagent {
 		s.Capabilities.Send, s.Capabilities.Attach, s.Capabilities.Interrupt = false, false, false
 	}
+	if origin.started != nil && s.Hierarchy == nil {
+		s.Hierarchy = origin.started // when the thread began, read with its origin: no read of its own (#5120)
+	}
 	if !origin.desktop {
 		// An App chat whose rollout is gone is grouped as one with a rollout (codex_appdb.go).
 		if _, app := codexAppThreadOf(src); !app {

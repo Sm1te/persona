@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceCatalog, workspaceCatalogOwner, workspaceKey, workspaceTarget, type HostWorkspace } from "./workspace-catalog";
+import { CATALOG_POLL_MS, WorkspaceCatalog, workspaceCatalogOwner, workspaceKey, workspaceTarget, type HostWorkspace } from "./workspace-catalog";
 import { credentialOwner, setToken } from "./api";
 import { chooseManager, resetManagerChoice, setRosterDefault } from "./manager-choice";
 
@@ -87,12 +87,25 @@ describe("independent workspace catalog", () => {
     const stop = catalog.watch(); const stopOther = catalog.watch();
     await Promise.resolve(); expect(request).toHaveBeenCalledTimes(1);
     stopOther();
-    await vi.advanceTimersByTimeAsync(10_000); expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(CATALOG_POLL_MS); expect(request).toHaveBeenCalledTimes(2);
     visibility = "hidden"; document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(30_000); expect(request).toHaveBeenCalledTimes(2);
     visibility = "visible"; document.dispatchEvent(new Event("visibilitychange"));
     await Promise.resolve(); expect(request).toHaveBeenCalledTimes(3);
     stop(); await vi.advanceTimersByTimeAsync(20_000); expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("re-reads a watched catalog once a minute, as Apple does (#5168)", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => "visible");
+    const request = transport(async () => ({ workspaces: [row()] }));
+    const stop = new WorkspaceCatalog(scope, request, () => scope).watch();
+    await Promise.resolve(); expect(request).toHaveBeenCalledTimes(1);
+    // every 10 s this was 5 more reads by now; each one asks every online computer live (workspaces.list)
+    await vi.advanceTimersByTimeAsync(59_000); expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000); expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000); expect(request).toHaveBeenCalledTimes(3);
+    stop();
   });
 
   it("does not overlap or starve slow discovery reads, and rejects a response received after hiding", async () => {

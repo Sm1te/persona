@@ -61,7 +61,7 @@ func archiveRelayHub(t *testing.T, failingStatus ...int) (*Hub, *httptest.Server
 					}
 					body = map[string]any{"sessions": []proto.Session{{MachineID: mid, SessionID: "same", Agent: agent,
 						Title: agent + " archive", Status: proto.StatusOffline, State: proto.StateOffline,
-						Archived: true, UpdatedAt: changed.Add(-time.Hour), ArchiveChangedAt: changed},
+						Archived: true, UpdatedAt: changed.Add(-time.Hour), ArchiveChangedAt: &changed},
 						// A manager cannot claim another manager's session in its response.
 						{MachineID: other, SessionID: "foreign", Agent: agent, Archived: true}}}
 				}
@@ -163,7 +163,7 @@ func TestAgentSessionArchivesRelayToOwnerAndMergeManagers(t *testing.T) {
 		t.Fatalf("merged archives: %d %+v", code, body)
 	}
 	for _, row := range rows {
-		if row.Manager != h.machineOwner(row.MachineID) || !row.Archived || row.ArchiveChangedAt.IsZero() {
+		if row.Manager != h.machineOwner(row.MachineID) || !row.Archived || row.ArchiveChangedAt == nil || row.ArchiveChangedAt.IsZero() {
 			t.Fatalf("manager identity or visibility lost: %+v", row)
 		}
 	}
@@ -306,7 +306,7 @@ func TestAgentSessionArchivesOrdinaryAndPagedInventory(t *testing.T) {
 		t.Fatalf("initial inventory: %+v", page)
 	}
 	for i := range m.sessions {
-		m.sessions[i].Archived, m.sessions[i].ArchiveChangedAt = true, time.Now()
+		m.sessions[i].Archived, m.sessions[i].ArchiveChangedAt = true, new(time.Now())
 	}
 	h.sessionsChanged(m)
 	if page := runtimePage(t, h, "summary=1&limit=50"); page.Total != 0 {
@@ -316,7 +316,7 @@ func TestAgentSessionArchivesOrdinaryAndPagedInventory(t *testing.T) {
 		t.Fatalf("manager archives leaked into ordinary inventory: %+v", rows)
 	}
 	for i := range m.sessions {
-		m.sessions[i].Archived, m.sessions[i].ArchiveChangedAt = false, time.Now()
+		m.sessions[i].Archived, m.sessions[i].ArchiveChangedAt = false, new(time.Now())
 	}
 	h.sessionsChanged(m)
 	if page := runtimePage(t, h, "summary=1&limit=50"); page.Total != 2 {
@@ -338,7 +338,7 @@ func TestAgentSessionArchivesRestoreDeletePrecedence(t *testing.T) {
 				t.Fatal(err)
 			}
 			row := proto.Session{MachineID: "computer", SessionID: "same", Agent: "codex", Status: proto.StatusOffline,
-				UpdatedAt: deleted.Add(-time.Hour), ArchiveChangedAt: deleted.Add(tc.delta)}
+				UpdatedAt: deleted.Add(-time.Hour), ArchiveChangedAt: new(deleted.Add(tc.delta))}
 			if got := len(h.shown("computer", []proto.Session{row})) == 1; got != tc.visible {
 				t.Fatalf("visibility=%v want %v", got, tc.visible)
 			}

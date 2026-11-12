@@ -34,8 +34,19 @@ object AssistantTaskCards {
     private val lifecycle = setOf("plan", "task", "receipt", "review", "report")
 
     /** Explicit hub housekeeping, drafts and assistant-to-Agent instructions live behind the trays. */
-    fun isBackgroundEvent(item: FeedItem): Boolean = (item.kind in lifecycle && !interruptShown(item)) || item.kind in setOf("notice", "message") ||
-        (item.kind == "routed" && item.field("from") == "assistant")
+    fun isBackgroundEvent(item: FeedItem): Boolean = (item.kind in lifecycle && !interruptShown(item) && !isBackgroundSupervisorReview(item)) ||
+        item.kind in setOf("notice", "message") || (item.kind == "routed" && item.field("from") == "assistant")
+
+    /**
+     * A review the background supervisor wrote (#5084, docs/assistant/unified-entry.md "Background supervisor"): the hub
+     * marks it `by: "background"`. It took no turn of the conversation that handed the task out, so nothing in the
+     * transcript says the task was accepted or sent back: the entry stays in the conversation as one line that opens the
+     * task. Every other review (the conversation's own, a leader's, a sampled acceptance, any from a hub without the
+     * mark) stays behind the trays as before.
+     */
+    fun isBackgroundSupervisorReview(item: FeedItem): Boolean = item.kind == "review" && item.field("by") == REVIEW_BY_BACKGROUND
+
+    private const val REVIEW_BY_BACKGROUND = "background"
 
     /** An interrupted receipt the hub worked out stays in the chat as its record (#3834): a batch's card, a handled line
      *  or a pending one; a batch's other receipts are drawn inside its head. */

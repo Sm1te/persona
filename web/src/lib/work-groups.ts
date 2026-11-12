@@ -1,9 +1,11 @@
 // One compact execution summary per exchange on every conversation style (#2602).
 // The latest assistant text occupies one replace-in-place slot while running; the final text stays there when done.
-// Older text and every tool/thinking step remain available inside the manually opened summary.
-// Compaction boundaries and unloaded history gaps retain their behavior.
+// Older text and every tool/thinking step remain available inside the manually opened summary: opened, it is cindy's
+// timeline (#5155, messageWorkGroups.ts createCompletedWorkGroup): the narration in order, each run of work between two
+// pieces of it an inner summary of its own. Compaction boundaries and unloaded history gaps retain their behavior.
 
 import { t } from "../i18n";
+import { isChildSessionStep } from "./child-cards";
 import type { Step } from "./turns";
 import type { Item } from "./types";
 
@@ -11,7 +13,7 @@ export type ToolStep = Extract<Step, { kind: "tool" }>;
 
 export type AgentStatus = "running" | "completed" | "failed" | "stopped";
 
-/** A group of steps (`children` hold steps and, in a finished timeline, inner groups), or a step left in the open. */
+/** A group of steps (`children` hold steps, or in a timeline the narration and inner groups), or a step left in the open. */
 export type WorkNode = WorkGroupNode | { kind: "step"; step: Step };
 
 export interface WorkGroupNode {
@@ -21,7 +23,7 @@ export interface WorkGroupNode {
   /** Its first step's seq: a group inside a fold the reader opened starts open. */
   seq?: number;
   children: WorkNode[];
-  /** The run still going at the end of a live exchange. */
+  /** The run still going at the end of a live exchange (in a timeline: its last run, with no words after it). */
   live: boolean;
   durationMs?: number;
   /** Where its clock starts (ms): the live timer counts from here. */
@@ -83,8 +85,9 @@ const boundaryTs = (s: Step | undefined): number | null => (s && (s.kind === "te
 const isAnswer = (s: Step) => s.kind === "text" && Boolean(s.item.text?.trim());
 
 /** The step a group is known by: its first real one (cindy keys a group by its first activity, so a live group keeps
- *  its key as it grows and once it is done). */
-const anchorStep = (run: Step[]) => run.find((s) => s.kind !== "text") ?? run[0];
+ *  its key as it grows and once it is done). A child session's card is not one: it comes in with the child's row, and
+ *  the group keeps the key (and the reader's open state) it had without it. */
+const anchorStep = (run: Step[]) => run.find((s) => s.kind !== "text" && !isChildSessionStep(s)) ?? run.find((s) => s.kind !== "text") ?? run[0];
 
 /** A group's key: its anchor's seq and block (a fold's is the seq of the first step it stands for, block 0). */
 function anchorKey(run: Step[]): string {
@@ -118,6 +121,36 @@ function createGroup(run: Step[], next: Step | undefined, live: boolean, prevBou
   };
 }
 
+/** cindy's createCompletedWorkGroup: a summary whose steps hold intermediate narration opens to that narration in order,
+ *  each maximal run of other steps between two pieces of it an inner group (its clock from the narration before it, or
+ *  the turn's start, to the narration after it, else its latest end). Null without narration: the steps stay direct.
+ *  `work` is the summary's steps: the latest text (in the slot) is not among them, so it is no boundary. `answer`: that
+ *  text when it came after the last run, which is then over and ends there; otherwise, while the turn is live, the last
+ *  run is the one still going. */
+function timeline(work: Step[], answer: Step | undefined, turnStart: number | null, live: boolean): WorkNode[] | null {
+  if (!work.some(isAnswer)) return null;
+  const out: WorkNode[] = [];
+  let run: Step[] = [];
+  let prev = turnStart;
+  // a text without words is no boundary: it goes with the run around it, and alone it is drawn as before (as nothing)
+  const flush = (next: Step | undefined, live: boolean) => {
+    if (run.some((s) => s.kind !== "text")) out.push(createGroup(run, next, live, prev));
+    else out.push(...run.map((step) => ({ kind: "step" as const, step })));
+    run = [];
+  };
+  for (const s of work) {
+    if (!isAnswer(s)) {
+      run.push(s);
+      continue;
+    }
+    flush(s, false);
+    out.push({ kind: "step", step: s });
+    prev = stepStart(s);
+  }
+  flush(answer, live && !answer);
+  return out;
+}
+
 /** One summary plus one text slot, irrespective of tool kind, text length or Markdown shape.
  *  A streamed text segment supersedes the persisted text, but the persisted words remain inspectable in the summary. */
 function groupTurn(items: Step[], turnStart: number | null, live: boolean, streaming: boolean, identity?: string): WorkNode[] {
@@ -133,7 +166,18 @@ function groupTurn(items: Step[], turnStart: number | null, live: boolean, strea
   }
   const answer = latest >= 0 ? items[latest] : undefined;
   const group = work.length ? createGroup(work, answer, live, turnStart) : undefined;
-  if (group && identity) group.id = `work-turn-${identity}`;
+  if (group) {
+    // the latest text ends the last run when nothing but words came after it
+    const answered = answer && items.slice(latest + 1).every((s) => s.kind === "text") ? answer : undefined;
+    const children = timeline(work, answered, turnStart, live);
+    if (identity) group.id = `work-turn-${identity}`;
+    if (children) {
+      group.children = children;
+      // an outer line without the exchange's key (a part before a compaction or a gap) is known by its first step, as
+      // its first inner group is: that one gets a key of its own, so each keeps its own open / closed state
+      for (const c of children) if (c.kind === "group" && c.id === group.id) c.id = c.id.replace(/^work-/, "work-run-");
+    }
+  }
   // A text before the last tool result is still the newest text, not the group's duration endpoint.
   if (group && group.startedAt !== undefined) {
     const end = items.reduce((latest, s) => Math.max(latest, stepEnd(s) ?? latest), group.startedAt);
@@ -141,6 +185,10 @@ function groupTurn(items: Step[], turnStart: number | null, live: boolean, strea
   }
   return [...(group ? [group] : []), ...kept, ...(answer ? [{ kind: "step" as const, step: answer }] : [])];
 }
+
+/** A thought without words (Claude Code writes most of them so) says nothing: it is no step of the work, as in cindy
+ *  (thinkingActivityForMessage), so a turn of nothing else has no summary and it never splits a run of rows (#5155). */
+const isWordlessThought = (s: Step) => s.kind === "thinking" && !s.item.text?.trim();
 
 /** One exchange's steps (the answer among them, in order) as what the chat draws. */
 export function workBlocks(steps: Step[], opts: WorkGroupOptions): WorkNode[] {
@@ -154,6 +202,7 @@ export function workBlocks(steps: Step[], opts: WorkGroupOptions): WorkNode[] {
     turn = [];
   };
   for (const s of steps) {
+    if (isWordlessThought(s)) continue;
     if (isCompactStep(s)) {
       flush(false);
       out.push({ kind: "step", step: s });
@@ -281,41 +330,28 @@ export interface WorkLineState {
 export const workLineOpen = (s: WorkLineState): boolean => s.turnLive ? (s.liveOverride ?? false) : s.remembered;
 export const togglesLiveOverride = (_style: WorkLineStyle, turnLive: boolean): boolean => turnLive;
 export const workLineOpens = (g: WorkGroupNode, _style: WorkLineStyle, _turnLive: boolean): boolean => groupOpens(g);
-/** Opening a summary must reveal every tool call, including legacy nested history groups. */
+/** Opening a summary must reveal every tool call: a timeline's inner groups start open with it (cindy folds them, which
+ *  super rule 2 does not allow), each remembering its own choice after that. */
 export const nestedLineDefault = (_style: WorkLineStyle): boolean => true;
 
-/** How long each thought took: from the step before it (or the exchange's start) to when it was written. */
-export function thinkingDurations(steps: Step[], turnStart?: string): Map<string, number> {
-  const out = new Map<string, number>();
-  let prev = tsMs(turnStart);
-  for (const s of steps) {
-    const st = stepStart(s);
-    if (s.kind === "thinking" && st !== null && prev !== null && st >= prev) out.set(s.id, st - prev);
-    const e = stepEnd(s);
-    if (e !== null) prev = prev === null ? e : Math.max(prev, e);
-  }
-  return out;
-}
-
-/** cindy's formatDuration in the page's language: Chinese "6 s", "1 min 5 s", "2 min", "1 h 05 min", 6s, 1m 5s in English (at least a second). */
+/** cindy's formatSessionDuration: under an hour `6s`, `1m 5s`, `2m` (the same in every language's catalog; at least a
+ *  second); from an hour the language's form, always with the minutes ("1h 0m", "1 小时 0 分", "1時間0分"; "1d 2h 5m"). */
 export function workDuration(msValue: number): string {
   const total = Math.max(1, Math.round((Number.isFinite(msValue) ? msValue : 0) / 1000));
-  // Units come from the catalog (#3592): "1 min 5 s" in Chinese, 1m 5s in English.
   if (total < 60) return t("lib-work-groups.dur_seconds", { s: total });
   if (total >= 3600) {
     const d = Math.floor(total / 86_400);
     const h = Math.floor((total % 86_400) / 3600);
     const m = Math.floor((total % 3600) / 60);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    if (d > 0) return t("lib-work-groups.dur_days_hours_minutes", { d, h: pad(h), m: pad(m) });
-    return m ? t("lib-work-groups.dur_hours_minutes", { h, m: pad(m) }) : t("lib-work-groups.dur_hours", { h });
+    return d > 0 ? t("lib-work-groups.dur_days_hours_minutes", { d, h, m }) : t("lib-work-groups.dur_hours_minutes", { h, m });
   }
   const m = Math.floor(total / 60);
   const s = total % 60;
   return s ? t("lib-work-groups.dur_minutes_seconds", { m, s }) : t("lib-work-groups.dur_minutes", { m });
 }
 
-/** A finished group's title: "Worked 1m 5s", and what it read when that is all it did. */
+/** A finished group's title: "Worked for 1m 5s" ("Work details" without its times), and what it read when that is all
+ *  it did directly (an outer timeline's tools are in its inner groups, so it says only how long). */
 export function groupTitle(g: WorkGroupNode): string {
   if (g.live) return t("lib-work-groups.working");
   const base = g.durationMs !== undefined ? t("lib-work-groups.worked_for", { duration: workDuration(g.durationMs) }) : t("lib-work-groups.work");

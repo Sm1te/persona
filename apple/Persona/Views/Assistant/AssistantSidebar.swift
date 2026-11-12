@@ -854,7 +854,7 @@ struct AssistantSidebar: View {
             .scrollContentBackground(.hidden)
             #if os(macOS)
             .modifier(MacListKeys(current: { current }, delete: { key in
-                guard key != model.assistantMain else { return }
+                guard key != model.assistantMain, !model.isBackgroundSupervisor(key.sessionID) else { return }
                 Task { await model.archiveConversation(key, true) }
             }))
             #endif
@@ -1379,6 +1379,9 @@ struct AssistantSidebar: View {
     private func row(_ s: Session, named: String? = nil) -> some View {
         let selected = s.key == current
         let isMain = s.key == model.assistantMain
+        // The main conversation and the hub's built-in background supervisor (#5083) stay: no Archive, Pin or End.
+        let builtIn = model.isBackgroundSupervisor(s.sessionID)
+        let kept = isMain || builtIn
         let title = isMain ? Self.mainTitle : named ?? (s.title.isEmpty || s.title == "Claude Code" ? String(localized: "New Chat [Quick Actions ea4b29]") : s.title)
         let preview = s.lastText.map { Fmt.plain($0).replacingOccurrences(of: "\n", with: " ") } ?? ""
         let counts: String? = model.assistantLeaders.contains(s.sessionID)
@@ -1423,7 +1426,7 @@ struct AssistantSidebar: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(isMain ? "sidebar-main" : "sidebar-conversation")
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if !isMain {
+            if !kept {
                 Button { Task { await model.archiveConversation(s.key, true) } } label: {
                     Label("Archive", systemImage: Theme.Icon.archive)
                 }
@@ -1431,11 +1434,11 @@ struct AssistantSidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .background { if !isMain { SwipeRowMark() } } // the drawer leaves a drag to the left on it to the row
+        .background { if !kept { SwipeRowMark() } } // the drawer leaves a drag to the left on it to the row
         #endif
         .contextMenu {
             if isMain { MainConversationMenu(key: s.key) } // Compact context, New Main Chat… (#1762)
-            if !isMain {
+            if !kept {
                 // A direction is the hub's, for every device (#4331): the long press makes a conversation one, or ends
                 // the direction there (#4331, `make` / `end`).
                 let lead = model.assistantLeaders.contains(s.sessionID)
@@ -1448,7 +1451,9 @@ struct AssistantSidebar: View {
             }
             if !isMain {
                 Button { renaming = s } label: { Label("Rename… [Assistant Sidebar ec4cd0]", systemImage: Theme.Icon.edit) }
-                Button { Task { await model.archiveConversation(s.key, true) } } label: { Label("Archive", systemImage: Theme.Icon.archive) }
+                if !builtIn {
+                    Button { Task { await model.archiveConversation(s.key, true) } } label: { Label("Archive", systemImage: Theme.Icon.archive) }
+                }
             }
             Button {
                 UIPasteboard.general.string = s.sessionID
@@ -1458,7 +1463,7 @@ struct AssistantSidebar: View {
                 UIPasteboard.general.string = ChatTrace.shared.text(s.key) // structure only, to paste into a report
                 model.toast = Toast(String(localized: "Diagnostics copied"), style: .success)
             } label: { Label("Copy Diagnostics", systemImage: Theme.Icon.diagnostics) }
-            if s.status.isLive {
+            if s.status.isLive, !builtIn {
                 Button(role: .destructive) { ending = s } label: { Label("End…", systemImage: Theme.Icon.end) }
             }
         } preview: {

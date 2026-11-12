@@ -8,7 +8,7 @@
 // (the session's own first, at most three at a time).
 import { useSyncExternalStore } from "react";
 import { t } from "../i18n";
-import { errorText } from "./api";
+import { ApiError, errorText } from "./api";
 import { agentId, sessionAgent } from "./agent-kind";
 import { modelShort } from "./context-usage";
 import { stateOf } from "./format";
@@ -197,6 +197,25 @@ export interface PillSetup {
 export interface PillView extends PillSetup {
   loading: boolean;
   failed: boolean;
+}
+
+/** A message refused because the switch to another launcher it was to carry out first could not be (#5035,
+ *  docs/protocol/protocol.md "Switching a running Agent to another provider": `switch_launcher_missing`,
+ *  `switch_failed`…): nothing was typed and the switch was dropped. */
+export const switchRefused = (e: unknown): boolean => e instanceof ApiError && e.status === 409 && Boolean(e.code?.startsWith("switch_"));
+
+/** The switch to another launcher waiting for the next message (#5035), as the pill draws it: that launcher, the model
+ *  picked (its list's name for it once read; none picked: the launcher's default), the effort picked or the one it runs
+ *  with now. null: none waits. */
+export function pendingView(s: Session, listOf: (launcher: string) => ModelList): PillSetup | null {
+  const ps = s.pending_switch;
+  if (!ps?.launcher || ps.launcher === sessionLauncher(s)) return null;
+  const models = listOf(ps.launcher).list?.models ?? [];
+  const row = ps.model ? models.find((m) => m.id === ps.model) : defaultModel(models);
+  const out: PillSetup = { engine: sessionEngine(s), provider: ps.launcher, model: row ? modelName(row) : ps.model ? modelLabel(ps.model) : t("chat-modelpill.default_model") };
+  const effort = ps.effort || s.effort;
+  if (effort) out.effort = effort;
+  return out;
 }
 
 export function pillView(s: Session, e: ModelList): PillView {

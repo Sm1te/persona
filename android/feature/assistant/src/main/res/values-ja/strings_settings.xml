@@ -127,6 +127,10 @@
     <string name="assistant_settings_quiet_caption">メインチャットが送り出したタスクはライブアクティビティ、プッシュ、バッジに出ません。完了・回答待ち・エラーのときは Persona がメインチャットで知らせます。これから送るタスクにだけ適用されます。</string>
     <string name="assistant_settings_background_folded">バックグラウンドのラウンドを折りたたむ</string>
     <string name="assistant_settings_background_folded_caption">メインチャットで別の会話・定期タスク・フォローアップが始めたラウンドを1行にまとめ、開くと全体を表示します。質問や通知をしたラウンドはそのまま表示します。</string>
+    <string name="assistant_settings_supervise_header">タスクのフォロー</string>
+    <string name="assistant_settings_supervise_own">メインチャットが自分のタスクを監督する</string>
+    <string name="assistant_settings_supervise_caption">オフのときはメインチャットが出したタスクをバックグラウンド監督が見守るので、メインチャットはあなたへの返答を優先でき、オンにするとメインチャット自身が見守ります。</string>
+    <string name="assistant_settings_supervise_model">バックグラウンド監督のモデル</string>
     <string name="assistant_settings_unavailable">アシスタント設定を開けません</string>
     <string name="assistant_settings_unavailable_detail">先に hub とペアリングするか、体験モードを終了してください。</string>
 </resources>

@@ -71,6 +71,7 @@ const hub = async (input: RequestInfo | URL, init?: RequestInit): Promise<Respon
     { ...agents, id: "kb", name: "信息处理", kind: "api", effective: { provider: "api.messages" } },
     { ...agents, id: "extension.example", name: "Example extension", kind: "api", effective: { provider: "api.responses" } },
   ], providers });
+  if (path.endsWith("/purposes/assistant.supervise")) return json({ error: "not found" }, 404); // a hub without the background supervisor's purpose (#5082)
   if (path.endsWith(`/purposes/${current.id}`)) return json({ purpose: current, providers });
   if (path.endsWith(`/purposes/${readonly.id}`)) return json({ purpose: readonly, providers });
   if (path.endsWith("/models")) return listFails ? json({ error: "unavailable" }, 404) : json({

@@ -1,5 +1,7 @@
 {
   "other_provider": "运行中的 Agent 暂时不能换供应商",
   "other_engine": "从 {from} 换到 {to} 需要新开对话",
-  "model_fixed": "运行中的 {agent} 会话不能换模型"
+  "model_fixed": "运行中的 {agent} 会话不能换模型",
+  "pending_note": "下一条消息时切换：Agent 会在 {provider} 上重启，对话保留",
+  "switch_scheduled": "已登记切换：下一条消息发出时，Agent 会换到 {target}"
 }

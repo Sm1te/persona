@@ -65,7 +65,7 @@ func TestSetRuntimeContext(t *testing.T) {
 	} {
 		s := proto.Session{Model: c.runAs}
 		setRuntimeContext(&s, c.m)
-		if s.ContextWindow != c.want || s.ContextTokens != c.m.contextTokens {
+		if int(s.ContextWindow) != c.want || int(s.ContextTokens) != c.m.contextTokens {
 			t.Errorf("%s: %d / %d, want %d / %d", c.name, s.ContextTokens, s.ContextWindow, c.m.contextTokens, c.want)
 		}
 	}

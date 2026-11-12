@@ -144,9 +144,10 @@ with one test, a full credential with a device (`personSent` in `server/internal
 token, an extension's, a computer link's or the watch's), for two requests: a message for an assistant chat
 (`assistant.send_params` marked `human`) and a new conversation's start with its first message (`POST
 /api/v1/assistant/conversations`, the relayed request's own `human` field, never a header). The manager keeps those messages'
-`client_msg_id`s, with the start of their words, for a day, in memory; a start's first message gets an id from the manager
-(`humanStart`, beginning `start:`, which the hub refuses on any app's send), which the node ties to the new conversation's
-first line (`assistant.send` with `client_msg_id` and no `new_session_id`). A message that carries a context block an app put
+`client_msg_id`s, with the start of their words, for a day, in memory. A start's first message gets no id of the manager's own
+(#5200): the node would tag its line with it, and the iPhone app, which matches its pending bubble by the id a line carries,
+showed it twice. So that first turn gets the card, until it is tied without an id the apps can see; the `start:` prefix stays
+reserved (the hub refuses it on any app's send). A message that carries a context block an app put
 in it is not the user's own words, whoever sent it (`fillWorkspaces`): a mail or Lark message handed on from the Inbox to a new or
 an existing chat, a page's selection used as context or for an AI edit, another conversation's message, a document, a to-do's
 decisions. Only a workspace mention the manager resolves is theirs: at the start of the message, every `kind` it names is

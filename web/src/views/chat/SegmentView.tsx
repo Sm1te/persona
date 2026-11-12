@@ -2,12 +2,13 @@ import { type CSSProperties, Fragment, memo, type ReactNode, useContext, useLayo
 import { clock } from "../../lib/format";
 import { stripCloseout } from "../../lib/closeout";
 import { getSession, getState } from "../../lib/store";
+import { withChildSessions } from "../../lib/child-cards";
 import { agentStatus, isNestedSubagentStep, nestedSubagentStatus, nestingKey, subagentFor, withNestedSubagents } from "../../lib/tasks";
 import { turnImages } from "../../lib/turn-images";
 import { TurnImages } from "./TurnImages";
 import { exchangeSteps, segmentIdentity, isLoopTick, isOwnMessage, type Context, type Segment, type UserMessage } from "../../lib/turns";
 import type { Item } from "../../lib/types";
-import { thinkingDurations, workBlocks, type ToolStep, type WorkNode } from "../../lib/work-groups";
+import { workBlocks, type ToolStep, type WorkNode } from "../../lib/work-groups";
 import { NO_WORKFLOW_CALLS } from "../../lib/workflows";
 import { channelOf, useChannels } from "../../lib/channels";
 import { splitQuotes } from "../../lib/drafts";
@@ -54,7 +55,7 @@ export function bubbleLines(text: string, perLine = CHARS_PER_LINE): number {
 }
 
 /** ModelChangeDivider's height as drawn (Chrome, 2026-11-12): its 8 px above and below, the chip's 4 px padding, 1 px
- *  border and 16.5 px line (11 px text, the inherited 1.5). The exchange's 12 px gap comes on top. */
+ *  border and 16.5 px line (11 px text, the inherited 1.5). The exchange's 14 px gap comes on top. */
 export const MODEL_DIVIDER_HEIGHT = 42.5;
 
 /** A finished exchange's height in px before it is first drawn (content-visibility, docs/web/web.md "Long chats"), by
@@ -63,7 +64,8 @@ export const MODEL_DIVIDER_HEIGHT = 42.5;
  *  row for each other block, and the model change divider when it has one (`modelChange`). Once drawn it keeps its
  *  own height. */
 export function segmentHeight(user: UserMessage | undefined, nodes: WorkNode[], modelChange = false): number {
-  const line = 24, gap = 12, row = 28;
+  // gap: the exchange's blocks stand 14 px apart (`gap-3.5`, cindy's msg-stream-items)
+  const line = 24, gap = 14, row = 28;
   const lines = user ? bubbleLines(user.text) : 0;
   let h = user ? (lines > BUBBLE_MAX_LINES ? 10 : lines) * line + 20 + (user.images.length ? 102 : 0) : 0;
   for (const n of nodes) h += n.kind === "step" && n.step.kind === "text" ? bubbleLines(n.step.item.text ?? "", CHARS_PER_LINE * 2.5) * line : row;
@@ -277,20 +279,24 @@ export const SegmentView = memo(function SegmentView({
    *  height through this (ChatView `watchSegment`, returning the unwatch) to keep the view still when it changes. */
   offscreen?: (section: HTMLElement) => () => void;
 }) {
-  const { subagents, tasks, scope, workflowCalls = NO_WORKFLOW_CALLS, lineStyle, closeoutSegment } = useChatContext();
+  const { subagents, tasks, scope, workflowCalls = NO_WORKFLOW_CALLS, lineStyle, closeoutSegment, children } = useChatContext();
   const own = useMemo(() => exchangeSteps(seg), [seg]);
   // the subagents its subagents launched, each a card of its own by when it started (#5030); a trace shows the calls only.
   // Keyed by what places them, not the list: that changes with every subagent's tokens and steps.
   const nesting = trace ? "" : nestingKey(subagents);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const steps = useMemo(() => (nesting ? withNestedSubagents(own, subagents) : own), [own, nesting]);
+  // the child sessions that started during this exchange, each a card among its steps (#5120, lib/child-cards.ts)
+  const placed = trace ? undefined : children?.get(seg.id);
+  const steps = useMemo(
+    () => withChildSessions(nesting ? withNestedSubagents(own, subagents) : own, placed),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [own, nesting, placed],
+  );
   const turnStart = seg.user?.ts ?? seg.start;
-  const thinking = useMemo(() => thinkingDurations(steps, turnStart), [steps, turnStart]);
   const p = useMemo<WorkProps>(() => {
     const agent = (s: ToolStep) =>
       isNestedSubagentStep(s) ? nestedSubagentStatus(subagentFor(subagents, s.use)) : agentStatus(s.result, subagentFor(subagents, s.use), live, s.use.tool_use_id ? tasks.notes.get(s.use.tool_use_id) : undefined);
-    return { mid, sid, scope, expandFold, agentStatus: agent, thinking, segment: seg.id, workflowCalls, trace, lineStyle, turnLive: live };
-  }, [mid, sid, scope, expandFold, subagents, tasks, live, thinking, seg.id, workflowCalls, trace, lineStyle]);
+    return { mid, sid, scope, expandFold, agentStatus: agent, segment: seg.id, workflowCalls, trace, lineStyle, turnLive: live };
+  }, [mid, sid, scope, expandFold, subagents, tasks, live, seg.id, workflowCalls, trace, lineStyle]);
   const identity = segmentIdentity(seg);
   const nodes = useMemo(
     () => workBlocks(steps, { live, turnStart, streaming: streaming !== undefined, identity }),
@@ -320,7 +326,7 @@ export const SegmentView = memo(function SegmentView({
   const divided = Boolean(seg.modelChange);
   const guess = useMemo(() => (offscreen ? ({ "--seg-est": `${segmentHeight(seg.user, nodes, divided)}px` } as CSSProperties) : undefined), [offscreen, seg.user, nodes, divided]);
   return (
-    <section ref={box} className={offscreen ? "seg-cv flex flex-col gap-3" : "flex flex-col gap-3"} style={guess} data-segment>
+    <section ref={box} className={offscreen ? "seg-cv flex flex-col gap-3.5" : "flex flex-col gap-3.5"} style={guess} data-segment>
       {trace && seg.user?.rawInput && !seg.user.promptHidden && !seg.user.sourceInTrace ? <RawInjectedInput items={seg.user.rawInput} mid={mid} sid={sid} /> : seg.user && (seg.user.source ? <SourceMessage msg={seg.user} mid={mid} sid={sid} /> : seg.user.injected ? <InjectedHint msg={seg.user} sid={sid} /> : seg.user.parts ? <MergedBubble msg={seg.user} mid={mid} sid={sid} /> : seg.user.from ? <PeerMessage msg={seg.user} /> : isLoopTick(seg.user) ? <LoopTick msg={seg.user} /> : <UserBubble msg={seg.user} mid={mid} sid={sid} />)}
       {/* the reply below came from another model than the one before it (cindy: after the message that started it) */}
       {seg.modelChange && <ModelChangeDivider from={seg.modelChange.from} to={seg.modelChange.to} />}

@@ -1,5 +1,7 @@
 {
   "other_provider": "Switching providers in a running Agent isn't available yet",
   "other_engine": "Switching from {from} to {to} needs a new conversation",
-  "model_fixed": "{agent} can't change the model of a running session"
+  "model_fixed": "{agent} can't change the model of a running session",
+  "pending_note": "Switches on your next message: the Agent restarts on {provider} and keeps this conversation",
+  "switch_scheduled": "Switch scheduled: your next message moves the Agent to {target}"
 }

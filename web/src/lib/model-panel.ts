@@ -6,6 +6,13 @@ import { matches } from "./launcher-models";
 import { cleanModelId, validModelId } from "./model-id";
 import { isCurrentModel } from "./model-switch";
 
+/** The catalog's reference price in USD per one million tokens; absent means unknown, not free. */
+export interface PanelPrice {
+  input: number;
+  output: number;
+  cache_read?: number;
+}
+
 /** One model of a provider, as the panel shows and picks it. */
 export interface PanelModel {
   /** What a pick sends (Claude Code's aliases too: opus, sonnet…). */
@@ -23,6 +30,8 @@ export interface PanelModel {
   fast?: boolean;
   /** Context window in tokens, when known. */
   context?: number;
+  /** Exact catalog reference price, when known. */
+  price?: PanelPrice;
   /** A model ID typed before for this provider (#1644): listed after the provider's own models, can be forgotten. */
   custom?: boolean;
   /** It stands for whatever its provider runs when no model is given (New Agent's "Default" row), not a model of its
@@ -484,6 +493,20 @@ export function effortColorAt(stops: string[], position: number): string {
   if (share === 0 || lo === hi) return effortColor(stops[lo]);
   if (share === 100) return effortColor(stops[hi]);
   return `color-mix(in srgb, ${effortColor(stops[hi])} ${share}%, ${effortColor(stops[lo])})`;
+}
+
+/** One to three dollar marks from the standard output price; malformed values mean unknown, never a guessed tier. */
+export function priceTier(price: PanelPrice | undefined): 1 | 2 | 3 | undefined {
+  if (!price || ![price.input, price.output].every((v) => Number.isFinite(v) && v >= 0)) return undefined;
+  if (price.cache_read !== undefined && (!Number.isFinite(price.cache_read) || price.cache_read < 0)) return undefined;
+  if (price.output <= 3) return 1;
+  if (price.output <= 15) return 2;
+  return 3;
+}
+
+/** A USD amount per million tokens, retaining the small cache-read prices. */
+export function priceAmount(value: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2, useGrouping: false }).format(value);
 }
 
 /** A context window as the flyout writes it: 200K, 1M. */

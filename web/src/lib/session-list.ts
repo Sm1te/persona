@@ -18,7 +18,7 @@ export function compareListIds(a: string, b: string): number {
 const JOURNAL_LIMIT = 16_384;
 const validCounts = (counts: ListCounts | undefined): counts is ListCounts => !!counts && typeof counts.total === "number" &&
   typeof counts.revision === "string" && !!counts.machine && !!counts.project && !!counts.group && !!counts.state;
-const FILTER_KEYS = ["state", "machine_id", "project", "group", "source", "provider", "q"] as const;
+const FILTER_KEYS = ["state", "machine_id", "project", "group", "source", "provider", "q", "parent_session_id"] as const;
 
 export type ListFilters = Partial<Record<typeof FILTER_KEYS[number], string>>;
 export interface ListCounts {
@@ -57,6 +57,9 @@ export interface SessionListOptions<T> {
   /** Whether the hub answers `with_counts=1` (`sessions_page_counts`, #4858): a refresh then reads its counts with the
    * page, one request instead of two. A page that comes back without them still gets the separate counts read. */
   pageCounts?: () => boolean;
+  /** Read the list without the child sessions folded under a listed one (`roots=1`, `sessions_hierarchy`, #5120): rows,
+   * totals and counts then hold each parent once, counted by its folded state. Only for a hub that advertises it. */
+  roots?: boolean;
 }
 
 type PreparedDelta<T> = { overlay: Map<string, T | null>; changes: Map<string, T | null>; revision: string; total: number };
@@ -84,6 +87,7 @@ export class SessionList<T> {
   private invalidationQueued = false;
   private lastFailure: "load" | "more" = "load";
   private summary: boolean;
+  private roots: boolean;
   private onDelta?: (upsert: T[], remove: string[]) => void;
   private pageCounts: () => boolean;
 
@@ -96,11 +100,14 @@ export class SessionList<T> {
     options: SessionListOptions<T> = {},
   ) {
     this.summary = options.summary ?? true;
+    this.roots = options.roots ?? false;
     this.onDelta = options.onDelta;
     this.pageCounts = options.pageCounts ?? (() => false);
   }
 
   isSummary(): boolean { return this.summary; }
+  /** Whether every read sends `roots=1`: a list or counts read over the same collection sends it too. */
+  isRoots(): boolean { return this.roots; }
   /** For a list over the same collection, e.g. a filtered copy of this one. */
   usesPageCounts(): boolean { return this.pageCounts(); }
 
@@ -108,6 +115,13 @@ export class SessionList<T> {
   setSummary(value: boolean): void {
     if (this.summary === value) return;
     this.summary = value;
+    this.reset();
+  }
+
+  /** Leaving the folded children out (or taking them back) changes every row, total and cursor: like setSummary. */
+  setRoots(value: boolean): void {
+    if (this.roots === value) return;
+    this.roots = value;
     this.reset();
   }
 
@@ -224,8 +238,9 @@ export class SessionList<T> {
   private query(extra: Record<string, string>): string {
     const [path, existing = ""] = this.path.split("?");
     const params = new URLSearchParams(existing);
-    for (const key of [...FILTER_KEYS, "summary", "limit", "counts", "with_counts", "cursor", "since"]) params.delete(key);
+    for (const key of [...FILTER_KEYS, "summary", "limit", "counts", "with_counts", "cursor", "since", "roots"]) params.delete(key);
     for (const key of FILTER_KEYS) if (this.filters[key]) params.set(key, this.filters[key]!);
+    if (this.roots) params.set("roots", "1");
     for (const [key, value] of Object.entries(extra)) params.set(key, value);
     return `${path}?${params}`;
   }

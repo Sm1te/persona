@@ -6,6 +6,7 @@
 import { useSyncExternalStore } from "react";
 import { stateOf } from "./format";
 import { agentKey } from "./pins";
+import { homeKey } from "./folded-rows";
 import { isDelegating } from "./delegate";
 import { isMuted } from "./session-actions";
 import type { AgentMutes } from "./agent-groups";
@@ -63,7 +64,7 @@ export function detectTransitions(prev: ReadonlyMap<string, AgentState>, session
 export function lookingOnly(interactions: readonly Interaction[]): Set<string> {
   const looking = new Set<string>();
   const other = new Set<string>();
-  for (const ix of interactions) (isDelegating(ix) ? looking : other).add(agentKey(ix));
+  for (const ix of interactions) (isDelegating(ix) ? looking : other).add(homeKey(ix));
   for (const key of other) looking.delete(key);
   return looking;
 }
@@ -113,7 +114,8 @@ export function detectNewCards(known: ReadonlyMap<string, number> | undefined, i
   const first = new Map<string, Interaction>();
   for (const ix of waiting) {
     if (known.has(ix.id)) continue;
-    const key = ix.session_id === "" ? `card:${ix.id}` : agentKey(ix);
+    // a child session's card is announced for its parent (#5120), the session the lists show and its link opens
+    const key = ix.session_id === "" ? `card:${ix.id}` : homeKey(ix);
     if (ix.session_id === "") { first.set(key, ix); continue; }
     if (quiet.has(key) || was.get(key) !== "needs_you" || next.get(key) !== "needs_you") continue;
     const had = first.get(key);

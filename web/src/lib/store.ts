@@ -10,6 +10,7 @@ import { agentsChanged, refreshAgentPrefs, refreshAgentSessions, resetAgents, se
 import { onRuntimeChanges, runtimeIdentity, runtimeRemoval, runtimeSessions, SESSIONS_LOOKUP_FEATURE, SESSIONS_PAGE_COUNTS_FEATURE, setRuntimePageCounts } from "./runtime-list";
 import { sameValue } from "./stable-lines";
 import { SESSIONS_LIST_FEATURE, type ListCounts } from "./session-list";
+import { SESSIONS_HIERARCHY_FEATURE } from "./child-sessions";
 import { applySessionDelta, SESSIONS_DELTA_FEATURE, sessionRefreshed, sessionSnapshot } from "./sessions-delta";
 import { dueMarks, heldRows, liveMarks, markOver, newMark, nextDue, unansweredMarks, type SeenMark, type SeenMarks } from "./seen-outbox";
 import { probeEdge } from "./edge-auth";
@@ -30,6 +31,7 @@ import type { OutboxEntry } from "./outbox";
 import { NO_LINK, RESTARTING_MS, type ConnLink } from "./connection";
 import { setOfflineProbe } from "./feedback";
 import { readDirectionTree } from "./direction-names";
+import { unnamedTaskConversations } from "./background-supervisor";
 import { directionTreeAwaitsHello } from "./direction-tree";
 import { afterEvent, afterHello, graceUntil, isResumed, NO_CURSOR, RESTART_FAST_MS, retryDelay, shownConn, wsQuery, type Drop, type EventCursor } from "./reconnect";
 
@@ -289,6 +291,33 @@ async function lookUpTaskAgents() {
   }
 }
 
+const cardRowsAsked = new Set<string>();
+let cardRowsFor: Interaction[] | null = null;
+/** A child session's card (`folded_under`, #5120) whose session no list holds: a paging hub leaves child sessions out of
+ *  the Agents list's pages (`roots`). One exact lookup for its row (`sessions_lookup`) puts it among the row hints, so the
+ *  card can be answered wherever it shows (the main chat's Needs you, the Inbox), not only on its parent's open page. */
+async function lookUpCardSessions() {
+  if (state.interactions === cardRowsFor || !state.features.includes(SESSIONS_LOOKUP_FEATURE)) return;
+  cardRowsFor = state.interactions;
+  const missing = new Set(state.interactions.filter((ix) => ix.folded_under && ix.session_id && !getSession(ix.machine_id, ix.session_id))
+    .map((ix) => runtimeIdentity({ machine_id: ix.machine_id, session_id: ix.session_id } as Session)));
+  for (const id of [...missing].filter((x) => !cardRowsAsked.has(x)).slice(0, 20)) {
+    cardRowsAsked.add(id);
+    const [mid, sid] = JSON.parse(id) as [string, string];
+    const params = new URLSearchParams({ summary: "1", limit: "1", machine_id: mid, session_id: sid });
+    try {
+      const page = await api<{ sessions?: Session[] }>(`/sessions?${params}`);
+      const row = page?.sessions?.[0];
+      if (row && runtimeIdentity(row) === id) {
+        rememberSessionRow(row);
+        notify(); // what reads getSession for the card (can it be answered) reads it again
+      }
+    } catch {
+      cardRowsAsked.delete(id); // asked again with the next change of the cards or connection
+    }
+  }
+}
+
 /** A clicked filtered row may not belong to the unfiltered first page. Keep a small hint until exact lookup finishes. */
 export function rememberSessionRow(row: Session) {
   const id = runtimeIdentity(row);
@@ -368,6 +397,8 @@ export const subscribe = (l: () => void) => {
     listeners.delete(l);
   };
 };
+// a child session's card may need its row looked up (lookUpCardSessions): checked as the cards change
+subscribe(() => void lookUpCardSessions());
 
 export function useStore<T>(select: (s: State) => T): T {
   const last = useRef<{ v: T } | null>(null);
@@ -726,9 +757,13 @@ function onMessage(msg: Record<string, unknown>) {
       const summaryMode = state.features.includes(SESSIONS_LOOKUP_FEATURE);
       if (runtimeSessions.isSummary() !== summaryMode) listedFull.clear();
       runtimeSessions.setSummary(summaryMode);
+      // a hub that folds child sessions (#5120): the Agents list and its counts leave them out, each parent counted once
+      runtimeSessions.setRoots(state.features.includes(SESSIONS_HIERARCHY_FEATURE));
       setRuntimePageCounts(state.features.includes(SESSIONS_PAGE_COUNTS_FEATURE));
       setAgentListMode(state.features.includes(SESSIONS_LIST_FEATURE));
       taskRowsAsked.clear();
+      cardRowsAsked.clear();
+      cardRowsFor = null;
       void lookUpTaskAgents();
       // subscriptions are per connection: chats resubscribe from what they have either way
       sessionListeners.forEach((ls) => ls.forEach((l) => l.reconnected?.()));
@@ -968,11 +1003,20 @@ export function upsertSession(s: Session) {
   set({ sessions: { ...state.sessions, [s.machine_id]: next }, ...syncAssistant(s.machine_id, [s]) });
 }
 
+/** The conversations the assistant was read again for (unnamedTaskConversations): once each, whatever it answered. */
+const askedForUnnamed = new Set<string>();
+
 // The assistant's conversations are sessions on its machine too: the change that keeps the copy in `assistant`
 // current, to go with the sessions' own (one update, not two).
 function syncAssistant(mid: string, list: Session[]): Partial<State> {
   const a = state.assistant;
   if (!a || a.machine_id !== mid) return {};
+  // a background supervisor the hub made since the assistant was read (#5082): read again, so it is the built-in one
+  const unnamed = unnamedTaskConversations(a, list).filter((id) => !askedForUnnamed.has(id));
+  if (unnamed.length) {
+    unnamed.forEach((id) => askedForUnnamed.add(id));
+    void refreshAssistant().catch(() => {});
+  }
   let changed = false;
   const convs = a.conversations.map((c) => {
     const s = list.find((x) => x.session_id === c.session_id);
@@ -1468,6 +1512,8 @@ export function reset() {
   resetAgents();
   rowHints.clear();
   taskRowsAsked.clear();
+  cardRowsAsked.clear();
+  cardRowsFor = null;
   listedFull.clear();
   runtimeSessions.reset();
   clearMemoryPages();

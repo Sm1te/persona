@@ -12,11 +12,18 @@ import (
 // ignore the canonical key. Presence, not boolean truth, gives it precedence.
 type sessionJSON Session
 
-// sessionWire is a Session as sent: its fields, then the legacy key. The session is embedded by pointer, so encoding
-// one copies none of its ~1 KB of fields.
+// sessionWire is a Session as sent: its fields, its hierarchy's (SessionHierarchy, keys of the row itself), then the
+// legacy key. The session is embedded by pointer, so encoding one copies none of its ~1 KB of fields; a nil hierarchy
+// writes nothing.
 type sessionWire struct {
 	*sessionJSON
+	*SessionHierarchy
 	LegacyStarted bool `json:"started_by_jarvis"`
+}
+
+// wireOf is s as sent (sessionWire).
+func wireOf(s *sessionJSON) *sessionWire {
+	return &sessionWire{sessionJSON: s, SessionHierarchy: s.Hierarchy, LegacyStarted: s.StartedByPersona}
 }
 
 // legacyStartedMember is sessionWire's legacy key as appendSession (session_wire.go) writes it: the literal stays in
@@ -27,7 +34,7 @@ func (s Session) MarshalJSON() ([]byte, error) {
 	if b, ok := appendSession(make([]byte, 0, 1024), &s); ok {
 		return b, nil
 	}
-	return json.Marshal(&sessionWire{(*sessionJSON)(&s), s.StartedByPersona})
+	return json.Marshal(wireOf((*sessionJSON)(&s)))
 }
 
 // MarshalJSONTo writes MarshalJSON's bytes straight into the encoder that asked: the hub encodes every session of a
@@ -47,7 +54,7 @@ func (s *Session) MarshalJSONTo(enc *jsontext.Encoder) error {
 			return enc.WriteValue(b)
 		}
 	}
-	return jsonv2.MarshalEncode(enc, &sessionWire{(*sessionJSON)(s), s.StartedByPersona}, json.DefaultOptionsV1())
+	return jsonv2.MarshalEncode(enc, wireOf((*sessionJSON)(s)), json.DefaultOptionsV1())
 }
 
 // sessionScratch holds the buffers MarshalJSONTo writes a session into before the encoder copies it. Not the encoder's
@@ -68,10 +75,13 @@ func writesRawAsIs(o jsonv2.Options) bool {
 	return raw && !reorder && !ints && !floats && marshalers == nil
 }
 
-// sessionWireIn is a Session as received: its fields, with both started keys kept apart (the session is embedded by
-// pointer, so it is decoded in place). The canonical key, when present (null included), beats the legacy one.
+// sessionWireIn is a Session as received: its fields and its hierarchy's, with both started keys kept apart (the
+// session is embedded by pointer, so it is decoded in place; the hierarchy is decoded into a copy of its own, made
+// only when a key of it comes or the session had one). The canonical key, when present (null included), beats the
+// legacy one.
 type sessionWireIn struct {
 	*sessionJSON
+	*SessionHierarchy
 	LegacyStarted  startedKey `json:"started_by_jarvis"`
 	CurrentStarted startedKey `json:"started_by_persona"`
 }
@@ -103,9 +113,16 @@ func (k *startedKey) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (s *Session) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	was := *s
 	in := sessionWireIn{sessionJSON: (*sessionJSON)(s)}
+	if s.Hierarchy != nil {
+		h := s.hierarchy() // decoded into a copy: the one s holds is shared with its other copies
+		in.SessionHierarchy = &h
+	}
 	if err := jsonv2.UnmarshalDecode(dec, &in, json.DefaultOptionsV1()); err != nil {
 		*s = was
 		return err
+	}
+	if s.Hierarchy = in.SessionHierarchy; s.Hierarchy != nil && s.Hierarchy.empty() {
+		s.Hierarchy = nil
 	}
 	key := in.LegacyStarted
 	if in.CurrentStarted.kind != 0 {

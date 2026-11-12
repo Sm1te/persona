@@ -78,6 +78,17 @@ describe("the pill's states", () => {
     expect(html).toContain(`title="Codex · 5.5 · gateway · 高 · ${t("chat-sessiondialogs.speed_fast")}"`);
   });
 
+  it("loading or failed, the pill keeps its 64 px under 420 px: only a waiting switch makes it grow there", () => {
+    for (const html of [
+      markup(<ModelPill current={{ engine: "claude", provider: "gateway" }} loading onOpen={() => {}} />),
+      markup(<ModelPill current={{ engine: "claude", provider: "gateway" }} failed onOpen={() => {}} />),
+    ]) {
+      const root = /^<button[^>]*class="([^"]*)"/.exec(html)![1];
+      expect(root).toContain("@max-[420px]/composer:w-[64px]");
+      expect(root).not.toContain("@max-[420px]/composer:w-auto");
+    }
+  });
+
   it("loading before a model is known: a spinner and Loading model…", () => {
     const html = markup(<ModelPill current={{ engine: "claude", provider: "gateway" }} loading onOpen={() => {}} />);
     expect(html).toContain('data-model-pill="loading"');
@@ -103,10 +114,22 @@ describe("the pill's states", () => {
     expect(html).toContain('data-model-pill="pending"');
     expect(html.indexOf("<svg")).toBeLessThan(html.indexOf(">C<")); // the clock before the tile
     // the target's engine before the name, gone when the pill is narrow
-    expect(html).toContain('<span class="shrink-0 text-ink-3 @max-[600px]/composer:hidden">Codex</span>');
+    expect(html).toContain('<span data-pill-target="true" class="max-w-[96px] shrink-0 truncate text-ink-3 @max-[600px]/composer:hidden">Codex</span>');
     expect(html).toContain('data-pill-engine="codex"');
     expect(html).toContain(`title="${t("chat-modelpill.current_and_next", { current: "Claude Code · Opus 5.5 · gateway · 高", next: "Codex · 5.5 · cx · 低" })}"`);
     expect(html).toContain(`aria-label="${t("chat-modelpill.aria_pending_effort", { agent: "Codex", model: "5.5", effort: "低" })}"`);
+  });
+
+  it("pending on another launcher of the same engine: that launcher named and drawn before the model", () => {
+    const next = { engine: "claude", provider: "work", model: "GLM 5.3", effort: "high" };
+    const html = markup(<ModelPill current={opus} pending={next} onOpen={() => {}} />);
+    expect(html).toMatch(/data-pill-target[^>]*>work<\/span>/);
+    expect(html).toContain(">W<"); // the target's tile
+    // under 420 px the clock, the tile and the chevron: wider than the plain pill's 64 px
+    expect(html).toContain("@max-[420px]/composer:w-auto");
+    expect(html).not.toContain("@max-[420px]/composer:w-[64px]");
+    expect(html).toContain(`title="${t("chat-modelpill.current_and_next", { current: "Claude Code · Opus 5.5 · gateway · 高", next: "Claude Code · GLM 5.3 · work · 高" })}"`);
+    expect(html).toContain(`aria-label="${t("chat-modelpill.aria_pending_effort", { agent: "work", model: "GLM 5.3", effort: "高" })}"`);
   });
 
   it("disabled while a switch is on its way", () => {
@@ -146,6 +169,7 @@ let calls: { method: string; url: string; body?: unknown }[];
 let listAnswer: (url: string) => Response;
 let modesAnswer: (body: unknown) => Response;
 let forgetAnswer: () => Response;
+let quotaAnswer: () => Response;
 // lists answer once this settles (a test that wants to see what shows while one is read holds it)
 let hold: Promise<unknown>;
 let machine = 0;
@@ -162,12 +186,14 @@ beforeEach(() => {
   listAnswer = (url) => (url.includes("/cx/") ? json({ agent: "codex", models: [{ id: "gpt-5.5", name: "gpt-5.5", efforts: ["low", "high"] }] }) : json(claudeList()));
   modesAnswer = () => json({ ok: true });
   forgetAnswer = () => json({ ok: true });
+  quotaAnswer = () => json({ unsupported: true });
   hold = Promise.resolve();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method: init?.method ?? "GET", url, body });
     if (url.includes("/models/custom")) return forgetAnswer();
+    if (url.includes("/quota")) return quotaAnswer();
     if (url.includes("/models")) return hold.then(() => listAnswer(url));
     if (/\/launchers(\?|$)/.test(url)) return json({ launchers: [{ name: "claude" }, { name: "gateway" }, { name: "cx", agent: "codex" }] });
     if (url.endsWith("/modes")) return modesAnswer(body);
@@ -214,6 +240,16 @@ describe("an Agent's pill", () => {
     // a second click closes it
     await act(async () => pill()!.click());
     expect(host.querySelector('[data-testid="panel"]')).toBeNull();
+  });
+
+  it("reads each provider's cached quota for this computer, without forcing a refresh", async () => {
+    quotaAnswer = () => json({ machine: `mac-${machine}`, checked_at: "2026-11-12T00:00:00Z", quota: { gateway: "example", pools: [{ name: "a", windows: [{ label: "每周", used_ratio: 0.77 }] }] } });
+    await show(agent());
+    await open();
+    for (const name of ["claude", "gateway", "cx"]) {
+      expect(calls.some((c) => c.url.includes(`/launchers/${name}/quota?machine=mac-${machine}`) && !c.url.includes("refresh="))).toBe(true);
+      expect(panel.props!.quotas?.[name]?.quota?.pools?.[0]?.windows?.[0]).toMatchObject({ label: "每周", used_ratio: 0.77 });
+    }
   });
 
   it("applies a pick the model first, then the effort, and stops at a failure", async () => {
@@ -296,10 +332,52 @@ describe("an Agent's pill", () => {
     expect(getSession(codex.machine_id, "s1")?.service_tier).toBeUndefined();
     expect(await act(() => panel.props!.onApplyCurrent!({ effort: "low" }))).toBe(true);
     expect(modes()).toEqual([{ service_tier: "priority" }, { effort: "low" }]);
-    // Standard back from Fast
+    // Standard back from Fast, once the session's push says it runs Fast (the speed is sent only when it changes)
+    const fast = { ...getSession(codex.machine_id, "s1")!, service_tier: "priority" };
+    upsertSession(fast);
+    act(() => root.render(<AgentModelPill session={fast} />));
+    await flush();
     calls.length = 0;
     await act(() => panel.props!.onApplyCurrent!({ fast: false }));
     expect(modes()).toEqual([{ service_tier: "default" }]);
+  });
+
+  it("switches to another launcher with the next message on a hub that does it: pending at once, said, put back on a refusal (#5035)", async () => {
+    Object.assign(getState(), { features: ["launcher_switch"] });
+    const s = agent();
+    await show(s);
+    await open();
+    expect(provider("claude").unavailable).toBeUndefined();
+    expect(await act(() => panel.props!.onPick({ provider: "claude", model: "haiku", effort: "low" }))).toBe(true);
+    expect(modes()).toEqual([{ launcher: "claude", from: "gateway", model: "haiku", effort: "low" }]);
+    expect(getSession(s.machine_id, "s1")?.pending_switch).toMatchObject({ launcher: "claude", model: "haiku", effort: "low" });
+    expect(toast).toHaveBeenCalledWith(t("chat-modelpanel.switch_scheduled", { target: "claude · Haiku 5.5" }), "ok");
+    // the pill shows it waiting
+    act(() => root.render(<AgentModelPill session={getSession(s.machine_id, "s1")!} />));
+    await flush();
+    expect(pill()!.getAttribute("data-model-pill")).toBe("pending");
+    expect(pill()!.getAttribute("title")).toBe(t("chat-modelpill.current_and_next", { current: "Claude Code · Opus 5.5 · gateway · 高", next: "Claude Code · Haiku 5.5 · claude · 低" }));
+    // a refusal puts it back as it was, with the hub's words
+    calls.length = 0;
+    modesAnswer = () => json({ error: "这个启动器用的是另一个配置目录", code: "switch_config_dir" }, 409);
+    expect(await act(() => panel.props!.onPick({ provider: "claude", model: "opus" }))).toBe(false);
+    expect(getSession(s.machine_id, "s1")?.pending_switch).toMatchObject({ launcher: "claude", model: "haiku" });
+    expect(toast).toHaveBeenLastCalledWith(expect.stringContaining("这个启动器用的是另一个配置目录"), "error");
+  });
+
+  it("a pending switch shows on the pill from the session, its note in the panel, and the session's own launcher drops it", async () => {
+    Object.assign(getState(), { features: ["launcher_switch"] });
+    const s = agent({ pending_switch: { launcher: "claude", model: "haiku", at: "2026-11-12T10:00:00Z" } });
+    await show(s);
+    expect(calls.some((c) => c.url.includes("/launchers/claude/models"))).toBe(true); // the target's list names its model
+    expect(pill()!.getAttribute("data-model-pill")).toBe("pending");
+    expect(pill()!.textContent).toContain("Haiku 5.5");
+    await open();
+    expect(panel.props!.state.note).toBe(t("chat-modelpanel.pending_note", { provider: "claude" }));
+    expect(panel.props!.state.pending).toMatchObject({ provider: "claude", model: "haiku" });
+    expect(await act(() => panel.props!.onPick({ provider: "gateway", model: "opus", effort: "high" }))).toBe(true);
+    expect(modes()).toEqual([{ launcher: "gateway", from: "gateway" }]);
+    expect(getSession(s.machine_id, "s1")?.pending_switch).toBeUndefined();
   });
 
   it("is a label where nothing switches (offline), and nothing at all without a model", async () => {

@@ -18,6 +18,7 @@ import {
 } from "../../lib/agent-chatlist-filter";
 import { awaitsReply, sessionSource, sourceName, type AgentMutes } from "../../lib/agent-groups";
 import { ago, backgroundWaiting, sessionPreview, sessionTitle, stateOf } from "../../lib/format";
+import { sessionCard } from "../../lib/folded-rows";
 import { machineWithHub } from "../../lib/mesh";
 import { plainMarkdown } from "../../lib/plain-markdown";
 import { href, type Route } from "../../lib/router";
@@ -318,7 +319,7 @@ export const AgentChatListRow = memo(function AgentChatListRow({
 }) {
   const st = stateOf(s);
   const awaiting = awaitsReply(s, mutes);
-  const ix = useStore((state) => state.interactions.find((i) => i.machine_id === s.machine_id && i.session_id === s.session_id));
+  const ix = useStore((state) => sessionCard(state.interactions, s.machine_id, s.session_id));
   const draft = draftLine(useLeftDraft(`${s.machine_id}/${s.session_id}`));
   const line: { lead?: string; text: string; tone?: "needs" | "reply" } | undefined = draft ?? rowLine(s, ix, awaiting);
   const previewText = line?.text || plainMarkdown(sessionPreview(s)) || s.activity || "";

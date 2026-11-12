@@ -1,14 +1,13 @@
 {
-  "read_files_other": "{count}個のファイルを読み取り",
-  "searches_other": "{count}回検索",
-  "listings_other": "{count}回ディレクトリを一覧",
+  "read_files_other": "{count} ファイルを読み取り",
+  "searches_other": "{count} 回検索",
+  "listings_other": "{count} 回ファイルを一覧表示",
   "working": "作業中…",
-  "worked_for": "作業時間 {duration}",
-  "work": "作業の経過",
-  "dur_seconds": "{s}秒",
-  "dur_minutes_seconds": "{m}分{s}秒",
-  "dur_minutes": "{m}分",
+  "worked_for": "{duration} 作業しました",
+  "work": "作業内容",
+  "dur_seconds": "{s}s",
+  "dur_minutes_seconds": "{m}m {s}s",
+  "dur_minutes": "{m}m",
   "dur_hours_minutes": "{h}時間{m}分",
-  "dur_days_hours_minutes": "{d}日{h}時間{m}分",
-  "dur_hours": "{h}時間"
+  "dur_days_hours_minutes": "{d}日{h}時間{m}分"
 }

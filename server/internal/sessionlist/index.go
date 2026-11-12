@@ -35,6 +35,14 @@ type Item struct {
 	// BackgroundWaiting: a working row that only waits on background commands (#6045). It stays in State's count
 	// (older apps call it working) and is counted apart in Counts.BackgroundWaiting too.
 	BackgroundWaiting bool
+	// FoldedBackgroundWaiting is BackgroundWaiting for Options.Roots: none of the rows folded under it works or needs
+	// the user either.
+	FoldedBackgroundWaiting bool
+	// Root is the session id (as parent_session_id names it, not the composite ID) of the item on the same Machine this
+	// one is folded under (a child session under its topmost listed ancestor), only when that item is in the same
+	// batch; FoldedState is the state the item shows with the items folded under it. Options.Roots leaves out the items
+	// with a Root and filters and counts the others by FoldedState; Options.Under selects the items folded under one.
+	Root, FoldedState string
 	UpdatedAt         time.Time
 	SearchText        string
 	Summary           any
@@ -52,6 +60,12 @@ type Options struct {
 	// cursor is bound to it. It is the adapter's to set (not a key Parse reads): the adapter knows which owners exist
 	// and who may ask for which.
 	Manager string
+	// Roots (roots=1) leaves the items folded under another (Item.Root) out of the rows, the totals and every count,
+	// and filters and counts the rest by Item.FoldedState. Under (parent_session_id, which needs Machine) selects the
+	// items of Machine folded under that session, all depths; the two cannot be combined. Both bind a cursor, as the
+	// other filters do.
+	Roots   bool
+	Under   string
 	Summary bool
 }
 
@@ -109,7 +123,8 @@ type journalEntry struct {
 }
 
 type filters struct {
-	ID, State, Machine, Project, Group, Source, Provider, Q, PaneSource, Manager string
+	ID, State, Machine, Project, Group, Source, Provider, Q, PaneSource, Manager, Under string
+	Roots                                                                               bool
 }
 
 type binding struct {
@@ -251,10 +266,10 @@ func (i *Index) ReplaceOwned(source, owner string, items []Item) {
 	}
 	for id, c := range changes {
 		if c.before != nil {
-			addCount(&i.counts, c.before.item, -1)
+			addCount(&i.counts, c.before.item, false, -1)
 		}
 		if c.after != nil {
-			addCount(&i.counts, c.after.item, 1)
+			addCount(&i.counts, c.after.item, false, 1)
 		}
 		if c.after == nil {
 			delete(i.items, id)

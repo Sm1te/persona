@@ -1,5 +1,6 @@
 // Overview: what needs you, what is running, what just finished — Beautiful UI's Task Rows — and the computers.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { homeKey } from "../lib/folded-rows";
 import { ago, interactionCanAnswer, sessionCan, sessionPreview, shortDuration, sourceSubtitle, sessionTitle, stateOf, tabLabel } from "../lib/format";
 import { usePendingLine } from "../lib/card-answer";
 import { cardState, requestRoute } from "../lib/card-focus";
@@ -116,7 +117,7 @@ export function Home({ onNewAgent, onToggleSidebar }: { onNewAgent: () => void; 
 
           {/* the headline counts agents, this counts cards: say so when one agent has several cards waiting */}
           {loaded && (interactions.length > 0 || held.length > 0) && (
-            <Group title={stateName("needs_you")} count={interactions.length} hint={new Set(interactions.map((ix) => `${ix.machine_id}/${ix.session_id}`)).size < interactions.length ? t("home.needs_you_hint") : undefined} grid="cards">
+            <Group title={stateName("needs_you")} count={interactions.length} hint={new Set(interactions.map(homeKey)).size < interactions.length ? t("home.needs_you_hint") : undefined} grid="cards">
               {withHeld(interactions, held).map(({ ix, held: h }, i, rows) => {
                 const s = sessions.find((x) => x.machine_id === ix.machine_id && x.session_id === ix.session_id);
                 const title = ix.session_title || (s ? sessionTitle(s) : ix.cwd || t("home.session"));

@@ -87,6 +87,10 @@ func (n *Node) stoppable(id string, retire bool) (unlock func(), a host.Agent, o
 		return no(notRetirable, "assistant conversations are not stopped")
 	case n.externalCodex(id) || h != nil || known || terminalOnly:
 		return no(noTerminal, "this session belongs to another tool")
+	case n.restarting(id):
+		// Refused at once rather than after the lock below, which a message carrying out a launcher switch holds for
+		// minutes: stopping the agent it starts then would leave the switch for nothing (launcher_switch.go).
+		return no(notRetirable, "still starting")
 	}
 	unlock = n.typing.lock(id) // not while a message is on its way in (a send may be resuming it right now)
 	fail := func(code, why string) (func(), host.Agent, bool, error) {

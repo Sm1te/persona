@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -116,5 +118,35 @@ func TestPutSettingsIsAllOrNothing(t *testing.T) {
 	}
 	if ok, _ := d.Setting(ctx, "model_config.z", &r); ok {
 		t.Fatal("the failing key was written")
+	}
+}
+
+// A launcher switch waiting for the next message (node/launcher_switch.go) comes back after a node restart, and a
+// record written without one has none (#5035).
+func TestNodePendingSwitchIsPersisted(t *testing.T) {
+	d, ctx := open(t), context.Background()
+	pending := `{"launcher":"work","model":"opus","at":"2026-11-12T10:00:00Z"}`
+	s := NodeSession{Launcher: "claude", Cwd: "/tmp/project", StartedAt: time.Now().UTC(), PendingSwitch: json.RawMessage(pending)}
+	if err := d.PutNodeSession(ctx, "machine", "session", s); err != nil {
+		t.Fatal(err)
+	}
+	out, err := d.NodeSessions(ctx, "machine")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want map[string]any
+	if err := json.Unmarshal(out["session"].PendingSwitch, &got); err != nil {
+		t.Fatalf("pending switch %q: %v", out["session"].PendingSwitch, err)
+	}
+	_ = json.Unmarshal([]byte(pending), &want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pending switch = %v, want %v", got, want)
+	}
+	s.PendingSwitch = nil
+	if err := d.PutNodeSession(ctx, "machine", "session", s); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = d.NodeSessions(ctx, "machine"); err != nil || out["session"].PendingSwitch != nil {
+		t.Fatalf("cleared switch came back: %q %v", out["session"].PendingSwitch, err)
 	}
 }

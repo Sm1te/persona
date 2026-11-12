@@ -237,7 +237,10 @@ private fun FeedLine(item: FeedItem, host: AssistantTaskHost) {
         }
         "answered" -> AnsweredLine(item, title, todos.firstOrNull { it.id == item.ref }?.let { todo -> { openTask(host, todo) } })
         "receipt" -> ReceiptCard(item, host, todos)
-        "review" -> ReviewLine(item, title, todos.firstOrNull { it.id == item.ref }?.let { todo -> { openTask(host, todo) } })
+        // The entry names its task itself (#5084): a review drawn in the conversation says which task even when the
+        // list no longer has it (then there is nothing to open).
+        "review" -> ReviewLine(item, todos.firstOrNull { it.id == item.ref }?.title ?: item.field("title")?.takeIf(String::isNotBlank) ?: title,
+            todos.firstOrNull { it.id == item.ref }?.let { todo -> { openTask(host, todo) } })
         "report" -> ReportCard(item, title, todos.firstOrNull { it.id == item.ref }?.let { todo -> { openTask(host, todo) } })
         // Persona's own message to the task's agent is folded, never the user's bubble (#1542, #1623).
         "routed" -> if (item.sentByPersona) SentLine(item, title, todos.firstOrNull { it.id == item.ref }?.let { todo -> { openTask(host, todo) } })

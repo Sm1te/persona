@@ -21,7 +21,7 @@ FILTERS = {
     "apple": ["apple/**", "schema/**", "spec/**", "scripts/app/sim-boot.sh", "scripts/i18n/**", "scripts/ci/apple*", ".github/workflows/apple-test.yml"],
     "runtimes": ["integrations/**", "sdk/ts/**", "schema/**", "spec/**", "scripts/ci/runtimes.sh", ".github/workflows/runtimes-test.yml"],
     "scripts": ["**"],
-    "image": ["Dockerfile", ".dockerignore", "deploy/docker/**", "server/**", "sdk/go/**", "web/**", "integrations/**", "schema/extension/**", "spec/fixtures/injected/**", "scripts/ci/hub-image.sh", ".github/workflows/release.yml", ".github/workflows/hub-image.yml"],
+    "image": ["Dockerfile", ".dockerignore", "deploy/docker/**", "server/**", "sdk/go/**", "web/**", "integrations/**", "schema/extension/**", "spec/fixtures/**", "scripts/ci/hub-image.sh", ".github/workflows/release.yml", ".github/workflows/hub-image.yml"],
 }
 SHARED = [".github/workflows/ci.yml", "scripts/ci/common.sh", "scripts/ci/run.py", "scripts/ci/paths.py", "scripts/ci/test_ci.py"]
 

@@ -879,10 +879,10 @@ func (s *Service) toolConversationSend(ctx context.Context, self string, args js
 		}
 		s.publish(ctx) // the receiver shows it waiting above its composer
 		if running {
-			return fmt.Sprintf("「%s」 is running: the message is queued (%d waiting) and goes in when its current turn ends.%s", name, n, back), nil
+			return fmt.Sprintf("%q is running: the message is queued (%d waiting) and goes in when its current turn ends.%s", name, n, back), nil
 		}
 		s.drainRelays(c.MachineID, []proto.Session{c}) // what may go goes; the rest when the hold for the user ends
-		return fmt.Sprintf("「%s」 has messages waiting, or the user is talking in it: the message is queued (%d waiting) and goes in after them.%s", name, n, back), nil
+		return fmt.Sprintf("%q has messages waiting, or the user is talking in it: the message is queued (%d waiting) and goes in after them.%s", name, n, back), nil
 	}
 	if err := s.deliverRelay(ctx, c.MachineID, c.SessionID, msg); err != nil {
 		return "", err

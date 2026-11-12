@@ -42,6 +42,11 @@ func listKeySized(list []proto.Session, size int) string {
 		w.quote(s.Branch, '/')
 		w.quote(s.SpaceID, '/')
 		w.quote(s.SpaceKind, '\n')
+		if h := s.Hierarchy; h != nil { // the node's of it: when it began, the parent a blocked runtime child asks for
+			w.b.WriteString("lineage:")
+			w.quote(h.AskingParentSessionID, '/')
+			w.int(unixOf(&h.StartedAt), '\n')
+		}
 		if s.TitleSource != proto.TitleSourceUnknown || s.TitleManual || s.OutputTokens != 0 {
 			w.b.WriteString("naming:")
 			w.quote(s.TitleSource.String(), '/')

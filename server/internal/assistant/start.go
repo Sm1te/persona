@@ -386,31 +386,17 @@ func (s *Service) Start(ctx context.Context, p StartParams) (proto.Session, erro
 	if p.Origin == "" || p.Origin == OriginUser {
 		p.Text = prompts.ProtectUserMessage(p.Text)
 	}
-	human := s.humanStart(&p)
+	// The first message gets no client_msg_id of the manager's own (#5200): the node would tag its line with it, and the
+	// iPhone app, which matches its pending bubble by the id a line carries, would show the message twice. So it is not
+	// a message the hub vouched for, and an Always rule does not cover the turn it starts (the card is shown).
 	sess, err := s.start(ctx, p)
 	if err != nil {
 		return proto.Session{}, err
-	}
-	if human != "" { // the hub's word: a person's own app sent its first message (secret_handoff.go handoffUserTurn)
-		s.humanSent.note(sess.SessionID, human, p.Text)
 	}
 	if !p.Untitled {
 		s.titleNew(sess.MachineID, sess.SessionID, time.Now())
 	}
 	return sess, nil
-}
-
-// humanStart gives the first message of a conversation a person's own app opens (p.Human, the hub's word) a
-// client_msg_id of its own, which the node ties to the conversation's first line, so that message counts as theirs as
-// a send the hub vouched for does; the id ("" for any other start, and for one that names its session or its first
-// message's id already: a meeting's, Just me's).
-func (s *Service) humanStart(p *StartParams) string {
-	if !p.Human || p.Origin != "" && p.Origin != OriginUser || p.OpenedBy != "" || p.GuestTools != nil ||
-		p.NewSessionID != "" || p.ClientMsgID != "" {
-		return ""
-	}
-	p.ClientMsgID = assistantwire.FirstMessageIDPrefix + randomHex(16)
-	return p.ClientMsgID
 }
 
 // ---- the main conversation ----
@@ -470,11 +456,6 @@ func (s *Service) startMain(ctx context.Context, p StartParams) (proto.Session, 
 	empty := strings.TrimSpace(p.Text) == "" && len(p.Images) == 0
 	if handoff.From != "" && !empty {
 		p.Text = s.renderHandoff(ctx, handoff, p.Text)
-		if strings.HasPrefix(p.ClientMsgID, assistantwire.FirstMessageIDPrefix) {
-			// What the old one left is not the user's words (it may hold a mail handed on there): the node is not given
-			// the id a person's own start got, so no line counts as theirs (secret_handoff.go handoffUserTurn).
-			p.ClientMsgID = ""
-		}
 	}
 	p.MachineID, p.Purpose, p.Main = "", "", false
 	p.Origin, p.OriginRef, p.OpenedBy = OriginUser, "", "" // the main conversation is the user's, whatever channel opened it

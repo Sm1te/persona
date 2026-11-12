@@ -88,6 +88,37 @@ class AssistantTest {
         assertTrue(conversationGroups(AssistantSnapshot(main.key, listOf(main, mine)), "", words).directions.isEmpty())
     }
 
+    // #5084: the background supervisor is built in. It waits under "All chats" with the chats Persona opened itself,
+    // never among 常驻 or Recent, and is found by the name the app gives it.
+    @Test fun theBackgroundSupervisorIsListedUnderAllChatsOnly() {
+        val main = Session(machineId = "demo", sessionId = "main", title = "主对话")
+        val mine = Session(machineId = "demo", sessionId = "mine", title = "周报", origin = "user", updatedAt = "2026-11-12T08:00:00Z")
+        val scheduled = Session(machineId = "demo", sessionId = "scheduled", title = "早报", origin = "task", originRef = "t1",
+            updatedAt = "2026-11-12T09:00:00Z")
+        val background = Session(machineId = "demo", sessionId = "bg", title = "Background supervisor", origin = "task",
+            updatedAt = "2026-11-12T10:00:00Z")
+        val named = words.copy(background = resources.getString(R.string.assistant_background_supervisor))
+        val snapshot = AssistantSnapshot(main.key, listOf(main, mine, scheduled, background), backgroundSupervisor = "bg")
+        val result = conversationGroups(snapshot, "", named)
+        assertEquals("bg", result.background)
+        assertEquals(listOf(background, scheduled, mine), result.others)
+        assertEquals(listOf(mine), result.recent)
+        assertTrue(result.directions.isEmpty())
+        // whatever the leaders or its origin say, it is no direction and no recent chat of the user's
+        val odd = snapshot.copy(leaders = listOf("bg"), conversations = listOf(main, mine, background.copy(origin = null)))
+        assertTrue(conversationGroups(odd, "", named).directions.isEmpty())
+        assertEquals(listOf(mine), conversationGroups(odd, "", named).recent)
+        assertEquals(listOf(background.copy(origin = null), mine), conversationGroups(odd, "", named).others)
+        // found by the app's name for it, in the app's language, whatever language the hub titled it in
+        assertEquals("后台督办", named.background)
+        assertEquals(listOf(background), conversationGroups(snapshot, "后台督办", named).others)
+        // an older hub names none: the conversation list is as before
+        val old = conversationGroups(snapshot.copy(backgroundSupervisor = null), "", named)
+        assertNull(old.background)
+        assertEquals(listOf(background, scheduled, mine), old.others)
+        assertTrue(conversationGroups(snapshot.copy(backgroundSupervisor = null), "后台督办", named).others.isEmpty())
+    }
+
     @Test fun archivedConversationsLeaveTheHistory() {
         val kept = Session(machineId = "demo", sessionId = "kept", title = "留着")
         val archived = Session(machineId = "demo", sessionId = "gone", title = "归档了", archived = true)

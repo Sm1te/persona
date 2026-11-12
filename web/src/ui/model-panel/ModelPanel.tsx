@@ -30,6 +30,7 @@ import {
   type PanelView,
 } from "../../lib/model-panel";
 import { navigate } from "../../lib/router";
+import type { LauncherQuotaAnswer } from "../../lib/quota";
 import { hasFinePointer, keyboardFrame } from "../../lib/viewport";
 import { settingsHref } from "../../views/settings/nav";
 import { cx, Spinner } from "../atoms";
@@ -58,6 +59,8 @@ export interface ModelPanelProps {
   onForget?: (provider: string, model: string) => void;
   /** Drawn inside the flyout of the model that runs now, under its controls (Claude Code's ultracode switch, #3428). */
   currentExtra?: ReactNode;
+  /** The launcher's existing quota answer, read by the chat for this computer; unknown providers have no entry. */
+  quotas?: Readonly<Record<string, LauncherQuotaAnswer>>;
   /** A strip above the search (a Persona chat's "Following the default" / "Picked for this chat", #5033). */
   header?: ReactNode;
   /** A row on top of the list, in no group (Cindy's "follow" row): following a default instead of a model of one's own
@@ -97,7 +100,7 @@ interface Geometry {
 
 const rowsOf = (list: HTMLElement | null) => (list ? [...list.querySelectorAll<HTMLElement>("[data-panel-row]")] : []);
 
-export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, onApplyCurrent, onReload, onForget, currentExtra, header, follow, presets, onPreset, engines, onHelp, onConfigure }: ModelPanelProps): ReactNode {
+export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, onApplyCurrent, onReload, onForget, quotas, currentExtra, header, follow, presets, onPreset, engines, onHelp, onConfigure }: ModelPanelProps): ReactNode {
   const store = usePanelStore(scope);
   const listId = useId();
   const [view, setView] = useState<PanelView>({ kind: "all" });
@@ -468,7 +471,7 @@ export function ModelPanel({ anchor, onClose, providers, state, scope, onPick, o
             />
           </div>
           <div ref={body} className="flex min-h-0 min-w-0 shrink" style={{ height: geo?.body ?? BODY }}>
-            <Rail providers={providers} view={shown} onView={chooseView} disabled={picking} />
+            <Rail providers={providers} view={shown} onView={chooseView} disabled={picking} quotas={quotas} />
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <div
                 ref={list}

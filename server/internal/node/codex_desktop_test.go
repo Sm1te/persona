@@ -249,6 +249,31 @@ func TestCodexOriginTellsAppChatsFromCLIAndSubagents(t *testing.T) {
 	}
 }
 
+// A Codex thread's row says when the thread began: its rollout's first line, read once with its origin and shared by
+// every row of it (#5120). A first line with no time says nothing.
+func TestCodexRowStartedAt(t *testing.T) {
+	n, home := testNode(t)
+	write := func(name, line string) codexSource {
+		p := filepath.Join(home, name+".jsonl")
+		os.WriteFile(p, []byte(line+"\n"), 0o600)
+		return codexSource{home: home, thread: name, path: p}
+	}
+	timed := write("timed", `{"timestamp":"2026-11-12T08:30:00.123Z","type":"session_meta","payload":{"originator":"codex-tui","source":"cli"}}`)
+	untimed := write("untimed", `{"type":"session_meta","payload":{"originator":"codex-tui","source":"cli"}}`)
+	row := func(src codexSource) proto.Session {
+		s := proto.Session{SessionID: src.thread, Capabilities: &proto.SessionCapabilities{}}
+		n.decorateCodexSession(&s, src, "", map[string]string{})
+		return s
+	}
+	a, b := row(timed), row(timed)
+	if want := time.Date(2026, 11, 12, 8, 30, 0, 123e6, time.UTC); !a.StartedAt().Equal(want) || a.Hierarchy != b.Hierarchy {
+		t.Fatalf("started %v (shared %v), want %v", a.StartedAt(), a.Hierarchy == b.Hierarchy, want)
+	}
+	if s := row(untimed); s.Hierarchy != nil {
+		t.Fatalf("no time, no hierarchy: %+v", s.Hierarchy)
+	}
+}
+
 func TestFileFollowsAMovedTranscript(t *testing.T) {
 	n, home := testNode(t)
 	id := "0e000000-0000-4000-8000-000000000001"

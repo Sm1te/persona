@@ -134,5 +134,8 @@
   "background_folded_footer": "Rounds that another conversation, a scheduled task or a follow-up started in the main chat show as one line you can open. Rounds that ask or tell you something stay shown.",
   "idle_close": "Stop idle Agents after",
   "idle_close_hint": "Their terminal stays. 0 turns it off.",
-  "idle_close_unit": "hours"
+  "idle_close_unit": "hours",
+  "main_supervises": "The main chat supervises its own tasks",
+  "main_supervises_hint": "Off by default: a built-in background supervisor follows up and reviews the tasks Persona hands out, so the main chat stays free to answer you; turn this on and the main chat does that itself, as it did before",
+  "background_supervisor_model": "Background supervisor's model"
 }

@@ -129,6 +129,47 @@ The main conversation folds the rounds it did not start, as web and iOS do (rule
 - **Tests**: `BackgroundRoundsTest` (core/domain), `AssistantSettingsStateTest.backgroundFoldSwitchSavesAndComesBackOnFailure`,
   `HttpSettingsParityWireTest.mainBackgroundFoldedIsSentOnlyWhenSetAndOnWhenMissing`.
 
+#### The background supervisor (#5084)
+
+Where the built-in background supervisor shows (what it is:
+[unified-entry.md](../assistant/unified-entry.md#background-supervisor-4927)). Everything here follows fields of
+`GET /api/v1/assistant` and is absent against a hub that does not send them.
+
+- **Its conversation**: `AssistantSnapshot.backgroundSupervisor` (`background_supervisor`, `backgroundSupervisorOf`).
+  This app's drawer has no group of its own for scheduled tasks' conversations: they wait under **All chats** with
+  every other conversation Persona opened itself, and so does this one. It is never listed under 常驻 or Recent
+  (`conversationGroups`, `recentConversations`), is named by the app (`assistant_background_supervisor`, in the app's
+  language whatever language the hub titled it in; a search finds it by that name), and its row's menu only copies
+  its session ID: no Pin, Archive or End chat (`AssistantDrawer`). The hub refuses the first two as well.
+  The hub makes the conversation on first use, long after the list was read, and only `GET /api/v1/assistant` says
+  which one it is: when a conversation that may be it arrives over the session stream (an assistant conversation with
+  `origin: "task"` and no `origin_ref`, new or just retitled, `mayBeNewBackgroundSupervisor`), the repository reads
+  the assistant again. Until that answer is in, the row is an ordinary chat's.
+- **Switch**: Settings › Assistant › Task follow-up › **Main chat supervises its own tasks**
+  (`main_supervises_own_tasks`, `AssistantSettingsState.setMainSupervisesOwnTasks`, as the fold switch: it moves at
+  once and comes back on a failure), with one sentence under it. Shown when the hub sends the field.
+- **Model**: the same section has **Background supervisor model**, which opens
+  `ModelPurposeRoute("assistant.supervise")` (`BackgroundSupervisor.PURPOSE`); the row is there whichever way the
+  switch is, as the use is in Model configuration, and the value is on the page it opens. The hub's catalog leaves
+  that use out, so Settings › Model configuration asks for it by its ID after the catalog (`ModelCatalogModel`,
+  `modelPurposesWith`) and lists it after the last use of its group; a hub without it, or one that fails that one
+  request, lists the catalog as it is.
+- **Its reviews in the conversation**: a review it writes takes no turn of the conversation that handed the task
+  out, so the hub marks the `review` feed entry `by: "background"` and the app draws exactly those entries in the
+  conversation as the existing one-line `ReviewLine` (task · verdict · note), instead of leaving them in the
+  background record (`AssistantTaskCards.isBackgroundSupervisorReview`, read by `isBackgroundEvent`). The mark is on
+  the entry, so a line stays where it is whatever the switch says later and whichever conversation is the background
+  supervisor then. Every other review, and every review from a hub without the mark, stays in the record as before.
+  The whole line opens the task while the to-do list has it; the name is the list's, else the entry's own `title`.
+- **Tests**: `BackgroundReviewsTest` (core/domain), `AssistantTest.theBackgroundSupervisorIsListedUnderAllChatsOnly`,
+  `AssistantSettingsStateTest.superviseOwnTasksSwitchSavesAndComesBackOnFailure`,
+  `HttpSettingsParityWireTest.mainSupervisesOwnTasksIsSentOnlyWhenSetAndTheBackgroundSupervisorIsReadOnly`,
+  `DirectionNamesTest.theBackgroundSupervisorIsReadWhenTheHubNamesOne` and
+  `.aConversationThatMayBeTheBackgroundSupervisorIsAskedAboutOnceItAppearsOrIsRetitled`,
+  `ModelConfigurationStateTest.theBackgroundSupervisorsUseIsListedWhenTheHubHasIt`; `AssistantSettingsShotsTest`,
+  `AssistantDrawerShotsTest` and `ReviewShotsTest` draw the section, the drawer row and the line in the three styles,
+  light and dark.
+
 #### Shared data contract
 
 The only hub API addition is `task_cards` on the existing `GET /api/v1/assistant/conversations/{id}/feed?since=` response:

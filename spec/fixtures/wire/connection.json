@@ -34,6 +34,7 @@
         "ultracode",
         "model_configuration",
         "typed_models",
+        "launcher_switch",
         "client_msg_id",
         "client_ops",
         "send_refusals",
@@ -101,6 +102,7 @@
         "sessions_pane_source",
         "sessions_manager",
         "sessions_page_counts",
+        "sessions_hierarchy",
         "machine_rename"
       ],
       "fp": "",
@@ -148,6 +150,7 @@
           "ultracode",
           "model_configuration",
           "typed_models",
+          "launcher_switch",
           "client_msg_id",
           "client_ops",
           "send_refusals",
@@ -215,6 +218,7 @@
           "sessions_pane_source",
           "sessions_manager",
           "sessions_page_counts",
+          "sessions_hierarchy",
           "machine_rename"
         ],
         "/type": "hello"
@@ -254,6 +258,7 @@
         "ultracode",
         "model_configuration",
         "typed_models",
+        "launcher_switch",
         "client_msg_id",
         "client_ops",
         "send_refusals",
@@ -321,6 +326,7 @@
         "sessions_pane_source",
         "sessions_manager",
         "sessions_page_counts",
+        "sessions_hierarchy",
         "machine_rename"
       ],
       "fp": "",
@@ -358,6 +364,7 @@
           "ultracode",
           "model_configuration",
           "typed_models",
+          "launcher_switch",
           "client_msg_id",
           "client_ops",
           "send_refusals",
@@ -425,6 +432,7 @@
           "sessions_pane_source",
           "sessions_manager",
           "sessions_page_counts",
+          "sessions_hierarchy",
           "machine_rename"
         ],
         "/ok": true,

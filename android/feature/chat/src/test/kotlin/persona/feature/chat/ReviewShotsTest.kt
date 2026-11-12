@@ -17,6 +17,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -63,13 +64,14 @@ class ReviewShotsTest {
     @Test fun reviewViews() {
         var style by mutableStateOf(AppStyle.Glass)
         var dark by mutableStateOf(false)
+        var opened = 0
         rule.setContent {
             PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
                 Column(Modifier.testTag("shot").width(400.dp).background(PersonaTheme.palette.background).padding(Tokens.Space.l),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                     ReviewChecklist(rework)
                     ReviewChecklist(pending)
-                    ReviewLine(review, "修登录崩溃", onOpenTask = {})
+                    ReviewLine(review, "修登录崩溃", onOpenTask = { opened++ })
                 }
             }
         }
@@ -78,6 +80,9 @@ class ReviewShotsTest {
         rule.onNodeWithText("只有浅色").assertIsDisplayed()
         rule.onNodeWithText("督办说明：深色截图没有，补上再交").assertIsDisplayed()
         rule.onNodeWithText("· 已验收").assertIsDisplayed()
+        // #5084: the whole line opens the task, not its name alone
+        rule.onNodeWithTag("review-line").performClick()
+        rule.runOnIdle { org.junit.Assert.assertEquals(1, opened) }
         for (s in AppStyle.entries) for (d in listOf(false, true)) {
             style = s; dark = d
             rule.waitForIdle()

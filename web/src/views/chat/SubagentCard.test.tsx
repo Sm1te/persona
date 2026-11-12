@@ -62,7 +62,7 @@ describe("SubagentCard: the two lines", () => {
   it("finished: Completed and how long it took, no live clock", () => {
     const h = html(call(input, { text: "All 120 cases passed." }), "completed", { subagents: [{ ...meta, running: false }] });
     expect(h).toContain("已完成");
-    expect(h).toContain(">1 分 5 秒<");
+    expect(h).toContain(">1m 5s<");
     expect(h).not.toContain("已运行");
   });
 

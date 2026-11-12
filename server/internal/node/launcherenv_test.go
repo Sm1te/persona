@@ -202,11 +202,12 @@ func TestProviderEnv(t *testing.T) {
 	}
 }
 
-// An explicit tier, small or subagent model gets [1m] by its own window in the provider's models, as the session's
-// model does: Claude Code runs it with the 1M window only then, and drops the marker before calling the gateway (#5149).
+// An explicit tier, small or subagent model with a window of 1M or more in the provider's models gets [1m]: Claude
+// Code runs it with the 1M window only then, and drops the marker before calling the gateway (#5149). One between 200K
+// and 1M stays unmarked: marked, Claude Code would count it as 1M, and nothing per model holds it to its size.
 func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
 	models := []proto.ProviderModel{
-		{ID: "std", ContextWindow: 200000}, {ID: "small", ContextWindow: 128000},
+		{ID: "std", ContextWindow: 200000}, {ID: "small", ContextWindow: 128000}, {ID: "mid", ContextWindow: 400000},
 		{ID: "wide", ContextWindow: 1000000}, {ID: "wider", ContextWindow: 2000000},
 	}
 	vars := []struct {
@@ -223,6 +224,7 @@ func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
 	for _, c := range []struct{ name, model, want string }{
 		{"1M window", "wide", "wide[1m]"},
 		{"over 1M", "wider", "wider[1m]"},
+		{"between 200K and 1M", "mid", "mid"},
 		{"marked already", "wide[1m]", "wide[1m]"},
 		{"marked, listed without a window", "other[1m]", "other[1m]"},
 		{"200K", "std", "std"},
@@ -231,7 +233,8 @@ func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
 	} {
 		for _, v := range vars {
 			for _, session := range []string{"std", "wide"} {
-				l := proto.ManagedLauncher{Name: "p", Kind: "api", BaseURL: "https://gw.example.com", APIKey: "sk-test-k",
+				// A launcher provider: an API one has no small or subagent model to save.
+				l := proto.ManagedLauncher{Name: "p", BaseURL: "https://gw.example.com", APIKey: "sk-test-k",
 					Model: session, Models: models}
 				v.set(&l, c.model)
 				env := providerEnv(l, "", "", false)
@@ -245,7 +248,7 @@ func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
 		}
 	}
 	// The Haiku tier follows an explicit small model by that model's window, and a tier left empty the session's model.
-	l := proto.ManagedLauncher{Name: "p", Kind: "api", BaseURL: "https://gw.example.com", APIKey: "sk-test-k", Model: "std",
+	l := proto.ManagedLauncher{Name: "p", BaseURL: "https://gw.example.com", APIKey: "sk-test-k", Model: "std",
 		Models: models, SmallModel: "wide", SonnetModel: "small"}
 	env := providerEnv(l, "", "", false)
 	for k, want := range map[string]string{
@@ -256,14 +259,17 @@ func TestProviderEnvExplicitModelsGetTheirOwnWindow(t *testing.T) {
 			t.Errorf("small model wide: %s=%q, want %q", k, env[k], want)
 		}
 	}
-	// A session started on another model: the empty tiers follow it, the explicit ones keep their own.
-	env = providerEnv(l, "wider", "", false)
-	for k, want := range map[string]string{
-		"ANTHROPIC_MODEL": "wider[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "wider[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "small",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "wide[1m]",
-	} {
-		if env[k] != want {
-			t.Errorf("session on wider: %s=%q, want %q", k, env[k], want)
+	// A session started on another model: the empty tiers follow it, the explicit ones keep their own. A session model
+	// between 200K and 1M is still marked, its window held by the process's compact window and context limit.
+	for _, c := range []struct{ session, model, sonnet string }{{"wider", "wider[1m]", "small"}, {"mid", "mid[1m]", "small"}} {
+		env = providerEnv(l, c.session, "", false)
+		for k, want := range map[string]string{
+			"ANTHROPIC_MODEL": c.model, "ANTHROPIC_DEFAULT_OPUS_MODEL": c.model, "ANTHROPIC_DEFAULT_SONNET_MODEL": c.sonnet,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": "wide[1m]",
+		} {
+			if env[k] != want {
+				t.Errorf("session on %s: %s=%q, want %q", c.session, k, env[k], want)
+			}
 		}
 	}
 }

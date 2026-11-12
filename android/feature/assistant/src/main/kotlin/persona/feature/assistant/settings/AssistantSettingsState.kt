@@ -275,6 +275,21 @@ internal class AssistantSettingsState(
         if (!ok) set { copy(config = this.config?.copy(mainBackgroundFolded = !on)) }
     }
 
+    /**
+     * "The main chat supervises its own tasks" (#4927): off, the background supervisor follows them up. Moves at once;
+     * a failure puts it back and says so.
+     */
+    suspend fun setMainSupervisesOwnTasks(on: Boolean) {
+        val config = state.value.config ?: return
+        if (config.mainSupervisesOwnTasks == null || config.mainSupervisesOwnTasks == on) return
+        set { copy(config = config.copy(mainSupervisesOwnTasks = on)) }
+        val ok = perform(SettingsText(R.string.assistant_settings_save_failed)) {
+            val updated = api.updateConfig(AssistantConfigUpdate(mainSupervisesOwnTasks = on))
+            set { copy(config = updated) }
+        }
+        if (!ok) set { copy(config = this.config?.copy(mainSupervisesOwnTasks = !on)) }
+    }
+
     suspend fun saveNotes(text: String): Boolean = perform(SettingsText(R.string.assistant_settings_save_failed)) {
         val updated = api.updateConfig(AssistantConfigUpdate(notes = text))
         set { copy(config = updated) }

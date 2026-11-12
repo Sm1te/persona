@@ -208,6 +208,9 @@ func (n *Node) start(ctx context.Context, cwd, launcher, prompt, resume, workspa
 	}
 	cmd := withHerdrAgent(typedHerdrAgent(launch, "claude", shells...), line)
 	cmd = n.agentCommand(cmd, shellQuote, shells...)
+	if cdFirst(ctx) { // a launcher switch in a shell that is not in the conversation's folder (launcher_switch.go)
+		cmd = cdThen(cwd, cmd, shells...)
+	}
 	n.notePaneStart(launcher) // not in the agent sandbox unless a managed launcher (agentsandbox.go)
 	st := sessionState{Pane: pane, Launcher: launcher, Cwd: cwd, StartedAt: time.Now().UTC(), Model: execution.Model, ModelFingerprint: execution.Fingerprint,
 		PlanThen: planThen}
@@ -216,6 +219,9 @@ func (n *Node) start(ctx context.Context, cwd, launcher, prompt, resume, workspa
 			st.StartedAt = prev.StartedAt
 		}
 		st.Ultracode = prev.Ultracode
+		// A switch to another launcher still waits for the next message (launcher_switch.go): a Resume on the launcher
+		// the agent ran on keeps it; the switch's own start leaves it for the switch to clear.
+		st.PendingSwitch = prev.PendingSwitch
 	}
 	n.state.put(id, st)
 	n.noteModes(id, mode, effort) // shown before the first prompt writes them down
@@ -441,6 +447,9 @@ func (n *Node) sessionFor(id string, a host.Agent) *proto.Session {
 // close quits any Claude running in the machine's engine (started by Persona or by hand) and closes its pane: herdr
 // closes its tab, or in a split tab only its own pane, so the other panes survive; herdr-core ends its terminal.
 func (n *Node) close(ctx context.Context, id string) error {
+	if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+		return err
+	}
 	a, ok := n.agent(id)
 	if !ok {
 		if _, mine := n.state.get(id); mine {

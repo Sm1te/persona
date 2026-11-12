@@ -52,11 +52,13 @@ This step uses the terminal, and you do it once, only on the hub machine. If you
 The phone and web side never need the terminal; installing Claude Code on a computer and connecting a Linux computer will need it, and even then it's just pasting one line.
 
 1. Open **Terminal** on the computer that will be the hub. Mac: press Command + Space, type "Terminal", press Return. Linux: find "Terminal" in the app list.
-2. Open the Persona website, copy the command in the "hub" section of the home page, paste it into the terminal and press Return. It looks like this:
+2. Copy this command, paste it into the terminal and press Return:
 
    ```sh
-   curl -fsSL <website address>/install.sh | sh -s -- --hub
+   curl -fsSL https://personaside.com/install.sh | sh -s -- --hub
    ```
+
+   It's the same command the Persona website shows ([personaside.com](https://personaside.com/#start); the site is in Chinese for now).
 
 3. It installs step by step: download and verify the program, set up the database, make it start at boot, run a check. It prints one line per finished step.
    Partway through it may ask once whether to use administrator rights, so the hub can run even when nobody is logged in; answer "yes" and type this computer's login password.
@@ -66,18 +68,19 @@ The phone and web side never need the terminal; installing Claude Code on a comp
    - the admin page address, where you can set an admin password. You can do this later.
 
 When a step says something is wrong, the "Next step" line below it says what to do. The most common one is "this computer is missing a database": on a Mac install Docker Desktop or OrbStack, on Linux install Docker, then paste the same command again.
-Steps already done aren't redone, so rerunning is safe; if the QR code expires, rerun the same command to get a new one.
+Steps already done aren't redone, so rerunning is safe; if the QR code expires, get a new one as in "Pair again" below.
+
 ## Connect your phone by scanning
 
 1. Scan the QR code in the terminal with the iPhone camera and tap the prompt that pops up; Persona opens and connects automatically. You can also tap scan on the App's first screen.
 2. When the system asks to allow finding devices on your local network, tap **Allow**.
 
-The App's first screen may also tell you to run a command on the hub machine to get a code. Ignore it and scan the code the hub installer printed (that text is still being revised).
+The App's pairing screen also shows the command `personad hub pair`. That's for getting a new code later ("Pair again" below); right after installing, scan the code the installer printed.
 
 If scanning doesn't connect:
 
 - The phone must be on the same Wi-Fi as the hub.
-- The QR code is valid for 10 minutes and works once. If it expired, go back to the hub machine and rerun the hub install command to get a new one.
+- The QR code is valid for 10 minutes and works once. If it expired, get a new one as in "Pair again" below.
 - If you previously denied local network access, turn Persona on in the iPhone's **Settings › Privacy & Security › Local Network**.
 
 For now it's only guaranteed to work on the same network at home. To connect back home while out, the only no-terminal option is to set up a VPN yourself. For direct IPv6, besides turning on IPv6 on your router, you also need to run one more command in the hub machine's terminal (see "Advanced", [network.md](network.md)).
@@ -89,6 +92,24 @@ A phone that's already connected can let other devices in, without going back to
 - **Another phone or tablet**: in the connected App open **Settings › Devices › Connect New Device**, and scan the code on screen with the new device.
 - **A browser on a computer**: open the hub's address in the browser. That's the part before `/admin` in the admin page address the hub installer printed, like `http://<LAN address>:18660`.
   The sign-in page walks you through it: on the connected phone open **Settings › Devices › Connect New Device**, choose **Browser**, then scan the code on the web page with the phone camera, or send the sign-in link to this computer and open it there.
+
+## Pair again
+
+A pairing QR code is valid for 10 minutes and works once. To get a new one, open **Terminal** on the hub machine and run:
+
+```sh
+personad hub pair
+```
+
+It prints a new QR code and a pairing link, just like the end of the install. If the terminal answers `command not found`, run `~/.persona/bin/personad hub pair` instead. Pasting the install command again works too: it redoes nothing that's already done and ends with a new code. For a hub in Docker on a NAS, see [docker.md](docker.md).
+
+| What happened | What to do |
+| --- | --- |
+| The QR code expired before you scanned it | Get a new code and scan it |
+| A new or reset phone, or the App was deleted and installed again | If another phone or tablet is still connected, let the new one in from there with **Settings › Devices › Connect New Device** (previous section). Otherwise get a new code on the hub machine and scan it from the App's first screen |
+| A browser on a computer was signed out | Sign it in again from a connected phone, as in the previous section |
+| The hub was installed again, or moved to another machine | Get a new code on the machine the hub runs on now, and scan it in the App with **Settings › Pair Again**. If the App still lists the old hub too, remove it in **Settings › hub** |
+| A computer was removed from the machine list | Add it again on the web as in "Connect a computer" below: **Machines › Add computer** |
 
 ## Connect a computer
 
@@ -151,6 +172,7 @@ These cards on iPhone and Android are still in progress; there you'll only see t
 ## What isn't possible yet, and what still needs the terminal
 
 - Installing the hub means pasting one command in that computer's terminal, once.
+- A new pairing code for a phone, when no other phone or tablet is still connected, takes one command in the hub machine's terminal ("Pair again").
 - A Mac as the hub needs Docker Desktop or OrbStack first.
 - Persona Link on the Mac, the Mac App, the Android App and the Windows programs have no packages yet; you build them yourself.
 - Installing Claude Code on a computer and signing in to Claude Code each have to be done once in that computer's terminal.
@@ -166,7 +188,7 @@ For people comfortable with the command line. The commands and files behind each
 
 - The hub install command ends by running `personad hub setup`: it writes `~/.persona/hub.json`, creates the Postgres container `persona-postgres` in Docker, installs a systemd user service (on a Mac, the LaunchAgent `com.persona.hub`), runs a self-check, and finally prints the pairing QR code and `/admin#setup=<setup code>`.
   What it does and doesn't change is in [onboarding.md](../assistant/onboarding.md) ("Installer"); for manual deployment see [server.md](../server/server.md), for a NAS see [docker.md](docker.md).
-- Get another phone pairing code: run `personad hub pair` on the hub machine. Under "Advanced" on the web sign-in page you can sign in with the hub's master key; it's the `token` in hub.json, and whoever has it can do anything.
+- Get another phone pairing code: run `personad hub pair` on the hub machine ("Pair again" above). Under "Advanced" on the web sign-in page you can sign in with the hub's master key; it's the `token` in hub.json, and whoever has it can do anything.
 - Add a computer without the web: **Admin › Computers › Add computer**, or run `personad hub pair --machine <id> --add --name <name>` on the hub machine. Computers added either way count as confirmed right away. Details in [link.md](link.md).
 - If the machine had no `claude` or `herdr` when the hub was installed, `machines` in `hub.json` is empty. After adding Claude Code, rerunning `personad hub setup` adds this machine (`kind: local`) while the hub still has no computer (`machines` empty and none kept by a manager); or edit hub.json in the admin page (or directly), add an entry `{"id": "<hostname>", "name": "<name>", "kind": "local"}` to `machines`, and restart the hub ([config.md](config.md)).
 - A freshly installed hub only opens its TLS port on LAN IPv4; to connect directly from outside too, rerun `personad hub setup --outside`, see [network.md](network.md).

@@ -171,6 +171,17 @@ describe("PendingCards", () => {
     expect(html).toMatch(/data-permission-from="true" title="来自子 Agent · code-reviewer" class="truncate/);
   });
 
+  it("names a child session's card by the child's title, on its parent's page (#5120)", () => {
+    expect(permissionFrom({ folded_under: "lead", session_title: "  Write the\n tests " })).toBe("来自子 Agent · Write the tests");
+    expect(permissionFrom({ folded_under: "lead" })).toBe("来自子 Agent · 子 Agent 任务");
+    expect(permissionFrom({ folded_under: "lead", session_title: "y".repeat(80) })).toBe(`来自子 Agent · ${"y".repeat(47)}…`);
+    // a question card says it too, at its top; the session's own cards say nothing
+    const questions = [{ question: "用哪个框架？", options: [{ label: "A" }] }] as Interaction["questions"];
+    const html = cards({ narrow: false, interactions: [ix("q", "question", { questions, folded_under: "lead", session_title: "Write the tests" })] });
+    expect(html).toMatch(/data-permission-from="true" title="来自子 Agent · Write the tests"/);
+    expect(cards({ narrow: false, interactions: [ix("q", "question", { questions })] })).not.toContain("data-permission-from");
+  });
+
   it("shows every card on a wide screen, in no box of their own", () => {
     const html = cards({ narrow: false });
     expect(html).not.toContain("data-chat-cards");

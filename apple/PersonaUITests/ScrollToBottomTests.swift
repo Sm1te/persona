@@ -7,6 +7,7 @@ import XCTest
 ///   Agents chat:  PORT=… MOCK_STREAM=1 MOCK_LONG_HISTORY=1 MOCK_AGENTS=1 python3 scripts/mock/mock_hub.py  (PERSONA_MOCK_HUB)
 ///   Persona chat:  PORT=… MOCK_ASSISTANT_RUN=1 (PERSONA_RUN_HUB); MOCK_ASSISTANT_RUN=alone for the one-screen chat;
 ///                  12: PORT=… MOCK_ASSISTANT_RUN=1 MOCK_LONG_ASSISTANT=1 (PERSONA_LONG_RUN_HUB, a long chat to glide in)
+///   13: PORT=… MOCK_TALL_HISTORY=1 MOCK_STREAM=1 (PERSONA_TALL_HUB: a long Agent chat of tall messages and screenshots, at work)
 final class ScrollToBottomTests: XCTestCase {
     private var app: XCUIApplication!
     private static let widget = "macbook/a1f3c2d4-0000-4000-8000-000000000001" // streams with MOCK_STREAM, long history
@@ -29,6 +30,10 @@ final class ScrollToBottomTests: XCTestCase {
         var glideTaps: Int?
         var jumpMs: Int?
         var content: Int?
+        var slips: Int?
+        var listGap: Int?
+        var lastShown: Bool?
+        var storedRow: Bool?
     }
 
     private typealias Timeline = [(t: Double, r: Rows)]
@@ -245,14 +250,30 @@ final class ScrollToBottomTests: XCTestCase {
         guard let field = composer() else { throw XCTSkip("the composer is not in the accessibility tree (#1006)") }
         field.tap()
         let up = record("4 keyboard up", seconds: 3, shots: 1)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap() // a tap on the page closes it
+        XCTAssertTrue(hideKeyboard(), "the composer's Hide Keyboard button")
         let down = record("4 keyboard down", seconds: 3, shots: 1)
         for (name, s) in [("up", up), ("down", down)] {
             let r = try XCTUnwrap(s.last?.r)
             XCTAssertTrue(r.newest && r.mode == "following", "keyboard \(name): at the newest end, following:\n\(describe(s))")
             XCTAssertEqual(flashes(s), 0, "keyboard \(name): the arrow flashed")
+            XCTAssertFalse(s.contains { $0.r.mode == "holding" }, "keyboard \(name): a row was opened:\n\(describe(s))")
             consistent("4 \(name)", s)
         }
+        XCTAssertEqual(app.keyboards.count, 0, "the keyboard went down")
+    }
+
+    /// Closes the keyboard with the composer's own Hide Keyboard button. A tap on the page closes it too, but the page
+    /// is rows: one at a quarter of the screen's height landed on a running turn's work line and opened it, and the
+    /// chat then held that header instead of following (#4813).
+    private func hideKeyboard() -> Bool {
+        for id in ["shell-composer-dismiss-keyboard", "composer-row-dismiss-keyboard"] {
+            let button = app.buttons[id].firstMatch
+            if button.waitForExistence(timeout: 2), button.isHittable {
+                button.tap()
+                return true
+            }
+        }
+        return false
     }
 
     /// 5. A message sent while reading history: back to the newest, following.
@@ -362,6 +383,93 @@ final class ScrollToBottomTests: XCTestCase {
     func testL_ArrowWhileTheListGlidesInPersonasChat() throws {
         launch(try hub("PERSONA_LONG_RUN_HUB"), chat: Self.main, assistant: true, ["-scrollTrace", "YES"])
         try tapWhileGliding("12")
+    }
+
+    /// 13. A long Agent chat at work (#4788, seen on a phone): tall messages and screenshots, read a few screens up
+    /// with drags let go at rest, while the agent works and a reply streams at the newest end (all of it held back); then
+    /// ↓ at rest, the reply still streaming. On the phone the list leapt toward the newest end, was put back where the
+    /// user had read about 0.2 s later, and ↓ was gone, three times in a row. It must end at the newest end and stay
+    /// there, the newest line on screen and ↓ gone, never pulled back (`listGap` is the scroll view's own distance).
+    func testM_ArrowInALongChatAtWork() throws {
+        let hub = try hub("PERSONA_TALL_HUB")
+        launch(hub, chat: Self.widget, assistant: false, ["-scrollTrace", "YES"])
+        // A little way up, a work line opened to see what the agent did, and folded again, as one does in such a chat.
+        // From then on SwiftUI's stored position names the row the user's own scrolling leaves on screen
+        // (`ChatPin.letGo`); on the phone ↓ was put back on that row (#4788). Without it nothing put the list back.
+        for _ in 0..<2 { drag(from: 0.25, to: 0.8, rest: 0.4) }
+        sleep(1)
+        let screen = Int(app.frame.height)
+        // Rows of very different heights: a little further up until a work line's header is well inside the screen.
+        func workHead() -> XCUIElement? {
+            app.buttons.matching(identifier: "work-head").allElementsBoundByIndex.first {
+                $0.isHittable && $0.frame.midY > app.frame.height * 0.2 && $0.frame.midY < app.frame.height * 0.7
+            }
+        }
+        var found = workHead()
+        for _ in 0..<6 where found == nil {
+            drag(from: 0.3, to: 0.55, rest: 0.4)
+            sleep(1)
+            found = workHead()
+        }
+        let head = try XCTUnwrap(found, "a work line on screen to open")
+        // By the screen, not the element: the header stays under the finger while what it opens comes in (`ChatPin`).
+        let at = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: head.frame.midX, dy: head.frame.midY))
+        at.tap()
+        sleep(2)
+        at.tap()
+        sleep(2)
+        // A few screens further up, each drag let go at rest (no glide).
+        for _ in 0..<5 { drag(from: 0.25, to: 0.8, rest: 0.4) }
+        sleep(1)
+        let read = record("13 reading", seconds: 1, shots: 1)
+        let r0 = try XCTUnwrap(read.last?.r)
+        XCTAssertEqual(r0.mode, "reading", "read up, let go:\n\(describe(read))")
+        XCTAssertGreaterThan(r0.listGap ?? 0, screen * 3 / 2, "far enough up that ↓ leaps a screen short of the newest first")
+        XCTAssertEqual(r0.storedRow, true, "the scrolling stored a row in SwiftUI's position, as after a row was opened on the phone")
+        // A reply streams in at the newest end (a delta every 80 ms for about 3 s) and is still being written when ↓ is
+        // tapped, as on the phone: nothing new is written meanwhile. A written line took the list to the newest end, and
+        // hid the bug: the list was put back where the user read, and 0.65 s later the reply, written, brought it down.
+        let reply = "第 13 轮的结果先发你：重试和小组件都改好了，截图在上面，测试都过了。\n\n还剩一件：标题截断的那张图我再补一张深色的。"
+        say(hub, reply, steps: 40, upto: 50)
+        sleep(2)
+        XCTAssertTrue(waitFor(seconds: 2) { $0.frozen == true && $0.arrow == true }, "held back while reading, ↓ showing")
+        XCTAssertTrue(arrowButton.waitForExistence(timeout: 2) && arrowButton.isHittable, "↓ to tap")
+        print(String(format: "MARK 13 tap %.3f", Date.now.timeIntervalSince1970)) // for cutting a recording to it
+        arrowButton.tap()
+        let s = record("13 after ↓", seconds: 6, shots: 4)
+        let end = try XCTUnwrap(s.last?.r)
+        XCTAssertTrue(end.newest && end.mode == "following" && end.arrow != true && !(end.frozen ?? true),
+                      "↓ in a long chat at work: at the newest end, following, no ↓:\n\(describe(s))")
+        XCTAssertLessThanOrEqual(end.listGap ?? .max, 1, "the scroll view is at its newest end:\n\(describe(s))")
+        XCTAssertEqual(end.lastShown, true, "the newest line is on screen:\n\(describe(s))")
+        XCTAssertFalse(arrowButton.exists, "↓ gone")
+        // Once there, it stays there while the reply is being written: never put back up.
+        if let at = s.firstIndex(where: { ($0.r.listGap ?? .max) <= 1 }) {
+            let away = s[at...].filter { ($0.r.listGap ?? 0) > 1 }
+            XCTAssertTrue(away.isEmpty, "pulled away from the newest end after ↓ got there:\n\(describe(s))")
+        } else {
+            XCTFail("never at the newest end after ↓:\n\(describe(s))")
+        }
+        XCTAssertEqual(end.slips ?? -1, 0, "↓ landed and was taken away again (the second look had to bring it back)")
+        XCTAssertFalse(s.contains { $0.r.mode == "reading" }, "reading again after ↓:\n\(describe(s))")
+        consistent("13", s)
+        // The reply is written: still at the newest end, its line on screen.
+        say(hub, reply, steps: 1, ms: 0)
+        let w = record("13 written", seconds: 3, shots: 1)
+        let written = try XCTUnwrap(w.last?.r)
+        XCTAssertGreaterThan(written.items, r0.items, "the reply was written")
+        XCTAssertFalse(w.contains { ($0.r.listGap ?? 0) > 1 }, "away from the newest end as the reply was written:\n\(describe(w))")
+        XCTAssertEqual(written.lastShown, true, "the written reply is on screen:\n\(describe(w))")
+    }
+
+    /// A reply streamed into the open chats (`/mock/say`): a delta every `ms` (80, the hub's pace), then written; with
+    /// `upto`, streamed to its first `upto` characters and left open there, unwritten, until the next call.
+    private func say(_ hub: String, _ text: String, steps: Int = 60, ms: Int = 80, upto: Int = 0) {
+        var c = URLComponents(string: hub + "/mock/say")!
+        c.queryItems = [URLQueryItem(name: "text", value: text), URLQueryItem(name: "stream", value: "1"),
+                        URLQueryItem(name: "steps", value: "\(steps)"), URLQueryItem(name: "ms", value: "\(ms)"),
+                        URLQueryItem(name: "upto", value: "\(upto)")]
+        _ = try? Data(contentsOf: c.url!)
     }
 
     /// From the newest end, as the chat opens or as ↓ leaves it: a thumb's flick toward the oldest (3000 pt/s, it glides

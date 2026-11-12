@@ -156,6 +156,9 @@ func (n *Node) rewind(ctx context.Context, id string, o rewindOpts) (map[string]
 	if o.Restore != RestoreConversation && o.Restore != RestoreCodeAndConv {
 		return nil, fmt.Errorf("bad params: restore is %q or %q", RestoreConversation, RestoreCodeAndConv)
 	}
+	if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+		return nil, err
+	}
 	// Typing into the pane: one thing at a time (a message sent meanwhile would land in the panel).
 	defer n.typing.lock(id)()
 	if n.isAssistantSession(id) {

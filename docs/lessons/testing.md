@@ -944,3 +944,13 @@ To check that a failure is this, move `dev.json` aside in the app's data contain
 
 - `docker run --entrypoint <test binary>` without `--init` makes the test binary PID 1, and every orphan is reparented to it. Go waits only for the children its `exec.Cmd`s started, so a background child killed after its shell exited stays a zombie, `kill(-pgid, 0)` still finds its group, and process-group tests fail. On `main`, `TestSecretRunTimeoutKillsTheGroup` and `TestSecretRunTimeoutEndsWhatIgnoresSIGTERM` failed in a `postgres:18-alpine` container this way and passed with `--init`.
 - Run such tests with `docker run --init` (Docker's own init, no image to pull), and compare with `main` in the same container before blaming a change.
+
+## A throw-away HOME also hides the Go settings (2026-11-12, #5191)
+
+- `testhome.Main` gives a test binary an empty `HOME`. The Go defaults hang off the home directory: the env file
+  `go env -w` writes (`GOENV`, where settings such as `GOPROXY` live), `GOPATH` and so the module cache, and the build
+  cache. A `go list` the hub's architecture guard started lost all of them, went to the default proxy with an empty
+  cache and failed after a minute with only `exit status 1`, on `main` too, so it looked like someone else's breakage.
+- `testhome` now resolves `GOENV`, `GOPATH`, `GOMODCACHE` and `GOCACHE` with the real home before swapping it and pins
+  them. Anything else that reads the home directory for its own config (git, ssh, a CLI's login) has the same problem
+  under testhome: pin what the child needs, or give the test its own config.

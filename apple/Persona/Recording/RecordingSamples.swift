@@ -7,10 +7,14 @@ enum RecordingSamples {
     /// Once per launch: the page appears again after its recording was deleted, and must not bring it back.
     nonisolated(unsafe) private static var installed = false
 
+    /// `-showRecordingSample second`: the same recording under another id, for a test that deletes one (the hub keeps the first's tombstone).
+    static let secondSample = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+
     static func installIfAsked() -> UUID? {
-        guard UserDefaults.standard.bool(forKey: "showRecordingSample"), !installed else { return nil }
+        let asked = UserDefaults.standard.string(forKey: "showRecordingSample")
+        guard !installed, UserDefaults.standard.bool(forKey: "showRecordingSample") || asked == "second" else { return nil }
         installed = true
-        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let id = asked == "second" ? secondSample : UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         RecordingLibrary.shared.restore(id)
         var entry = RecordingEntry(id: id, createdAt: Date(timeIntervalSince1970: 1_800_000_000), source: .watch,
                                    title: "项目讨论", active: false, expectedSegments: 1)

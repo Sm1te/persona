@@ -15,6 +15,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
 PORT = int(os.environ.get("PORT", "18760"))
+# MOCK_CHILD_SESSIONS=1 (#5120) builds on the Paseo computer: its agent's created agents are its children.
+if os.environ.get("MOCK_CHILD_SESSIONS"):
+    os.environ.setdefault("MOCK_PASEO", "1")
 NOW = datetime.now(timezone.utc)
 LOG = sys.stderr
 # MOCK_HUB_ID keeps the identity across restarts, so a paired App stays paired when the switches change.
@@ -38,7 +41,7 @@ def features():
                 ["assistant_compact", "assistant_main_new", "assistant_main_clear"] if os.environ.get("MOCK_MAIN_ACTIONS") == "1" else []) + (
                 ["messaging"] if os.environ.get("MOCK_MESSAGING") == "1" else []) + (
                 ["conversation_origin"] if os.environ.get("MOCK_AUTO_CONVERSATIONS") == "1" else []) + (
-                ["sessions_list", "sessions_lookup"] if os.environ.get("MOCK_SESSIONS_LIST") == "1" else []) + (
+                ["sessions_list", "sessions_lookup", "sessions_hierarchy"] if os.environ.get("MOCK_SESSIONS_LIST") == "1" else []) + (
                 ["preview"] if os.environ.get("MOCK_PREVIEW") else []) + (
                 ["task_cron"] if os.environ.get("MOCK_CRON") == "1" else []) + (
                 [] if os.environ.get("MOCK_LOOK_UPLOADS") == "off" else ["look_uploads"])
@@ -702,9 +705,9 @@ SESSIONS = [
          "搜索做好了，支持按食材和用时筛选。", space_kind=None, space_id=None, space_name=None, slot_id=None, slot_name=None),
 ]
 
-# #2430 agent-details: what the node reads off a transcript for the "Show details on agent rows" line and the session header's
-# context bar — the model id as Claude Code records it, the latest reply's input tokens, the model's window. Some
-# sessions say nothing (no reply yet, a model the node does not know), as real ones do.
+# #2430 agent-details: what the node reads off a transcript for the "Show details on agent rows" line and the usage row
+# below the composer (#5056) — the model id as Claude Code records it, the latest reply's input tokens, the model's window.
+# Some sessions say nothing (no reply yet, a model the node does not know), as real ones do.
 _CONTEXT = {
     WIDGET: ("claude-opus-5-5", 78_000, 200_000),            # 39% used, 61% left
     TESTS: ("claude-sonnet-5-5", 31_000, 200_000),           # 16% used
@@ -1079,16 +1082,38 @@ if os.environ.get("MOCK_PASEO"):
                background=[{"id": PASEO_ASKS, "kind": "agent", "description": "Add a remember-me option", "started_at": ago(minutes=5)},
                            {"id": PASEO_CODEX, "kind": "agent", "description": "Review the session handling", "started_at": ago(minutes=3)}]),
         _paseo(PASEO_ASKS, "Add a remember-me option", "Fix the login flow", "brave-fox", "fix/login", "blocked", "needs_you", 1,
-               "May I run the migration on the test database?", pending_interactions=1),
+               "May I run the migration on the test database?", pending_interactions=1, asking_parent_session_id=PASEO_LEAD,
+               started_at=ago(minutes=5)),
         _paseo(PASEO_CODEX, "Review the session handling", "Fix the login flow", "brave-fox", "fix/login", "working", "working", 0,
-               "Reading how the token is refreshed.", agent="codex", is_subagent=True, parent_session_id=PASEO_LEAD, root_session_id=PASEO_LEAD),
+               "Reading how the token is refreshed.", agent="codex", is_subagent=True, parent_session_id=PASEO_LEAD, root_session_id=PASEO_LEAD,
+               started_at=ago(minutes=3), effort="high"),
         _paseo("019a5e00-0000-7000-8000-000000000005", "Trace the refresh failure", "Fix the login flow", "brave-fox", "fix/login",
                "working", "working", 0, "Following the 401 through the retry.", agent="codex", agent_name="Codex CLI",
                source_kind="codex_history", source_thread_id="019a5e00-0000-7000-8000-000000000005", source_instance_id=None, host=None,
                slot_name=None, is_subagent=True, parent_session_id=PASEO_CODEX, root_session_id=PASEO_LEAD,
-               read_only_reason="View only: its parent Agent drives this sub-Agent", capabilities={"read": True}),
+               read_only_reason="View only: its parent Agent drives this sub-Agent", capabilities={"read": True},
+               started_at=ago(minutes=2), model="gpt-5.4-mini"),
         _paseo("9a5e0000-0000-4000-8000-000000000006", "Profile the CSV parser", "Speed up the importer", "calm-owl", "perf/importer",
                "done", "unread", 12, "The parser is three times faster on the sample files."),
+    ]
+# MOCK_CHILD_SESSIONS=1 (#5120): the Paseo agent that created two agents created two more, both finished (one of them
+# failed), and an agent whose creator is not listed stays a row of its own. With the hub's folding (fold_hierarchy) the
+# web lists none of the children: the lead's row needs you (its waiting child) and its chat draws a card for each.
+PASEO_DONE = "paseo-9a5e0000-0000-4000-8000-000000000007"
+PASEO_FAILED = "paseo-9a5e0000-0000-4000-8000-000000000008"
+PASEO_ORPHAN = "paseo-9a5e0000-0000-4000-8000-000000000009"
+PASEO_GRANDCHILD = "019a5e00-0000-7000-8000-000000000005"
+if os.environ.get("MOCK_CHILD_SESSIONS"):
+    SESSIONS += [
+        _paseo(PASEO_DONE, "Write the regression tests", "Fix the login flow", "brave-fox", "fix/login", "done", "idle", 6,
+               "Added three regression tests for the refresh path; all pass.", is_subagent=True, parent_session_id=PASEO_LEAD,
+               started_at=ago(minutes=8.8), model="claude-sonnet-4-5", effort="medium", seen_at=ago(minutes=5)),
+        _paseo(PASEO_FAILED, "Check the CI config", "Fix the login flow", "brave-fox", "fix/login", "idle", "idle", 7,
+               "The model service timed out.", agent="codex", is_subagent=True, parent_session_id=PASEO_LEAD,
+               started_at=ago(minutes=8.5), effort="low", turn_error="The model service timed out.", seen_at=ago(minutes=6)),
+        _paseo(PASEO_ORPHAN, "Update the changelog", "Fix the login flow", "brave-fox", "fix/login", "working", "working", 0,
+               "Adding the login change to the changelog.", is_subagent=True,
+               parent_session_id="9a5e0000-0000-4000-8000-0000000000ff", started_at=ago(minutes=1)),
     ]
 # MOCK_ORCA_CHILDREN=1: an Orca worktree with three child worktrees (#2073, parent_space_id), one of them with a child of
 # its own: the web folds them under the parent and sums their states on its row.
@@ -1664,6 +1689,15 @@ if os.environ.get("MOCK_ORIGINS") == "1":
     for c in ASSISTANT[:4]:
         c.setdefault("origin", "user")
 
+# MOCK_BACKGROUND_SUPERVISOR=1 (#4927, docs/assistant/unified-entry.md "Background supervisor"): the hub's built-in
+# conversation that follows up the tasks no leader supervises. It has origin "task" with no origin_ref, so the apps list
+# it with the scheduled tasks' conversations; GET /api/v1/assistant names it as `background_supervisor`, and archiving
+# it is refused. Not with MOCK_LEGACY_HUB (a hub from before it).
+BACKGROUND_SUPERVISOR = ""
+if os.environ.get("MOCK_BACKGROUND_SUPERVISOR") == "1" and not os.environ.get("MOCK_LEGACY_HUB"):
+    BACKGROUND_SUPERVISOR = "bgsv0000-0000-4000-8000-000000000001"
+    ASSISTANT.append(dict(assistant_sess(BACKGROUND_SUPERVISOR, "后台督办", 12, "「补测试」已验收：测试补齐，PR 已合并。"), origin="task"))
+
 # MOCK_RECENT=1 (#4873): more of the user's own conversations, so the sidebar's Recent (the newest five that are not the main
 # conversation or a leader) has more than it lists and All chats holds the rest. Synthetic titles.
 if os.environ.get("MOCK_RECENT") == "1":
@@ -2061,6 +2095,9 @@ ASSISTANT_CONFIG = {"machine_id": "server", "launcher": "claude", "timezone": "A
                     # supervised task reach its supervisor (#4293), off by default; closed sessions archive themselves
                     # after this many idle days (#3618), 0 is never. Left out with MOCK_LEGACY_HUB.
                     "agent_tasks": False, "inbox_signals": False, "archive_closed_days": 3,
+                    # The main chat follows up its own tasks instead of the background supervisor (#4927), off by
+                    # default. Left out with MOCK_LEGACY_HUB.
+                    "main_supervises_own_tasks": False,
                     # idle Agents stop after this many hours, their terminal kept (#4754); 0 is never
                     "idle_close_hours": 12,
                     # The role a meeting recording pre-selects (#2981; MOCK_MEETING_ATTENDANCE_DEFAULT=listener starts there)
@@ -2089,7 +2126,10 @@ def assistant_state(space="", archived=False):
                              and (archived or not s.get("archived"))]}
     if not os.environ.get("MOCK_LEGACY_HUB"):
         out.update(agent_tasks=cfg["agent_tasks"], inbox_signals=cfg["inbox_signals"], archive_closed_days=cfg["archive_closed_days"],
-                   idle_close_hours=cfg["idle_close_hours"], kb_topics=cfg["kb_topics"])
+                   idle_close_hours=cfg["idle_close_hours"], kb_topics=cfg["kb_topics"],
+                   main_supervises_own_tasks=cfg["main_supervises_own_tasks"])
+        if BACKGROUND_SUPERVISOR and not space:  # once the hub has made it (#4927)
+            out.update(background_supervisor=BACKGROUND_SUPERVISOR, background_supervisor_machine_id=cfg["machine_id"])
     if cfg["notes"] is not None:
         out["notes"] = cfg["notes"]
     if isinstance(cfg.get("timezone_picked"), bool):  # once a client said so, as the hub (#1855)
@@ -5219,6 +5259,35 @@ EDIT_NEW = """    func makeEntry(for date: Date) -> WeatherEntry {
     }"""
 
 ITEMS = {}
+if os.environ.get("MOCK_CHILD_SESSIONS"):  # #5120: the lead's two exchanges, and what each child was asked and did
+    ITEMS[PASEO_LEAD] = (
+        [it("user", "text", 14, text="Rework the login flow: move the token refresh into the middleware.")]
+        + tool("Read", {"file_path": "src/auth/session.ts"}, "export function refresh(token) { … }", 13)
+        + tool("Edit", {"file_path": "src/auth/middleware.ts", "old_string": "next()", "new_string": "await refresh(req); next()"}, "ok", 12)
+        + [it("assistant", "text", 11, text="The refresh now runs in the middleware, before every handler.")]
+        + [it("user", "text", 9, text="Have agents add the tests and a remember-me option, check CI, and review the session handling.")]
+        + [it("assistant", "thinking", 8.9, text="Four parts that can run side by side: I'll start one agent for each.")]
+        + [it("assistant", "text", 4, text="Two agents are checking the change.")])
+    ITEMS[PASEO_DONE] = (
+        [it("user", "text", 8.8, text="Write regression tests for the token refresh now that it runs in the middleware: an expired token, a revoked one, and two requests at once.")]
+        + tool("Write", {"file_path": "src/auth/middleware.test.ts", "content": "describe(\"refresh\", () => { … })"}, "ok", 8)
+        + tool("Bash", {"command": "npm test -- src/auth"}, "3 passed", 7)
+        + [it("assistant", "text", 6, text="Added three regression tests for the refresh path (expired, revoked, concurrent); all pass.")])
+    ITEMS[PASEO_FAILED] = (
+        [it("user", "text", 8.5, text="Check that the CI config runs the auth tests on every pull request.")]
+        + tool("Read", {"file_path": ".github/workflows/ci.yml"}, "jobs: …", 8)
+        + [it("system", "notice", 7, text="The model service timed out.")])
+    ITEMS[PASEO_ASKS] = (
+        [it("user", "text", 5, text="Add a remember-me option to the login form and keep it in the sessions table.")]
+        + tool("Edit", {"file_path": "src/auth/LoginForm.tsx", "old_string": "</form>", "new_string": "<RememberMe />\n</form>"}, "ok", 3)
+        + [it("assistant", "tool_use", 1, tool_use_id="toolu_migrate_test", tool_name="Bash", tool_input={"command": "npm run migrate -- --env test"})])
+    ITEMS[PASEO_CODEX] = (
+        [it("user", "text", 3, text="Review the session handling after the refresh moved into the middleware. Report anything that can leak a token.")]
+        + tool("Bash", {"command": "rg -n refresh src/auth"}, "src/auth/middleware.ts:12: await refresh(req)", 2)
+        + [it("assistant", "text", 0.5, text="Reading how the token is refreshed.")])
+    ITEMS[PASEO_GRANDCHILD] = (
+        [it("user", "text", 2, text="Trace why a refresh after a retry returns 401.")]
+        + [it("assistant", "text", 0.2, text="Following the 401 through the retry.")])
 if os.environ.get("MOCK_ORCA_CHILDREN"):
     ITEMS["c2073000-0000-4000-8000-000000000006"] = [
         it("user", "text", 61, text="Review the prior work in this workspace."),
@@ -5886,6 +5955,15 @@ if MOCK_TASKS:
             _feed("feed_r3", 3.5, "report", "todo_task_tests", {"kind": "question", "text": "统一用 snake_case 还是 camelCase 命名新接口？", "later": True}),
             _feed("feed_r2", 3, "routed", "todo_task_tests", {"text": "用协议注入，先改网络层那 6 个文件", "interrupted": True, "from": "assistant"}),
         ]
+    # MOCK_BACKGROUND_SUPERVISOR=1 (#5082): the reviews in the main chat's feed are the background supervisor's (`by`),
+    # so the chat shows each as its line; without MOCK_TASKS_REPORTS there is one, the release notes accepted.
+    if BACKGROUND_SUPERVISOR:
+        if not any(_i["kind"] == "review" for _i in TASK_FEED[ASK1]):
+            TASK_FEED[ASK1].append(_feed("feed_bg1", 18, "review", "todo_task_release", {
+                "title": "整理发布说明", "verdict": "accepted", "note": "写在 docs/release-notes.md，7 个 PR 都在里面"}))
+        for _i in TASK_FEED[ASK1]:
+            if _i["kind"] == "review":
+                _i["body"]["by"] = "background"
     # MOCK_BRIEFS=1 (#3822, docs/assistant/unified-entry.md "Briefs"): tasks carry the brief they are held to. The open
     # plan's task has a real one (the owner's own words, long enough to be cut, the goal, criteria, time and what is out
     # of bounds). The widget fix has a real one too, taken over twice (a lineage of three), with one scope change and an
@@ -7200,6 +7278,7 @@ if os.environ.get("MOCK_OPENCODE"):
 if os.environ.get("MOCK_PASEO"):
     INTERACTIONS.append(
         {"id": "paseo_migrate_test", "machine_id": "server", "session_id": PASEO_ASKS, "session_title": "Add a remember-me option",
+         "folded_under": PASEO_LEAD, "tool_use_id": "toolu_migrate_test",
          "cwd": "/home/me/.paseo/worktrees/1a2b3c4d/brave-fox", "kind": "permission", "agent": "claude",
          "created_at": ago(minutes=1), "expires_at": later(minutes=29), "tool_name": "Bash",
          "summary": "npm run migrate -- --env test", "tool_input": {"command": "npm run migrate -- --env test"}})
@@ -7269,7 +7348,9 @@ def mock_interactions():
         if MOCK_TASKS:  # a task's agent asking: the hub names the task (task_title)
             titles = {a["session_id"]: t["title"] for t in TODOS if t.get("origin") and not t.get("done_at") for a in t.get("agents", [])}
             out = [dict(x, task_title=titles[x["session_id"]]) if x.get("session_id") in titles else x for x in out]
-        return out
+    # the session a card's session folds under (Interaction.folded_under, #5120): its home is that session's page
+    folds = {(r["machine_id"], r["session_id"]): r["folded_under"] for r in all_sessions() if r.get("folded_under")}
+    return [dict(x, folded_under=folds[(x.get("machine_id"), x.get("session_id"))]) if (x.get("machine_id"), x.get("session_id")) in folds else x for x in out]
 
 
 # MOCK_FLEET: the hub's fleet summary (server/internal/hub/liveactivity.go buildFleet) for Android's ongoing notification,
@@ -10512,6 +10593,31 @@ MODEL_CATEGORY_FOR = {pid: {"主对话": "assistant", "Agents": "agent.new", "�
                       for pid, _, group, _ in MODEL_DEFINITIONS}
 
 
+SUPERVISE_PURPOSE = "assistant.supervise"
+
+
+def supervise_model_purpose():
+    """The background supervisor's use (#4927): not in the catalog, read and set by its own id. A record of its own;
+    Main Chat's model while that is empty. None from a hub before it (MOCK_LEGACY_HUB)."""
+    if os.environ.get("MOCK_LEGACY_HUB"):
+        return None
+    catalog = model_configuration()
+    main = next(x for x in catalog["purposes"] if x["id"] == "assistant")
+    with MODEL_CONFIG_LOCK:
+        stored = MODEL_BINDINGS.get(SUPERVISE_PURPOSE, {"revision": 0, "override": {}})
+    binding = dict(stored["override"])
+    effective = {k: v for k, v in main["effective"].items() if k != "runtime"}
+    if binding.get("provider"):
+        provider = next((x for x in catalog["providers"] if x["id"] == binding["provider"]), {})
+        effective = {"provider": binding["provider"], "model": provider.get("model", "")}
+    effective.update(binding)
+    purpose = dict(id=SUPERVISE_PURPOSE, category_id="assistant", parent="assistant", name="后台督办", group="主对话",
+                   kind="launcher", override=binding, effective=effective, revision=stored["revision"],
+                   inherited_from=main["name"], fields=["provider", "model", "effort"],
+                   provider_ids=main["provider_ids"], status="未验证")
+    return {"purpose": purpose, "providers": catalog["providers"]}
+
+
 def model_configuration(include_uses=False):
     providers = [dict(id="launcher." + l["name"], name=l["name"], kind=l.get("kind", "launcher"),
                       model=l.get("model"), hidden=l.get("hidden", False)) for l in LAUNCHERS if l["source"] != "builtin"]
@@ -10553,9 +10659,9 @@ _CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 LAUNCHER_MODELS = {
     "claude": {"agent": "claude", "models": [
         {"id": "default", "name": "Default (recommended)", "description": "Use the default model (currently claude-opus-5-5)", "resolved": "claude-opus-5-5", "default": True, "efforts": _CLAUDE_EFFORTS},
-        {"id": "fable", "name": "Fable", "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks", "resolved": "claude-fable-5-1", "efforts": _CLAUDE_EFFORTS},
-        {"id": "opus", "name": "Opus 5.5", "description": "Opus 5.5 · Best for everyday complex work", "resolved": "claude-opus-5-5", "efforts": _CLAUDE_EFFORTS},
-        {"id": "sonnet", "name": "Sonnet 5.5", "description": "Sonnet 5.5 · Fast and capable", "resolved": "claude-sonnet-5-5", "efforts": ["low", "medium", "high", "max"]},
+        {"id": "fable", "name": "Fable", "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks", "resolved": "claude-fable-5-1", "efforts": _CLAUDE_EFFORTS, "price": {"input": 10, "output": 50, "cache_read": 0.25}},
+        {"id": "opus", "name": "Opus 5.5", "description": "Opus 5.5 · Best for everyday complex work", "resolved": "claude-opus-5-5", "efforts": _CLAUDE_EFFORTS, "price": {"input": 4, "output": 20, "cache_read": 0.2}},
+        {"id": "sonnet", "name": "Sonnet 5.5", "description": "Sonnet 5.5 · Fast and capable", "resolved": "claude-sonnet-5-5", "efforts": ["low", "medium", "high", "max"], "price": {"input": 2, "output": 10, "cache_read": 0.1}},
         {"id": "haiku", "name": "Haiku 5.5", "description": "Haiku 5.5 · Fastest for quick answers", "resolved": "claude-haiku-5-5"},
         {"id": "gateway/glm-5.3", "name": "glm-5.3", "description": "From gateway", "efforts": ["low", "medium", "high"]},
         {"id": "gateway/deepseek-v4", "name": "deepseek-v4", "description": "From gateway", "efforts": ["low", "medium", "high"]},
@@ -10684,6 +10790,10 @@ LAUNCHER_QUOTAS = {  # as a quota plugin would answer (docs/extensions/extension
              "models": [{"model": "example-flash", "windows": [_w("TPM", 0.02, 8400, 500000, "tokens")]}]},
             {"name": "供应商 B", "state": "unsupported", "detail": "上游没有额度接口，只有网关统计"}]},
 }
+if os.environ.get("MOCK_MODEL_PANEL_USAGE"):
+    # A critical weekly bar beside cc_main's / cc_team's ordinary ones (#5056); all values are synthetic.
+    LAUNCHER_QUOTAS["claude"] = {"gateway": "example-subscription", "pools": [
+        {"name": "示例订阅", "state": "available", "windows": [_w("每周", 0.95, resets=later(hours=36))]}]}
 # "Add provider" › "Add from plugin" (docs/extensions/extensions.md "Model providers"): the providers made-up plugins offer (GET /api/v1/launchers/presets).
 LAUNCHER_PRESETS = [
     {"id": "example-gateway/team", "plugin": "example-gateway", "name": "示例网关 · 团队", "description": "团队共用的 Claude Code 网关，按 Key 计费",
@@ -10812,6 +10922,8 @@ def machine_launchers(mid=""):
     Mac Studio under MOCK_NEW_AGENT_PANEL), and under MOCK_PROVIDERS the managed providers Agents can start, each with its
     display name."""
     out = [{"name": "claude", "model": "opus"}, {"name": "sonnetcc", "model": "sonnet"}, codex_launcher()]
+    if os.environ.get("MOCK_MODEL_PANEL_USAGE"):
+        out += [{"name": "cc_main", "model": "opus"}, {"name": "cc_team", "model": "example-pro"}]
     if NEW_AGENT_PANEL and mid == "studio":
         out = [l for l in out if l["name"] != "codex"]
     if MOCK_PROVIDERS:
@@ -11853,6 +11965,71 @@ if os.environ.get("MOCK_WORK_GROUPS") == "1":
     mock_work_groups()
 
 
+# MOCK_WORK_TIMELINE=1 (#5155): a work summary that opens to cindy's timeline. The weather agent (WORKTL) has a finished
+# turn whose work is narration with a run of steps between each piece (a long thought with words, one without, reads,
+# a search, commands, an edit), then a live turn: narration, a run, more narration and a call still running. Persona's
+# main conversation gets the same shape in everyday words (a finished trip plan, a live dinner booking). With a
+# connection that declared session_live, both sessions say they are thinking (work_timeline_live). Made-up content.
+WORKTL = "a1f3c2d4-0000-4000-8000-0000000c5155"
+
+
+def mock_work_timeline():
+    _w = [it("user", "text", 12, text="The widget refreshes late in the morning. Find out why and fix it.")]
+    _w.append(it("assistant", "thinking", 11.95, text="The refresh is late in the morning, so it is probably the timeline policy rather than the "
+                                                      "network: WidgetKit only reloads after the date the provider returns, and if that date is "
+                                                      "computed from the last entry instead of now, a long night pushes it past breakfast."))
+    _w += tool("Read", {"file_path": "/Users/me/code/weather/Widget/Provider.swift"}, "let next = Calendar.current.date(byAdding: .minute, value: 30, to: lastEntry)!", 11.9)
+    _w += tool("Grep", {"pattern": "policy:", "path": "Widget"}, "Widget/Provider.swift:12: policy: .after(next)", 11.85)
+    _w.append(it("assistant", "text", 11.8, text="The next refresh is counted from the last entry, not from now, so after a quiet night it lands late. Changing it to count from now."))
+    _w.append(it("assistant", "thinking", 11.75, text=""))
+    _w += tool("Edit", {"file_path": "/Users/me/code/weather/Widget/Provider.swift",
+                        "old_string": "let next = Calendar.current.date(byAdding: .minute, value: 30, to: lastEntry)!",
+                        "new_string": "let next = Calendar.current.date(byAdding: .minute, value: 15, to: now)!"}, "ok", 11.6)
+    _w += tool("Bash", {"command": "xcodebuild test -scheme WeatherWidget -quiet", "description": "Run the widget tests"},
+               "Test Suite 'All tests' passed.\n     Executed 48 tests, with 0 failures (0 unexpected) in 9.2 seconds", 11.1)
+    _w.append(it("assistant", "thinking", 11.05, text="Tests pass."))
+    _w.append(it("assistant", "text", 11, text="Fixed: the widget now schedules its next refresh 15 minutes from now, so a quiet night no longer "
+                                               "pushes the morning refresh late. All 48 tests pass."))
+    _w.append(it("user", "text", 1.5, text="Also make the fetch timeout a setting."))
+    _w.append(it("assistant", "thinking", 1.45, text="**Moving the timeout** — it is a literal in `Fetcher`; a setting means `WidgetSettings`."))
+    _w += tool("Grep", {"pattern": "timeout", "path": "Widget"}, "Widget/Fetcher.swift:8: let timeout = 10", 1.4)
+    _w.append(it("assistant", "text", 1.2, text="The timeout is hard-coded in `Fetcher.swift`. Moving it into `WidgetSettings`."))
+    _w += tool("Edit", {"file_path": "/Users/me/code/weather/Widget/Fetcher.swift", "old_string": "let timeout = 10",
+                        "new_string": "let timeout = WidgetSettings.fetchTimeout"}, "ok", 0.9)
+    _w.append(it("assistant", "text", 0.6, text="Now running the tests again."))
+    _w.append(it("assistant", "tool_use", 0.5, tool_use_id="toolu_wtl_run", tool_name="Bash",
+                 tool_input={"command": "xcodebuild test -scheme WeatherWidget -quiet", "description": "Run the widget tests"}))
+    ITEMS[WORKTL] = _w
+    SESSIONS.append(sess("macbook", WORKTL, "Widget refresh and timeout", "/Users/me/code/weather", "working", "working", "weather", 1,
+                         "timeline", 12, 0, "Now running the tests again.", state_since=ago(minutes=1.5)))
+
+    _a = [it("user", "text", 20, text="Plan a weekend at the coast for the two of us.")]
+    _a.append(it("assistant", "thinking", 19.95, text="**Two people, one weekend:** check the weather first, then trains, then somewhere to stay near the beach."))
+    _a += tool("WebSearch", {"query": "coast weather this weekend"}, "Saturday sunny 24°, Sunday cloudy 21°", 19.9)
+    _a.append(it("assistant", "text", 19.8, text="Saturday looks sunny, Sunday cloudier. Looking at trains for Saturday morning."))
+    _a.append(it("assistant", "thinking", 19.75, text=""))
+    _a += tool("WebSearch", {"query": "Saturday morning trains to the coast"}, "08:10, 09:40, 11:05", 19.6)
+    _a += tool("WebSearch", {"query": "small hotels near the beach"}, "Three places with rooms for Saturday", 19.4)
+    _a.append(it("assistant", "text", 19, text="Here is a plan: take the 09:40 train on Saturday, stay at a small hotel two streets from the "
+                                               "beach, and spend Sunday morning at the market before the 15:00 train home."))
+    _a.append(it("user", "text", 1.2, text="Book a table for dinner on Saturday."))
+    _a += tool("WebSearch", {"query": "seafood restaurants near the beach, Saturday 19:30"}, "Three places with tables at 19:30", 1.1)
+    _a.append(it("assistant", "text", 0.9, text="Three places have a table at 19:30. Checking which one is quieter."))
+    _a.append(it("assistant", "thinking", 0.85, text="The harbour one has the best reviews for a quiet dinner."))
+    _a += tool("WebFetch", {"url": "https://example.com/harbour-kitchen", "prompt": "Is it quiet in the evening?"}, "Quiet tables by the window", 0.8)
+    _a.append(it("assistant", "text", 0.7, text="The harbour restaurant is the quietest. Asking for a table by the window."))
+    _a.append(it("assistant", "tool_use", 0.6, tool_use_id="toolu_wtl_book", tool_name="WebFetch",
+                 tool_input={"url": "https://example.com/harbour-kitchen/book", "prompt": "A table for two at 19:30 on Saturday, by the window"}))
+    ITEMS[ASK1] = ITEMS[ASK1] + _a
+    ASSISTANT[0].update(state="working", status="working", state_since=ago(minutes=1.2), updated_at=ago(),
+                        last_text="The harbour restaurant is the quietest. Asking for a table by the window.")
+
+
+WORK_TIMELINE = os.environ.get("MOCK_WORK_TIMELINE") == "1"
+if WORK_TIMELINE:
+    mock_work_timeline()
+
+
 # MOCK_EDIT_DIFF=1 (#2915): one finished turn whose edits read as real diffs: an Edit that changes a word in two lines
 # of a block (context between and around them), a MultiEdit of two pieces, a Write (all additions) and an Edit of a
 # 56-line switch that changes its first and last lines (the unchanged middle folds; past 40 lines, Show All). The first
@@ -12828,7 +13005,75 @@ MODES_LOG = []  # POST …/modes requests, GET /mock/modes (the model picker's a
 
 
 def all_sessions():
-    return [decorated_session(s) for s in (SESSIONS + ASSISTANT)]
+    return fold_hierarchy([decorated_session(s) for s in (SESSIONS + ASSISTANT)])
+
+
+def is_child_row(r):
+    root = r.get("root_session_id")
+    return bool(r.get("is_subagent") or r.get("parent_session_id") or r.get("asking_parent_session_id") or (root and root != r["session_id"]))
+
+
+def fold_hierarchy(rows):
+    """The manager's folding (#5120, docs/protocol/protocol.md "Session hierarchy"), on copies: a child (is_subagent, a
+    parent, or the parent a waiting runtime child names in asking_parent_session_id) whose topmost listed ancestor on its
+    machine is another listed row gets folded_under that ancestor, which gets children (its descendants by their own
+    state). Orphans and cycles fold nowhere."""
+    by = {(r["machine_id"], r["session_id"]): r for r in rows}
+
+    def parent(r):
+        for k in ("parent_session_id", "asking_parent_session_id", "root_session_id"):
+            v = r.get(k)
+            if v and v != r["session_id"] and (r["machine_id"], v) in by:
+                return by[(r["machine_id"], v)]
+        return None
+    top = {}
+    for r in rows:
+        cur, seen, found = r, {r["session_id"]}, None
+        while is_child_row(cur):
+            p = parent(cur)
+            if p is None:
+                break
+            if p["session_id"] in seen:
+                found = None
+                break
+            seen.add(p["session_id"])
+            found = cur = p
+        if found is not None:
+            top[(r["machine_id"], r["session_id"])] = found["session_id"]
+    if not top and not any("folded_under" in r or "children" in r for r in rows):
+        return rows
+    rollup = {}
+    for (mid, sid), root in top.items():
+        c = rollup.setdefault((mid, root), {"total": 0, "working": 0, "needs_you": 0})
+        c["total"] += 1
+        state = by[(mid, sid)].get("state")
+        if state in ("working", "needs_you"):
+            c[state] += 1
+    out = []
+    for r in rows:
+        k = (r["machine_id"], r["session_id"])
+        r = {x: v for x, v in r.items() if x not in ("folded_under", "children")}
+        if k in top:
+            r["folded_under"] = top[k]
+        if k in rollup:
+            r["children"] = {x: v for x, v in rollup[k].items() if v or x == "total"}
+        out.append(r)
+    return out
+
+
+def with_fold(row):
+    """One decorated row with what the list's folding gives it."""
+    return next((x for x in all_sessions() if x["machine_id"] == row.get("machine_id") and x["session_id"] == row.get("session_id")), row)
+
+
+def folded_state(s):
+    """Session.FoldedState: what a parent shows and is counted as with its folded children."""
+    own, c = s.get("state") or "unknown", s.get("children") or {}
+    if own == "needs_you" or c.get("needs_you"):
+        return "needs_you"
+    if c.get("working") and own != "unread" and not (own == "idle" and s.get("awaits_reply")):
+        return "working"
+    return own
 
 
 LIST_JOURNAL = {}  # revision -> {identity: row} of the unfiltered list as it was (a bounded delta journal, #3759)
@@ -12900,12 +13145,20 @@ def paged_sessions(query):
     if os.environ.get("MOCK_SESSIONS_LIST") != "1" or not (set(query) - {"manager"}):
         return {"sessions": rows}, 200
     revision = list_revision(rows)
-    fields = {"machine_id": "machine_id", "session_id": "session_id", "state": "state",
+    fields = {"machine_id": "machine_id", "session_id": "session_id",
               "group": "space_id", "source": "source_kind", "provider": "agent"}
     search = query.get("q", [""])[0].lower()
+    # sessions_hierarchy (#5120): roots=1 leaves the folded children out and counts each parent by its folded state;
+    # parent_session_id=<id> (with machine_id) lists the sessions folded under it.
+    roots, under = query.get("roots", [""])[0] == "1", query.get("parent_session_id", [""])[0]
+    if under and not query.get("machine_id", [""])[0]:
+        return {"error": "parent_session_id needs machine_id", "code": "invalid_query"}, 400
+    state_of = folded_state if roots else (lambda s: s.get("state", "unknown"))
 
     def matching(rows):
-        rows = [s for s in rows if all(not query.get(k, [""])[0] or query[k][0] == s.get(v, "")
+        rows = [s for s in rows if (not roots or not s.get("folded_under")) and (not under or s.get("folded_under") == under)
+                and (not query.get("state", [""])[0] or query["state"][0] == state_of(s))
+                and all(not query.get(k, [""])[0] or query[k][0] == s.get(v, "")
                                       for k, v in fields.items())
                 and (not query.get("project", [""])[0] or query["project"][0] == (s.get("repo_root") or s.get("workspace_cwd") or s.get("cwd", "")))
                 and (not search or search in "\n".join(str(s.get(k, "")) for k in ("title", "cwd", "space_name", "slot_name", "last_text")).lower())]
@@ -12917,7 +13170,7 @@ def paged_sessions(query):
         counts = {"total": len(rows), "revision": revision, "machine": {}, "project": {}, "group": {}, "state": {}}
         for s in rows:
             values = {"machine": s["machine_id"], "project": s.get("repo_root") or s.get("workspace_cwd") or s.get("cwd", ""),
-                      "group": s.get("space_id") or s.get("workspace_id", ""), "state": s.get("state", "unknown")}
+                      "group": s.get("space_id") or s.get("workspace_id", ""), "state": state_of(s)}
             for key, value in values.items():
                 counts[key][value] = counts[key].get(value, 0) + 1
         return counts, 200
@@ -15810,7 +16063,7 @@ def set_session_state(query):
     session.update(state=state, status=STATUS_OF_STATE[state], updated_at=now, state_since=now,
                    rev=(session.get("rev") or 0) + 1)
     push_machine(mid)
-    return {"session": stamp_row(decorated_session(session))}, 200
+    return {"session": stamp_row(with_fold(decorated_session(session)))}, 200
 
 
 def incoming_message(query):
@@ -15835,7 +16088,7 @@ def incoming_message(query):
         if sid in subscribed:
             try: send({"type": "items", "machine_id": mid, "session_id": sid, "items": [item], **span([item], before)})
             except OSError: pass
-    return {"session": stamp_row(decorated_session(session)), "item": item}, 200
+    return {"session": stamp_row(with_fold(decorated_session(session))), "item": item}, 200
 
 
 def quiet_capsule():
@@ -16359,6 +16612,54 @@ if os.environ.get("MOCK_CHURN") == "1":
     for _n, _x in enumerate(ITEMS[WIDGET]):  # seqs in transcript order again (the new ones were numbered last)
         _x["seq"] = _w[0]["seq"] + _n
 
+
+# MOCK_TALL_HISTORY=1: the weather chat with twelve tall exchanges in front, like an Agent chat used for a day of work
+# (#4788): long messages of the user's (Chinese and English, lists, paths), replies with headings and nested lists, and
+# tool calls whose results are screenshots. Rows of very different heights, so the lazy list's guesses are far off.
+# With MOCK_STREAM=1 the chat keeps working at its newest end (ScrollToBottomTests 13).
+if os.environ.get("MOCK_TALL_HISTORY") == "1":
+    _tall = []
+    for _k in range(12):
+        _m = 900 - _k * 40
+        _ask = "\n".join([
+            "第 %d 轮：请把下面几件事按顺序推进，做完一件回我一句。" % (_k + 1),
+            "1) 先看 `apps/weather/Sources/Forecast%d.swift` 里的重试逻辑：断网时 retry 没有上限，改成最多 3 次、指数退避。" % _k,
+            "2) Then check the widget timeline: it reloads every 5 minutes even when nothing changed, which drains the battery.",
+            "3) 截图对比：改前 / 改后各一张，深色和浅色都要，放到 `.shots/round-%d/` 下面，拼成一张给我看。" % (_k + 1),
+            "4) 跑相关测试（ForecastTests、WidgetTimelineTests），不用跑整套。",
+            "说明：如果第 2 件需要改接口，先停下来问我；其余的直接做，不用等我确认。",
+            "补充：上一轮的截图里标题被截断了（「天气预报 · 未来七…」），这次一起看一下是不是同一个原因。",
+        ])
+        _tall.append(it("user", "text", _m, text=_ask))
+        _tall.append(it("assistant", "thinking", _m - 1, text="先看重试逻辑，再看小组件的刷新，最后截图。"))
+        _tall += tool("Read", {"file_path": "/Users/me/code/weather/Sources/Forecast%d.swift" % _k}, "struct Forecast%d {}" % _k, _m - 1)
+        _shot = tool("Bash", {"command": "xcrun simctl io booted screenshot .shots/round-%d/after.png" % (_k + 1),
+                              "description": "截改后的图"}, "", _m - 2)
+        _tall += _shot
+        for _dark in (False, True):
+            _tall.append(it("user", "image", _m - 2, tool_use_id=_shot[0]["tool_use_id"],
+                            image={"mime": "image/png", "data": base64.b64encode(_page_png(360, 480, dark=_dark)).decode()}))
+        _tall.append(it("assistant", "text", _m - 3, text="\n".join([
+            "第 %d 轮做完了，按顺序说：" % (_k + 1),
+            "",
+            "**重试逻辑：** 改成最多 3 次，间隔 1 s、2 s、4 s；断网时第三次失败就停下，界面显示「暂时连不上」。",
+            "- 改了 `Forecast%d.swift` 和它的测试，`ForecastTests` 全过。" % _k,
+            "- 顺手把两处重复的超时判断合并成一个函数。",
+            "",
+            "**Widget timeline:** it now reloads only when the forecast changed or at the next hour, instead of every 5 minutes.",
+            "- Measured on the simulator: 12 reloads an hour before, 1–2 after.",
+            "- `WidgetTimelineTests` passes, including a new case for an unchanged forecast.",
+            "",
+            "**截图：** 改前 / 改后、深浅色各一张，拼图在上面。",
+            "- 标题截断是同一个原因：标题行没有给日期留位置，改成最多两行。",
+            "- 第 2 件没有动接口，所以没停下来问你。",
+            "",
+            "**接下来：** 等你看完截图，没问题我就开 PR；有要改的直接说。",
+        ])))
+    _w = ITEMS[WIDGET]
+    ITEMS[WIDGET] = _tall + _w
+    for _n, _x in enumerate(ITEMS[WIDGET]):  # transcript order: the tall history first
+        _x["seq"] = _n + 1
 
 # MOCK_COMPUTER=ready|permissions|locked: the hub's plugin cua is on (docs/extensions/computer-use.md) and macbook is turned on
 # in that state; Mac Studio is a Mac it is not on for yet. =off: on, but for no machine yet. Unset: the plugin is off.
@@ -18248,6 +18549,7 @@ MOCK_HELP = [
     "MOCK_SESSIONS_MANY=<n>  n more idle sessions to page through; GET /mock/sessions/touch expires the old cursors (#4410)",
     "MOCK_MANUAL_HERDR=1  没挂待办的 herdr Agent 算手动开的（started_by_persona 为假），Agents「按待办」里出「手动开的」一段（#2917）",
     "MOCK_ORCA_CHILDREN=1  MacBook 上一个 Orca 工作区带三个子工作区（其中一个还有子项，parent_space_id，#2073）",
+    "MOCK_CHILD_SESSIONS=1  The Paseo computer (MOCK_PASEO) with its agent's four created agents (one waiting for you, one working with a Codex subagent of its own, one done, one failed) and an agent whose creator is not listed: the hub folds them (folded_under / children) and the lead's chat draws a card for each (#5120)",
     "MOCK_PASEO=1  A computer whose engine is Paseo: a project with its main checkout and two titled worktree workspaces, an agent with the two agents it created (one waiting for you), and a Codex agent whose thread has a subagent",
     "MOCK_LIVE_STEP=bash|command|reads|parallel|thinking|thinking-folded  The widget chat a minute into a turn whose newest step is still going: the running work line names it (#2987)",
     "MOCK_TOOL_OUTCOMES=1  A turn whose tool results carry outcomes: a failed test run (exit code, the cut output's end), a denied edit, a refused write, an interrupted and a timed-out command; only the failure is red (#4303)",
@@ -19071,6 +19373,8 @@ class H(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             return self.send_json(assistant_state(q.get("space", [""])[0], q.get("archived", [""])[0] == "1"))
         if p == "/api/v1/model-config": return self.send_json(model_configuration())
+        if p == "/api/v1/model-config/purposes/" + SUPERVISE_PURPOSE and (own := supervise_model_purpose()):
+            return self.send_json(own)
         if p.startswith("/api/v1/model-config/purposes/"):
             catalog = model_configuration(include_uses=True)
             purpose = next((x for x in catalog["purposes"] if x["id"] == unquote(p.rsplit("/", 1)[1])), None)
@@ -19850,6 +20154,8 @@ class H(BaseHTTPRequestHandler):
             if c is None: return self.send_json({"error": "not found"}, 404)
             if m.group(2) == "archive" and c["session_id"] == ASSISTANT_CONFIG["main"]:
                 return self.send_json({"error": "the main conversation can't be archived"}, 400)
+            if m.group(2) == "archive" and c["session_id"] == BACKGROUND_SUPERVISOR:  # built in, stays listed (#4927)
+                return self.send_json({"error": "the background supervisor can't be archived"}, 400)
             c["archived"] = m.group(2) == "archive"
             push_machine(c["machine_id"])
             return self.send_json({"ok": True, "archived": c["archived"]})
@@ -20045,6 +20351,21 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
         if self.command == "POST" and p.startswith("/api/v1/inbox/") and p.endswith("/draft"):
             return self.send_json(*inbox_draft(unquote(p[len("/api/v1/inbox/"):-len("/draft")]), json.loads(self.last_body or b"{}")))
+        if p == "/api/v1/model-config/purposes/" + SUPERVISE_PURPOSE and self.command == "PATCH" and (own := supervise_model_purpose()):
+            body, purpose = json.loads(self.last_body or b"{}"), own["purpose"]
+            with MODEL_CONFIG_LOCK:
+                if body.get("revision") != purpose["revision"]:
+                    return self.send_json({"error": "配置已在别处修改"}, 409)
+                binding = dict(purpose["override"])
+                if "provider" in body and body["provider"] != binding.get("provider"):
+                    binding.pop("model", None)
+                    binding.pop("effort", None)
+                for field in purpose["fields"]:
+                    if field not in body: continue
+                    if body[field] is None: binding.pop(field, None)
+                    else: binding[field] = body[field]
+                MODEL_BINDINGS[SUPERVISE_PURPOSE] = {"revision": purpose["revision"] + 1, "override": binding}
+            return self.send_json(supervise_model_purpose())
         if p.startswith("/api/v1/model-config/purposes/") and self.command == "PATCH":
             pid, body = unquote(p.rsplit("/", 1)[1]), json.loads(self.last_body or b"{}")
             with MODEL_CONFIG_LOCK:
@@ -20838,6 +21159,8 @@ class H(BaseHTTPRequestHandler):
                 ASSISTANT_CONFIG["agent_tasks"] = body["agent_tasks"]
             if isinstance(body.get("inbox_signals"), bool):
                 ASSISTANT_CONFIG["inbox_signals"] = body["inbox_signals"]
+            if isinstance(body.get("main_supervises_own_tasks"), bool) and not os.environ.get("MOCK_LEGACY_HUB"):
+                ASSISTANT_CONFIG["main_supervises_own_tasks"] = body["main_supervises_own_tasks"]
             if isinstance(body.get("kb_topics"), bool):
                 ASSISTANT_CONFIG["kb_topics"] = body["kb_topics"]
             if body.get("machine_id"):
@@ -20927,7 +21250,7 @@ class H(BaseHTTPRequestHandler):
                 if os.environ.get("MOCK_RESUME_ERROR"): return self.send_json({"error": os.environ["MOCK_RESUME_ERROR"]}, 502)
                 resume.update(status="idle", state="idle")
                 push_machine(resume["machine_id"])
-                return self.send_json({"session": decorated_session(resume)})
+                return self.send_json({"session": with_fold(decorated_session(resume))})
             codex = body.get("launcher") == "codex"  # the node starts Codex with its first message and answers with its thread
             if codex and (body.get("async") or not (body.get("prompt") or "").strip() and not MOCK_CODEX_WAITING):
                 return self.send_json({"error": "新建 Codex 会话要连第一条消息一起发：Codex 收到第一条消息才建会话。", "code": "codex_needs_prompt"}, 400)
@@ -20976,7 +21299,7 @@ class H(BaseHTTPRequestHandler):
                     t["updated_at"] = now_str
                     push_machine(s["machine_id"])
                     push_todos()
-            return self.send_json({"session": decorated_session(s)})
+            return self.send_json({"session": with_fold(decorated_session(s))})
         if p.startswith("/api/v1/auth/tokens/") and self.command == "DELETE":
             for t in TOKENS:
                 if t["id"] == p.split("/")[-1]:
@@ -21520,6 +21843,8 @@ class H(BaseHTTPRequestHandler):
                     subscribed.add(sid)
                     if LIVE_STATUS and "session_live" in asked:
                         live_status_subscribe(send, mid, sid)
+                    if WORK_TIMELINE and "session_live" in asked:
+                        work_timeline_live(send, mid, sid)
                     items = find_items(sid)
                     since = msg.get("since_seq") or 0
                     if GAP and sid == SESSIONS[0]["session_id"] and not GAP_STATE["started"]:
@@ -21778,6 +22103,9 @@ MOCK_HELP.append("MOCK_MARKDOWN=1  任务往来和回执里带 **粗体**、`代
 MOCK_HELP.append("MOCK_TASK_RENAMED=1  整理发布说明这个任务在回执写好后改了名：回执应显示新名字「写本周发布说明」（#3036）")
 MOCK_HELP.append("MOCK_AUTO_CONVERSATIONS=1  助手对话带来源 origin（feature conversation_origin）：另有 10 段自动对话（收件箱 6、定时任务 2、飞书 /agent、对话派生），侧边栏收进「自动对话」（#3264）")
 MOCK_HELP.append("MOCK_EXTERNAL=1  和 MOCK_AUTO_CONVERSATIONS=1 一起用：飞书 /agent 那段带上请求和上下文，另加一段别的扩展开的（origin extension），两段都是外部的（#3758）")
+MOCK_HELP.append("MOCK_BACKGROUND_SUPERVISOR=1  The hub's built-in background supervisor conversation exists (#4927): origin task with no origin_ref, "
+                 "named by GET /api/v1/assistant as background_supervisor, and archiving it is refused. Without it the setting "
+                 "main_supervises_own_tasks and the model use assistant.supervise (answered by its own id, not in the catalog) are still there; MOCK_LEGACY_HUB has none of them")
 
 
 
@@ -22161,6 +22489,26 @@ def live_status_subscribe(send, mid, sid):
 
 
 MOCK_HELP.append("MOCK_LIVE_STATUS=1  Claude 会话的实时状态行（session_live，#1963）：声明了 session_live 的连接订阅后按 MOCK_LIVE_STATUS_TICK 秒（默认 1）一条推 live（思考中、thought for、token 增长、动词变化），最后推 null、会话变空闲；结束后再订阅会重来一轮")
+
+
+def work_timeline_live(send, mid, sid):
+    """MOCK_WORK_TIMELINE: the two live sessions say they are thinking, every 5 s for 10 minutes or until the page goes."""
+    if sid not in (WORKTL, ASK1):
+        return
+
+    def run():
+        import time
+        for _ in range(120):
+            try:
+                send({"type": "live", "machine_id": mid, "session_id": sid,
+                      "live": {"verb": "Thinking", "thinking": True, "elapsed_s": 30, "at": utc_now()}})
+            except Exception:
+                return
+            time.sleep(5)
+    threading.Thread(target=run, daemon=True).start()
+
+
+MOCK_HELP.append("MOCK_WORK_TIMELINE=1  work summaries that open to cindy's timeline (#5155): the weather Agent (WORKTL) and the Persona main conversation each have a finished and a live turn, with narration between runs of steps and thoughts with and without words; a connection that declared session_live and subscribes to either is told every 5 s that it is thinking")
 
 
 # ---------- MOCK_CHAT_CARDS: a crowded composer on a phone (#1996) ----------
@@ -23188,6 +23536,110 @@ MOCK_HELP.append("MOCK_ULTRACODE=1  Claude Code 的 ultracode 开关（#3428）�
 MOCK_HELP.append("MOCK_CUSTOM_MODELS=1|forgetfail|empty|fail  手动输入模型 ID（#1644）：features 带 typed_models；Claude Code / Codex 的模型列表后面带输入过的 ID（custom），"
                  "DELETE …/models/custom?model= 忘掉；新建和 …/modes 用了列表里没有的 ID 就记下。forgetfail：忘掉回 500；empty：Claude Code 的列表是空的；"
                  "fail：读不到列表（502）。GET /mock/custom_models 看记着的，?reset=1 复原")
+
+# Switching a running Agent to another provider (#5035, docs/protocol/protocol.md "Switching a running Agent to another
+# provider"): MOCK_LAUNCHER_SWITCH=1 advertises `launcher_switch`, gives every computer a second Claude Code launcher
+# ("work", through a made-up gateway, with its own models) beside claude, the locked sonnetcc and codex, and takes
+# POST …/modes {launcher, model?, effort?}: another Claude launcher records `pending_switch` on the row (nothing typed;
+# codex is 409 switch_other_agent, a model with sonnetcc 409 switch_model_locked, an unknown one 409
+# switch_launcher_missing), the session's own drops it. The next message carries it out: the row's launcher (and model)
+# become the new ones and pending_switch goes. =pending: the PR review starts with a switch to work waiting; =refuse: a
+# message carrying a switch is refused (409 switch_busy, delivered none) and the switch keeps waiting; =pending,refuse
+# both. GET /mock/launcher_switch: the requests; ?reset=1 drops every pending switch (and puts =pending's back).
+LAUNCHER_SWITCH_MODE = os.environ.get("MOCK_LAUNCHER_SWITCH", "")
+LAUNCHER_SWITCH_LOG = []
+LAUNCHER_SWITCH_ALL = [{"name": "claude", "model": "opus"}, {"name": "work", "model": "glm-5.3"}, {"name": "sonnetcc", "model": "sonnet"},
+                       {"name": "codex", "model": "gpt-5.5", "agent": "codex", "agent_type": "codex"}]
+if LAUNCHER_SWITCH_MODE:
+    LAUNCHER_MODELS["work"] = {"agent": "claude", "models": [
+        {"id": "default", "name": "Default (recommended)", "description": "Use the gateway's default model (currently glm-5.3)", "resolved": "glm-5.3", "default": True, "efforts": ["low", "medium", "high"]},
+        {"id": "glm-5.3", "name": "glm-5.3", "description": "From the gateway", "efforts": ["low", "medium", "high"]},
+        {"id": "deepseek-v4", "name": "deepseek-v4", "description": "From the gateway", "efforts": ["low", "medium", "high"]},
+        {"id": "opus", "name": "Opus 5.5", "description": "Opus 5.5 · through the gateway", "resolved": "claude-opus-5-5", "efforts": _CLAUDE_EFFORTS},
+    ]}
+
+
+def launcher_switch_reset():
+    for s in SESSIONS:
+        s.pop("pending_switch", None)
+    if "pending" in LAUNCHER_SWITCH_MODE:
+        for s in SESSIONS:
+            if s["session_id"] == REVIEW:
+                s["pending_switch"] = {"launcher": "work", "model": "glm-5.3", "at": ago(minutes=2)}
+
+
+def launcher_switch_route(handler, p, body):
+    """MOCK_LAUNCHER_SWITCH: the second launcher, POST …/modes {launcher}, a message carrying the switch. False otherwise."""
+    if not LAUNCHER_SWITCH_MODE: return False
+    if p == "/mock/launcher_switch":
+        if "reset=1" in (handler.path.split("?", 1) + [""])[1]:
+            launcher_switch_reset()
+            for m in MACHINES: push_machine(m["id"])
+        return handler.send_json({"requests": LAUNCHER_SWITCH_LOG}) or True
+    if handler.command == "GET" and re.fullmatch(r"/api/v1/machines/[^/]+/launchers", p):
+        return handler.send_json({"launchers": launcher_health_list([dict(l) for l in LAUNCHER_SWITCH_ALL])}) or True
+    m = re.fullmatch(r"/api/v1/sessions/([^/]+)/([^/]+)/(modes|messages)", p)
+    if not m or handler.command != "POST": return False
+    s = next((x for x in SESSIONS if x["machine_id"] == m.group(1) and x["session_id"] == m.group(2)), None)
+    if s is None: return False
+    req = json.loads(body or b"{}")
+    if m.group(3) == "messages":
+        ps = s.get("pending_switch")
+        if not ps: return False
+        if "refuse" in LAUNCHER_SWITCH_MODE:
+            return handler.send_json({"error": "Agent 正在工作，等它停下再发，发出时会先切换到 %s" % ps["launcher"], "code": "switch_busy",
+                                      "delivered": "none"}, 409) or True
+        s["launcher"] = ps["launcher"]
+        s["model"] = ps.get("model") or LAUNCHER_MODELS.get(ps["launcher"], {}).get("models", [{}])[0].get("resolved", s.get("model"))
+        if ps.get("effort"): s["effort"] = ps["effort"]
+        s.pop("pending_switch", None)
+        push_machine(s["machine_id"])
+        return False  # the message goes on as any other
+    launcher = req.get("launcher") or ""
+    if not launcher: return False
+    LAUNCHER_SWITCH_LOG.append({"session_id": s["session_id"], **{k: req[k] for k in ("launcher", "model", "effort") if k in req}})
+    if launcher == (s.get("launcher") or "claude"):
+        s.pop("pending_switch", None)
+        push_machine(s["machine_id"])
+        rest = {k: v for k, v in req.items() if k in ("permission_mode", "effort", "model") and v}
+        if rest:
+            s.update(rest)
+            MODES_LOG.append({"session_id": s["session_id"], **rest})
+        return handler.send_json({}) or True
+    known = {l["name"]: l for l in LAUNCHER_SWITCH_ALL}
+    if launcher not in known:
+        return handler.send_json({"error": "这台电脑上没有启动器 %s" % launcher, "code": "switch_launcher_missing"}, 409) or True
+    if known[launcher].get("agent", "claude") != "claude":
+        return handler.send_json({"error": "%s 运行的不是 Claude Code" % launcher, "code": "switch_other_agent"}, 409) or True
+    if req.get("model") and LAUNCHER_MODELS.get(launcher, {}).get("locked"):
+        return handler.send_json({"error": "%s 固定了自己的模型，不能另选" % launcher, "code": "switch_model_locked"}, 409) or True
+    s["pending_switch"] = {"launcher": launcher, **{k: req[k] for k in ("model", "effort") if req.get(k)}, "at": ago(minutes=0)}
+    if req.get("permission_mode"): s["permission_mode"] = req["permission_mode"]
+    push_machine(s["machine_id"])
+    return handler.send_json({}) or True
+
+
+if LAUNCHER_SWITCH_MODE:
+    launcher_switch_reset()
+
+_plugins_route_without_launcher_switch = plugins_route
+
+
+def plugins_route(handler, p, body):
+    return launcher_switch_route(handler, p, body) or _plugins_route_without_launcher_switch(handler, p, body)
+
+
+_features_without_launcher_switch = features
+
+
+def features():
+    return _features_without_launcher_switch() + (["launcher_switch"] if LAUNCHER_SWITCH_MODE else [])
+
+
+MOCK_HELP.append("MOCK_LAUNCHER_SWITCH=1|pending|refuse|pending,refuse  运行中的 Agent 换服务商（#5035）：features 带 launcher_switch；每台电脑多一个 Claude Code 启动器 work（走网关，"
+                 "自己的模型列表）；POST …/modes {launcher} 换到另一个 Claude 启动器就记下 pending_switch（codex 回 409 switch_other_agent，"
+                 "sonnetcc 带模型回 409 switch_model_locked），换回自己的就清掉；下一条消息执行切换。pending：检查 PR 那个一开始就有待切换；"
+                 "refuse：带切换的消息回 409 switch_busy。GET /mock/launcher_switch 看请求，?reset=1 复原")
 
 # Agent session archives (docs/protocol/protocol.md "Agent session archives"; web "Archived agents"): MOCK_AGENT_ARCHIVES=1
 # advertises archives and "Archive and close" (=archive: archives only, as behind an older manager), with two agents

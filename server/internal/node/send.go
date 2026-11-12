@@ -86,6 +86,25 @@ func (n *Node) send(ctx context.Context, id, text string, images []proto.Image, 
 		if err := n.checkPaneFor(ctx, pane, kind, opts); err != nil { // sendsafe.go
 			return err
 		}
+		if kind == "claude" && opts.ApplySwitch {
+			// The user's own message carries out the switch to another launcher they picked (launcher_switch.go): the
+			// agent is quit and resumed there, in the same terminal, and the message goes to it. While the agent is busy
+			// the message goes on the launcher it runs on and the switch waits; a failed switch is dropped with nothing
+			// typed. A switch kept with the record waits for the hub's copy of it after a node restart.
+			_ = n.state.loaded(ctx)
+			if ps := n.pendingSwitch(id); ps != nil {
+				switched := false
+				if pane, switched, err = n.applySwitch(ctx, id, pane, *ps); err != nil {
+					return err
+				}
+				// The new claude came up behind a dialog of its own (start returns early then): the text would answer it.
+				if switched {
+					if err := n.checkPane(ctx, pane, "claude", ""); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	} else {
 		// A session of the desktop app's sidebar that nothing runs: the app opens it, and the message goes to its inbox,
 		// not to a claude --resume of ours (claudedesktop_open.go).
@@ -283,6 +302,9 @@ func keepImagePaths(text string) string {
 }
 
 func (n *Node) keys(ctx context.Context, id string, keys []string, text string) error {
+	if err := n.switchingRefusal(id); err != nil { // a launcher switch, maybe on the last connection's Node
+		return err
+	}
 	n.dropSuggestion(id) // whatever goes in replaces or sends it
 	pane, err := n.paneFor(ctx, id)
 	if err != nil {

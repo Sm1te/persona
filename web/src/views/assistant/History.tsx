@@ -1,6 +1,8 @@
 // "All chats" (docs/assistant/assistant.md "Managing its own conversations", the iOS app's sidebar + ArchivedConversationsView): every conversation
 // Persona has, the main one first, the rest newest first by day; search on the title and the last message; a row's menu
-// renames it, copies its id, archives it (the main one can't be). The archived ones are folded at the end.
+// renames it, copies its id, archives it (the main one can't be). The archived ones are folded at the end. The background
+// supervisor (#5082, lib/background-supervisor.ts) is with the scheduled tasks' chats, marked built in, and its menu only
+// copies its id.
 import { conversationChannel, useChannels } from "../../lib/channels";
 import { ChannelMark, OriginMark } from "../../ui/ChannelMark";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -18,6 +20,7 @@ import { arrange, conversationTitle, filterConversations, mergeConversations, sp
 import { Empty, inputClass, SectionTitle } from "./parts";
 import { Chip } from "../inbox/InboxParts";
 import { autoConversations, externalOrigin, matchesOrigin, originLabel, parseOriginFilter, type OriginFilter } from "../../lib/conversation-origins";
+import { backgroundSupervisorTitle, isBackgroundSupervisor } from "../../lib/background-supervisor";
 import { t } from "../../i18n";
 
 const NONE: Session[] = [];
@@ -73,9 +76,10 @@ export function History({ origin, onToggleSidebar }: { origin?: string; onToggle
       }),
     [fetched, assistant?.conversations, live, titles, marked],
   );
-  const hits = useMemo(() => filterConversations(all.filter((s) => matchesOrigin(s, filter)), query), [all, query, filter]);
+  const background = assistant?.background_supervisor;
+  const hits = useMemo(() => filterConversations(all.filter((s) => matchesOrigin(s, filter, background)), query), [all, query, filter, background]);
   // the sources there are (#3264): "All" · "Mine" · one per kind of automatic conversation, when there are any
-  const sources = useMemo(() => autoConversations(all, assistant?.main).groups, [all, assistant?.main]);
+  const sources = useMemo(() => autoConversations(all, assistant?.main, background).groups, [all, assistant?.main, background]);
   const { main, days, archived } = useMemo(() => arrange(hits, assistant?.main, new Date(nowMs)), [hits, assistant?.main, nowMs]);
   const total = all.filter((s) => !s.archived).length;
   const searching = query.trim() !== "";
@@ -244,8 +248,10 @@ function ConvChannel({ ids }: { ids?: string[] }) {
 function ConvRow({ s, main, now, onRename, onArchive }: { s: Conversation; main?: boolean; now: number; onRename: (s: Conversation) => void; onArchive: (s: Conversation, on: boolean) => void }) {
   const menu = useMenu();
   const route: Route = conversationPage(s.session_id, s.machine_id, s.manager);
-  const title = conversationTitle(s, main);
-  const split = splitTitle(title);
+  // the background supervisor is built in (#5082): its own name and mark, and nothing to rename, archive or make 常驻
+  const builtIn = useStore((x) => isBackgroundSupervisor(x.assistant, s.session_id));
+  const title = builtIn ? backgroundSupervisorTitle(s) : conversationTitle(s, main);
+  const split = builtIn ? null : splitTitle(title);
   const st = stateOf(s);
   const flagged = st === "needs_you" || st === "working" || st === "unread";
   const last = plainMarkdown(s.last_text);
@@ -253,11 +259,12 @@ function ConvRow({ s, main, now, onRename, onArchive }: { s: Conversation; main?
   const origin = externalOrigin(s);
   // the chats outside the sidebar live here: 设为常驻 puts one in its 常驻 group (#4331)
   const leader = useStore((x) => !!x.assistant?.leaders?.includes(s.session_id));
+  const own = !main && !builtIn;
   const items: MenuItem[] = [
-    ...(!main && !s.archived ? [leaderItem(s, leader)] : []),
-    ...(!main ? [{ key: "rename", label: t("assistant-history.rename_ellipsis"), icon: "pencil" as const, onSelect: () => onRename(s) }] : []),
+    ...(own && !s.archived ? [leaderItem(s, leader)] : []),
+    ...(own ? [{ key: "rename", label: t("assistant-history.rename_ellipsis"), icon: "pencil" as const, onSelect: () => onRename(s) }] : []),
     { key: "copy", label: t("assistant-history.copy_session_id"), icon: "copy", onSelect: () => void copyText(s.session_id) },
-    ...(!main
+    ...(own
       ? [s.archived
           ? { key: "unarchive", label: t("assistant-history.unarchive"), icon: "archive" as const, onSelect: () => onArchive(s, false) }
           : { key: "archive", label: t("assistant-history.archive"), icon: "archive" as const, onSelect: () => onArchive(s, true) }]
@@ -272,7 +279,7 @@ function ConvRow({ s, main, now, onRename, onArchive }: { s: Conversation; main?
         className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 focus-visible:outline-none"
       >
         <span className={cx("flex size-8 shrink-0 items-center justify-center rounded-full", main ? "bg-ink text-surface" : markTone(s.session_id))}>
-          <Icon name={main ? "spark" : "chat"} size={main ? 13 : 14} />
+          <Icon name={main ? "spark" : builtIn ? "target" : "chat"} size={main ? 13 : 14} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
@@ -287,6 +294,7 @@ function ConvRow({ s, main, now, onRename, onArchive }: { s: Conversation; main?
               )}
             </span>
             {main && <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full bg-accent-tint px-2 text-[11px] font-medium text-accent-ink">{t("assistant-history.main_chat")}</span>}
+            {builtIn && <span data-testid="built-in" className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full bg-field px-2 text-[11px] font-medium text-ink-2">{t("assistant-conversations.built_in")}</span>}
             {origin ? <OriginMark origin={origin} size={16} /> : <ConvChannel ids={s.channels} />}
           </span>
           {last && <span className="mt-0.5 block truncate text-[12px] text-ink-3">{last}</span>}

@@ -10,7 +10,7 @@ import { ActionRow } from "./ActionRow";
 import { ChatContext } from "./chat-context";
 import { ChatSearch } from "./ChatSearch";
 import { revealItem, undoReveals } from "./search-reveal";
-import { ThinkingCard } from "./ThinkingCard";
+import { ThinkingRow } from "./ThinkingRow";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -120,12 +120,22 @@ describe("going to a hit", () => {
   });
 
   it("opens a thought", () => {
-    const thought: Item = { id: "th#0", seq: 2, role: "assistant", kind: "thinking", text: "the parser drops a token" };
-    act(() => root.render(<ThinkingCard item={thought} durationMs={2000} scope="m/s:" />));
-    expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    const thought: Item = { id: "th#0", seq: 2, role: "assistant", kind: "thinking", text: "the parser drops a token\nat the end" };
+    act(() => root.render(<ThinkingRow item={thought} scope="m/s:" />));
+    expect(host.querySelector('[data-thinking="words"] > div')?.getAttribute("aria-expanded")).toBe("false");
     act(() => revealItem("m/s:", "th#0"));
-    expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector('[data-thinking="words"] > div')?.getAttribute("aria-expanded")).toBe("true");
     act(() => undoReveals());
-    expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('[data-thinking="words"] > div')?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens a thought that fits on its row too (#5155: its row says it already, opened it shows it whole)", () => {
+    const thought: Item = { id: "th#1", seq: 2, role: "assistant", kind: "thinking", text: "the parser drops a token" };
+    act(() => root.render(<ThinkingRow item={thought} scope="m/s:" />));
+    expect(host.querySelector('[data-thinking="words"] > div')?.hasAttribute("aria-expanded")).toBe(false);
+    act(() => revealItem("m/s:", "th#1"));
+    expect(host.querySelector('[data-thinking="words"] > div')?.getAttribute("aria-expanded")).toBe("true");
+    act(() => undoReveals());
+    expect(host.querySelector('[data-thinking="words"] > div')?.hasAttribute("aria-expanded")).toBe(false);
   });
 });

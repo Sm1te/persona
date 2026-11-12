@@ -284,4 +284,52 @@ class AssistantDrawerShotsTest {
         rule.waitForIdle()
         rule.onNodeWithText("最近").assertDoesNotExist()
     }
+
+    // #5084: the built-in background supervisor waits under All chats with the chats Persona opened itself, under the
+    // app's name for it, in every style, light and dark; its menu only copies its session id.
+    @Test fun drawsTheBackgroundSupervisorUnderAllChatsWithoutPinArchiveOrEnd() {
+        var style by mutableStateOf(AppStyle.Glass)
+        var dark by mutableStateOf(false)
+        val scheduled = Session(machineId = "hub", sessionId = "s1", title = "每日早报", origin = "task", originRef = "t1",
+            status = "idle", updatedAt = minutesAgo(50))
+        val background = Session(machineId = "hub", sessionId = "bg", title = "Background supervisor", origin = "task",
+            status = "working", updatedAt = minutesAgo(3), lastText = "登录页修复：三条验收标准都有证据，已验收。")
+        val snapshot = persona.core.contracts.api.AssistantSnapshot(main.key, listOf(main, scheduled, background) + recent,
+            backgroundSupervisor = "bg")
+        val groups = conversationGroups(snapshot, "", ConversationWords("新对话", "接力", "接力：%s", "后台督办"))
+        rule.setContent {
+            PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
+                Box(Modifier.testTag("shot").width(400.dp).height(1700.dp).background(PersonaTheme.palette.background)) {
+                    AssistantDrawer("", {}, groups, active = null, hasMain = true, onEnd = {}, onMain = {}, onOpen = {},
+                        onInfo = {}, onNew = {}, onHome = {}, onSettings = {}, onArchive = {}, onLeader = {})
+                }
+            }
+        }
+        // not among the user's recent chats; under All chats, which lists it with the scheduled task's conversation
+        rule.onNodeWithText("后台督办").assertDoesNotExist()
+        rule.onNodeWithText("全部对话（4）").performClick()
+        rule.onNodeWithText("后台督办").assertExists()
+        rule.onNodeWithText("每日早报").assertExists()
+        rule.onAllNodesWithText("Background supervisor").assertCountEquals(0)
+        for (s in AppStyle.entries) for (d in listOf(false, true)) {
+            style = s; dark = d
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+            capture("drawer-background-supervisor-${s.name.lowercase()}-${if (d) "dark" else "light"}")
+        }
+        style = AppStyle.Glass; dark = false
+        rule.waitForIdle()
+        // The rows with a menu, top to bottom: Persona, the two recent chats, then All chats newest first, where the
+        // background supervisor (3 minutes ago) is first.
+        rule.onAllNodesWithContentDescription("对话操作")[3].performClick()
+        rule.onNodeWithText("拷贝会话 ID").assertExists()
+        rule.onAllNodesWithText("设为常驻").assertCountEquals(0)
+        rule.onAllNodesWithText("归档").assertCountEquals(0)
+        rule.onAllNodesWithText("结束对话").assertCountEquals(0)
+        rule.onNodeWithText("拷贝会话 ID").performClick()
+        // any other chat there keeps its whole menu
+        rule.onAllNodesWithContentDescription("对话操作")[4].performClick()
+        rule.onNodeWithText("设为常驻").assertExists()
+        rule.onNodeWithText("归档").assertExists()
+        rule.onNodeWithText("结束对话").assertExists()
+    }
 }

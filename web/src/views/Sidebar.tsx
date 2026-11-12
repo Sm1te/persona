@@ -20,6 +20,7 @@ import { cardState } from "../lib/card-focus";
 import { agentKey, isSpacePinned, pinnedSessions } from "../lib/pins";
 import { firstAndCurrent } from "../lib/persona-nav";
 import { recentConversations } from "../lib/conversation-origins";
+import { isBackgroundSupervisor } from "../lib/background-supervisor";
 import { setRecentMore, useRecentCount, useRecentMore } from "../lib/sidebar-recent";
 import { countsLabel, directionLabel, totalCounts, useDirectionNames, useLeaderCounts } from "../lib/direction-names";
 import { groupsByDirection, useDirectionTree } from "../lib/direction-tree";
@@ -271,12 +272,13 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
   // it is the menu's 设为常驻 / 取消常驻, on the hub for every device. Each says what it has open, Working and Waiting on
   // you, and an open sidebar follows the hub's `directions` (lib/store.ts). Then "最近", the newest of the user's other
   // chats (#4873): as many as the setting says, more after each Show more (#5146); every chat is under 全部对话.
-  const leaders = (assistant?.leaders ?? []).filter((id) => id !== assistant?.main);
+  // The background supervisor is neither: it is built in, listed with the scheduled tasks' chats under 全部对话 (#5082).
+  const leaders = (assistant?.leaders ?? []).filter((id) => id !== assistant?.main && !isBackgroundSupervisor(assistant, id));
   const isLeader = (id: string) => leaders.includes(id);
   const directions = leaders.map((id) => assistant?.conversations.find((c) => c.session_id === id)).filter((c): c is Session => !!c);
   const recentCount = useRecentCount();
   const recentMore = useRecentMore();
-  const ownChats = recentConversations(assistant?.conversations ?? [], assistant?.main, leaders);
+  const ownChats = recentConversations(assistant?.conversations ?? [], assistant?.main, leaders, assistant?.background_supervisor);
   const recent = ownChats.slice(0, recentCount * (1 + recentMore));
   const recentLeft = ownChats.length - recent.length;
   const recentLess = recentMore > 0 && ownChats.length > recentCount;
@@ -382,7 +384,7 @@ export function Sidebar({ route, onSearch, onNewAgent, onNavigate, workspaceActi
         {workBrowserReady ? <PendingAgents route={route} reg={reg} hover={hover} go={go} onNewAgent={onNewAgent} onNavigate={onNavigate} />
           : !(narrow && route.name === "agent-list") && <AgentsBlock reg={reg} hover={hover} activeKey={activeKey} go={go} onNewAgent={onNewAgent} onNavigate={onNavigate} workspaceActions={workspaceActions} foldable />}
       </div>
-      {convMenu && <ConversationRowMenu s={convMenu.s} main={convMenu.s.session_id === assistant?.main} leader={isLeader(convMenu.s.session_id)} anchor={convMenu.anchor} at={convMenu.at} onClose={() => setConvMenu(null)} />}
+      {convMenu && <ConversationRowMenu s={convMenu.s} main={convMenu.s.session_id === assistant?.main} leader={isLeader(convMenu.s.session_id)} builtIn={isBackgroundSupervisor(assistant, convMenu.s.session_id)} anchor={convMenu.anchor} at={convMenu.at} onClose={() => setConvMenu(null)} />}
       {/* subscription rate-limit windows (#2432): nothing is drawn without data */}
       <SidebarUsage />
       <NodePrompt />

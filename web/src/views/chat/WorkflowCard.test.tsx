@@ -159,9 +159,9 @@ describe("the card in the chat", () => {
     expect(q("[data-task-status]")!.dataset.taskStatus).toBe("running");
     expect(text("[data-task-status]")).toBe("运行中");
     expect(q("[data-task-status] svg")).toBeNull(); // a spinner, not an outcome's icon
-    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "12.3k tokens", "37 次工具调用", "已运行 1 分 55 秒"]);
+    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "12.3k tokens", "37 次工具调用", "已运行 1m 55s"]);
     act(() => vi.advanceTimersByTime(2000));
-    expect(text("[data-task-elapsed]")).toBe("已运行 1 分 57 秒"); // ticks each second
+    expect(text("[data-task-elapsed]")).toBe("已运行 1m 57s"); // ticks each second
     expect(text("[data-workflow-progress-line]")).toBe("Verify · 4/5 Agent");
     expect([...host.querySelectorAll<HTMLElement>("[data-workflow-strip] [data-cell]")].map((c) => c.dataset.cell)).toEqual(["done", "done", "done", "done", "running"]);
     expect(q("[data-workflow-strip]")!.getAttribute("aria-hidden")).toBe("true");
@@ -173,7 +173,7 @@ describe("the card in the chat", () => {
 
   it("leaves out what the hub does not say, and says the time it took once the run has ended", () => {
     drawCard([ended()]);
-    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "1 分 35 秒"]);
+    expect([...host.querySelectorAll("[data-task-meta] > *")].map((e) => e.textContent)).toEqual(["Workflow", "1m 35s"]);
     expect(text("[data-workflow-progress-line]")).toBe("5/5 Agent"); // no phase once it ended
     expect(q("[data-task-elapsed]")).toBeNull();
   });

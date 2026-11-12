@@ -81,12 +81,13 @@ test('a row: its space, the agent the apps know, model, modes and transcript', (
   const a = agentSnapshot({
     provider: 'my-claude', cwd: '/w/proj', workspaceId: 'wks_9', title: '  修登录  ', model: 'claude-x[1m]', currentModeId: 'acceptEdits',
     effectiveThinkingOptionId: 'max', persistence: { sessionId: CLAUDE_SID, metadata: { provider: 'claude' } }, updatedAt: '2026-11-04T10:00:00.000Z',
+    createdAt: '2026-11-04T09:58:00.000Z',
   })
   const row = agentRow(a, { roots, project: { projectKey: 'prj', projectName: 'proj', workspaceName: '登录修复' } })
   assert.deepEqual(row, {
     session_id: CLAUDE_SID, title: '修登录', cwd: '/w/proj', status: 'idle', updated_at: '2026-11-04T10:00:00.000Z',
     rev: Date.parse('2026-11-04T10:00:00.000Z'), space_id: 'prj', space_name: 'proj', slot_name: '登录修复',
-    agent: 'claude', launcher: 'my-claude',
+    agent: 'claude', launcher: 'my-claude', started_at: '2026-11-04T09:58:00.000Z',
     model: 'claude-x[1m]', permission_mode: 'acceptEdits', effort: 'max', transcript: CLAUDE_SID,
   })
   const g = agentRow(agentSnapshot({ id: 'g1', provider: 'grok', cwd: '/w/x', currentModeId: 'yolo', status: 'error', lastError: 'boom' }),
@@ -141,6 +142,8 @@ test("a delegated agent is its creator's subtask: its parent, no waiting to be l
 
   const row = agentRow(child({ status: 'running' }), { roots, parent: CLAUDE_SID, quiet: true })
   assert.deepEqual([row.is_subagent, row.parent_session_id, row.status], [true, CLAUDE_SID, 'working'])
+  assert.equal(row.started_at, '2026-11-04T09:00:00.000Z', 'when it was created: its card counts its running time from it')
+  assert.equal(agentRow(child({ createdAt: undefined }), { roots }).started_at, undefined, 'never a time it was not created at')
   assert.equal(agentRow(child({ status: 'idle', requiresAttention: true }), { roots, parent: CLAUDE_SID, quiet: true }).status, 'idle')
   const own = agentRow(child({ status: 'running' }), { roots })
   assert.deepEqual([own.is_subagent, own.parent_session_id], [undefined, undefined], 'its creator is not listed beside it: a row of its own')

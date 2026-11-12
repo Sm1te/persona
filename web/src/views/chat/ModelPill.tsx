@@ -10,7 +10,7 @@ import { t } from "../../i18n";
 import { agentName } from "../../lib/agent-kind";
 import { onModelPicker, sessionLauncher } from "../../lib/model-switch";
 import { effortTitle } from "../../lib/session-actions";
-import { modelList, pillView, readForPanel, readModels, sessionSwitches, useModelLists, type PillSetup } from "../../lib/session-models";
+import { modelList, pendingView, pillView, readForPanel, readModels, sessionSwitches, useModelLists, type PillSetup } from "../../lib/session-models";
 import { CODEX_ULTRA, ultracodeOn } from "../../lib/ultracode";
 import type { Session } from "../../lib/types";
 import { AgentMark } from "../../ui/AgentMark";
@@ -44,7 +44,8 @@ export function ModelPill({
   buttonRef,
 }: {
   current: PillSetup;
-  /** A switch accepted for the next message (#5035): a clock first, the target's engine named, the tooltip both. */
+  /** A switch accepted for the next message (#5035): a clock first, the launcher it moves to named (the engine, when
+   *  that changes) and drawn, the tooltip both setups. */
   pending?: PillSetup | null;
   /** The model list is read for the first time. */
   loading?: boolean;
@@ -68,8 +69,11 @@ export function ModelPill({
     ? t("chat-modelpill.current_and_next", { current: describe(current), next: describe(pending) })
     : [describe(current), failed && !unknown ? t("chat-modelpill.failed") : ""].filter(Boolean).join(" · ");
   const effort = shown.effort ? effortTitle(shown.effort) : "";
+  // what the next message runs on, before its model: the engine when it changes (Cindy's case), else the launcher
+  // (Persona's in-session switch, #5035)
+  const target = pending ? (pending.engine !== current.engine ? agentName(pending.engine) : pending.provider) : "";
   const label = pending
-    ? t(effort ? "chat-modelpill.aria_pending_effort" : "chat-modelpill.aria_pending", { agent: agentName(pending.engine), model: name, effort })
+    ? t(effort ? "chat-modelpill.aria_pending_effort" : "chat-modelpill.aria_pending", { agent: target, model: name, effort })
     : t(effort ? "chat-modelpill.aria_effort" : "chat-modelpill.aria", { model: name, effort });
 
   const body: ReactNode = (
@@ -80,7 +84,7 @@ export function ModelPill({
       <ProviderMark name={shown.provider} className={cx("mr-1.5", failed && !unknown ? "text-red" : "text-ink-2")} />
       {pending && (
         <>
-          <span className="shrink-0 text-ink-3 @max-[600px]/composer:hidden">{agentName(pending.engine)}</span>
+          <span data-pill-target className="max-w-[96px] shrink-0 truncate text-ink-3 @max-[600px]/composer:hidden">{target}</span>
           <span aria-hidden className="shrink-0 text-ink-3 @max-[600px]/composer:hidden">·</span>
         </>
       )}
@@ -106,7 +110,10 @@ export function ModelPill({
   const shell = cx(
     // Cindy's bare toolbar pill: no frame at rest, the capsule shows on hover and while its panel is open
     "flex h-[30px] max-w-[min(320px,100%)] min-w-[72px] shrink items-center rounded-full border border-transparent px-2.5 text-[13px] leading-none whitespace-nowrap transition-colors duration-150",
-    "@max-[600px]/composer:w-[148px] @max-[520px]/composer:text-[12px] @max-[520px]/composer:[--provider-mark:14.2px] @max-[420px]/composer:w-[64px] @max-[420px]/composer:min-w-[64px]",
+    "@max-[600px]/composer:w-[148px] @max-[520px]/composer:text-[12px] @max-[520px]/composer:[--provider-mark:14.2px] @max-[420px]/composer:min-w-[64px]",
+    // under 420 px the tile and the chevron: 64 px, as the pill always was there; only a waiting switch's clock before
+    // them makes it grow to hold it
+    pending ? "@max-[420px]/composer:w-auto" : "@max-[420px]/composer:w-[64px]",
   );
   // the clip is inside, so the touch target (touch-hit) can reach past the pill's 30 px
   const inner = "flex min-w-0 flex-1 items-center gap-1 overflow-hidden";
@@ -168,13 +175,21 @@ export const AgentModelPill = memo(function AgentModelPill({ session }: { sessio
     if (shown) readForPanel(mid, own);
   }, [shown, mid, own]);
 
+  // a switch to another launcher that the next message carries out (#5035): its list names the model picked
+  const target = session.pending_switch?.launcher;
+  useEffect(() => {
+    if (target && target !== own) void readModels(mid, target);
+  }, [target, own, mid]);
+
   const view = pillView(session, modelList(mid, own));
+  const pending = pendingView(session, (name) => modelList(mid, name));
   if (!opens && !view.model) return null;
   const workflow = ultracodeOn(session) ? {} : view.engine === "codex" && session.effort === CODEX_ULTRA ? { label: t("ultracode.codex_ultra_title"), title: t("ultracode.codex_ultra_title") } : undefined;
   return (
     <>
       <ModelPill
         current={view}
+        pending={pending}
         loading={view.loading}
         failed={view.failed}
         open={Boolean(anchor)}

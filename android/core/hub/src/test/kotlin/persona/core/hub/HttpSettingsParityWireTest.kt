@@ -98,4 +98,28 @@ class HttpSettingsParityWireTest {
             assertEquals(true, old.backgroundFolded)
         }
     }
+
+    /**
+     * #5084: "The main chat supervises its own tasks" goes out alone when set; the background supervisor's conversation
+     * is read, never written; an older hub sends none of it.
+     */
+    @Test fun mainSupervisesOwnTasksIsSentOnlyWhenSetAndTheBackgroundSupervisorIsReadOnly() = runBlocking {
+        MockWebServer().use { server ->
+            val api = HttpAssistantManagement(server.url("/").toString(), "test-token", OkHttpClient())
+            server.enqueue(MockResponse().setBody("""{"machine_id":"server","launcher":"claude","cwd":"","main_supervises_own_tasks":true,
+                "background_supervisor":"bg-1","background_supervisor_machine_id":"server","background_supervisor_at":"2026-11-12T08:00:00Z"}"""))
+            val saved = api.updateConfig(AssistantConfigUpdate(mainSupervisesOwnTasks = true))
+            assertEquals("""{"main_supervises_own_tasks":true}""", server.takeRequest().body.readUtf8())
+            assertEquals(true, saved.mainSupervisesOwnTasks)
+            assertEquals("bg-1", saved.backgroundSupervisor)
+            server.enqueue(MockResponse().setBody("""{"machine_id":"server","launcher":"claude","cwd":"","main_supervises_own_tasks":false}"""))
+            val fresh = api.config()
+            assertEquals(false, fresh.mainSupervisesOwnTasks)
+            assertEquals("not made until a task needs it", null, fresh.backgroundSupervisor)
+            server.enqueue(MockResponse().setBody("""{"machine_id":"server","launcher":"claude","cwd":""}"""))
+            val old = api.config()
+            assertEquals(null, old.mainSupervisesOwnTasks)
+            assertEquals(null, old.backgroundSupervisor)
+        }
+    }
 }

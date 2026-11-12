@@ -127,6 +127,10 @@
     <string name="assistant_settings_quiet_caption">主对话派出去的任务不进实时活动、推送和角标，做完、等你回答或出错时由 Persona 在主对话里告诉你。只影响之后派的任务。</string>
     <string name="assistant_settings_background_folded">后台轮次默认折叠</string>
     <string name="assistant_settings_background_folded_caption">主对话里由别的对话、定时任务或跟进发起的轮次折成一行，点开能看全部；问过你或通知过你的轮次照常显示。</string>
+    <string name="assistant_settings_supervise_header">任务跟进</string>
+    <string name="assistant_settings_supervise_own">主对话自己督办它派出的任务</string>
+    <string name="assistant_settings_supervise_caption">关闭时，主对话派出的任务由后台督办跟进，主对话先回答你；打开后改由主对话自己跟进。</string>
+    <string name="assistant_settings_supervise_model">后台督办的模型</string>
     <string name="assistant_settings_unavailable">暂时打不开助手设置</string>
     <string name="assistant_settings_unavailable_detail">先配对 hub，或退出体验模式。</string>
 </resources>

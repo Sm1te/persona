@@ -1,5 +1,6 @@
 // The list transport stays separate from complete, subscribed chat details.
 import { SessionList, compareListIds } from "./session-list";
+import { foldedState } from "./child-sessions";
 import { t } from "../i18n";
 import type { Session } from "./types";
 
@@ -31,8 +32,9 @@ export const runtimeOrder = (a: Session, b: Session) => {
 };
 /** A row's last activity, the time `runtimeOrder` sorts by (NaN without one: it sorts last and counts as earlier). */
 export const runtimeActiveAt = (s: Session) => Date.parse(s.updated_at ?? "");
-/** Needs the user by the hub's rule for `state.needs_you` counts, not the client's answered-here state. */
-export const runtimeNeedsYou = (s: Session) => s.state === "needs_you";
+/** Needs the user by the hub's rule for `state.needs_you` counts, not the client's answered-here state: by the folded
+ *  state, which a child that waits gives its parent (`roots=1` counts it so, #5120). */
+export const runtimeNeedsYou = (s: Session) => foldedState(s) === "needs_you";
 export const SESSIONS_LOOKUP_FEATURE = "sessions_lookup";
 export const SESSIONS_PAGE_COUNTS_FEATURE = "sessions_page_counts";
 let pageCounts = false;

@@ -88,6 +88,17 @@ async function verify(browser, kind, theme, width) {
   assert.equal(await chat.locator("[data-action-row]:visible").count(), 0);
   assert.equal(await chat.getByText("First progress: the example files are loaded.", { exact: true }).count(), 0);
   await slot.evaluate((el) => { el.dataset.identity = "fixed-text-slot"; });
+  // After a reload the chat's header can still grow a line, moving the summary under a click: wait until it holds still.
+  const stillThenClick = async (target) => {
+    let last = "";
+    for (let i = 0; i < 20; i++) {
+      const box = JSON.stringify(await target.boundingBox());
+      if (box === last) break;
+      last = box;
+      await page.waitForTimeout(250);
+    }
+    await target.click();
+  };
   const shot = async (state) => {
     const expanded = state.endsWith("expanded");
     // Keep the full manually opened trace in the screenshot rather than behind the fixed composer.
@@ -111,6 +122,10 @@ async function verify(browser, kind, theme, width) {
   await chat.locator('[data-action-row="Bash"]').first().waitFor();
   assert.equal(await summary.getAttribute("aria-expanded"), "true");
   assert(await chat.getByText("First progress: the example files are loaded.", { exact: true }).isVisible());
+  // #5155: opened, the narration and an inner summary for each run between, all open with it; the last run is live
+  const inner = chat.locator("[data-work-detail] [data-work-group]");
+  assert.deepEqual(await inner.evaluateAll((gs) => gs.map((g) => [g.dataset.workGroup, g.querySelector(":scope > button").getAttribute("aria-expanded")])),
+    [["done", "true"], ["done", "true"], ["live", "true"]]);
   await page.waitForFunction(() => document.querySelector("[data-work-detail]")?.parentElement?.parentElement?.style.gridTemplateRows === "1fr");
   await shot("running-expanded");
   items = finished;
@@ -119,7 +134,7 @@ async function verify(browser, kind, theme, width) {
   socket.send(JSON.stringify({ type: "sessions", machine_id: "example", sessions: [session()] }));
   await slot.getByText("Final result: the example tests and build passed. No further action is needed.", { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector("[data-work-group] > button")?.getAttribute("aria-expanded") === "false");
-  await chat.locator("[data-work-detail]").waitFor({ state: "detached" });
+  await chat.locator("[data-work-detail]").first().waitFor({ state: "detached" });
   await page.getByText("Running", { exact: true }).waitFor({ state: "hidden" });
   assert.equal(await slot.getAttribute("data-identity"), "fixed-text-slot", "completion uses the same slot");
   assert.equal(await chat.locator("[data-action-row]:visible").count(), 0);
@@ -127,13 +142,15 @@ async function verify(browser, kind, theme, width) {
   await summary.click();
   assert(await chat.getByText("New progress: reviewing the final checks.", { exact: true }).isVisible());
   assert.equal(await chat.locator("[data-action-row]:visible").count(), 4);
+  assert.deepEqual(await inner.evaluateAll((gs) => gs.map((g) => [g.dataset.workGroup, g.querySelector(":scope > button").getAttribute("aria-expanded")])),
+    [["done", "true"], ["done", "true"], ["done", "true"], ["done", "true"]]);
   await page.waitForFunction(() => document.querySelector("[data-work-detail]")?.parentElement?.parentElement?.style.gridTemplateRows === "1fr");
   await shot("completed-expanded");
   await summary.click();
   await page.reload();
   await slot.getByText("Final result: the example tests and build passed. No further action is needed.", { exact: true }).waitFor();
   assert.equal(await summary.getAttribute("aria-expanded"), "false", "reloaded history is folded");
-  await summary.click();
+  await stillThenClick(summary);
   assert.equal(await chat.locator("[data-action-row]:visible").count(), 4);
   // Reload creates a new document; mark that document's slot before checking wake-time identity.
   await slot.evaluate((el) => { el.dataset.identity = "fixed-text-slot"; });
@@ -151,7 +168,7 @@ async function verify(browser, kind, theme, width) {
   socket.send(JSON.stringify({ type: "sessions", machine_id: "example", sessions: [session()] }));
   await slot.getByText("Wake progress: checking the follow-up.", { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector("[data-work-group] > button")?.getAttribute("aria-expanded") === "false");
-  await chat.locator("[data-work-detail]").waitFor({ state: "detached" });
+  await chat.locator("[data-work-detail]").first().waitFor({ state: "detached" });
   assert.equal(await chat.locator("[data-work-group]").count(), 1, "no extra placeholder or wake drawer");
   assert.equal(await slot.getAttribute("data-identity"), "fixed-text-slot", "wake retains the same text slot");
   await shot("wake-running");
@@ -164,7 +181,7 @@ async function verify(browser, kind, theme, width) {
   socket.send(JSON.stringify({ type: "sessions", machine_id: "example", sessions: [session()] }));
   await slot.getByText("Wake final result: follow-up complete.", { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector("[data-work-group] > button")?.getAttribute("aria-expanded") === "false");
-  await chat.locator("[data-work-detail]").waitFor({ state: "detached" });
+  await chat.locator("[data-work-detail]").first().waitFor({ state: "detached" });
   await page.getByText("Running", { exact: true }).waitFor({ state: "hidden" });
   assert.equal(await slot.getAttribute("data-identity"), "fixed-text-slot");
   await shot("wake-completed");
@@ -174,7 +191,7 @@ async function verify(browser, kind, theme, width) {
   await page.reload();
   await slot.getByText("Wake final result: follow-up complete.", { exact: true }).waitFor();
   assert.equal(await summary.getAttribute("aria-expanded"), "false");
-  await summary.click();
+  await stillThenClick(summary);
   assert.equal(await chat.locator("[data-action-row]:visible").count(), 6);
   console.log(`PASS ${kind} ${width} ${theme}: collapsed running/completed, same text slot, manual trace, recap wake and reload`);
   await context.close();

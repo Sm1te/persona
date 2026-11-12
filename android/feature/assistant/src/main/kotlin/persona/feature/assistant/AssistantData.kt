@@ -29,12 +29,14 @@ import java.util.UUID
  * The drawer's Persona chats (#4331): [main] the main conversation (its own row, above the search), [directions] the
  * leader conversations under their [names] ("常驻", in the hub's order), and [others] every other conversation, which
  * "All chats" lists and a search narrows. [counts] each leader's open tasks, by session id. [recent] the user's own newest
- * chats between 常驻 and All chats (#4922), none while searching.
+ * chats between 常驻 and All chats (#4922), none while searching. [background] the built-in background supervisor's
+ * conversation id (#4927): it is one of [others], under its own name, and its row has no pin, archive or end.
  */
 internal data class ConversationGroups(
     val main: Session?, val directions: List<Session> = emptyList(), val others: List<Session> = emptyList(),
     val names: Map<String, String> = emptyMap(), val counts: Map<String, LeaderCounts> = emptyMap(),
     val recent: List<Session> = emptyList(),
+    val background: String? = null,
 )
 
 /** How many chats the drawer's Recent lists (#4922, the web's `RECENT_LIMIT`, iOS). */
@@ -46,12 +48,13 @@ private val USER_ORIGINS = setOf("", "user", "channel")
 /**
  * The drawer's Recent (#4922, web `recentConversations`, iOS `AssistantSidebarGroups.recent`): the conversations that are
  * not the main one, not a leader, not archived and not opened by Persona itself (the inbox, a task, Lark /agent, a spawned
- * chat, an extension: those stay in All chats only), newest first, equal times by session id, at most [limit].
+ * chat, an extension, the background supervisor: those stay in All chats only), newest first, equal times by session id, at most [limit].
  */
 internal fun recentConversations(snapshot: AssistantSnapshot, limit: Int = RECENT_LIMIT): List<Session> {
     val leaders = snapshot.leaders.toSet()
     return snapshot.conversations.distinctBy { it.key }
-        .filter { it.key != snapshot.mainSession && it.sessionId !in leaders && !it.archived && it.origin?.trim().orEmpty() in USER_ORIGINS }
+        .filter { it.key != snapshot.mainSession && it.sessionId !in leaders && !it.archived && it.origin?.trim().orEmpty() in USER_ORIGINS &&
+            it.sessionId != snapshot.backgroundSupervisor }
         .map { it to it.updated }
         .sortedWith(compareByDescending<Pair<Session, java.time.Instant?>> { it.second }.thenBy { it.first.sessionId })
         .take(limit).map { it.first }
@@ -62,16 +65,20 @@ internal fun conversationGroups(
     query: String,
     words: ConversationWords,
 ): ConversationGroups {
+    // The background supervisor (#4927) is built in: a conversation with the scheduled tasks' ones under All chats, found
+    // by its name too, and never a direction whatever the leaders say.
+    val background = snapshot.backgroundSupervisor?.takeIf(String::isNotBlank)
     val matches = snapshot.conversations.distinctBy { it.key }.filter {
         !it.archived && (query.isBlank() || it.conversationTitle(words).contains(query.trim(), ignoreCase = true) ||
-                it.lastText.orEmpty().contains(query.trim(), ignoreCase = true))
+                it.lastText.orEmpty().contains(query.trim(), ignoreCase = true) ||
+                (it.sessionId == background && words.background.contains(query.trim(), ignoreCase = true)))
     }.map { it to it.updated } // each time parsed once, not on every comparison
         .sortedWith(compareByDescending<Pair<Session, java.time.Instant?>> { it.second }.thenBy { it.first.key.path }).map { it.first }
     // The leaders are the drawer's 常驻 group, under their names; a search matches the name too. Every other
     // conversation waits under one "All chats" row (there is no all-conversations page on this app): main and the
     // leaders are not listed twice.
     val names = snapshot.directionNames
-    val directions = snapshot.leaders.mapNotNull { id ->
+    val directions = snapshot.leaders.filter { it != background }.mapNotNull { id ->
         snapshot.conversations.firstOrNull { it.sessionId == id && it.key != snapshot.mainSession && !it.archived }
     }.filter { query.isBlank() || it in matches || names[it.sessionId].orEmpty().contains(query.trim(), ignoreCase = true) }
     val listed = directions.mapTo(HashSet()) { it.key }
@@ -80,6 +87,7 @@ internal fun conversationGroups(
         snapshot.conversations.firstOrNull { it.key == snapshot.mainSession && !it.archived },
         directions, others, names, snapshot.leaderCounts,
         recent = if (query.isBlank()) recentConversations(snapshot) else emptyList(),
+        background = background,
     )
 }
 
@@ -167,14 +175,18 @@ internal fun Session.conversationTitle(words: ConversationWords): String {
     return handoffTitle(line, words) ?: line.take(30)
 }
 
-/** The words a conversation's name falls back to: "Chat", "Hand to Persona" and "Hand to Persona: X" ([handoffNamed] has `%1$s`). */
-internal data class ConversationWords(val untitled: String, val handoff: String, val handoffNamed: String) {
+/**
+ * The words a conversation's name falls back to: "Chat", "Hand to Persona" and "Hand to Persona: X" ([handoffNamed] has `%1$s`);
+ * [background] is what the built-in background supervisor's conversation is called (#4927).
+ */
+internal data class ConversationWords(val untitled: String, val handoff: String, val handoffNamed: String, val background: String = "") {
     fun handoff(title: String): String = String.format(handoffNamed, title)
 }
 
 @Composable
 internal fun conversationWords() = ConversationWords(stringResource(R.string.assistant_untitled),
-    stringResource(R.string.assistant_handoff), stringResource(R.string.assistant_handoff_named))
+    stringResource(R.string.assistant_handoff), stringResource(R.string.assistant_handoff_named),
+    stringResource(R.string.assistant_background_supervisor))
 
 private val handoffTag = Regex("""<persona-context\b[^>]*?\btitle="([^"]*)"""")
 

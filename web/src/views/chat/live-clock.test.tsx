@@ -15,7 +15,7 @@ import { WorkGroup, type WorkProps } from "./WorkGroup";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const props: WorkProps = { mid: "m", sid: "s", scope: "t:", expandFold: async () => {}, agentStatus: () => "completed", thinking: new Map() };
+const props: WorkProps = { mid: "m", sid: "s", scope: "t:", expandFold: async () => {}, agentStatus: () => "completed" };
 let box: HTMLDivElement;
 let root: Root;
 beforeEach(() => {

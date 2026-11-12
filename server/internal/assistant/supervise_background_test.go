@@ -148,15 +148,22 @@ func TestBackgroundSupervisorFollowsUpTheMainConversationsTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The entry says the background supervisor wrote it; the main conversation's own review says nothing.
 	var accepted bool
+	by := map[string]string{} // each review's author, by its note
 	for _, it := range items {
 		var body reviewFeedBody
-		if it.Kind == feedReview && it.Ref == todo.ID && json.Unmarshal(it.Body, &body) == nil && body.Verdict == reviewAccepted {
-			accepted = true
+		if it.Kind != feedReview || it.Ref != todo.ID || json.Unmarshal(it.Body, &body) != nil {
+			continue
 		}
+		by[body.Note] = body.By
+		accepted = accepted || body.Verdict == reviewAccepted
 	}
 	if !accepted {
 		t.Fatalf("the main conversation's feed has no accepted review: %+v", items)
+	}
+	if by["补测试"] != reviewByBackground || by["已合并，测试补了"] != reviewByBackground || by["再补深色截图"] != "" {
+		t.Fatalf("who wrote each review, background supervisor's twice and the main conversation's once: %+v", by)
 	}
 	if tasks := s.snapshotTasks(ctx, ""); len(tasks) != 1 || tasks[0].ID != todo.ID || !strings.Contains(tasks[0].Health, "已验收") {
 		t.Fatalf("the snapshot's tasks: %+v", tasks)

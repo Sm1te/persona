@@ -123,6 +123,33 @@ export function quotaPercent(ratio: number): number {
   return Math.round(Math.min(Math.max(ratio, 0), 1) * 100);
 }
 
+export interface WeeklyQuota {
+  window: QuotaWindow;
+  /** Whole percent left, clamped to 0…100. */
+  remaining: number;
+  tone: QuotaTone;
+}
+
+/** The rail's one weekly number: the most constrained weekly window in the launcher's existing cached answer. */
+export function weeklyQuota(answer: LauncherQuotaAnswer | undefined): WeeklyQuota | undefined {
+  const q = answer?.quota;
+  if (!q) return undefined;
+  const windows = [...(q.budget ?? []), ...(q.pools ?? []).flatMap((p) => p.windows ?? [])];
+  let found: { window: QuotaWindow; used: number } | undefined;
+  for (const w of windows) {
+    if (!/week|周|週/i.test(w.label)) continue;
+    let used = w.used_ratio !== undefined && Number.isFinite(w.used_ratio) ? w.used_ratio : undefined;
+    if (used === undefined && w.used !== undefined && w.limit !== undefined && Number.isFinite(w.used) && w.used >= 0 && Number.isFinite(w.limit) && w.limit > 0) used = w.used / w.limit;
+    if (used === undefined) {
+      if (!w.exhausted) continue;
+      used = 1;
+    }
+    if (!found || (w.exhausted && !found.window.exhausted) || (w.exhausted === found.window.exhausted && used > found.used)) found = { window: w, used };
+  }
+  if (!found) return undefined;
+  return { window: found.window, remaining: found.window.exhausted ? 0 : 100 - quotaPercent(found.used), tone: quotaTone(found.used, found.window.exhausted) };
+}
+
 /** Nothing to show beyond the key's use: the key has no ceiling. */
 export function quotaUnlimited(q: LauncherQuota): boolean {
   return !q.pools?.length && !q.budget?.length && !q.note;

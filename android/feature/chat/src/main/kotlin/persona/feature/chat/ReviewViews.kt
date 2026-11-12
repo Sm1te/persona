@@ -144,11 +144,13 @@ internal fun ReviewLine(item: FeedItem, title: String, onOpenTask: (() -> Unit)?
     val stage = reviewVerdictStage(item.field("verdict").orEmpty())
     val round = ((item.body as? JsonObject)?.get("round") as? JsonPrimitive)?.intOrNull ?: 0
     val note = item.field("note").orEmpty()
-    Row(Modifier.clip(CircleShape).background(PersonaTheme.palette.surfaceStrong).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs)
+    // The whole line opens the task (#5084), not its name alone: it is the line's only action.
+    Row(Modifier.clip(CircleShape).background(PersonaTheme.palette.surfaceStrong)
+        .then(if (onOpenTask != null) Modifier.clickable(onClickLabel = stringResource(R.string.chat_tasks_open_task), onClick = onOpenTask) else Modifier)
+        .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs)
         .testTag("review-line"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         JIcon(PhIcons.CheckCircle, decorative = true, size = Tokens.Space.m, tint = PersonaTheme.palette.ink2)
-        Text(title, (if (onOpenTask != null) Modifier.clickable(onClickLabel = stringResource(R.string.chat_tasks_open_task), onClick = onOpenTask) else Modifier)
-            .weight(1f, fill = false), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title, Modifier.weight(1f, fill = false), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("· " + (stage?.label(round) ?: stringResource(R.string.chat_review_line)), style = PersonaTheme.type.caption,
             color = PersonaTheme.palette.ink, maxLines = 1)
         if (note.isNotBlank()) Text(note, Modifier.weight(1f, fill = false), style = PersonaTheme.type.caption, color = PersonaTheme.palette.ink2,

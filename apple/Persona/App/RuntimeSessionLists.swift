@@ -251,6 +251,8 @@ extension Session {
         row.codexRouteNote = old.codexRouteNote
         row.runtime = old.runtime
         row.runtimeFallback = old.runtimeFallback
+        row.modelFallback = old.modelFallback
+        row.modelRestore = old.modelRestore
         row.compaction = old.compaction
         row.asks = old.asks
         return row

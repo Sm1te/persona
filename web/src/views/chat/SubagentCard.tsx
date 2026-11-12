@@ -103,12 +103,14 @@ export const SubagentCard = memo(function SubagentCard({ step, status, mid, sid,
 });
 
 /** What it reported, as plain text: four lines until "Show full result" when it is longer (measured, `useClamped`); a
- *  report the hub cut has its "View full text" too. */
-function SubagentResult({ item, fallback, mid, sid }: { item: Item | undefined; fallback: string; mid: string; sid?: string }) {
-  const full = useFullText(item?.kind === "tool_result" ? item : undefined, mid, sid);
+ *  report the hub cut has its "View full text" too. A child session's card (ChildSessionCard) hands it the child's own
+ *  latest words (a text item). */
+export function SubagentResult({ item, fallback, mid, sid }: { item: Item | undefined; fallback: string; mid: string; sid?: string }) {
+  const own = item?.kind === "tool_result" || item?.kind === "text";
+  const full = useFullText(own ? item : undefined, mid, sid);
   // a report the call returned ends with Claude Code's "agentId: …" line, and may start with its hand-back frame: both
   // are for the model
-  const said = item?.kind === "tool_result" ? agentSummary({ ...item, text: full.text }, undefined) : (item ? item.task?.detail ?? "" : fallback).trim();
+  const said = item?.kind === "tool_result" ? agentSummary({ ...item, text: full.text }, undefined) : item?.kind === "text" ? full.text.trim() : (item ? item.task?.detail ?? "" : fallback).trim();
   const text = isHandbackText(said) ? said.split("\n").slice(1).join("\n").trim() : said;
   const [whole, setWhole] = useState(false);
   const clamp = useClamped<HTMLParagraphElement>(whole);

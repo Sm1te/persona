@@ -348,6 +348,9 @@ func (s *Service) decorateInventory(machine string, list []proto.Session, comple
 		list[i].SpawnFrom, list[i].Chat, list[i].Topic, list[i].Dispatched = "", "", "", nil
 	}
 	s.fillStateMarks(machine, list, time.Now(), complete)
+	if !complete {
+		s.foldSubset(machine, list) // a complete list is folded once its archive is applied (archivedInventory)
+	}
 	return list
 }
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { attentionReason, interactionCanAnswer, sessionTitle, stateOf } from "./format";
 import { agentKey } from "./pins";
+import { homeKey } from "./folded-rows";
 import { useCounts, useAgentSessions } from "./sessions";
 import { getState, useStore } from "./store";
 import { answeredTags, attentionSoundEnabled, badgeText, batchDue, finishedBatch, detectNewCards, detectTransitions, pickEvent, rateLimiter, SETTLE_MS, settledTags, suppressed, tabTitle, trackTurns, type Turn } from "./attention";
@@ -294,7 +295,7 @@ export function useAttentionSignals(label: string, pane: { mid: string; sid: str
     cards.current = fresh.ids;
     for (const k of bare.current) if (next.get(k) !== "needs_you") bare.current.delete(k);
     for (const e of fresh.events) bare.current.delete(e.key);
-    for (const e of events) if (e.kind === "needs" && !interactions.some((ix) => agentKey(ix) === e.key)) bare.current.add(e.key);
+    for (const e of events) if (e.kind === "needs" && !interactions.some((ix) => homeKey(ix) === e.key)) bare.current.add(e.key);
     // answered or seen, here or elsewhere: its system notification goes too (#3458); and one about a card that is gone,
     // while the session waits on another; and a Could not allow one about a card that is gone
     const settled = new Set([...settledTags(prev.current, next), ...answeredTags(announced.current, interactions), ...failedTagsOver(interactions)]);

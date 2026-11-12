@@ -59,7 +59,9 @@ class AssistantSettingsShotsTest {
     private class FakeManagement(memoryTitle: String, memoryBody: String) : AssistantManagement {
         private val updated = Instant.now().minusSeconds(3_600).toString()
         var config = AssistantConfig(machineId = "workstation", launcher = "claude", cwd = "/home/me/.persona/assistant",
-            timezone = "Asia/Shanghai", notesEffective = "~/code", main = "main", mainTasksQuiet = true, manager = "assistant", defaultPermissionMode = "bypassPermissions",
+            timezone = "Asia/Shanghai", notesEffective = "~/code", main = "main", mainTasksQuiet = true,
+            // #5084: the background supervisor's off switch and its model row
+            mainSupervisesOwnTasks = false, backgroundSupervisor = "supervisor", manager = "assistant", defaultPermissionMode = "bypassPermissions",
             permissionDefaults = AssistantPermissionDefaults(1, "assistant", AssistantPermissionDefaults.MODES))
         val files = listOf(
             MemoryFile("MEMORY.md", "- [$memoryTitle](morning.md)", updated),
@@ -104,7 +106,7 @@ class AssistantSettingsShotsTest {
                 CompositionLocalProvider(LocalManagerRoster provides roster) {
                     Box(Modifier.testTag("shot").width(400.dp).height(1800.dp).background(PersonaTheme.palette.background)) {
                         // Each part is a fresh page: the preview switch is read once, when the page first composes.
-                        key(part) { AssistantSettingsScreen(management, machines, onBack = {}) }
+                        key(part) { AssistantSettingsScreen(management, machines, onBack = {}, onModelConfiguration = { _, _ -> }) }
                     }
                 }
             }

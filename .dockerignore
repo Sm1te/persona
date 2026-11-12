@@ -1,4 +1,4 @@
-# Only server/, web/, deploy/docker/, the shared cases a web test reads (spec/fixtures/injected/, spec/fixtures/attention/), the extension schema
+# Only server/, web/, deploy/docker/, the shared cases the web tests read (spec/fixtures/), the extension schema
 # the web build uses (schema/extension/) and the runtime packages' sources (integrations/, go generate) go into the hub
 # image (Dockerfile).
 *
@@ -12,18 +12,8 @@
 !integrations/runtime-sdk/
 # the extension SDK's wire types: server/go.mod replaces its module with ../sdk/go (Dockerfile)
 !sdk/go/
-# the cases web/src/lib/injected.test.ts reads: the web build's tsc checks the tests too (Dockerfile)
-!spec/fixtures/injected/
-# the cases web/src/lib/attention-fixture.test.ts reads (Dockerfile)
-!spec/fixtures/attention/
-# the cases web/src/lib/recent-setups.test.ts reads (Dockerfile)
-!spec/fixtures/recents/
-# Shared JSON imported by the web app's typechecked tests.
-!spec/fixtures/entries/
-!spec/fixtures/comments/
-!spec/fixtures/inbox/
-!spec/fixtures/triage/
-!spec/fixtures/sync/
+# the shared cases the web app's tests import: the web build's tsc checks the tests too (Dockerfile)
+!spec/fixtures/
 # the extension schema and its examples: the web app builds them in and its tests import them (Dockerfile)
 !schema/extension/
 integrations/**/node_modules/

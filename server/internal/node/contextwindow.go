@@ -49,8 +49,8 @@ func setContext(s *proto.Session, m quickMeta) {
 	if m.contextTokens <= 0 {
 		return
 	}
-	s.ContextTokens = m.contextTokens
-	s.ContextWindow = contextWindowOf(m.model, m.contextWindow, m.contextTokens)
+	s.ContextTokens = proto.Tokens32(m.contextTokens)
+	s.ContextWindow = proto.Tokens32(contextWindowOf(m.model, m.contextWindow, m.contextTokens))
 }
 
 // setRuntimeContext is setContext for a runtime's session whose conversation is a transcript here (Paseo). The model

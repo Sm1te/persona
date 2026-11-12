@@ -457,11 +457,10 @@ class ComposeTests(unittest.TestCase):
                 self.assertTrue(list(fixture.parent.glob(fixture.name)), str(fixture.relative_to(ROOT)))
                 groups.add(fixture.relative_to(ROOT / "spec/fixtures").parts[0])
         self.assertTrue(groups)
-        for group in sorted(groups):
-            with self.subTest(group=group):
-                self.assertIn("!spec/fixtures/" + group + "/", context)
-                self.assertIn("COPY spec/fixtures/" + group + "/ /src/spec/fixtures/" + group + "/", dockerfile)
-
+        # The whole folder goes in, so a new case folder needs no Docker change (#5197).
+        self.assertIn("!spec/fixtures/", context)
+        self.assertIn("COPY spec/fixtures/ /src/spec/fixtures/", dockerfile)
+        self.assertFalse([line for line in context if line.startswith("!spec/fixtures/") and line != "!spec/fixtures/"])
 
 if __name__ == "__main__":
     unittest.main()

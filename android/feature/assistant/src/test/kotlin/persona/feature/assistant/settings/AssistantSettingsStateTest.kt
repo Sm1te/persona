@@ -53,6 +53,7 @@ class AssistantSettingsStateTest {
                 main = if (update.main == AssistantConfigUpdate.CLEAR_MAIN) null else update.main ?: config.main,
                 mainTasksQuiet = update.mainTasksQuiet ?: config.mainTasksQuiet,
                 mainBackgroundFolded = update.mainBackgroundFolded ?: config.mainBackgroundFolded,
+                mainSupervisesOwnTasks = update.mainSupervisesOwnTasks ?: config.mainSupervisesOwnTasks,
                 defaultPermissionMode = update.defaultPermissionMode ?: config.defaultPermissionMode,
             )
             return config
@@ -140,6 +141,30 @@ class AssistantSettingsStateTest {
         api.fail = true
         state.setMainBackgroundFolded(true)
         assertEquals(false, state.state.value.config?.mainBackgroundFolded)
+        assertTrue(state.state.value.notice?.error == true)
+    }
+
+    /** #5084: "The main chat supervises its own tasks", the background supervisor's off switch. */
+    @Test fun superviseOwnTasksSwitchSavesAndComesBackOnFailure() = runTest {
+        val api = FakeApi()
+        val state = AssistantSettingsState(api, Zone())
+        state.load()
+        // A hub without the background supervisor: nothing to switch.
+        state.setMainSupervisesOwnTasks(true)
+        assertTrue(api.updates.isEmpty())
+        assertNull(state.state.value.config?.mainSupervisesOwnTasks)
+        api.config = api.config.copy(mainSupervisesOwnTasks = false, backgroundSupervisor = "bg")
+        state.load()
+        state.setMainSupervisesOwnTasks(false)
+        assertTrue("already off: nothing is sent", api.updates.isEmpty())
+        state.setMainSupervisesOwnTasks(true)
+        assertEquals(true, api.updates.single().mainSupervisesOwnTasks)
+        assertEquals(null, api.updates.single().mainBackgroundFolded)
+        assertEquals(true, state.state.value.config?.mainSupervisesOwnTasks)
+        assertEquals("the conversation it made stays the hub's to say", "bg", state.state.value.config?.backgroundSupervisor)
+        api.fail = true
+        state.setMainSupervisesOwnTasks(false)
+        assertEquals(true, state.state.value.config?.mainSupervisesOwnTasks)
         assertTrue(state.state.value.notice?.error == true)
     }
 

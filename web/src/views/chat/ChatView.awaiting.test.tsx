@@ -290,6 +290,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// #5035: a message that was to carry out a switch to another launcher first, refused by the node (the launcher went, the
+// agent did not come up there…): nothing went, so its words go back into the box with the hub's reason, as an edit's
+// refused send does, not into a failed bubble; any other refusal still leaves its failed bubble. Only the user's message
+// from this chat carries a switch out: it says so (apply_switch) while one waits, and only then.
+describe("a message the launcher switch refused", () => {
+  const box = () => host.querySelector<HTMLTextAreaElement>("textarea")!;
+  const typeInto = (text: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(box(), text);
+      box().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const sent = () => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages")).map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+  const send = async (text: string, answer: Record<string, unknown>, waits = true, status = 409) => {
+    fetcher.mockImplementation(async (url) => (String(url).endsWith("/messages") ? new Response(JSON.stringify(answer), { status }) : new Response("{}")));
+    captured.session = { ...captured.session, pending_switch: waits ? { launcher: "work" } : undefined };
+    act(() => root.render(<ChatView mid="hub" sid="c1" />));
+    await flush();
+    typeInto(text);
+    act(() => host.querySelector<HTMLButtonElement>(`button[aria-label="${t("chat-composer.send")}"]`)!.click());
+    await flush();
+  };
+
+  // the page's words outside the box (a textarea's own text is its value)
+  const outsideBox = () => {
+    const copy = host.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("textarea").forEach((e) => e.remove());
+    return copy.textContent ?? "";
+  };
+
+  it.each(["switch_launcher_missing", "switch_pick_model", "switch_failed", "switch_failed_stopped"])("keeps the words in the box: %s", async (code) => {
+    await send("Carry on with the tests", { error: "The agent did not come up there", code, delivered: "none" });
+    expect(box().value).toBe("Carry on with the tests");
+    expect(outsideBox()).not.toContain("Carry on with the tests"); // no failed bubble
+  });
+
+  it("asks for the switch with the user's message while one waits, and only then", async () => {
+    await send("Carry on", {}, true, 200);
+    expect(sent().at(-1)).toMatchObject({ text: "Carry on", apply_switch: true });
+    fetcher.mockClear();
+    await send("And then this", {}, false, 200);
+    expect(sent().at(-1)).toMatchObject({ text: "And then this" });
+    expect(sent().at(-1)).not.toHaveProperty("apply_switch");
+  });
+
+  it("any other refusal is the failed bubble it always was", async () => {
+    await send("Carry on with the tests", { error: "A dialog is open in the terminal", code: "dialog_open", delivered: "none" });
+    expect(box().value).toBe("");
+    expect(outsideBox()).toContain("Carry on with the tests");
+  });
+});
+
 describe("a message waiting for its turn to start (#2450)", () => {
   it("can be interrupted: the composer shows Interrupt, Esc sends it, and the wait ends there", async () => {
     transcript.items = [{ id: "u1", seq: 1, role: "user", kind: "text", text: "Write a status line", ts: new Date().toISOString() }];

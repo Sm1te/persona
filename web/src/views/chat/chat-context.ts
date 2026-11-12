@@ -1,8 +1,9 @@
 // What the chat hands down to its rows without threading props through every step: the background tasks and their
 // calls (to badge a call that went to the background and name a notice's call), the subagents (their cards), the
 // workflow runs' calls (their cards), the items that came in live (their words fade in), and the key the open / closed
-// state is kept under.
+// state is kept under, and where the child sessions' cards go.
 import { createContext, useContext } from "react";
+import type { ChildPlace } from "../../lib/child-cards";
 import type { ExternalOrigin } from "../../lib/conversation-origins";
 import { emptyTaskIndex, type TaskIndex } from "../../lib/tasks";
 import type { Subagent } from "../../lib/types";
@@ -28,6 +29,9 @@ export interface ChatContextValue {
   /** The exchange whose last words carried the closeout the card above the transcript shows (#3612): they are drawn
    *  without the raw block. Unset while no card is shown. */
   closeoutSegment?: string;
+  /** The child sessions drawn as cards in this chat (#5120, lib/child-cards.ts), by the exchange each sits in. The same
+   *  map while none moved: a child's own updates redraw only its card. */
+  children?: ReadonlyMap<string, ChildPlace[]>;
 }
 
 export const ChatContext = createContext<ChatContextValue>({ tasks: emptyTaskIndex(), subagents: [], scope: "", workflowCalls: NO_WORKFLOW_CALLS });

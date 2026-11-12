@@ -15,7 +15,7 @@ const claudeList: LauncherModels = {
   agent: "claude",
   models: [
     { id: "default", name: "Default (recommended)", default: true, resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high" },
-    { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high", description: "Most capable" },
+    { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high", description: "Most capable", price: { input: 4, output: 20, cache_read: 0.2 } },
     { id: "haiku", name: "Haiku 5.5", resolved: "claude-haiku-5-5", efforts: ["low", "high"] },
     { id: "vendor/model-x", name: "vendor/model-x", custom: true },
   ],
@@ -49,7 +49,7 @@ describe("the providers of an Agent's chat", () => {
     const own = providers.find((p) => p.id === "gateway")!;
     expect(own.models).toEqual([
       { id: "default", name: "Default (recommended)", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high" },
-      { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high", description: "Most capable", context: 200000 },
+      { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high", description: "Most capable", context: 200000, price: { input: 4, output: 20, cache_read: 0.2 } },
       { id: "haiku", name: "Haiku 5.5", resolved: "claude-haiku-5-5", efforts: ["low", "high"] },
       // a typed ID's efforts aren't known: Claude Code takes any
       { id: "vendor/model-x", name: "vendor/model-x", efforts: ALL, custom: true },
@@ -106,34 +106,34 @@ describe("the providers of an Agent's chat", () => {
 
 describe("what a pick sends", () => {
   it("the model first, then the effort, each only when it differs", () => {
-    expect(pickPlan(session(), { provider: "gateway", model: "haiku", effort: "low" }, claudeList)).toEqual([{ model: "haiku" }, { effort: "low" }]);
-    expect(pickPlan(session(), { provider: "gateway", model: "opus", effort: "max" }, claudeList)).toEqual([{ effort: "max" }]);
-    expect(pickPlan(session(), { provider: "gateway", model: "opus", effort: "high" }, claudeList)).toEqual([]);
+    expect(pickPlan(session(), { provider: "gateway", model: "haiku", effort: "low" }, () => claudeList)).toEqual([{ model: "haiku" }, { effort: "low" }]);
+    expect(pickPlan(session(), { provider: "gateway", model: "opus", effort: "max" }, () => claudeList)).toEqual([{ effort: "max" }]);
+    expect(pickPlan(session(), { provider: "gateway", model: "opus", effort: "high" }, () => claudeList)).toEqual([]);
     // the default entry goes by its id, as the popover sent it; while nothing is reported it is what runs
-    expect(pickPlan(session(), { provider: "gateway", model: "default" }, claudeList)).toEqual([]);
-    expect(pickPlan(session({ model: "claude-haiku-5-5" }), { provider: "gateway", model: "default" }, claudeList)).toEqual([{ model: "default" }]);
-    expect(pickPlan(session({ model: undefined }), { provider: "gateway", model: "default" }, claudeList)).toEqual([]);
+    expect(pickPlan(session(), { provider: "gateway", model: "default" }, () => claudeList)).toEqual([]);
+    expect(pickPlan(session({ model: "claude-haiku-5-5" }), { provider: "gateway", model: "default" }, () => claudeList)).toEqual([{ model: "default" }]);
+    expect(pickPlan(session({ model: undefined }), { provider: "gateway", model: "default" }, () => claudeList)).toEqual([]);
   });
 
   it("a model ID typed by hand goes as it is (#1644); one the hub would refuse doesn't go", () => {
-    expect(pickPlan(session(), { provider: "gateway", model: "~vendor/model-latest" }, claudeList)).toEqual([{ model: "~vendor/model-latest" }]);
-    expect(pickPlan(session(), { provider: "gateway", model: "vendor/model-x" }, claudeList)).toEqual([{ model: "vendor/model-x" }]);
-    expect(pickPlan(session(), { provider: "gateway", model: "a;b" }, claudeList)).toBeNull();
+    expect(pickPlan(session(), { provider: "gateway", model: "~vendor/model-latest" }, () => claudeList)).toEqual([{ model: "~vendor/model-latest" }]);
+    expect(pickPlan(session(), { provider: "gateway", model: "vendor/model-x" }, () => claudeList)).toEqual([{ model: "vendor/model-x" }]);
+    expect(pickPlan(session(), { provider: "gateway", model: "a;b" }, () => claudeList)).toBeNull();
     // the list couldn't be read: still offered
-    expect(pickPlan(session(), { provider: "gateway", model: "vendor/model-y" }, undefined)).toEqual([{ model: "vendor/model-y" }]);
+    expect(pickPlan(session(), { provider: "gateway", model: "vendor/model-y" }, () => undefined)).toEqual([{ model: "vendor/model-y" }]);
   });
 
   it("nothing for another launcher, or another model where the agent can't switch", () => {
-    expect(pickPlan(session(), { provider: "claude", model: "haiku" }, claudeList)).toBeNull();
-    expect(pickPlan(session({ status: "offline", state: "offline" }), { provider: "gateway", model: "haiku" }, claudeList)).toBeNull();
-    expect(pickPlan(codex(), { provider: "cx", model: "gpt-5.5-mini" }, codexList)).toBeNull();
+    expect(pickPlan(session(), { provider: "claude", model: "haiku" }, () => claudeList)).toBeNull();
+    expect(pickPlan(session({ status: "offline", state: "offline" }), { provider: "gateway", model: "haiku" }, () => claudeList)).toBeNull();
+    expect(pickPlan(codex(), { provider: "cx", model: "gpt-5.5-mini" }, () => codexList)).toBeNull();
   });
 
   it("a Codex thread: its effort and its speed, Standard back from Fast", () => {
-    expect(pickPlan(codex(), { provider: "cx", model: "gpt-5.5", effort: "low", fast: true }, codexList)).toEqual([{ effort: "low" }, { service_tier: "priority" }]);
-    expect(pickPlan(codex({ service_tier: "priority" }), { provider: "cx", model: "gpt-5.5", fast: false }, codexList)).toEqual([{ service_tier: "default" }]);
+    expect(pickPlan(codex(), { provider: "cx", model: "gpt-5.5", effort: "low", fast: true }, () => codexList)).toEqual([{ effort: "low" }, { service_tier: "priority" }]);
+    expect(pickPlan(codex({ service_tier: "priority" }), { provider: "cx", model: "gpt-5.5", fast: false }, () => codexList)).toEqual([{ service_tier: "default" }]);
     // a saved Standard setup has no `fast` (cleanSetup drops false): picking it turns Fast off
-    expect(pickPlan(codex({ service_tier: "priority" }), { provider: "cx", model: "gpt-5.5" }, codexList)).toEqual([{ service_tier: "default" }]);
+    expect(pickPlan(codex({ service_tier: "priority" }), { provider: "cx", model: "gpt-5.5" }, () => codexList)).toEqual([{ service_tier: "default" }]);
   });
 
   it("an Antigravity variant brings its own thinking level", () => {
@@ -142,7 +142,7 @@ describe("what a pick sends", () => {
       { id: "future-medium", name: "Future Medium", efforts: ["low", "medium", "high"], default_effort: "medium" },
       { id: "future-high", name: "Future High", efforts: ["low", "medium", "high"], default_effort: "high" },
     ] };
-    expect(pickPlan(agy, { provider: "agy", model: "future-high" }, list)).toEqual([{ model: "future-high" }, { effort: "high" }]);
+    expect(pickPlan(agy, { provider: "agy", model: "future-high" }, () => list)).toEqual([{ model: "future-high" }, { effort: "high" }]);
     // its rows have no slider: the variants are the levels
     expect(sessionPanel(agy, [], lists({ agy: { list } })).providers[0].models!.every((m) => m.efforts.length === 0)).toBe(true);
   });

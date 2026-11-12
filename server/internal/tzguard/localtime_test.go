@@ -23,6 +23,7 @@ var allowed = map[string]string{
 	"internal/kb/zone.go":                   "the archive's zone before it is set, and files written before zones were recorded",
 	"internal/devices/metrics.go":           "Usage: the machine's zone only without Options.Location (the manager passes the user's, assistant/main.go)",
 	"internal/connector/larkcli/clizone.go": "cliLocation: lark-cli prints wall-clock times in the zone of the machine running it, the hub's",
+	"internal/fleetsoak/":                   "a developer's soak command: its log clock and output directory name are for the person at that terminal",
 }
 
 var (
