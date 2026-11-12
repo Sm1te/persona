@@ -122,16 +122,14 @@ describe("New agent's first message for Codex (#4961)", () => {
   it("is required only where the computer needs it, and a Codex start takes it with the start", async () => {
     codexOptional = false;
     await open();
-    act(() => chip("codex")!.click());
-    await flush();
+    await pick("model:codex\ngpt-5.5");
     expect(document.body.textContent).toContain("第一条消息");
     expect(document.body.textContent).not.toContain("第一条消息（可选）");
     expect(button("启动")!.disabled).toBe(true);
 
     codexOptional = true;
     await open("b");
-    act(() => chip("codex")!.click());
-    await flush();
+    await pick("model:codex\ngpt-5.5");
     expect(document.body.textContent).toContain("第一条消息（可选）");
     expect(button("启动")!.disabled).toBe(false);
     act(() => button("启动")!.click());
