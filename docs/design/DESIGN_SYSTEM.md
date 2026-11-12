@@ -909,7 +909,7 @@ your permission" (section 5, "Notifications"); moving them to the card's words i
 - A failed run has no state of its own. It shows its state like any other run, and its row's line 2 says what failed, in red.
 - A Codex opened with no first message (`awaiting_first_message`) has no state of its own either. It is idle, never Needs You or unread, and sends no push.
   Its row's line 2 says "Waiting for its first message" (web `sidebar.codex_waiting` through `rowLine`, Apple `Session.listPreview`).
-  Its chat says, above the composer, that Codex is open on the computer and takes its first message here or in its terminal (Apple `CodexWaitingNote`, the web chat's `codex-waiting` note).
+  Its chat says once, while it has no messages, that Codex is open on the computer and takes its first message below or in its terminal (Apple: the chat's empty state, in place of its generic line; the web: the chat's `codex-waiting` note).
   Once the message goes in, the page moves to the thread's session in the same pane (`docs/integrations/codex.md` "Starting without a first message").
 
 ## 6. Dark mode, Dynamic Type, accessibility baseline

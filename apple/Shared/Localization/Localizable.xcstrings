@@ -33368,25 +33368,25 @@
       },
       "extractionState" : "manual"
     },
-    "Codex is open on %@. Send its first message here, or type it in its terminal." : {
+    "Codex is open on %@. Send its first message below, or type it in its terminal." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex is open on %1$@. Send its first message here, or type it in its terminal."
+            "value" : "Codex is open on %1$@. Send its first message below, or type it in its terminal."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex は %1$@ で開いています。ここで最初のメッセージを送るか、ターミナルに直接入力してください。"
+            "value" : "Codexは「%1$@」で開いています。下で最初のメッセージを送るか、ターミナルに直接入力してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex 已在 %1$@ 上打开。在这里发第一条消息，或直接在它的终端里输入。"
+            "value" : "Codex 已在「%1$@」上打开。在下面发第一条消息，或直接在它的终端里输入。"
           }
         }
       }

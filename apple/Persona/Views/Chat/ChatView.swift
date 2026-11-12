@@ -2624,6 +2624,13 @@ struct ChatView: View {
                     EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages"),
                                    message: String(localized: "This Agent stopped before it left any messages."))
                         .flippedBack().accessibilityIdentifier("chat-empty-placeholder")
+                } else if model.session(key)?.awaitingFirstMessage == true {
+                    // A Codex opened with no first message (docs/integrations/codex.md「Starting without a first message」):
+                    // it waits for one, sent from here or typed in its terminal. Said once, here, as the web's note.
+                    let computer = model.machine(key.machineRef)?.title ?? key.machineID
+                    EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages yet"),
+                                   message: String(localized: "Codex is open on \(computer). Send its first message below, or type it in its terminal."))
+                        .flippedBack().accessibilityIdentifier("chat.codexWaiting")
                 } else {
                     EmptyStateView(symbol: Theme.Icon.conversation, title: String(localized: "No messages yet"), message: String(localized: "Send a message to get started."))
                         .flippedBack().accessibilityIdentifier("chat-empty-placeholder")
@@ -4354,26 +4361,6 @@ struct StartingNote: View {
     }
 }
 
-/// A Codex opened with no first message (Session.awaitingFirstMessage): it waits for one, sent here or typed in its
-/// terminal (docs/integrations/codex.md「Starting without a first message」).
-struct CodexWaitingNote: View {
-    var computer: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-            ThemedIcon(Theme.Icon.terminal).font(Theme.Font.labelStrong).foregroundStyle(.secondary)
-            Text("Codex is open on \(computer). Send its first message here, or type it in its terminal.")
-                .font(Theme.Font.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.Space.m)
-        .padding(.vertical, Theme.Space.s)
-        .surface(in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("chat.codexWaiting")
-    }
-}
-
 /// Why a session waits for the user, in its host's words (a botmux attention), with its Feishu topic one tap away.
 struct AttentionNote: View {
     var reason: String
@@ -4853,9 +4840,6 @@ struct Composer: View, Equatable {
         return VStack(spacing: Theme.Space.s) {
             if let m = offlineManager {
                 ManagerOfflineNote(manager: m)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if let s = model.session(key), s.awaitingFirstMessage == true {
-                CodexWaitingNote(computer: model.machine(key.machineRef)?.title ?? key.machineID)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if let s = model.session(key), s.starting == true || s.startError != nil {
                 StartingNote(error: s.startError, agent: s.agentLabel, coded: s.startErrorCode?.isEmpty == false)

@@ -27,9 +27,9 @@ if (shots) mkdirSync(shots, { recursive: true });
 
 const lang = locale.startsWith("en") ? "en" : locale.startsWith("ja") ? "ja" : "zh";
 const WORDS = {
-  zh: { optional: "第一条消息（可选）", start: "启动", waiting: "等第一条消息", box: "给 Codex 的第一条消息", send: "发送", note: "Codex 已在" },
+  zh: { optional: "第一条消息（可选）", start: "启动", waiting: "等第一条消息", box: "给 Codex 的第一条消息", send: "发送", note: "Codex 已在「" },
   en: { optional: "First message (optional)", start: "Start", waiting: "Waiting for its first message", box: "First message to Codex", send: "Send", note: "Codex is open on" },
-  ja: { optional: "最初のメッセージ（任意）", start: "開始", waiting: "最初のメッセージ待ち", box: "Codex への最初のメッセージ", send: "送信", note: "Codex は" },
+  ja: { optional: "最初のメッセージ（任意）", start: "開始", waiting: "最初のメッセージ待ち", box: "Codex への最初のメッセージ", send: "送信", note: "Codexは「" },
 }[lang];
 const SIZES = { wide: { width: 1280, height: 860 }, narrow: { width: 390, height: 844 } };
 const RUNS = [["wide", "light"], ["wide", "dark"], ["narrow", "light"], ["narrow", "dark"]];
