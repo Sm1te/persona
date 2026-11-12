@@ -61,12 +61,14 @@ struct ExtensionComponentRowLabel<Trailing: View>: View {
             .clipShape(.circle)
             .accessibilityHidden(true)
         } else if let i = row.icon, !i.isEmpty {
-            // A minimum, not a fixed square: at the accessibility sizes the glyph grows past `sizeScale`'s 1.6 × and
-            // spilled into the title (#4841); now the column is as wide as the glyph and the row keeps its gap.
+            // The icon and its column stop growing at the largest standard size, where the glyph still fits: past it the
+            // glyph followed the text to 3 × while the column stopped at `sizeScale`'s 1.6 ×, and spilled into the
+            // title and past the inset (#4841). The title keeps growing; the default sizes are unchanged.
             ThemedIcon(ExtensionUIStyle.icon(i))
                 .font(Theme.Font.heading)
                 .foregroundStyle(Theme.accent)
-                .scaledFrame(minWidth: Theme.Size.icon, minHeight: Theme.Size.icon)
+                .scaledFrame(width: Theme.Size.icon, height: Theme.Size.icon)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .accessibilityHidden(true)
         }
     }
