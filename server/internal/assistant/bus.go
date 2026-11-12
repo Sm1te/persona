@@ -619,6 +619,9 @@ func (b *BusHub) request(ctx context.Context, method string, params json.RawMess
 	}
 	if d := b.opts.Devices; d != nil {
 		if out, ok, err := d.Request(ctx, method, params); ok { // devices.* (devices.go)
+			if err == nil && method == devicewire.MethodCall {
+				s.nodeCallDone(ctx, params) // an effort set on a conversation with a model pick (model_pick.go)
+			}
 			return out, err
 		}
 	}

@@ -1,4 +1,4 @@
-Hand part of your own task to workers: each task you give this starts a new coding agent on a computer, beneath the task you lead, at once, with no card for the user to start it. You get this tool only because your task was handed out as a leader task. Workers belong to this task only: you cannot pick another to-do (todo_id and role are refused), a worker cannot hand work on, and at most 8 workers of this task run at a time. A worker that changes files takes the default permission mode unless you set one; a task that only reads sets readonly true. Leave machine and cwd out to start the worker where you run. What a worker reports, and when it stops, stalls or waits for review, reaches you as a message that starts with "Persona · supervision"; your own reports still go to whoever handed your task to you. You supervise each worker: give it done_when, and review it with task_review when its supervision message comes. Returns at once, with each worker's to-do; it does not confirm the agent started.
+Hand part of your own task to workers: each task you give this starts a new coding agent on a computer, beneath the task you lead, at once, with no card for the user to start it. You get this tool only because your task was handed out as a leader task. Workers belong to this task only: you cannot pick another to-do (todo_id and role are refused), a worker cannot hand work on, and at most 8 workers of this task run at a time. A worker that changes files takes the default permission mode unless you set one; a task that only reads sets readonly true and gets the read-only constraint in its first message. Claude-family launchers always start in bypassPermissions mode; Codex read-only tasks keep the plan-mode sandbox. Leave machine and cwd out to start the worker where you run. What a worker reports, and when it stops, stalls or waits for review, reaches you as a message that starts with "Persona · supervision"; your own reports still go to whoever handed your task to you. You supervise each worker: give it done_when, and review it with task_review when its supervision message comes. Returns at once, with each worker's to-do; it does not confirm the agent started.
 
 ```json
 {
@@ -64,11 +64,11 @@ Hand part of your own task to workers: each task you give this starts a new codi
               "bypassPermissions",
               "plan"
             ],
-            "description": "empty: the default mode for a writable task; readonly true always runs in plan mode"
+            "description": "empty: the default mode for a writable task. Claude-family launchers always use bypassPermissions; readonly=true adds a first-prompt constraint instead of forcing plan. Codex read-only tasks keep plan"
           },
           "readonly": {
             "type": "boolean",
-            "description": "true when the worker only reads (looks things up, reads code, changes no project files); false when it changes files"
+            "description": "true when the worker only reads (looks things up, reads code, changes no project files); false when it changes files. The first message automatically adds the read-only constraint. Claude-family launchers use bypassPermissions; Codex keeps its plan sandbox"
           },
           "done_when": {
             "type": "array",

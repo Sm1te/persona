@@ -49,8 +49,9 @@ struct MeetingPage: View {
     /// keeps its height.
     @FocusState private var writing: Bool
     /// At accessibility sizes, why the composer takes no words (`MeetingPageBar`): shown at the end of what scrolls, so
-    /// the bar stays two rows.
+    /// the bar stays two rows. Likewise that some picked photos couldn't be read (#3862 phase 3), beside it.
     @State private var notice: String?
+    @State private var photoNotice: String?
 
     private var paused: Bool { capture.state == .paused }
 
@@ -97,7 +98,8 @@ struct MeetingPage: View {
             .safeAreaInset(edge: .bottom, spacing: Theme.Space.flush) {
                 VStack(spacing: Theme.Space.flush) {
                     if showsStopSpeaking { stopSpeaking }
-                    MeetingPageBar(entry: entry, mode: .live, paused: paused, justMe: $justMe, focus: $writing, notice: $notice)
+                    MeetingPageBar(entry: entry, mode: .live, paused: paused, justMe: $justMe, focus: $writing, notice: $notice,
+                                   photoNotice: $photoNotice)
                 }
             }
             .onChange(of: exchanges.compactMap(\.answer)) { old, new in
@@ -157,11 +159,16 @@ struct MeetingPage: View {
         }
     }
 
-    /// Why the composer takes no words, at accessibility sizes (the bar says it at the others).
+    /// Why the composer takes no words, and picked photos that couldn't be read, at accessibility sizes (the bar says
+    /// them at the others).
     @ViewBuilder private var noticeBanner: some View {
         if let notice {
             NoticeBanner(text: notice, tone: .neutral)
                 .accessibilityIdentifier("meeting-ask-notice")
+        }
+        if let photoNotice {
+            NoticeBanner(text: photoNotice, tone: .danger)
+                .accessibilityIdentifier("meeting-photo-problem")
         }
     }
 

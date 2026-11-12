@@ -61,9 +61,14 @@ final class UnfoldTests: XCTestCase {
         // Nothing asked of the app while it measures: every query of its accessibility tree costs it frames.
         Thread.sleep(forTimeInterval: 3.6) // `UnfoldTrace.window`
         guard seq() != before, let r = results().last else { print("UNFOLD \(label): the tap measured nothing"); return nil }
-        print("UNFOLD \(label) \(r.what) at \(String(format: "%.3f", r.at ?? 0)): moved \(r.moved) end \(r.end) step \(r.step ?? -1) hitches \(r.hitches)/\(r.frames) worst \(r.worstMS) ms bodies \((r.bodies ?? []).joined(separator: ", ")) ys "
-              + r.ys.map { $0.map(String.init) ?? "-" }.joined(separator: " ")
-              + " drawn " + (r.drawn ?? []).map { $0.map(String.init) ?? "-" }.joined(separator: " "))
+        // Built in typed steps: one long interpolated concatenation is too much for the type checker.
+        let at: String = String(format: "%.3f", r.at ?? 0)
+        let bodies: String = (r.bodies ?? []).joined(separator: ", ")
+        let ys: String = r.ys.map { $0.map(String.init) ?? "-" }.joined(separator: " ")
+        let drawn: String = (r.drawn ?? []).map { $0.map(String.init) ?? "-" }.joined(separator: " ")
+        var line: String = "UNFOLD \(label) \(r.what) at \(at): moved \(r.moved) end \(r.end) step \(r.step ?? -1)"
+        line += " hitches \(r.hitches)/\(r.frames) worst \(r.worstMS) ms bodies \(bodies) ys \(ys) drawn \(drawn)"
+        print(line)
         shot("\(label)-\(before)-after")
         if still {
             XCTAssertLessThanOrEqual(r.moved, 1, "\(label) \(r.what): the tapped row moved \(r.moved) pt")

@@ -144,6 +144,12 @@ existing `devicewire.NodeCall` or `assistantwire.HTTPRequest` envelope; client
 headers and arbitrary node parameters cannot install them. Background/delegated
 manager calls are system calls and borrow no human owner.
 
+Sharing-authority handover follows the hub's trusted roster: its staged entries
+and machines recorded as kept by their manager. Removing a kept machine from
+hub.json does not remove its authority. The keeper/owner filter and live routing
+generation validation still apply; reported-only machines receive no authority.
+This does not change the separate handover of actual machine configuration.
+
 The manager persists a creation intent and sends opaque creation/incarnation IDs
 only to nodes advertising `creation_receipt.v1`. Terminal, asynchronous, runtime
 launcher and engine-runtime start returns record those IDs in node state. The
@@ -157,6 +163,34 @@ Managers advertise `agent_sharing.v1`; nodes advertise `share_projection.v1` and
 content. Source projection is `session.share_projection` with
 `{session_id,incarnation,previous?}`; the trusted inspection variant can recover
 an existing node incarnation without claiming it. Clients cannot supply file paths.
+
+### Creation outcome diagnostics
+
+Local `share_creation` lines contain only a JSON object with `session_id`, `step`
+and an allowlisted `result`. UUID and bounded synthetic session IDs are accepted;
+other identifiers become `invalid`, and a not-yet-known ID becomes `pending`.
+Content, owner/credential identities, creation/incarnation IDs, capabilities,
+paths, machine names and raw error strings are never included. These are local
+logs, not public DTOs, permissions or new durable state.
+
+| Step | What its result establishes |
+| --- | --- |
+| `manager_prepare` | The intent was created, or preparation skipped/failed because storage, caller, authority, resume or node capability did not qualify. Emitted after the start reply supplies its session ID. |
+| `node_reply` | Returned creation identities match the manager's prepared identities, are missing, or differ. Values themselves are not logged. |
+| `node_receipt` | The real node updated memory and invoked its persistence callback, lacked a callback, or skipped the receipt. |
+| `node_notify` | The one-way write was sent without durable acknowledgement, lacked a peer, or failed. Existing reconnect/switch-state handling is preserved. |
+| `manager_persist` | State arrived with/without both receipt fields, its database write committed, or storage/input failed. |
+
+`sent_unacknowledged` is deliberately not called persisted. Likewise,
+`committed_with_receipt` proves the state write succeeded, not that an unknown or
+mismatched intent acquired ownership. Existing database reconciliation and catalog
+ownership checks remain the authority. Counts may be obtained from these fixed
+step/result codes; they never use session IDs as metric labels.
+
+For a bounded synthetic reproduction, reduce only exact-session log lines to
+step/result presence and counts. Do not publish its actual identifiers or inspect
+unrelated conversation logs. Missing lines from an older node or unavailable log
+stream are an observability limitation, not proof that a stage did not execute.
 
 Supported complete sources:
 

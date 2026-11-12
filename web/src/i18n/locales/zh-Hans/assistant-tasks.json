@@ -53,7 +53,7 @@
   "plan_start": "开始",
   "plan_dismiss": "不开",
   "default_model": "默认模型",
-  "readonly": "只读",
+  "readonly": "已要求只读",
   "needs_answer": "有事等你回答",
   "interrupted_reason": "模型服务出错，中断了：{reason}",
   "interrupted": "模型服务出错，中断了",

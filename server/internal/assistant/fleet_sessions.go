@@ -311,6 +311,7 @@ func (s *Service) decorateInventory(machine string, list []proto.Session, comple
 			list[i].Archived = shown[list[i].SessionID].Archived
 			v := shown[list[i].SessionID]
 			list[i].Origin, list[i].OriginRef, list[i].OpenedBy = v.Origin, v.OriginRef, v.OpenedBy // origins.go
+			list[i].ModelPick = v.ModelPick                                                         // what its next messages run on (model_pick.go)
 			// Messages from other conversations wait in the assistant while it runs: shown like typed-ahead input, after
 			// the user's own (the node's), and counted so the apps leave them alone: the assistant delivers them when the
 			// turn ends, and the queue's actions are claude's (#4342).

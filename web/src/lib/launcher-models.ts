@@ -70,6 +70,23 @@ export interface MachineLaunchers {
   tiers?: PickerTier[];
   /** The profile the presets come from (they follow its switches). */
   tiers_profile?: { id: string; name: string };
+  /** `?purpose=assistant` on a hub with `assistant_model_pick` (#5033): what can't run the main chat on this computer, with
+   *  why in the request's language (shown off, not hidden). */
+  unavailable?: UnavailableLauncher[];
+}
+
+/** One of MachineLaunchers.unavailable: a launcher of the computer or a Model provider that can't run assistant chats here. */
+export interface UnavailableLauncher {
+  name: string;
+  display_name?: string;
+  /** launcher | api */
+  kind?: string;
+  agent?: string;
+  /** A direct API's protocol (responses, chat…). */
+  api?: string;
+  /** not_main_chat, api_protocol, launcher_out_of_scope, launcher_own_service */
+  code?: string;
+  reason: string;
 }
 
 /** The launchers on `mid` with the default of `purpose` (the hub's own when absent: "New agent"). */

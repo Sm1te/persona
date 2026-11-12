@@ -1,17 +1,4 @@
 {
-  "launchers_failed": "读不到启动器：{error}",
-  "launchers_loading": "正在读取启动器…",
-  "launchers_none": "这台电脑上没有能运行 Persona 的启动器",
-  "using_model": "下一条消息起使用 {launcher} · {model}",
-  "using_default_model": "下一条消息起使用 {launcher} 的默认模型",
-  "back_to_launchers": "← 启动器",
-  "default_model": "默认模型",
-  "models_loading": "正在读取模型…",
-  "launcher_chip_title": "启动器：下一条消息起使用",
-  "models_header": "模型：{launcher}",
-  "from_next_message": "下一条消息起使用",
-  "new_chat_launcher_title": "新对话用的启动器",
-  "new_chat_uses": "新对话使用",
   "details": "详细信息",
   "knowledge": "知识库",
   "back_to_main": "回到主对话",
@@ -33,11 +20,5 @@
   "new_main": "新建主对话",
   "new_main_body": "现在的主对话会归档，改名为「{title}」，之后在「已归档」里能找到。新的主对话从你发的下一条消息开始。",
   "carry_summary": "带上旧对话的摘要",
-  "carry_summary_hint": "没压缩过的只带最近几条；想带完整摘要，可以先压缩上下文。",
-  "typed_before": "输入过的",
-  "other_model": "其他模型…",
-  "model_id_placeholder": "模型 ID，比如 vendor/model-name",
-  "forget_typed": "忘记输入过的模型",
-  "forget_failed": "没能忘记「{id}」：{error}",
-  "pick_dropped": "「{launcher}」跑不了助手对话，已换回默认启动器"
+  "carry_summary_hint": "没压缩过的只带最近几条；想带完整摘要，可以先压缩上下文。"
 }

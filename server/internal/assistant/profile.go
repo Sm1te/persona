@@ -619,13 +619,28 @@ func (s *Service) profileRoutes() {
 	})
 }
 
-// warm gets a process ready on the assistant's machine (node assistant.warm) for the launcher ("" is the one new
-// conversations start with).
+// warm gets a process ready (node assistant.warm) for the launcher on the assistant's machine; "" is what the main
+// conversation's next message runs on: its pick (model_pick.go) on the main conversation's machine, else the one new
+// conversations start with.
 func (s *Service) warm(launcher string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	machine := s.settings(ctx).MachineID
-	if launcher == "" {
+	cfg := s.settings(ctx)
+	machine := cfg.MachineID
+	pick, picked := modelPick{}, false
+	switch {
+	case launcher != "":
+	case cfg.Main != "":
+		// Kept under the main conversation's machine, where its next message runs: that one is warmed then.
+		if pick, picked = s.modelPickOf(ctx, cfg.mainRouteMachine(), cfg.Main); picked {
+			machine = cfg.mainRouteMachine()
+		}
+	default: // after /clear: the next main conversation starts on the assistant's machine with the carried pick
+		if h := s.loadHandoff(ctx); h.Pick != nil {
+			pick, picked = *h.Pick, true
+		}
+	}
+	if launcher == "" && !picked {
 		launcher = s.launcherNow(ctx)
 	}
 	if _, ok := s.device(ctx, machine); !ok {
@@ -636,7 +651,12 @@ func (s *Service) warm(launcher string) {
 		return
 	}
 	params := map[string]any{"cwd": cwd, "launcher": launcher}
-	if err := s.applyModel(ctx, "assistant", params); err != nil {
+	if picked {
+		err = s.applyPick(ctx, params, pick)
+	} else {
+		err = s.applyModel(ctx, "assistant", params)
+	}
+	if err != nil {
 		s.logf("warm model: %v", err)
 		return
 	}

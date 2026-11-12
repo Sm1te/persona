@@ -99,19 +99,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, for example when you first connect to your hub."
+            "value": "Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, and to take a photo you add to a chat or a meeting, for example a whiteboard during a meeting."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Personaはカメラで`personad hub pair`が表示するペアリング用QRコードを読み取ります。たとえば初めてハブに接続するときに使います。"
+            "value": "Personaはカメラで`personad hub pair`が表示するペアリング用QRコードを読み取り、チャットや会議に追加する写真を撮ります。たとえば会議中のホワイトボードを撮るときに使います。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Persona 用相机扫描 `personad hub pair` 打印的配对二维码，比如第一次连接你的 hub 时。"
+            "value": "Persona 用相机扫描 `personad hub pair` 打印的配对二维码，也用来拍你要加到聊天或会议里的照片，比如会上的白板。"
           }
         }
       }

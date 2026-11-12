@@ -126,6 +126,8 @@ type Service struct {
 	supervise  superviseBook   // supervise_signals.go
 	preempt    preemptBook     // owner_preempt.go
 	tbriefs    taskBriefBook   // task_brief.go
+
+	modelPicks modelPickBook // model_pick.go
 	// noBackground: there is no background supervisor whatever the setting says, so the main conversation gets its
 	// own tasks' signals. Only the tests of what the main conversation's own supervision does set it; the hub never does.
 	noBackground bool
@@ -229,6 +231,7 @@ func New(o Options) *Service {
 	// The kept old keys too while a rotation keeps them (keyrotate.go).
 	s.models.secret = secretkey.NewWithFallback(o.SecretKey)
 	s.archiveRoutes()
+	s.modelPickRoutes()
 	s.agentArchiveRoutes()
 	s.alwaysRoutes()
 	s.standingAuthorizationRoutes()
@@ -566,6 +569,11 @@ func (s *Service) snapshot(ctx context.Context) Snapshot {
 	}
 	for id, machine := range archived {
 		view(id, machine).Archived = true
+	}
+	picks, ok := s.modelPicksSet()
+	snap.Partial = snap.Partial || !ok
+	for id, p := range picks {
+		view(id, p.MachineID).ModelPick = p.wire()
 	}
 	directions, ok := s.directionViews(ctx)
 	snap.Partial = snap.Partial || !ok

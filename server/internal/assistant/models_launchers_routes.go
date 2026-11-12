@@ -452,8 +452,12 @@ func (s *Service) machineLauncherRoutes() {
 			return
 		}
 		list, err := s.pickerLaunchers(ctx, mid)
+		var unavailable []unavailableLauncher
 		if err == nil && r.URL.Query().Get("purpose") == "assistant" { // the main chat's menu, and the scheduled tasks' that follow it
-			list, err = s.assistantLaunchersOf(ctx, mid, list)
+			all := list
+			if list, err = s.assistantLaunchersOf(ctx, mid, all); err == nil {
+				unavailable = s.mainChatUnavailable(ctx, mid, all, list, s.requestLang(r)) // and what it can't run, with why (#5033)
+			}
 		}
 		if err != nil {
 			apierr.Call(w, err)
@@ -474,6 +478,9 @@ func (s *Service) machineLauncherRoutes() {
 			}
 		}
 		out := map[string]any{"launchers": shown, "default": def}
+		if unavailable != nil {
+			out["unavailable"] = unavailable
+		}
 		if purpose := r.URL.Query().Get("purpose"); purpose == "" || purpose == "agent.new" {
 			usable := make([]ConfiguredLauncher, 0, len(shown))
 			for _, l := range shown {

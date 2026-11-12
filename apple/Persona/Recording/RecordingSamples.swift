@@ -1,6 +1,9 @@
 #if DEBUG
 // i18n-ignore-file: DEBUG-only made-up recording for screenshots
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 
 /// Demo and screenshots use made-up text only and never start the microphone; with a hub paired they sync into its Knowledge as usual (UI tests check this step with the mock hub).
 enum RecordingSamples {
@@ -86,8 +89,9 @@ enum RecordingSamples {
     /// `-showMeetingSample recording|paused|interrupted`: a meeting 12:34 into its recording, as the recording page and its
     /// Live Activity show it (no microphone); `listening|taking-part|answered`: the same with Persona attending (#2981);
     /// `room-listening|room-taking-part`: the same as a room meeting (#3862), whose sheet is the meeting page;
-    /// `minutes` / `pending`: a finished meeting whose page opens (its minutes from the hub, or still being written). Both
-    /// recordings are made up.
+    /// `room-whiteboard`: `room-taking-part` started with photos, which adds a made-up whiteboard photo as the camera
+    /// would (#3862 phase 3); `minutes` / `pending`: a finished meeting whose page opens (its minutes from the hub, or
+    /// still being written). Both recordings are made up.
     static func showMeetingIfAsked() {
         #if os(iOS)
         guard let mode = UserDefaults.standard.string(forKey: "showMeetingSample") else {
@@ -129,11 +133,12 @@ enum RecordingSamples {
         // answers given. The main chat attends, picked for it (no session named, `mainPicked`: never the default, #3862);
         // the made-up meeting's upload tells the hub, as a real one would, and its lines go to the hub's live log, the last
         // one just before the tap (12:34). `room-listening` / `room-taking-part`: the meeting's own room conversation
-        // attends instead (#3862), not private.
-        let room = ["room-listening", "room-taking-part"].contains(mode)
+        // attends instead (#3862), not private; `room-whiteboard` takes part and takes photos.
+        let room = ["room-listening", "room-taking-part", "room-whiteboard"].contains(mode)
+        let photos = mode == "room-whiteboard"
         if ["listening", "taking-part", "answered"].contains(mode) || room {
             if room {
-                live.attendance = RecordingAttendance.room(mode == "room-listening" ? .listener : .participant, private: false, photos: false)
+                live.attendance = RecordingAttendance.room(mode == "room-listening" ? .listener : .participant, private: false, photos: photos)
             } else {
                 live.attendance = RecordingAttendance(role: mode == "listening" ? .listener : .participant, session: nil,
                                                       sessionTitle: "Persona", mainPicked: true)
@@ -142,8 +147,13 @@ enum RecordingSamples {
                 RecordingSentence(start: 741, end: 748, text: "上周定的长录音测试谁负责？"),
             ]))
         }
+        if photos {
+            // An earlier run's photos not sent yet stay behind: this run's whiteboard is the only one.
+            try? FileManager.default.removeItem(at: RecordingLibrary.shared.folder(liveMeeting).appending(path: MeetingPhotos.listFile))
+        }
         try? RecordingLibrary.shared.save(live)
         RecordingCapture.shared.showSample(liveMeeting, elapsed: 754, paused: mode == "paused", interrupted: mode == "interrupted")
+        if photos { Task { await addWhiteboard() } }
         if mode == "answered" {
             let first = MeetingAsk.Exchange(recordingID: liveMeeting, at: 612, question: "Mac 上的录音现在谁在跟？", typed: true,
                                             state: .answered("还没有定负责人。上次周会把它列为待定问题，计划下周同一时间再对。"),
@@ -156,5 +166,55 @@ enum RecordingSamples {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// `room-whiteboard`: once the hub has the meeting with its room (the first upload's `200`, 10 s at most), a made-up
+    /// whiteboard goes the way a camera photo goes (`MeetingPhotos.add`), so the real pipeline runs: downscaled, read on
+    /// the phone, uploaded, sent into the room, and the room's note.
+    private static func addWhiteboard() async {
+        for _ in 0..<50 {
+            if let entry = RecordingLibrary.shared.entry(liveMeeting), RecordingSync.shared.attendanceSettled(entry) { break }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        let at = RecordingCapture.shared.timeline
+        guard let jpeg = await Task.detached(priority: .userInitiated, operation: { RecordingSamples.whiteboard() }).value,
+              let entry = RecordingLibrary.shared.entry(liveMeeting) else { return }
+        MeetingPhotos.shared.add(.camera(jpeg), to: entry, at: at)
+    }
+
+    /// A whiteboard as a phone camera would hand it over: 2000 × 1500 px, white, a few lines in a dark marker, a box drawn
+    /// around the decision. Drawn off the main actor (`UIGraphicsImageRenderer` is safe there).
+    nonisolated private static func whiteboard() -> Data? {
+        let size = CGSize(width: 2000, height: 1500)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let ink = UIColor(red: 0.1, green: 0.14, blue: 0.32, alpha: 1)
+        let red = UIColor(red: 0.72, green: 0.12, blue: 0.12, alpha: 1)
+        let lines: [(text: String, size: CGFloat, color: UIColor)] = [
+            ("Q3 预算", 150, ink),
+            ("导出上限 4 MB", 120, red),
+            ("回归测试：张三 周五", 120, ink),
+            ("Mac 录音：下周再定", 110, ink),
+        ]
+        return renderer.jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            var y: CGFloat = 170
+            for line in lines {
+                let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: line.size, weight: .bold),
+                                                                 .foregroundColor: line.color]
+                (line.text as NSString).draw(at: CGPoint(x: 180, y: y), withAttributes: attributes)
+                y += line.size * 1.9
+            }
+            // The decision boxed in red, as people mark one on a board.
+            let box = UIBezierPath(rect: CGRect(x: 140, y: 170 + 150 * 1.9 - 30, width: 1120, height: 200))
+            box.lineWidth = 12
+            red.setStroke()
+            box.stroke()
+        }
+    }
+    #endif
 }
 #endif

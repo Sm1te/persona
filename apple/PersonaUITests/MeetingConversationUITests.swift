@@ -7,7 +7,9 @@ import XCTest
 /// room-taking-part`): its uploads carry `room` and `private`, its lines reach the room, its Stop ends the recording as a
 /// real one does. Every test starts from a fresh mock: `POST /mock/recording_minutes` forgets the recordings, rooms,
 /// follow-ups and receipts, and `/mock/meeting_conversation` and `/mock/meeting_attendance` switch the features on (the app
-/// reads them from its next hello). The app runs in zh-Hans: elements are found by their identifiers, never their words.
+/// reads them from its next hello). Photos (phase 3): the fresh start forgets every photo too, and `/mock/meeting_photos`
+/// switches them on with the room's note a second after each one; `-showMeetingSample room-whiteboard` draws a whiteboard
+/// and adds it as the camera would. The app runs in zh-Hans: elements are found by their identifiers, never their words.
 /// PERSONA_SHOTS=<dir> saves conversation-<appearance>-<name>.png (PERSONA_SHOTS_APPEARANCE names the appearance).
 final class MeetingConversationUITests: XCTestCase {
     private let live = "00000000-0000-0000-0000-000000000002"
@@ -17,14 +19,20 @@ final class MeetingConversationUITests: XCTestCase {
         try post(hub, "/mock/recording_minutes", ["mode": "pending"])
         try post(hub, "/mock/meeting_conversation", ["on": true, "room": "ok", "end_seconds": 180])
         try post(hub, "/mock/meeting_attendance", ["on": true, "default": "participant", "answer": "ok", "kb_read_only": false])
+        try post(hub, "/mock/meeting_photos", Self.photosOn)
     }
 
-    /// The shared mock goes back to how it starts (both features on, attending's default off, a room's end after 180 s).
+    /// The shared mock goes back to how it starts (the features on, attending's default off, a room's end after 180 s, a
+    /// photo's note a second after it).
     override func tearDownWithError() throws {
         guard let hub = ProcessInfo.processInfo.environment["PERSONA_MOCK_HUB"] else { return }
         try post(hub, "/mock/meeting_conversation", ["on": true, "room": "ok", "end_seconds": 180])
         try post(hub, "/mock/meeting_attendance", ["on": true, "default": "off"])
+        try post(hub, "/mock/meeting_photos", Self.photosOn)
     }
+
+    /// Photos on, and the room's note on each one a second after it reaches the room.
+    private static var photosOn: [String: Any] { ["on": true, "note": "ok", "note_seconds": 1] }
 
     // MARK: Starting
 
@@ -214,6 +222,97 @@ final class MeetingConversationUITests: XCTestCase {
         try shot(app, "followup")
     }
 
+    // MARK: Photos (phase 3)
+
+    /// The whiteboard: a photo taken in the meeting shows in the thread at once, becomes meeting material once the hub
+    /// stored it, and the room's note shows under it. The hub has what the phone prepared: a JPEG at most 1600 px on its
+    /// long side with the words read on the board, sent into the room and noted there. While the meeting takes photos [+]
+    /// offers the library (the simulator has no camera).
+    @MainActor func testWhiteboardPhotoGetsTheRoomsNote() throws {
+        let hub = try mockHub()
+        let app = try meetingPage(hub, sample: "room-whiteboard")
+        let row = element(app, "meeting-photo-row")
+        XCTAssertTrue(row.waitForExistence(timeout: 40), "the whiteboard never showed in the thread:\n\(app.debugDescription)")
+        let material = element(app, "meeting-photo-material")
+        XCTAssertTrue(material.waitForExistence(timeout: 60), "the photo never became meeting material:\n\(app.debugDescription)")
+        reveal(material, in: app)
+        try shot(app, "photo")
+        let note = element(app, "meeting-photo-note")
+        XCTAssertTrue(note.waitForExistence(timeout: 30), "the room's note never showed under the photo:\n\(app.debugDescription)")
+        reveal(note, in: app)
+        try shot(app, "photo-note")
+
+        XCTAssertTrue(waitFor(10) { ((try? self.photos(hub, self.live))?.first?["note"] as? String)?.isEmpty == false },
+                      "the hub has no note on the photo: \(String(describing: try? self.photos(hub, self.live)))")
+        let listed = try photos(hub, live)
+        XCTAssertEqual(listed.count, 1, "one whiteboard, stored once: \(listed)")
+        let stored = try XCTUnwrap(listed.first, "the hub lists no photo")
+        let width = stored["width"] as? Int ?? 0, height = stored["height"] as? Int ?? 0
+        XCTAssertTrue(min(width, height) > 0 && max(width, height) <= 1600, "not prepared on the phone: \(width)×\(height)")
+        XCTAssertEqual(stored["mime"] as? String, "image/jpeg")
+        XCTAssertFalse((stored["text"] as? String ?? "").isEmpty, "no words read on the whiteboard: \(stored)")
+        XCTAssertEqual(stored["forwarded"] as? Bool, true, "never sent into the room")
+
+        openPlus(app)
+        XCTAssertTrue(menuItem(app, "meeting-photo-library", label: "选择照片").waitForExistence(timeout: 5),
+                      "[+] offers no photos in a meeting that takes them:\n\(app.debugDescription)")
+    }
+
+    /// Deleting a photo the room saw: its long-press menu's Delete Photo asks first, the hub lists it no more, and the
+    /// row goes; the room's message of it reads Photo removed. (The photo's element carries its state as its identifier:
+    /// `meeting-photo-material` once stored.)
+    @MainActor func testDeletePhotoShowsPhotoRemoved() throws {
+        let hub = try mockHub()
+        let app = try meetingPage(hub, sample: "room-whiteboard")
+        let row = element(app, "meeting-photo-row")
+        XCTAssertTrue(row.waitForExistence(timeout: 40), "the whiteboard never showed in the thread:\n\(app.debugDescription)")
+        let material = element(app, "meeting-photo-material")
+        XCTAssertTrue(material.waitForExistence(timeout: 60), "the photo never became meeting material:\n\(app.debugDescription)")
+        // Deleted once the room has it and noted it, so the room's thread holds its message.
+        XCTAssertTrue(waitFor(30) { (try? self.photos(hub, self.live))?.first?["forwarded"] as? Bool == true }, "never sent into the room")
+        XCTAssertTrue(element(app, "meeting-photo-note").waitForExistence(timeout: 30), "no note:\n\(app.debugDescription)")
+
+        // The long press goes on the row's state line: the note's words are selectable, and the thumbnail opens the viewer.
+        reveal(material, in: app)
+        material.press(forDuration: 1.2)
+        let delete = menuItem(app, "meeting-photo-delete", label: nil)
+        XCTAssertTrue(delete.waitForExistence(timeout: 5), "the photo's menu has no Delete Photo:\n\(app.debugDescription)")
+        try shot(app, "photo-menu")
+        delete.tap()
+        try confirmDelete(app)
+
+        XCTAssertTrue(waitFor(20) { (try? self.photos(hub, self.live))?.isEmpty == true },
+                      "the hub still lists the photo: \(String(describing: try? self.photos(hub, self.live)))")
+        let removed = element(app, "meeting-photo-removed")
+        let rows = app.descendants(matching: .any).matching(identifier: "meeting-photo-row")
+        XCTAssertTrue(waitFor(20) { removed.exists || rows.count == 0 }, "the photo's row stayed:\n\(app.debugDescription)")
+        if removed.exists { reveal(removed, in: app) }
+        try shot(app, "photo-removed")
+    }
+
+    /// The photo items follow what the meeting started with (`RecordingAttendance.photos`), both ways round: the same
+    /// meeting started with photos (`room-whiteboard`) offers Choose Photos, and started without them (`room-taking-part`)
+    /// [+] has only its question about what was just said, no camera or library. So a page that always offered photos,
+    /// or never did, fails here. How a real start takes the flag from the hub's hello is
+    /// `MeetingConversationTests.aStartTakesPhotosOnlyWhenTheHubListsThem`.
+    @MainActor func testPhotoMenuFollowsTheMeetingsStart() throws {
+        let hub = try mockHub()
+        let with = try meetingPage(hub, sample: "room-whiteboard")
+        openPlus(with)
+        XCTAssertTrue(menuItem(with, "meeting-photo-library", label: "选择照片").waitForExistence(timeout: 5),
+                      "[+] offers no photos in a meeting that started with them:\n\(with.debugDescription)")
+        try shot(with, "photo-menu-on")
+        with.terminate()
+
+        let app = try meetingPage(hub)
+        openPlus(app)
+        XCTAssertTrue(menuItem(app, "meeting-heard", label: "刚才说的").waitForExistence(timeout: 5),
+                      "[+] didn't open:\n\(app.debugDescription)")
+        try shot(app, "photo-menu-off")
+        XCTAssertFalse(menuItem(app, "meeting-photo-library", label: "选择照片").exists, "Choose Photos in a meeting started without photos")
+        XCTAssertFalse(menuItem(app, "meeting-photo-camera", label: "拍照").exists, "Take Photo in a meeting started without photos")
+    }
+
     // MARK: Helpers: the app
 
     @MainActor private func launch(_ hub: String, _ args: [String] = []) -> XCUIApplication {
@@ -225,9 +324,10 @@ final class MeetingConversationUITests: XCTestCase {
         return app
     }
 
-    /// The made-up meeting's page, once the hub's room for it is up (its upload opens it).
-    @MainActor private func meetingPage(_ hub: String) throws -> XCUIApplication {
-        let app = launch(hub, ["-showMeetingSample", "room-taking-part"])
+    /// The made-up meeting's page, once the hub's room for it is up (its upload opens it). `sample`: `room-taking-part`, or
+    /// `room-whiteboard`, the same meeting started with photos, which adds its whiteboard once the hub has its room.
+    @MainActor private func meetingPage(_ hub: String, sample: String = "room-taking-part") throws -> XCUIApplication {
+        let app = launch(hub, ["-showMeetingSample", sample])
         XCTAssertTrue(element(app, "meeting-thread-header").waitForExistence(timeout: 20), "no meeting page:\n\(app.debugDescription)")
         XCTAssertTrue(waitFor(20) { (try? self.room(hub, self.live))?["state"] as? String == "ready" },
                       "the room never came up: \(String(describing: try? self.meeting(hub, self.live)))")
@@ -269,6 +369,42 @@ final class MeetingConversationUITests: XCTestCase {
         let dialog = app.sheets.firstMatch.exists ? app.sheets.firstMatch : app.alerts.firstMatch
         XCTAssertTrue(dialog.exists, "Stop didn't ask first:\n\(app.debugDescription)")
         dialog.buttons.element(boundBy: 0).tap()
+    }
+
+    /// Opens the composer's [+] menu.
+    /// Opens the composer's [+] menu; at accessibility sizes its items are in the bar's More menu (DESIGN_SYSTEM
+    /// "Meeting page (#3862)"), which opens instead.
+    @MainActor private func openPlus(_ app: XCUIApplication) {
+        let plus = element(app, "meeting-plus")
+        if plus.waitForExistence(timeout: 15) { plus.tapCenter(); return }
+        let more = app.buttons["recording-more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "no [+] and no More:\n\(app.debugDescription)")
+        more.tap()
+    }
+
+    /// A menu's item by its identifier; when the menu came without it, by its zh-Hans words (`label`), or for none given
+    /// the first item whose words say delete (「删除」).
+    @MainActor private func menuItem(_ app: XCUIApplication, _ id: String, label: String?) -> XCUIElement {
+        let named = element(app, id)
+        if named.waitForExistence(timeout: 3) { return named }
+        let words = label.map { NSPredicate(format: "label == %@", $0) } ?? NSPredicate(format: "label CONTAINS %@", "删除")
+        return app.buttons.matching(words).firstMatch
+    }
+
+    /// Delete Photo asks first: its button by identifier, else the dialog's first (the destructive one comes before
+    /// Cancel), else the one whose words say delete.
+    @MainActor private func confirmDelete(_ app: XCUIApplication) throws {
+        let confirm = element(app, "meeting-photo-delete-confirm")
+        let found = confirm.waitForExistence(timeout: 5)
+        try shot(app, "photo-delete")
+        if found { confirm.tap(); return }
+        if let dialog = [app.sheets.firstMatch, app.alerts.firstMatch].first(where: { $0.exists }) {
+            dialog.buttons.element(boundBy: 0).tap()
+            return
+        }
+        let words = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "删除")).firstMatch
+        XCTAssertTrue(words.waitForExistence(timeout: 3), "Delete Photo didn't ask first:\n\(app.debugDescription)")
+        words.tap()
     }
 
     /// Brings `element` on screen (the Recordings list, the page's thread).
@@ -339,6 +475,12 @@ final class MeetingConversationUITests: XCTestCase {
     /// The recording's last upload as the hub stored it (`GET /mock/recordings`).
     private func upload(_ hub: String, _ id: String) throws -> [String: Any]? {
         (try json(hub, "/mock/recordings")["recordings"] as? [String: Any])?[id] as? [String: Any]
+    }
+
+    /// The recording's photos as the hub lists them (`GET /api/v1/recordings/{id}/photos`, oldest first): what it stored
+    /// (`width`, `height`, `mime`, `text`), whether it went into the room (`forwarded`) and the room's `note`.
+    private func photos(_ hub: String, _ id: String) throws -> [[String: Any]] {
+        try json(hub, "/api/v1/recordings/\(id)/photos")["photos"] as? [[String: Any]] ?? []
     }
 
     /// A conversation's items as the hub lists them, all of them.

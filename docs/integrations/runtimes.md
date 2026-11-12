@@ -59,9 +59,9 @@ Optional (for each one present, the SDK declares the capability in `runtime.hell
 In `createRuntime`'s options, a runtime that runs several Agents can also pass `launchers: [{name, model, agent, models}]`: besides `launcher`, the new-session form then has these entries, one per provider,
 each with the Agent and models it starts; when they change later, call `rt.launchersChanged(list)`. `resume: true`: `start` accepts `{resume: <Claude session id>}` to take over a Claude session it doesn't have
 and keep that id (`caps.resume`, for runtimes acting as the engine to continue "Not running" sessions). `start` also receives the form's choices (`launcher`, `model`, `permission_mode`, `effort`,
-`workspace_id`); see `docs/protocol/protocol.md` ("Runtime ↔ node"). `readonly: true` (`caps.readonly`): a `start` with `permission_mode: "plan"` (every
-read-only task, #3238) runs in a read-only mode before its first prompt, or throws `readonly_unsupported` — never falling back to a writable
-provider, and a takeover that cannot set the mode refuses too. Without it the node refuses plan starts for the runtime itself.
+`workspace_id`); see `docs/protocol/protocol.md` ("Runtime ↔ node"). `readonly: true` (`caps.readonly`): a `start` with `permission_mode: "plan"` (an ordinary
+plan-mode start, or a read-only task on a non-Claude runtime, #3238) runs in a read-only mode before its first prompt, or throws `readonly_unsupported` — never falling back to a writable
+provider, and a takeover that cannot set the mode refuses too. Without it the node refuses plan starts for the runtime itself. Claude task dispatches use `bypassPermissions` and do not require this capability.
 
 Call the SDK when things happen:
 

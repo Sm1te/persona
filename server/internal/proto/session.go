@@ -168,6 +168,11 @@ type Session struct {
 	// Space is the assistant's space it runs in: "health" for the health space's (docs/assistant/health.md), "" for the
 	// assistant's own. Set by the hub on the assistant's conversations.
 	Space string `json:"space,omitempty"`
+	// ModelPick is the launcher / model / effort picked for one of the assistant's conversations, which its next
+	// messages run on (#5033, docs/assistant/model-config.md "A conversation's own model"); nil follows Model
+	// configuration › Main chat (the main conversation, a scheduled task's) or what the conversation runs. Set by the
+	// manager.
+	ModelPick *ModelPick `json:"model_pick,omitempty"`
 	// ArchiveChangedAt is the manager's last explicit archive/restore visibility change; nil when there was none. The
 	// hub uses it only to order its legacy delete tombstones against that report. A pointer, not a time.Time: the 16
 	// bytes it saves keep Session in its size class (session_size_test.go).
@@ -505,6 +510,14 @@ type Direction struct {
 	By      string     `json:"by"`
 	At      time.Time  `json:"at"`
 	EndedAt *time.Time `json:"ended_at,omitempty"`
+}
+
+// ModelPick is what an assistant conversation was set to run on in the apps (PUT
+// /api/v1/assistant/conversations/{id}/model): a launcher and, when one was picked, its model and reasoning effort.
+type ModelPick struct {
+	Launcher string `json:"launcher"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
 }
 
 // ServiceTier is a speed advertised by the native Codex model catalog.

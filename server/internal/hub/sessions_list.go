@@ -143,7 +143,7 @@ func (h *Hub) indexStampedLocked(mid string, list []proto.Session, stamp bool, m
 }
 
 // indexedRow is row's item in the paged index (row stamped with manager when stamp), folded under root ("" for none: a
-// session of the same batch, sessionlist.Item.Root), raw its encoding and indexed what the index holds under id (the
+// session of the same batch, sessionlist.Fold.Root), raw its encoding and indexed what the index holds under id (the
 // zero Item for none). When indexed's Full is raw with the same pane_source, its Summary is what row's is too: the
 // summary is cut from the fields raw encodes. Both are then kept, and the item is unchanged for Replace, rather than
 // marshalled again. The scalars are always read from row.
@@ -160,11 +160,10 @@ func indexedRow(mid, id string, row *proto.Session, stamp bool, manager, root st
 		group = row.WorkspaceID
 	}
 	pane := sessionorigin.Of(*row)
-	kids := row.Children()
 	item := sessionlist.Item{
 		ID: id, Machine: mid, Project: project, Group: group, PaneSource: pane,
 		State: row.State, BackgroundWaiting: row.BackgroundWaiting, Source: row.SourceKind, Provider: row.Agent, UpdatedAt: row.UpdatedAt,
-		Root: root, FoldedState: row.FoldedState(), FoldedBackgroundWaiting: row.BackgroundWaiting && kids.Working == 0 && kids.NeedsYou == 0,
+		Fold: indexedFold(row, root, indexed.Fold),
 	}
 	// What q finds a row by: the fields the apps' own searches read, the branch too (#4770).
 	text := [...]string{row.Title, row.Cwd, row.RepoRoot, row.Branch, row.SpaceName, row.SlotName, row.AgentName, row.LastText}
@@ -187,6 +186,22 @@ func indexedRow(mid, id string, row *proto.Session, stamp bool, manager, root st
 	}{pane})
 	item.SearchText = strings.Join(text[:], "\n")
 	return item
+}
+
+// indexedFold is row's sessionlist.Fold folded under root: nil when it folds under none and shows its own state and
+// background wait (a row without children), else was when that is the same fold, else a new one. Folds are shared
+// between copies of an item and never written in place.
+func indexedFold(row *proto.Session, root string, was *sessionlist.Fold) *sessionlist.Fold {
+	kids := row.Children()
+	fold := sessionlist.Fold{Root: root, State: row.FoldedState(), BackgroundWaiting: row.BackgroundWaiting && kids.Working == 0 && kids.NeedsYou == 0}
+	switch {
+	case fold == sessionlist.Fold{State: row.State, BackgroundWaiting: row.BackgroundWaiting}:
+		return nil
+	case was != nil && *was == fold:
+		return was
+	}
+	kept := fold // only a new fold goes to the heap: &fold would put every row's there
+	return &kept
 }
 
 // paneSourceKey is what runtimeListFields puts between a row's fields and its pane_source value.
@@ -324,7 +339,7 @@ func runtimeSummary(s proto.Session) runtimeRowSummary {
 		SpaceKind: s.SpaceKind, SpaceID: s.SpaceID, SpaceName: s.SpaceName, SpaceIndex: s.SpaceIndex,
 		ParentSpaceID: s.ParentSpaceID, SlotID: s.SlotID, SlotName: s.SlotName, SlotIndex: s.SlotIndex, PaneIndex: s.PaneIndex,
 		WorkspaceID: s.WorkspaceID, TabID: s.TabID, PaneID: s.PaneID,
-		Assistant: s.Assistant, Archived: s.Archived, ArchiveChangedAt: s.ArchiveChangedAt, Space: s.Space,
+		Assistant: s.Assistant, Archived: s.Archived, ArchiveChangedAt: s.ArchiveChangedAt, Space: s.Space, ModelPick: s.ModelPick,
 		Starting: s.Starting, StartError: rowText(s.StartError, startErrorRow(s)), StartedByPersona: s.StartedByPersona,
 		StartErrorCode: s.StartErrorCode, StartErrorArgs: s.StartErrorArgs,
 		ReadOnlyReason: rowText(s.ReadOnlyReason, 180), Origin: s.Origin, OriginRef: s.OriginRef, OpenedBy: s.OpenedBy,

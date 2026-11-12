@@ -46,6 +46,7 @@ extensions.call:{id} /api/v1/extensions/{id}/
 -                    DELETE /api/v1/agent-shares/{share_id}
 -                    DELETE /api/v1/agents/sessions/{id}/messages/{clientId}
 -                    DELETE /api/v1/assistant/conversations/{id}/always/{hash}
+-                    DELETE /api/v1/assistant/conversations/{id}/model
 -                    DELETE /api/v1/assistant/directions/offers/{id}
 -                    DELETE /api/v1/assistant/followups/{id}
 -                    DELETE /api/v1/assistant/memory/{name}
@@ -555,6 +556,7 @@ todos.write          POST /api/v1/todos/{id}/decisions
 -                    PUT /api/v1/agents/prefs
 -                    PUT /api/v1/agents/triage
 -                    PUT /api/v1/assistant
+-                    PUT /api/v1/assistant/conversations/{id}/model
 -                    PUT /api/v1/assistant/directions/{id}/name
 -                    PUT /api/v1/assistant/feishu/companions
 -                    PUT /api/v1/assistant/memory/{name}

@@ -1,5 +1,6 @@
 package persona.feature.chat
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -242,4 +245,33 @@ class TaskSheetsShotsTest {
     @Test fun planGlassDark() = shot("plan", AppStyle.Glass, true, "第一条消息")
     @Test fun planBrief() = shot("plan", AppStyle.Brief, false, "第一条消息")
     @Test fun planBoard() = shot("plan", AppStyle.Board, false, "第一条消息")
+
+    @Test fun readOnlyLabelIsARequest() {
+        assertEquals("已要求只读", ApplicationProvider.getApplicationContext<Context>().getString(R.string.chat_tasks_read_only))
+    }
+
+    private fun readOnlyPlanCard(style: AppStyle, dark: Boolean) {
+        val store = TasksStore(Api(todos), Connection(), CoroutineScope(Dispatchers.Unconfined))
+        val machines = listOf(Machine("mac", "工作笔记本", online = true), Machine("box", "构建服务器", online = true))
+        rule.setContent {
+            PersonaTheme(darkTheme = dark, reduceMotion = true, style = style) {
+                val host = AssistantTaskHost(store, "main", listOf(lead, helper, own), { id -> machines.first { it.id == id }.name }, {}, {}, {})
+                Column(Modifier.testTag("shot").width(400.dp).background(PersonaTheme.palette.background).padding(Tokens.Space.l)) {
+                    PlanCard(plan, host)
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("no read-only request", rule.onAllNodesWithText("已要求只读", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        val bitmap = rule.onNodeWithTag("shot").captureToImage().asAndroidBitmap()
+        File(out(), "tasks-read-only-${style.name.lowercase()}-${if (dark) "dark" else "light"}.png").outputStream()
+            .use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun readOnlyPlanCardGlass() = readOnlyPlanCard(AppStyle.Glass, false)
+    @Test fun readOnlyPlanCardGlassDark() = readOnlyPlanCard(AppStyle.Glass, true)
+    @Test fun readOnlyPlanCardBrief() = readOnlyPlanCard(AppStyle.Brief, false)
+    @Test fun readOnlyPlanCardBriefDark() = readOnlyPlanCard(AppStyle.Brief, true)
+    @Test fun readOnlyPlanCardBoard() = readOnlyPlanCard(AppStyle.Board, false)
+    @Test fun readOnlyPlanCardBoardDark() = readOnlyPlanCard(AppStyle.Board, true)
 }

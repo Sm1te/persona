@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""End-to-end check of the composer's permission-mode and thinking-effort menus (#5584) in a real browser, where layout
+"""End-to-end check of the composer's permission-mode menu (#5584) in a real browser, where layout
 exists (jsdom has none): every option shows its name and its whole description, nothing in a row is wider than the
 row or runs past the menu, exactly one option is checked (aria-checked) and its check is not squeezed, and the menu
 stays inside the window and above the chip that opened it. Runs an agent chat and a Persona chat, light and dark, at
-1440, 390 and 320 wide. An agent chat has the permission chip only: its effort is on the composer's model pill (#5032).
+1440, 390 and 320 wide. Both have the permission chip only: the effort is on the composer's model pill (#5032, #5033).
 
     PORT=18871 MOCK_HUB_ID=mode-menu python3 scripts/mock/mock_hub.py &
     (cd web && PERSONA_HUB_URL=http://127.0.0.1:18871 npx vite --port 5371 --strictPort &)
@@ -22,10 +22,9 @@ SIZES = {"wide": {"width": 1440, "height": 900}, "narrow": {"width": 390, "heigh
 PAGES = {"agent": "/s/macbook/a1f3c2d4-0000-4000-8000-000000000001", "assistant": "/persona/b2e4d6f8-0000-4000-8000-000000000002"}
 CHIPS = {
     "permission": 'button[title="Permission mode"], button[title^="Never asks"]',
-    "effort": 'button[title="Thinking effort"]',
 }
 # the chips each page has
-PAGE_CHIPS = {"agent": ["permission"], "assistant": ["permission", "effort"]}
+PAGE_CHIPS = {"agent": ["permission"], "assistant": ["permission"]}
 
 # For each option row: its name and description, whether anything inside overflows the row, and the check's width.
 MEASURE = """menu => {
@@ -39,7 +38,7 @@ MEASURE = """menu => {
     const svgs = [...row.querySelectorAll('svg')];
     const check = svgs[svgs.length - 1];
     return {
-      role: row.getAttribute('role'), checked: row.getAttribute('aria-checked'),
+      role: row.getAttribute('role'), checked: row.getAttribute('aria-checked'), disabled: row.disabled || row.getAttribute('aria-disabled') === 'true',
       name: name ? name.innerText : '', nameWidth: name ? name.getBoundingClientRect().width : 0,
       detail: detail ? detail.innerText : null, overflow: wide.length > 0 || row.scrollWidth > row.clientWidth + 1 || r.right > box.right,
       check: check ? check.getBoundingClientRect().width : 0,
@@ -70,7 +69,8 @@ def check_menu(page, chip, tag, viewport):
             fail(f"{tag}: {r['name']!r} has no description")
         if r["overflow"]:
             fail(f"{tag}: {r['name']!r} is clipped: something in the row is wider than it or runs past the menu")
-        if r["role"] != "menuitemradio":
+        # Allow everything where the agent can't take it while it runs: shown off with why, not a choice (#4013)
+        if r["role"] != "menuitemradio" and not r["disabled"]:
             fail(f"{tag}: {r['name']!r} is a {r['role']}, not one choice of a set")
     if [r["checked"] for r in rows].count("true") != 1:
         fail(f"{tag}: {[r['checked'] for r in rows]} checked, want exactly one")

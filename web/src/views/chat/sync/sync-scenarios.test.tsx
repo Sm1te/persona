@@ -22,9 +22,7 @@ vi.mock("../../../lib/panel", async (importOriginal) => ({ ...await importOrigin
 vi.mock("../../assistant/Persona", () => ({ usePersona: () => ({ name: "Persona" }), PersonaAvatar: () => null }));
 vi.mock("../../assistant/AssistantChat", () => ({
   AssistantFace: () => null,
-  AssistantLauncherChip: () => null,
   CompactionStrip: () => null,
-  StarterLauncherChip: () => null,
   useAssistantMenu: () => ({ items: [], dialogs: null }),
 }));
 // The new-conversation page's setup checks: ready, as a hub without readiness reports it. A refused start still shows

@@ -1,5 +1,6 @@
 #if os(iOS)
 import BeautifulUI
+import PhotosUI
 import SwiftUI
 
 /// The meeting page's bottom bar (#3862, docs/assistant/meeting-minutes.md「The meeting card」), pinned under the thumb:
@@ -10,9 +11,16 @@ import SwiftUI
 /// (`…/followup`, then the conversation's messages). While the field has the keyboard, Pause, Bookmark and Stop step
 /// aside so the thread stays in view.
 ///
+/// [+] also takes photos (phase 3) while a meeting that started with them records and Just Me is off: they are the
+/// meeting's material, never private. Take Photo opens the camera, Choose Photos the library; both are presented from
+/// the bar (a picker inside a menu never presents), and each picture goes to `MeetingPhotos` with the meeting's time
+/// when it was taken or picked; a picked one's row shows at once, before Photos hands its bytes over. Adding one plays
+/// no haptic: its row is the feedback, and the microphone is open.
+///
 /// At accessibility sizes the bar is at most two rows, the field and one row of icons: Pause or Continue, Stop, a More
-/// menu (Bookmark, Just Me, What Was Just Said) and send. Why the field takes no words then shows among what the page
-/// scrolls (`notice`), and with the field as its spoken hint.
+/// menu (Bookmark, Just Me, the photos, What Was Just Said) and send. Why the field takes no words then shows among what
+/// the page scrolls (`notice`), and with the field as its spoken hint; so do picked photos that couldn't be read
+/// (`photoNotice`).
 ///
 /// Stop asks first, as the live sheet's bar does: a stopped recording cannot be continued.
 struct MeetingPageBar: View {
@@ -24,6 +32,19 @@ struct MeetingPageBar: View {
     var focus: FocusState<Bool>.Binding
     /// At accessibility sizes, why the field takes no words now, for the page to show (nil at other sizes: the bar says it).
     @Binding var notice: String?
+    /// At accessibility sizes, that some picked photos couldn't be read, for the page to show (nil at other sizes).
+    @Binding var photoNotice: String?
+
+    init(entry: RecordingEntry, mode: MeetingPage.Mode, paused: Bool = false, justMe: Binding<Bool>, focus: FocusState<Bool>.Binding,
+         notice: Binding<String?>, photoNotice: Binding<String?> = .constant(nil)) {
+        self.entry = entry
+        self.mode = mode
+        self.paused = paused
+        _justMe = justMe
+        self.focus = focus
+        _notice = notice
+        _photoNotice = photoNotice
+    }
 
     @Environment(\.dynamicTypeSize) private var size
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,8 +53,14 @@ struct MeetingPageBar: View {
     @State private var ask = MeetingAsk.shared
     @State private var conversation = MeetingConversation.shared
     @State private var sync = RecordingSync.shared
+    /// Read for one thing only: how many of the last pick couldn't be read.
+    @State private var photos = MeetingPhotos.shared
     @State private var draft = ""
     @State private var confirmingStop = false
+    /// The camera and the library, presented from the bar for the [+] menu's items.
+    @State private var takingPhoto = false
+    @State private var choosingPhotos = false
+    @State private var picks: [PhotosPickerItem] = []
 
     private enum Target { case room, justMe, followup }
 
@@ -85,6 +112,11 @@ struct MeetingPageBar: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("meeting-ask-caption")
             }
+            if let photoProblem, !size.isAccessibilitySize {
+                Text(photoProblem).font(Theme.Font.caption).foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("meeting-photo-problem")
+            }
             if mode == .live, !writing, !size.isAccessibilitySize { controls }
         }
         .padding(.horizontal, Theme.Space.page)
@@ -98,10 +130,23 @@ struct MeetingPageBar: View {
         .onChange(of: size.isAccessibilitySize ? blocked : nil, initial: true) { _, now in
             if notice != now { notice = now }
         }
+        // At accessibility sizes the line would wrap the bar past its two rows: the page shows it among what scrolls.
+        .onChange(of: size.isAccessibilitySize ? photoProblem : nil, initial: true) { _, now in
+            if photoNotice != now { photoNotice = now }
+        }
+        .onChange(of: photoProblem) { _, now in
+            if let now { AccessibilityNotification.Announcement(now).post() }
+        }
         .confirmationDialog("Stop Recording?", isPresented: $confirmingStop, titleVisibility: .visible) {
             Button("Stop Recording", role: .destructive) { MeetingRecorder.shared.stop(recordingID: entry.id.uuidString) }
         } message: {
             Text("The audio is saved on this device and its text goes to Knowledge. A stopped recording can't be continued.")
+        }
+        .photosPicker(isPresented: $choosingPhotos, selection: $picks, maxSelectionCount: Theme.Recording.photoPickLimit,
+                      matching: .images)
+        .onChange(of: picks) { _, items in addPicked(items) }
+        .fullScreenCover(isPresented: $takingPhoto) {
+            CameraPicker { image in addTaken(image) }.ignoresSafeArea()
         }
     }
 
@@ -155,13 +200,14 @@ struct MeetingPageBar: View {
         return String(localized: "Too long to send. Shorten it to \(MeetingConversation.maxText.formatted()) characters.")
     }
 
-    /// [+]: what else the composer can send. Phase 1 has one item, the question about what was just said, asked of the
-    /// room; with nothing to offer (Just Me, after the meeting, Persona off or not reachable) the button is not there. At
-    /// accessibility sizes its items are in More.
+    /// [+]: what else the composer can send: photos for the meeting's material (a meeting that takes them), and the
+    /// question about what was just said, asked of the room; with nothing to offer (Just Me, after the meeting, Persona
+    /// off or not reachable, no photos) the button is not there. At accessibility sizes its items are in More.
     @ViewBuilder private var plus: some View {
-        if canAskHeard {
+        if canAskHeard || canAddPhotos {
             Menu {
-                heardButton
+                if canAddPhotos { photoButtons }
+                if canAskHeard { heardButton }
             } label: {
                 plusFace
             }
@@ -174,6 +220,29 @@ struct MeetingPageBar: View {
     }
 
     private var canAskHeard: Bool { mode == .live && target == .room && MeetingAsk.canAsk(entry, roomMissing: roomMissing) }
+
+    /// Some photos of the last pick couldn't be read (still in iCloud): said until the next pick, while photos can be
+    /// added.
+    private var photoProblem: String? {
+        guard canAddPhotos, photos.unreadPicks(entry.id) > 0 else { return nil }
+        return String(localized: "Couldn't read some photos (they may still be downloading from iCloud)")
+    }
+
+    /// Photos go to a room meeting that started with them while it records, whatever Persona's role (with Persona off the
+    /// hub stores them without showing the room); never with Just Me, which is private, and not after the meeting.
+    private var canAddPhotos: Bool {
+        mode == .live && target == .room && entry.active && entry.roomMeeting && entry.attendance?.photos == true
+    }
+
+    /// Take Photo (where there is a camera) and Choose Photos; each opens from the bar, after the menu has closed.
+    @ViewBuilder private var photoButtons: some View {
+        if CameraPicker.isAvailable {
+            Button { takingPhoto = true } label: { Label("Take Photo", systemImage: Theme.Icon.camera) }
+                .accessibilityIdentifier("meeting-photo-camera")
+        }
+        Button { choosingPhotos = true } label: { Label("Choose Photos", systemImage: Theme.Icon.photos) }
+            .accessibilityIdentifier("meeting-photo-library")
+    }
 
     private var heardButton: some View {
         Button { askHeard() } label: { Label("What Was Just Said", systemImage: Theme.Icon.question) }
@@ -222,6 +291,7 @@ struct MeetingPageBar: View {
             }
             .disabled(!entry.active)
             .accessibilityIdentifier("meeting-just-me")
+            if canAddPhotos { photoButtons }
             if canAskHeard { heardButton }
         } label: {
             ThemedIcon(Theme.Icon.moreMenu).font(Theme.Font.heading)
@@ -300,5 +370,32 @@ struct MeetingPageBar: View {
         MeetingRecorder.shared.addMark(recordingID: entry.id.uuidString)
         AccessibilityNotification.Announcement(String(localized: "Bookmark added")).post()
     }
+
+    /// The library's picks: each goes as the meeting's material at the time they were picked, its row in the thread at
+    /// once ("Preparing…"). Their bytes come from Photos when each one's turn to be prepared comes (a HEIC as it is: the
+    /// pipeline reads it off the main actor); one Photos can't hand over (still in iCloud) is said under the field.
+    private func addPicked(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        picks = []
+        let loads = items.map { item in { @Sendable () async -> Data? in try? await item.loadTransferable(type: Data.self) } }
+        MeetingPhotos.shared.pick(loads, to: entry, at: capture.timeline)
+    }
+
+    /// The camera's picture: encoded as JPEG off the main actor (a full-size frame takes a while), then prepared and sent
+    /// as any photo is. Its time is when it was taken, not when the encoding is done.
+    private func addTaken(_ image: UIImage) {
+        let at = capture.timeline
+        let recording = entry.id
+        let quality = Self.cameraQuality
+        Task {
+            let data = await Task.detached(priority: .userInitiated) { image.jpegData(compressionQuality: quality) }.value
+            guard let data, let current = RecordingLibrary.shared.entry(recording) else { return }
+            MeetingPhotos.shared.add(.camera(data), to: current, at: at)
+        }
+    }
+
+    /// The camera's frame as it is handed over (the pipeline downscales it to 1600 px and encodes it again): close to
+    /// what the camera saw, so the text read in it is the text on the board.
+    private static let cameraQuality: CGFloat = 0.9
 }
 #endif

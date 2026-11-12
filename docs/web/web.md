@@ -588,7 +588,7 @@ use it only on the intranet / VPN, and put an HTTPS reverse proxy in front befor
     copy session ID / directory / resume command, close Agent (confirms first); sessions that are not running can delete the chat (confirms first, only removes it from the list, `docs/protocol/protocol.md` DELETE `/sessions/{mid}/{sid}`).
   - Claude Code sessions have the permission-mode chip at the left of the row below the input (`POST …/modes`, local state changes first and is restored on failure; allow everything is not in the list unless that Claude can reach it: it was started with `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions` or `--permission-mode bypassPermissions` (`bypass_available` on the session, #1379), or is in it now. Then its row is red and asks again ("Switch to Allow all", with the warning) before the node presses shift+tab to it). The model and thinking effort are the **model pill** at the right of that row ("Model pill and model panel" below, #5032); the line beside the chip keeps the source and the folder, and at phone width its ⓘ menu lists those two. A Persona chat keeps its effort chip and launcher chip for now (#5033).
   - **Header permission mode** (#3956, the rules of iOS #3719 and Android #3957; `ModeTone` in `docs/design/DESIGN_SYSTEM.md`): the end of the header's controls, right before ⋯, at every width, has an icon-only button for a Claude agent's mode (`HeaderModeButton` in `views/chat/SessionDialogs.tsx`, rules in `lib/header-mode.ts`). It draws the mode's symbol in its tone (`--mode-*` in `styles.css`): Ask First the quiet gray on the chip fill, always there; Plan Only teal; Auto-edit and Auto purple; Allow all `--red`; a mode not reported yet the plain shield, never a guessed Ask First. Codex, an assistant conversation and a panel's header show none (`showsInHeader`). The words are its accessible name and tooltip ("Permission mode: Auto-edit") and its menu, which is the composer pill's (`modeMenuItems`): the modes it can switch to, the current one checked; Allow all where the agent can't take it while it runs is shown disabled with its reason; going into Allow all asks again, and so does leaving it when `bypass_available` is false ("Switch to Plan only", "can't be switched back to it from here"). Not running, the rows are disabled under a line saying why. The header says the state once: the dot before the title, and from 800 px the state pill's words without a second dot (`StatePill` `dot`); the background chip counts by a neutral gear, not the working color (a workflow's runs keep their mark). No new request: `permission_mode` and `bypass_available` are in every session row. Checked by `lib/header-mode.test.ts` and `web/e2e/header-mode.mjs` (mock hub `MOCK_HEADER_MODES=1`; every mode, Codex, the menus and both questions, 1280 and 390 px, light and dark).
-    Each option in the permission-mode and thinking-effort menus shows its name with its explanation wrapped on a second line (#5584). The Persona chat's model submenu does the same with each model's description. A menu row's sentence goes in `MenuItem.detail`, not `hint`. `hint` is a short note that never wraps, at the end of the row, and a sentence there pushed the name off the row, ran past the menu's edge and squeezed the current option's check into a stray glyph (the check now never shrinks). The explanation is the row's `aria-describedby`. Rows that are one choice of a set set `MenuItem.radio`: they are `menuitemradio` with `aria-checked`, so screen readers say which is selected. Toggles and filters that set only `checked` stay plain `menuitem`s. In the model submenu only "Default model" is checked when nothing is picked, not the launcher's own default entry too. A menu above its button is measured at its final width, because wrapped rows make it taller and it would otherwise cover the button. `scripts/test/web_mode_menu_e2e.py` checks in a real browser that no row is clipped.
+    Each option in the permission-mode menu shows its name with its explanation wrapped on a second line (#5584). A menu row's sentence goes in `MenuItem.detail`, not `hint`. `hint` is a short note that never wraps, at the end of the row, and a sentence there pushed the name off the row, ran past the menu's edge and squeezed the current option's check into a stray glyph (the check now never shrinks). The explanation is the row's `aria-describedby`. Rows that are one choice of a set set `MenuItem.radio`: they are `menuitemradio` with `aria-checked`, so screen readers say which is selected. Toggles and filters that set only `checked` stay plain `menuitem`s. A menu above its button is measured at its final width, because wrapped rows make it taller and it would otherwise cover the button. `scripts/test/web_mode_menu_e2e.py` checks in a real browser that no row is clipped.
     Switching a running Claude Code session's model (#2434) goes through the model pill and its panel (#5032, "Model pill and model panel" below): typing just `/model` in the input and pressing Enter does not send but opens the panel (Agents without model switching send as usual). On receiving `model`, node types `/model <id>` into Claude Code's input along the same safe path as sending messages: it reads the screen first and refuses, typing nothing, if a dialog is open (`dialog_open`) or the input has a draft (`input_draft`);
     it also refuses while the Agent is working. After typing it reads the screen again to confirm `Set model to` appeared, and reports an error otherwise rather than treating it as success. The model id accepts a single word (letters, digits and `._:/@[]-`), never a command or arguments. Note: newer Claude Code's `/model <id>` also saves the chosen model as the default for new sessions (the output in the local transcript is "Set model to `…` and saved as your default for new sessions"); there is no way to change only this session. In the older iOS / Mac layout, the thinking-effort tag menu can also pick a model, through the same `modes {"model"}` (#3119).
   - Sending bubbles show `<persona-context>` as a quote card, the same as in the record (it used to expose the raw tag).
@@ -606,8 +606,7 @@ use it only on the intranet / VPN, and put an HTTPS reverse proxy in front befor
     Uploaded looks (`"uploaded": true`) say the user's description, or "Your image", where others show their colors, and have **Delete** in the card's corner (on hover and keyboard focus, always on touch screens). It asks first, says when the look is the current one that Persona goes back to the default, and takes the hub's `current` from `DELETE /looks/uploads/{id}`.
   - **Profile page** (`/assistant`, `views/assistant/Profile.tsx`, following `AssistantProfileView`): avatar, name, where it runs, online / next item, up next (scheduled tasks), avatar, proactive work / knowing you / runs on, access.
     Entries: **Data** at the top right of the new-chat page, and **Details** in the chat's ⋯ menu (the ⋯ menu also has knowledge base, back to main chat, copy info).
-  - **Switching launchers in a chat** (`lib/assistant-chat.ts`, `AssistantChat.tsx`): a launcher pill below the input; its menu **Used from the next message** lists launchers on the assistant's computer that can run the assistant (like iOS `runsAssistant`),
-    and every later message in this chat carries `launcher`; the choice lives only on this page (iOS also keeps it only in memory). On the new-chat page, the pill picks the launcher for the new chat.
+  - **Switching models in a chat** (#5033): the composer's model pill and its panel, as in an Agent's chat ("Model pill and model panel" below). The pick holds from the next message and stays with the conversation on every device (`model_pick`, kept on the hub); on an older hub it lives only on this page, sent with each message as before. On the new-chat page the pill picks the launcher, model and effort the new chat starts with.
   - **Cross-page pending messages** (`lib/outbox.ts`, the store's `outbox`, following iOS's outbox): **Ask Persona** in the knowledge base, **Hand to AI** in the Inbox, **Hand back to Persona** in Agents, and the first message on the new-chat page jump there first and show the bubble right away;
     it disappears once the same message appears in the record (delivered ones wait at most 60 seconds). Failed ones stay with the reason and offer **Retry** (same `client_msg_id`) / **Delete**, and **Clear and send** when the computer's input has text that can be cleared.
     A failed one's message menu (right click, a long press on touch screens, ⋯ in the hover bar) ends in **Delete** in red as well, and has no Rewind (#4626, as the apps' long press). Delete drops the entry and its kept copy and sends nothing; the toast's **Undo** puts it back where it was (`discardOutbox` returns the undo, `deleteFailed` in `OutboxBubbles.tsx`).
@@ -1527,13 +1526,15 @@ Code: `lib/usage-windows.ts` (pure functions, with unit tests), `views/UsageBars
 
 ## Model pill and model panel (#5032)
 
-Who it serves: people working with coding Agents in the **Agents** chats. The user asked (2026-11-12) for this part of the
-chat page to match Cindy's model selector; where Persona's earlier rules differ, Cindy's wins, built from Persona's tokens
-and components (`docs/design/DESIGN_SYSTEM.md` 3.1). A Persona chat keeps its launcher chip in this step (#5033).
+Who it serves: people working with coding Agents in the **Agents** chats, and everyone in a Persona chat (#5033), where it
+reads as plain choices of a model. The user asked (2026-11-12) for this part of the chat page to match Cindy's model
+selector; where Persona's earlier rules differ, Cindy's wins, built from Persona's tokens and components
+(`docs/design/DESIGN_SYSTEM.md` 3.1).
 
-- **Where**: an Agent chat's composer, at the right of its bottom row, before voice / Stop / Send (`Composer`'s `trailing`
-  slot, `views/chat/ModelPill.tsx`). The permission chip stays at the left; the thinking-effort chip and the
-  "launcher · model" text are gone from Agent chats, and the context bar below the composer does not name the model.
+- **Where**: an Agent chat's composer and a Persona chat's (the main chat, the others and the new-chat page), at the right
+  of its bottom row, before voice / Stop / Send (`Composer`'s `trailing` slot, `views/chat/ModelPill.tsx`). The permission
+  chip stays at the left; the thinking-effort chip, a Persona chat's launcher chip and an Agent's "launcher · model" text
+  are gone, and the context bar below the composer does not name the model.
 - **What the pill shows**: `[provider][model][engine][effort][⚡][⌄]`: the launcher's letter tile, the model as its
   launcher's list names it (before that list is in, a short form of the ID such as `opus 5.5`), the engine's mark (no "·"
   before it: the mark is the separator), the thinking effort in the text colour (English says "Extra" for "Very high" on
@@ -1614,17 +1615,47 @@ and components (`docs/design/DESIGN_SYSTEM.md` 3.1). A Persona chat keeps its la
   launcher rather than a handoff summary (the conversation is resumed as it is); a failed list shows Persona's warning
   triangle rather than a circled alert. The note that newer Claude Code also saves the chosen model as the default for new
   sessions (under the composer bullets above) is no longer repeated in the panel.
+- **Persona chats** (#5033, `AssistantModelPill`; `lib/assistant-models.ts` for what the pill says, `lib/assistant-panel.ts`
+  and `views/chat/AssistantModelPanel.tsx` for the panel, loaded on its first tap; docs/assistant/model-config.md "A
+  conversation's own model"): a Persona chat switches models freely. The panel (scope `assistant`, so its favorites and
+  Recent are apart from an Agent's) lists what the assistant's computer can run Persona chats on
+  (`GET /machines/{mid}/launchers?purpose=assistant`): its rc-file aliases and PATH wrappers, plain claude and the Model
+  providers that can run the main chat (launchers and Messages-protocol direct APIs; one whose model list can't be read
+  shows the model it is set up with), each in its own group; "Recommended" is the provider the chat runs on now. What
+  can't run Persona chats there (a Responses or Chat Completions direct API, a provider out of the computer's scope or
+  with its own sign-in) is listed at the end with the hub's reason, off, not hidden; a pick whose launcher is gone stays
+  shown, off, with why, and the hub refuses its messages rather than run them elsewhere. A chat that already runs keeps
+  its engine (Claude Code can't resume a Codex thread, nor Codex a Claude transcript): a provider of another engine is
+  off with an Agent panel's words, "Switching from Claude Code to Codex needs a new conversation"; the new-chat page runs
+  nothing yet and offers every kind. A launcher that fixes its own
+  model offers its default only; a model ID typed into the search is offered where the hub keeps typed IDs
+  (`typed_models`). A strip above the search says where the setup comes from: "Following the default · claude · Opus
+  5.5" (the main chat, Model configuration › Main chat), "Same as when this chat started · …" (another chat), "Picked for
+  this chat · …" with **Follow default** (the main chat) or **Undo pick** (another chat), or "For this new chat · …".
+  A pick is kept for the conversation on a hub with `assistant_model_pick`: `PUT /assistant/conversations/{id}/model`
+  `{launcher, model?, effort?, machine_id}` (no model for a provider's default entry; the effort the setup has), drawn
+  at once as the session's `model_pick` and put back with the hub's words when it says no (`launcher_out_of_scope`,
+  `launcher_own_service`, `launcher_missing`, `launcher_other_kind`, a launcher that can't run assistant chats);
+  **Follow default** / **Undo pick** is a `DELETE`. It holds from the next message on every device; the messages carry nothing of it. An effort set
+  in the flyout of the model that runs is kept the same way; Codex's Fast is the speed request. On an older hub the pick
+  lives on this page and goes with each message (`launcher`, `model`) and the effort with `POST …/modes`, as the old
+  chips did, and a pick of a launcher the list no longer offers goes back to the default with a word. The new-chat page
+  keeps its pick for the start (`POST /assistant/conversations` `{launcher, model?, effort?}`), which the new chat keeps
+  as its own pick on a hub with `assistant_model_pick` (an older hub ignores the model and keeps nothing).
 - **Tests**: `lib/session-models.test.ts` (providers, the current row, unavailable reasons, Codex, prices, what a pick
   sends, the lists kept and read again), `lib/session-panel.test.ts` (the switch to another launcher: with and without the
   feature, another engine, the pending setup and note, what a switch or its cancel sends, the pill's pending setup, which
-  send refusals are the switch's), `lib/quota.test.ts` (weekly-window selection and thresholds),
+  send refusals are the switch's), `lib/assistant-panel.test.ts` (a Persona chat's setup and where it comes from, its pill,
+  its providers with the ones that can't run there, what a pick keeps), `lib/quota.test.ts` (weekly-window selection and thresholds),
   `ui/model-panel/ModelPanel.test.tsx` (rail bars, price tiers and flyout details), `views/chat/ModelPill.test.tsx` and
-  `ModelPill.en.test.tsx` (states, widths, cached-quota wiring, a switch picked, shown and dropped), `ChatView.test.tsx`
-  (the footer and context row), `ChatView.awaiting.test.tsx` (a refused switch keeps the words in the box),
+  `ModelPill.en.test.tsx` (states, widths, cached-quota wiring, a switch picked, shown and dropped), `views/chat/AssistantModelPill.test.tsx` (a Persona chat's PUT,
+  DELETE, refusal, older hub, new-chat page, Fast), `ChatView.test.tsx`
+  (the footer and context row), `ChatView.awaiting.test.tsx` (a refused switch keeps the words in the box), `ChatView.chrome-renders.test.tsx` (the
+  pill on both composers),
   `ContextMeter.test.tsx`, `Composer.test.tsx` (the trailing slot). Screenshots: the mock's `MOCK_MODEL_PANEL_USAGE=1`
   scenario supplies synthetic weekly windows without reading a real account; `MOCK_LAUNCHER_SWITCH=1` supplies a second
   Claude Code launcher, `work`, on every computer (`=pending` has the PR review waiting to switch to it; `=refuse` refuses
-  the message that carries a switch out).
+  the message that carries a switch out); a Persona chat's: `MOCK_MODEL_PICK=1` (`=picked`: the second chat has a pick of its own).
 
 ## Claude Code ultracode (#3428)
 

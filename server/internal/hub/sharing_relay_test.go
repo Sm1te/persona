@@ -211,7 +211,7 @@ func (host receiptIntegrationHost) Notify(event string, params any) error {
 }
 
 func TestShareCreationAuthenticatedHTTPReceiptIntegration(t *testing.T) {
-	for _, mode := range []string{"matching", "absent", "unknown", "mismatched", "work-matching"} {
+	for _, mode := range []string{"matching", "absent", "unknown", "mismatched", "work-matching", "kept-matching"} {
 		t.Run(mode, func(t *testing.T) { shareCreationHTTPReceiptIntegration(t, mode) })
 	}
 }
@@ -247,6 +247,10 @@ func shareCreationHTTPReceiptIntegration(t *testing.T, mode string) {
 	}
 	machine := "synthetic-receipt-machine-" + mode
 	h.cfg.Machines = []MachineConfig{{ID: machine, Kind: "local"}}
+	if mode == "kept-matching" {
+		h.cfg.Machines = nil
+		h.devices.kept = map[string]string{machine: devicesOwner}
+	}
 	h.byID[machine] = &Machine{cfg: MachineConfig{ID: machine}, hub: h}
 	route, err := store.ShareRouting(ctx, issuer, machine, devicesOwner)
 	if err != nil {
@@ -297,7 +301,13 @@ func shareCreationHTTPReceiptIntegration(t *testing.T, mode string) {
 		}
 	}})
 	rawMachine, _ := json.Marshal(devices.MachineConfig{ID: machine, Kind: "local"})
-	d.Configure(devicewire.Config{Machines: []json.RawMessage{rawMachine}, ShareAuthorities: map[string]devicewire.ShareAuthority{machine: route.Authority}})
+	managerCfg := devicewire.Config{Machines: []json.RawMessage{rawMachine}, ShareAuthorities: map[string]devicewire.ShareAuthority{machine: route.Authority}}
+	if mode == "kept-matching" {
+		// The isolated node fixture supplies its own machine entry; authority must
+		// come from the real hub handover, not a manually injected matching map.
+		managerCfg.ShareAuthorities = h.devicesConfigFor(devicesOwner).ShareAuthorities
+	}
+	d.Configure(managerCfg)
 	done := make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
 	t.Cleanup(func() {
@@ -418,7 +428,7 @@ func shareCreationHTTPReceiptIntegration(t *testing.T, mode string) {
 	// An RPC on the same stream fences the preceding state.put: the manager
 	// processes the event before it can answer state.load. No timing inference
 	// or start reply may substitute for a matching persisted receipt.
-	if mode != "matching" && mode != "work-matching" {
+	if mode != "matching" && mode != "work-matching" && mode != "kept-matching" {
 		state := map[string]any{}
 		if mode == "unknown" {
 			state = map[string]any{"creation_id": "synthetic-unknown-creation", "incarnation": o.incarnation}

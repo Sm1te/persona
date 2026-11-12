@@ -43,6 +43,7 @@ func readonlyTaskService(t *testing.T) (*Service, *fakeHub) {
 	t.Helper()
 	f := newFakeHub()
 	f.sessions["box"] = nil
+	f.launcherList = []proto.Launcher{{Name: "claude", Agent: "claude"}}
 	f.ownModels = true
 	return newStorelessService(t, f), f
 }
@@ -73,13 +74,17 @@ func TestReadonlyTaskPlanLaunchPermissions(t *testing.T) {
 				}
 				synctest.Wait()
 				p := readonlyFeedPlan(t, s, "readonly-chat")
-				if p.State != planStarted || p.Tasks[0].Permission != "plan" || !p.Tasks[0].Readonly {
+				if p.State != planStarted || p.Tasks[0].Permission != "bypassPermissions" || !p.Tasks[0].Readonly {
 					t.Fatalf("saved read-only plan = %+v", p)
 				}
 				f.mu.Lock()
 				defer f.mu.Unlock()
-				if len(f.starts) != 1 || f.starts[0]["permission_mode"] != "plan" {
+				if len(f.starts) != 1 || f.starts[0]["permission_mode"] != "bypassPermissions" {
 					t.Fatalf("read-only launch = %v", f.starts)
+				}
+				prompt, _ := f.starts[0]["prompt"].(string)
+				if strings.Count(prompt, "本任务只读：不改项目文件、不提交、不对外写入") != 1 {
+					t.Fatalf("read-only prompt = %q", prompt)
 				}
 				if todo := onlyTodo(s); len(todo.Agents) != 1 {
 					t.Fatalf("task did not finish dispatch: %+v", todo)
@@ -87,6 +92,25 @@ func TestReadonlyTaskPlanLaunchPermissions(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestReadonlyTaskClaudeAliasLaunchPermissions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, f := readonlyTaskService(t)
+		f.launcherList = []proto.Launcher{{Name: "cc-grok", Agent: "claude"}}
+		task := readonlyTestTask("plan")
+		task.Launcher = "cc-grok"
+		if _, err := s.toolTaskPlan(context.Background(), "readonly-chat", readonlyTaskArgs(t, task)); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if p := readonlyFeedPlan(t, s, "readonly-chat"); p.Tasks[0].Permission != "bypassPermissions" {
+			t.Fatalf("saved aliased Claude plan = %+v", p)
+		}
+		if len(f.starts) != 1 || f.starts[0]["permission_mode"] != "bypassPermissions" {
+			t.Fatalf("aliased Claude launch = %v", f.starts)
+		}
+	})
 }
 
 // Waiting cards and their edits must carry the same restriction as automatic starts.
@@ -115,7 +139,7 @@ func TestReadonlyTaskWaitingPlanEdits(t *testing.T) {
 				}
 				synctest.Wait()
 				p := readonlyFeedPlan(t, s, conversation)
-				if p.State != planOpen || p.Tasks[0].Permission != "plan" || len(f.starts) != 0 {
+				if p.State != planOpen || p.Tasks[0].Permission != "bypassPermissions" || len(f.starts) != 0 {
 					t.Fatalf("waiting plan = %+v, starts = %v", p, f.starts)
 				}
 				p, err := s.startPlan(context.Background(), p.ID, []PlanTask{{Permission: "acceptEdits"}}, false)
@@ -124,20 +148,15 @@ func TestReadonlyTaskWaitingPlanEdits(t *testing.T) {
 				}
 				synctest.Wait()
 				p = readonlyFeedPlan(t, s, conversation)
-				if p.State != planStarted || p.Tasks[0].Permission != "plan" {
+				if p.State != planStarted || p.Tasks[0].Permission != "bypassPermissions" {
 					t.Fatalf("edited plan = %+v", p)
 				}
 				if len(f.starts) != len(tasks) {
 					t.Fatalf("starts = %v", f.starts)
 				}
 				for _, start := range f.starts {
-					want := "plan"
-					// Dispatch order is independent of the plan's order; identify the task by its prompt.
-					if strings.Contains(start["prompt"].(string), "Fix the login flow and add tests.") {
-						want = "bypassPermissions"
-					}
-					if start["permission_mode"] != want {
-						t.Fatalf("start = %v, want permission %q", start, want)
+					if start["permission_mode"] != "bypassPermissions" {
+						t.Fatalf("start = %v, want Claude bypass", start)
 					}
 				}
 			})
@@ -179,11 +198,15 @@ func TestReadonlyTaskLegacyStartAndRetry(t *testing.T) {
 				}
 				synctest.Wait()
 				saved, err := s.loadPlan(ctx, p.ID)
-				if err != nil || saved.Tasks[0].Permission != "plan" {
+				if err != nil || saved.Tasks[0].Permission != "bypassPermissions" {
 					t.Fatalf("legacy plan = %+v, error = %v", saved, err)
 				}
-				if len(f.starts) != 1 || f.starts[0]["permission_mode"] != "plan" || len(onlyTodo(s).Agents) != 1 {
+				if len(f.starts) != 1 || f.starts[0]["permission_mode"] != "bypassPermissions" || len(onlyTodo(s).Agents) != 1 {
 					t.Fatalf("legacy launch = %v, todo = %+v", f.starts, onlyTodo(s))
+				}
+				prompt, _ := f.starts[0]["prompt"].(string)
+				if strings.Count(prompt, "本任务只读：不改项目文件、不提交、不对外写入") != 1 {
+					t.Fatalf("legacy read-only prompt = %q", prompt)
 				}
 			})
 		})
@@ -199,18 +222,53 @@ func TestReadonlyTaskDispatchBoundary(t *testing.T) {
 			if _, _, err := s.startTaskAgent(context.Background(), &task, true); err != nil {
 				t.Fatal(err)
 			}
-			want, stored := permission, permission
-			if want == "" {
-				want = "default"
-			}
-			if readonly {
-				want, stored = "plan", "plan"
-			}
 			got, _ := f.starts[0]["permission_mode"].(string)
-			if got != want || task.Permission != stored {
+			if got != "bypassPermissions" || task.Permission != "bypassPermissions" {
 				t.Fatalf("readonly=%v permission=%q: launch=%v task=%+v", readonly, permission, f.starts, task)
 			}
 		}
+	}
+}
+
+func TestReadonlyTaskResolveStartFailureDoesNotSavePlan(t *testing.T) {
+	ctx := context.Background()
+	database, err := db.Open(ctx, newDatabase(t), db.ManagerSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(database.Close)
+	s, f := newTaskServiceOn(t, database)
+	f.launcherList = []proto.Launcher{{Name: "claude", Agent: "claude"}}
+	if err := s.putSetting(ctx, launchersManagedKey, []storedLauncher{{ManagedLauncher: proto.ManagedLauncher{
+		Name: "direct", Kind: "api", API: "responses", BaseURL: "https://api.example.com", Model: "m",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	setModel(t, s, "agent.new", ModelBinding{Provider: "launcher.direct"})
+	_, err = s.toolTaskPlan(ctx, "readonly-chat", readonlyTaskArgs(t, readonlyTestTask("")))
+	resolutionError := i18n.T(s.lang(ctx), "assistant-models.err_api_as_launcher")
+	if err == nil || !strings.Contains(err.Error(), resolutionError) {
+		t.Fatalf("planning error = %v, want the launcher/model resolution failure", err)
+	}
+	if len(f.starts) != 0 {
+		t.Fatalf("a failed resolution started agents: %v", f.starts)
+	}
+	rows, readErr := database.TaskPlans(ctx, "readonly-chat")
+	if readErr != nil || len(rows) != 0 {
+		t.Fatalf("a failed resolution saved a plan: %v, error = %v", rows, readErr)
+	}
+}
+
+func TestReadonlyCodexTaskKeepsPlanSandbox(t *testing.T) {
+	s, f := readonlyTaskService(t)
+	f.launcherList = []proto.Launcher{{Name: "codex", Agent: "codex"}}
+	task := readonlyTestTask("bypassPermissions")
+	task.Launcher = "codex"
+	if _, _, err := s.startTaskAgent(context.Background(), &task, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.starts[0]["permission_mode"]; got != "plan" || task.Permission != "plan" {
+		t.Fatalf("Codex read-only launch = %v, task = %+v", f.starts, task)
 	}
 }
 
@@ -227,7 +285,7 @@ func TestReadonlyTaskUnsupportedLauncherReportsFailure(t *testing.T) {
 				}
 				synctest.Wait()
 				p := readonlyFeedPlan(t, s, "readonly-chat")
-				if task := p.Tasks[0]; task.ErrorCode != "readonly_unsupported" || task.Permission != "plan" {
+				if task := p.Tasks[0]; task.ErrorCode != "readonly_unsupported" || task.Permission != "bypassPermissions" {
 					t.Fatalf("unsupported task = %+v", task)
 				}
 				if todo := onlyTodo(s); todo.DoneAt == nil || len(todo.Agents) != 0 ||
@@ -262,7 +320,7 @@ func TestReadonlyTaskPlanPersistsAcrossRestart(t *testing.T) {
 	p := readonlyFeedPlan(t, s, "readonly-chat")
 	restarted, _ := newTaskServiceOn(t, database)
 	saved, err := restarted.loadPlan(ctx, p.ID)
-	if err != nil || saved.State != planOpen || saved.Tasks[0].Permission != "plan" || saved.Tasks[1].Permission != "bypassPermissions" {
+	if err != nil || saved.State != planOpen || saved.Tasks[0].Permission != "bypassPermissions" || saved.Tasks[1].Permission != "bypassPermissions" {
 		t.Fatalf("persisted plan = %+v, error = %v", saved, err)
 	}
 }

@@ -23,7 +23,9 @@ func (h *Hub) devicesConfigFor(id string) devicewire.Config {
 		out.SharePublicOrigin = h.sharingOrigin()
 	}
 	out.ShareAuthorities = map[string]devicewire.ShareAuthority{}
-	for _, mc := range h.cfgEntries() {
+	// Authority follows the trusted roster, including machines a recorded keeper
+	// holds out of hub.json. The actual machine-list handover below is unchanged.
+	for _, mc := range h.knownEntries() {
 		if h.entryOwner(mc.ID) != id {
 			continue
 		}

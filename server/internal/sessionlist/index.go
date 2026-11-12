@@ -35,18 +35,34 @@ type Item struct {
 	// BackgroundWaiting: a working row that only waits on background commands (#6045). It stays in State's count
 	// (older apps call it working) and is counted apart in Counts.BackgroundWaiting too.
 	BackgroundWaiting bool
-	// FoldedBackgroundWaiting is BackgroundWaiting for Options.Roots: none of the rows folded under it works or needs
-	// the user either.
-	FoldedBackgroundWaiting bool
-	// Root is the session id (as parent_session_id names it, not the composite ID) of the item on the same Machine this
-	// one is folded under (a child session under its topmost listed ancestor), only when that item is in the same
-	// batch; FoldedState is the state the item shows with the items folded under it. Options.Roots leaves out the items
-	// with a Root and filters and counts the others by FoldedState; Options.Under selects the items folded under one.
-	Root, FoldedState string
-	UpdatedAt         time.Time
-	SearchText        string
-	Summary           any
-	Full              any
+	// Fold is the item's place in the session hierarchy (#5120); nil for an item folded under none that shows its own
+	// State and BackgroundWaiting, as every item without children does. It sits behind a pointer to keep Item in its
+	// allocation size class: an adapter builds a whole batch as one []Item, as the hub does on every pass.
+	Fold       *Fold
+	UpdatedAt  time.Time
+	SearchText string
+	Summary    any
+	Full       any
+}
+
+// Fold is how an Item folds. Root is the session id (as parent_session_id names it, not the composite ID) of the item
+// on the same Machine this one is folded under (a child session under its topmost listed ancestor), only when that
+// item is in the same batch; State is the state the item shows with the items folded under it ("" for its own);
+// BackgroundWaiting is Item.BackgroundWaiting for Options.Roots: none of the items folded under it works or needs the
+// user either. Options.Roots leaves out the items with a Root and filters and counts the others by their folded state;
+// Options.Under selects the items folded under one. Like the rest of an Item it is immutable once handed to Replace:
+// copies of the item share it.
+type Fold struct {
+	Root, State       string
+	BackgroundWaiting bool
+}
+
+// root is the session v is folded under ("" for none).
+func (v *Item) root() string {
+	if v.Fold == nil {
+		return ""
+	}
+	return v.Fold.Root
 }
 
 // Options selects a filtered full list or an incremental change list. Limit zero
@@ -60,8 +76,8 @@ type Options struct {
 	// cursor is bound to it. It is the adapter's to set (not a key Parse reads): the adapter knows which owners exist
 	// and who may ask for which.
 	Manager string
-	// Roots (roots=1) leaves the items folded under another (Item.Root) out of the rows, the totals and every count,
-	// and filters and counts the rest by Item.FoldedState. Under (parent_session_id, which needs Machine) selects the
+	// Roots (roots=1) leaves the items folded under another (Fold.Root) out of the rows, the totals and every count,
+	// and filters and counts the rest by their folded state (Fold.State). Under (parent_session_id, which needs Machine) selects the
 	// items of Machine folded under that session, all depths; the two cannot be combined. Both bind a cursor, as the
 	// other filters do.
 	Roots   bool

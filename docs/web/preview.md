@@ -128,10 +128,12 @@ the Mac app is frozen and has none of it.
   block the web writes. Its `Page:` is the computer's address (`http://localhost:5173/…`, `PortForwarder.key(for:)`), not
   the phone's forwarded one. The pick comes back through the script handler `personaPreviewPick`, added while picking and
   removed after: the pool's web views share one user content controller, so a handler left there would answer for every page.
-- **The accessibility text sizes** (#5114): a row's Running, Start… or Cancel goes on a line under its name and port; the bar
+- **The accessibility text sizes** (#5114, #5172): a row's Running, Start… or Cancel goes on a line under its name and port; the bar
   puts the address on a line of its own above its buttons; picking's banner takes up to four lines; the comment panel
-  stacks Add to Message over Cancel and scrolls, since it can be taller than the room above the keyboard. The standard sizes
-  are unchanged.
+  stacks Add to Message over Cancel and has the room under the header to itself (the page folds away while it is open),
+  scrolling when it is taller than the room above the keyboard; the card's header, a bar, grows with the text up to the
+  largest standard size (xxxLarge), as the viewers' bars do, so its title and the server chooser stay readable beside its
+  buttons. The standard sizes are unchanged.
 - **Tests**: `PreviewLogicTests` / `PreviewModelTests` (the web's cases, and Start against `FakeHub`); `PreviewUITests` against
   `MOCK_PREVIEW=1`, whose running ports forward to the mock's own page server with the made-up app (`mock_preview.forward`).
 

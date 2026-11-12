@@ -374,6 +374,8 @@ type SessionView struct {
 	// Direction: the conversation is (or was) a leader, one direction of the owner's work (assistant/directions.go,
 	// #3484); nil for any other.
 	Direction *proto.Direction `json:"direction,omitempty"`
+	// ModelPick: what the user set the conversation to run on (assistant/model_pick.go, #5033); nil follows the default.
+	ModelPick *proto.ModelPick `json:"model_pick,omitempty"`
 }
 
 // ErrStaleSnapshot is manager.snapshot's stale_snapshot: a newer one came in first (two changes reported at once).

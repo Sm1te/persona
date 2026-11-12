@@ -41,11 +41,11 @@ func TestParseHierarchy(t *testing.T) {
 func TestQueryHierarchy(t *testing.T) {
 	var index Index
 	lead := testItem("lead", 1)
-	lead.State, lead.FoldedState, lead.BackgroundWaiting, lead.FoldedBackgroundWaiting = "working", "needs_you", true, false
+	lead.State, lead.BackgroundWaiting, lead.Fold = "working", true, &Fold{State: "needs_you"}
 	kid := testItem("kid", 2)
-	kid.Root, kid.State, kid.FoldedState = "lead", "needs_you", "needs_you"
+	kid.State, kid.Fold = "needs_you", &Fold{Root: "lead", State: "needs_you"}
 	solo := testItem("solo", 3)
-	solo.FoldedState, solo.BackgroundWaiting, solo.FoldedBackgroundWaiting = "working", true, true
+	solo.BackgroundWaiting, solo.Fold = true, &Fold{State: "working", BackgroundWaiting: true}
 	index.Replace("machine-a", []Item{lead, kid, solo})
 
 	all := mustQuery(t, &index, Options{Limit: 10})

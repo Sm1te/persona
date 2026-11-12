@@ -109,7 +109,7 @@ The hub writes minutes for a meeting recording once its text is complete (#2710;
 
 ## Persona in meetings
 
-Persona can attend a meeting being recorded on the iPhone (#2981; the iPhone side is #3375). The contract, with every field and error, is [meeting-minutes.md](../assistant/meeting-minutes.md) "Attending a meeting"; this is what the app does with it. Only a hub that lists the `meeting_attendance` feature gets any of it: with another hub the Recordings page, the upload and the Live Activity are exactly as before. The redesign (#3862) replaces the attending session with the meeting's own room conversation and a meeting page, on a hub that lists `meeting_conversation`: [meeting-minutes.md](../assistant/meeting-minutes.md) "Meeting conversation (#3862)". The iPhone does phase 1 of it ("The meeting conversation (#3862)" below); a meeting started on a hub without it, or before the hub listed it, keeps everything this section describes.
+Persona can attend a meeting being recorded on the iPhone (#2981; the iPhone side is #3375). The contract, with every field and error, is [meeting-minutes.md](../assistant/meeting-minutes.md) "Attending a meeting"; this is what the app does with it. Only a hub that lists the `meeting_attendance` feature gets any of it: with another hub the Recordings page, the upload and the Live Activity are exactly as before. The redesign (#3862) replaces the attending session with the meeting's own room conversation and a meeting page, on a hub that lists `meeting_conversation`: [meeting-minutes.md](../assistant/meeting-minutes.md) "Meeting conversation (#3862)". The iPhone does phase 1 of it and phase 3, photos ("The meeting conversation (#3862)" below); a meeting started on a hub without it, or before the hub listed it, keeps everything this section describes.
 
 - **Role, chosen as the recording starts**: **Off** (the hub writes the minutes after the meeting, as before), **Listen** (Persona follows the meeting; answers show on screen only), or **Take Part** (they are also said aloud). The Recordings page shows the choice under **Meeting Recording** (`MeetingAttendanceStart`), pre-selected from the hub's `meeting_attendance_default`, which **Settings › Meetings** changes (`MeetingSettingsView`, `PUT /api/v1/assistant`). A pick on the page is for that one recording. The drawer, the home screen's menu, the Control, Siri and the Action button start with the default and the session picked last unless that was the main chat, else with Persona off, so they stay one tap (never the main chat by default, #3862); the last word from the hub (whether it offers attending, its default) is kept for a start without the app in front (`MeetingAttendanceDefaults`).
 - **Who attends**: one session per recording (`MeetingAttendees`): the main chat (sent by leaving `attending_session` out), Persona's other open chats, or an Agent that takes messages; never one the hub would refuse ("Sessions that never attend": a work computer's, another manager's, the health space's, a chat whose replies leave the apps or that an extension opened, one in `bypassPermissions`). The one picked last is pre-selected while it can still attend, unless it was the main chat: the main chat attends only when picked for that meeting (`RecordingAttendance.mainPicked`; owner decision in #3862, since every line fed to a chat fills its context). With nobody chosen the role shows Off; Listen or Take Part shows Who Attends: Choose with "Choose who attends. Until then Persona stays out of the meeting.", a start without a choice starts with Persona off, the picker never pre-selects the main chat, and turning Persona on mid-meeting (the strip's Turn on Persona or its role menu; `MeetingRecorder.setRole` returns false) opens the picker first and turns on once someone is picked. The upload holds it whatever built the attendance: an attending role with no session named and the main chat not picked goes as `off` (`RecordingAttendance.sentRole`, which the stored mark, live lines and asks follow too), so `attending_session` is never left out by default. Kept on the recording as `RecordingEntry.attendance` (`RecordingAttendance`), on this phone only.
@@ -221,6 +221,110 @@ hub that lists `meeting_conversation` beside `meeting_attendance`. The page's de
   private mark and when the hub's word replaces the start's, Just me and the follow-up with their retries and the 8000
   limit, when the follow-up waits, asks while the room is missing, `room_unavailable`, the words) and `MeetingThreadTests`
   (the web's cases, the mock's items, where a Just me answer ends, asks answered from material in place).
+
+#### Photos (phase 3)
+
+The contract's "Phase 3: photos" ([meeting-minutes.md](../assistant/meeting-minutes.md)), for a room meeting started
+while the hub listed `meeting_photos` (`RecordingAttendance.photos`, kept for life like the rest of the start; a hub that
+lists it later adds nothing to a meeting already running). The row, its states, the delete confirmation and the viewer
+are in [DESIGN_SYSTEM.md](../design/DESIGN_SYSTEM.md) "Meeting page (#3862)". The core case is a whiteboard: shoot it,
+see it in the thread at once, then "Used as material", then the room's note on what in it matters.
+
+- **Adding**: while the meeting records, the composer's `[+]` menu has **Take Photo** (only where `CameraPicker.isAvailable`)
+  and **Choose Photos** (`PhotosPicker`, images only, at most `Theme.Recording.photoPickLimit` at once). Not with Just me
+  on (photos are the meeting's material, never private), not after the meeting, not for a meeting started without the
+  feature. A photo's `at` is the recording's clock (`RecordingCapture.shared.timeline`) when it was taken or picked.
+  Picked photos show at once as Preparing… rows (`MeetingPhotos.pick`); Photos hands each one's bytes over when its
+  turn to be prepared comes, and one it can't (still downloading from iCloud) leaves again and is said in a line under
+  the field (at accessibility sizes among what the page scrolls). Adding a photo plays no haptic.
+- **Prepared on the phone, off the main actor, one at a time** (`MeetingPhotoPipeline`, the store's queue; the original
+  is let go of once downscaled, before Vision reads the small copy): ImageIO downscales it to at most 1600 px on its
+  long side (never up) and encodes a JPEG at quality 0.75, then 0.6, 0.45 and 0.3 until it is at most 1 MiB; a PNG's
+  transparency goes onto white. Vision (`VNRecognizeTextRequest`, `.accurate`, language correction) reads its words in
+  the recording's languages (`zh-CN`: Simplified Chinese and English, `ja-JP`: Japanese and English, otherwise English);
+  the lines go as `text`, cut to 8000 characters, and no `text` when nothing was read. A camera picture becomes JPEG
+  bytes off the main actor before it goes in; nothing decodes an image with `UIImage(data:)`
+  (`scripts/test/test_apple_perf_patterns.py`).
+- **The upload** (`MeetingPhotos`): `POST …/photos` with `id`, `at`, `mime`, `data` and `text`, at once, under the photo's
+  own id (lowercase). No answer, a 5xx, `408` or `429` sends the same id again after 2, 4, 8, 16, 30 and 60 s, then it
+  fails and **Retry** sends the same id. `404 recording_not_found` uploads the recording first and sends the same id once
+  more; `409 op_id_reused` sends it under a new id; `410 photo_deleted` (stored, then deleted elsewhere) and `410
+  recording_deleted` drop it for good (its JPEG and its entry in `photos.json` too). Any other refusal fails at once with
+  its own words (`photos_full`, `transcript_expired`, `not_meeting`, `kb_read_only`, `forbidden`, a picture the hub can't
+  read); a `404` without a code is a hub without the photo routes, said so and not tried again on its own. Whether Retry
+  can help is kept with the failure (`Local.State.failed(…, retry:)`, `MeetingPhotos.canRetry(after:)`), over a relaunch
+  too: not for a picture the hub can't take, `not_meeting`, `transcript_expired`, `forbidden` or a hub without the
+  routes, which show Delete Photo alone; yes after no answer, a 5xx, `kb_read_only` or `photos_full`. A `200` stores it:
+  its photo joins the hub's list, which is read again soon after, and the local copy leaves once the list has it (the
+  thread keys photo rows by the lowercase id, so the row stays where it is). **An answer lost**: a list that has a photo
+  still uploading or failed here (its first `POST` stored, the answer lost, every try since failed or waiting out the
+  backoff) settles it: the local copy leaves (its JPEG stays for the thumbnail) and `photos.json` forgets it, so the
+  row reads Used as material, the next try never goes, and a try still on its way changes nothing when it comes back
+  (nor does a late `200` bring back a photo deleted meanwhile). A relaunch whose list came first doesn't show it failed
+  again.
+- **Kept over a relaunch**: a photo not stored yet keeps its JPEG at `<recording folder>/photos/<id>.jpg` and its state in
+  `<recording folder>/photos.json`, written atomically off the main actor. `MeetingRecorder.start()` calls
+  `MeetingPhotos.shared.start()`, which sends again those that were on their way, keeps a failed one (with Retry when it
+  can help) and drops one still being prepared (its original is gone). A stored photo's JPEG stays for the thread's
+  thumbnail while the hub lists it: once a list read whole (every entry read, or at least named) no longer has it
+  (deleted elsewhere, cut with the transcript), its JPEG and its thumbnails go too. The folder is checked against the
+  list after each such read, once the launch read of `photos.json` is in, so this holds after a relaunch, and a photo
+  still to send keeps its JPEG.
+- **The hub's list**: `GET …/photos` (`MeetingPhotos.refresh`, one read per recording at a time, calls meanwhile sharing
+  the next; it says whether a list was applied) is the truth for every stored photo: its number, the room's `note`,
+  `cited`, `forwarded`. For a meeting that takes photos `MeetingConversation` also reads the `photos` revision of `GET
+  …/live` (`?parts=photos` carries only the revision): a `meeting_live` event or a `…/live` read with a newer one reads
+  the list again, as does a page that starts watching, and the revision counts as read only once that list applied, so
+  a read that failed (a timeout, a hub switch) is tried again by the next event or `…/live` read. Only `404
+  recording_not_found` and `410 recording_deleted` list nothing; any other refusal (a `404` without a code: a manager
+  without the routes) leaves what was listed, and a list never read stays unread.
+- **The pages' view** (`MeetingPhotos.Album`, one per recording): each photo's row content worked out once per change
+  (its number, time, first lines, note, `added_at` read once, whether it has a picture and whether Retry can help), the
+  order of those the room's part doesn't hold, the numbers for the minutes, whether the list was read, and the deletes
+  running and their problems. The thread reads only the order; each photo row is its own view that reads the rest
+  (docs/apple/performance.md P4, P5).
+- **In the thread** (`MeetingThread`): the room's two items of a forwarded photo (the image and the line asking for its
+  note, both `client_msg_id` `photo-<id>`) are one `.photo` entry where the room got it, never an image, a batch or a
+  question. The hub's line withdrawing a deleted photo (`photo-withdrawn-<id>`) shows nothing; the end batch is only the
+  room's last line from the meeting, and only once the meeting ended (`room(…, ended:)`). Photos the room thread doesn't
+  hold (not forwarded: the role off, the room not up; forwarded with its message not among the room's pages loaded; or
+  still on their way) follow the room's entries, oldest `at` first, those the hub doesn't list yet last, and move to
+  their message once a page with it is loaded; none is ever hidden. A `photo-<id>` the hub's list no longer has, once it was read, is **Photo
+  removed**. The room's note shows under its photo; "Persona is looking at the photo…" shows while a forwarded photo has
+  no note and the room is ready, for at most `Theme.Recording.photoNoteWait` after it was added. After the meeting the
+  page shows the same photos from the list, with their notes and **Cited in the minutes**; it adds none.
+- **Thumbnails and the viewer**: from the JPEG kept on the phone, else `GET …/photos/{n}`, downsampled off the main actor
+  to `Theme.Recording.photoThumbSide` points at the screen's scale and kept in a memory cache that counts bytes. The viewer
+  shows the whole picture from the same sources.
+- **Deleting** (`MeetingPhotos.remove`): the photo's long-press menu, a failed photo's Delete Photo button or its
+  accessibility action, then a confirmation that says whether Persona already saw it, then `DELETE …/photos/{n}`. A
+  failed photo whose upload may have been stored (no refusal that comes after the hub's check for a stored repeat:
+  `kb_read_only`, `not_meeting`, `transcript_expired`, `photos_full`) reads the list first: one it has is deleted there
+  by its number, one it doesn't only leaves this phone, and with no list (offline) it stays and says so. `404
+  photo_not_found`, `404 recording_not_found` and `410 recording_deleted` count as done; the JPEG on the phone goes too;
+  a refusal says "Couldn't delete the photo. Retry." unless it has words of its own (`kb_read_only`, no connection).
+- **Cited in the minutes**: a minutes item may cite a photo (`RecordingMinutes.Item.photo`, its `n`). The recording page's
+  minutes show that photo's thumbnail under the item (`MinutesPhoto`, iPhone only; a tap opens the viewer), Photo
+  removed once the list was read and no longer has it, the thumbnail's place while it isn't; Copy and Share add
+  "(photo N)" to the item as the hub's Markdown does.
+- Nothing of photos reaches the Live Activity. The camera's purpose string (`NSCameraUsageDescription`) names a meeting's
+  whiteboard beside pairing and chat photos.
+- **Screenshots and tests**: `-showMeetingSample room-whiteboard` is `room-taking-part` started with photos; once its
+  upload's `200` carried `room` it draws a made-up whiteboard (2000×1500 px) and adds it as the camera does, so the real
+  pipeline, upload and note run. The mock hub serves the photo routes (`POST /mock/meeting_photos {"on", "note",
+  "note_seconds"}`; `MOCK_NO_MEETING_PHOTOS=1` is a manager without them), forwards each photo to a ready room and
+  writes the room's note `note_seconds` later; the fresh start `POST /mock/recording_minutes` forgets every photo. UI
+  tests in `MeetingConversationUITests`: the whiteboard's note (`testWhiteboardPhotoGetsTheRoomsNote`, which also checks
+  what the hub stored), a delete leaving **Photo removed** (`testDeletePhotoShowsPhotoRemoved`), and the photo items
+  only in the meeting started with photos, both ways round (`testPhotoMenuFollowsTheMeetingsStart`: `room-whiteboard`
+  offers Choose Photos, `room-taking-part` doesn't). Unit tests: `MeetingPhotosTests` (the pipeline and recognition, the
+  upload body, retries under the same id, a new id after `op_id_reused`, each refusal's words and whether Retry can help,
+  the list and which refusals empty it, an answer lost and settled by the list (after a relaunch, during the backoff, a
+  late failure or `200`), the delete of a failed photo, the JPEGs of photos that went, one photo prepared at a time, rows
+  at once for a pick, the album per recording, `photos.json` over a relaunch, thumbnails), `MeetingConversationTests`
+  (the photos revision kept only once its read applied; a start takes photos only when the hello listed
+  `meeting_photos` with the conversation), `MeetingRecordingTests` (a minutes item citing a photo) and
+  `MeetingThreadTests` (photo entries, the withdrawn line, the end batch).
 
 ## Entry points
 

@@ -165,7 +165,8 @@ import UIKit
 }
 
 /// The minutes' sections in a recording's page: when and where, who was there, key points, decisions, action items and open questions, each
-/// with the time it was said (a tap shows that line of the transcript); Copy and Share. Before they exist, what they wait for.
+/// with the time it was said (a tap shows that line of the transcript); Copy and Share. Before they exist, what they wait for. An item
+/// that cites a meeting photo (#3862 phase 3) shows its thumbnail on the iPhone (`MinutesPhoto`).
 struct RecordingMinutesSections: View {
     var entry: RecordingEntry
     var model: RecordingMinutesModel
@@ -331,6 +332,9 @@ struct RecordingMinutesSections: View {
                 if let byline = RecordingMinutes.byline(item) {
                     Text(byline).font(Theme.Font.caption).foregroundStyle(.secondary)
                 }
+                #if os(iOS)
+                if let photo = item.photo { MinutesPhoto(recording: entry.id, n: photo) }
+                #endif
                 if large { time(item) }
                 below()
             }
@@ -363,4 +367,48 @@ struct RecordingMinutesSections: View {
         AppModel.shared.toast = Toast(String(localized: "Minutes copied"), style: .success)
     }
 }
+
+#if os(iOS)
+/// The meeting photo a minutes item cites (#3862 phase 3; docs/assistant/meeting-minutes.md "Phase 3: photos", "Minutes"):
+/// its thumbnail under the item's words, a tap opens it full screen; Photo removed once the hub's list was read and no
+/// longer has it (deleted, or a trimmed recording's); nothing while the list isn't read yet (offline), which isn't a
+/// delete. Its own view, the only part of the minutes that reads the recording's photos (`MeetingPhotos.Album`), which
+/// it reads once if no page has.
+struct MinutesPhoto: View {
+    var recording: UUID
+    /// The photo's number at the hub (`n`).
+    var n: Int
+
+    @State private var viewing: MeetingPhotoItem?
+
+    private var album: MeetingPhotos.Album { MeetingPhotos.shared.album(recording) }
+
+    var body: some View {
+        let photos = album
+        Group {
+            if let item = photos.numbers[n].flatMap({ photos.items[$0] }) {
+                Button { viewing = item } label: {
+                    MeetingPhotoThumb(recording: recording, photoID: item.photoID, n: item.n, ready: item.hasImage)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text([String(localized: "Photo"), item.at.map { RecordingFormat.clock($0) }].compactMap { $0 }
+                    .joined(separator: ", ")))
+                .accessibilityAddTraits(.isImage)
+                .accessibilityIdentifier("minutes-photo")
+            } else if photos.loaded {
+                Text("Photo removed").font(Theme.Font.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("minutes-photo-removed")
+            } else {
+                // The list not read yet: the photo's place, until it is.
+                MeetingPhotoThumb(recording: recording, photoID: "", n: nil, ready: false)
+                    .accessibilityLabel(Text("Photo"))
+            }
+        }
+        .task(id: recording) {
+            if !photos.loaded { await MeetingPhotos.shared.refresh(recording) }
+        }
+        .fullScreenCover(item: $viewing) { item in MeetingPhotoViewer(recording: recording, item: item) }
+    }
+}
+#endif
 #endif

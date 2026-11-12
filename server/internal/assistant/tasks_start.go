@@ -271,7 +271,7 @@ func (s *Service) runPlanTaskStart(planID, conversation string, i int, t PlanTas
 	defer s.releaseTaskWorkspace(t.TodoID)
 	ctx, cancel := context.WithTimeout(context.Background(), taskStartTimeout)
 	defer cancel()
-	placed, placedWhy := t.Machine, t.Why
+	placed, placedWhy, placedPermission := t.Machine, t.Why, t.Permission
 	if t.Role == roleLeader { // its tools are listed once it is linked: a list asked for meanwhile waits (task_leader.go)
 		s.leaderStarts.Add(1)
 		defer s.leaderStarts.Add(-1)
@@ -294,7 +294,7 @@ func (s *Service) runPlanTaskStart(planID, conversation string, i int, t PlanTas
 			}
 		}
 	}
-	if t.Machine != placed || t.Why != placedWhy { // workspace admission already persisted the actual checkout
+	if t.Machine != placed || t.Why != placedWhy || t.Permission != placedPermission { // workspace admission already persisted the actual checkout
 		s.updatePlanTask(ctx, planID, i, t)
 	}
 	if err == nil {

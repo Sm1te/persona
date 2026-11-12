@@ -9,6 +9,13 @@ import SwiftUI
 /// conversation (its first message's material folded) and the messages on their way to it. It subscribes to the
 /// conversations it shows while it is on screen and derives its rows from their items only when those change
 /// (`MeetingThread`); a reply being written redraws only its own row (`MeetingLiveAnswer`).
+///
+/// Photos (phase 3, `MeetingPhotos`): one the room got sits where its message is, with its state, the room's note under
+/// it, and Photo removed once the hub no longer lists it; the others (not sent to the room, its message not among the
+/// room's pages loaded, still on their way from this phone) follow the room's rows. A long press deletes one, a tap on
+/// its thumbnail opens the app's image viewer. The page's `MeetingConversation.watch` reads the photos as it reads the
+/// meeting. The thread reads only the order of its recording's photos (`MeetingPhotos.Album.order`); each photo row is its
+/// own view that reads the rest, so a photo's progress never redraws the room's rows.
 struct MeetingThreadView: View {
     /// What the thread shows, for the page around it: its rows' ids in order (Jump to Latest counts the new ones), and the
     /// exchanges it draws as `MeetingExchangeRow` cards, which carry their own Stop Speaking.
@@ -52,6 +59,14 @@ struct MeetingThreadView: View {
     @State private var whole: Set<String> = []
     /// The follow-up's answers already there: a new one is announced; nil until its items first came.
     @State private var followupAnswers: Int?
+    /// The photos the room's thread holds (its `photo-<id>` messages), and those drawn after the room's rows, in order:
+    /// derived when the room's entries or the recording's photos change, never in `body`.
+    @State private var roomPhotos: Set<String> = []
+    @State private var apart: [String] = []
+    /// The photo whose Delete Photo waits for its confirmation.
+    @State private var confirming: MeetingPhotoItem?
+    /// The photo open in the viewer.
+    @State private var viewing: MeetingPhotoItem?
 
     var body: some View {
         let meeting = conversation.meeting(entry.id)
@@ -81,14 +96,35 @@ struct MeetingThreadView: View {
             resubscribe()
         })
         .onChange(of: wanted) { resubscribe() }
-        .onChange(of: RoomInput(items: signature(roomKey), asks: meeting.asks), initial: true) { rebuildRoom() }
+        .onChange(of: RoomInput(items: signature(roomKey), asks: meeting.asks, ended: !entry.active), initial: true) { rebuildRoom() }
         .onChange(of: signature(followupKey), initial: true) { rebuildFollowup() }
         .onChange(of: sends) { markDelivered() }
         .onChange(of: JustMeInput(asks: mine, chats: chatKeys(mine).map { signature($0) }), initial: true) { rebuildReplies() }
+        // None while Just Me shows instead: photos are the meeting's material.
+        .onChange(of: PhotoInput(order: showsJustMe ? [] : album.order, inRoom: roomPhotos), initial: true) { _, input in
+            let next = input.order.filter { !input.inRoom.contains($0) }
+            if apart != next { apart = next }
+        }
         .onChange(of: report, initial: true) { _, now in shown = now }
+        .confirmationDialog("Delete This Photo?", isPresented: confirmingBinding, titleVisibility: .visible, presenting: confirming) { item in
+            Button("Delete Photo", role: .destructive) { delete(item) }
+                .accessibilityIdentifier("meeting-photo-delete-confirm")
+        } message: { item in
+            // What the room already saw stays with it; the hub tells it not to use the photo again. One that never
+            // reached the hub as far as this phone knows promises nothing: the delete reads the hub's list first.
+            if item.listed?.forwarded == true {
+                Text("Persona already saw it. It is told not to use it again, and it leaves the minutes.")
+            } else if item.listed != nil {
+                Text("It leaves the meeting's material and the minutes.")
+            }
+        }
+        .fullScreenCover(item: $viewing) { item in MeetingPhotoViewer(recording: entry.id, item: item) }
     }
 
     private var showsJustMe: Bool { mode == .live && justMe }
+
+    /// The recording's photos as the pages draw them; the thread itself reads only their order.
+    private var album: MeetingPhotos.Album { MeetingPhotos.shared.album(entry.id) }
 
     // MARK: Subscriptions
 
@@ -133,10 +169,15 @@ struct MeetingThreadView: View {
         guard let key = conversation.roomKey(entry.id) else {
             roomEntries = []
             roomRows = mode == .after ? MeetingThread.pairs(asks, materialOnly: false).map { .ask($0) } : []
+            if !roomPhotos.isEmpty { roomPhotos = [] }
             return
         }
-        roomEntries = MeetingThread.room(model.chat(key).items, recordingID: entry.id, asks: asks.map { MeetingThread.AskInfo($0) })
+        // While it records the meeting hasn't ended: a line from it with nothing after (a withdrawn photo's) is no end.
+        roomEntries = MeetingThread.room(model.chat(key).items, recordingID: entry.id, asks: asks.map { MeetingThread.AskInfo($0) },
+                                         ended: !entry.active)
         roomRows = mode == .after ? MeetingThread.merged(roomEntries, asks: asks) : roomEntries.map { .entry($0) }
+        let photos = Set(MeetingThread.photoIDs(roomEntries))
+        if roomPhotos != photos { roomPhotos = photos }
     }
 
     private func rebuildFollowup() {
@@ -206,6 +247,7 @@ struct MeetingThreadView: View {
             return mine.flatMap { ask in replies[ask.id]?.text == nil ? ["me-\(ask.id)"] : ["me-\(ask.id)", "me-\(ask.id)-answer"] }
         }
         var ids = roomRows.map(\.id)
+        ids += apart.map { "photo-" + $0 }
         ids += local.map { "exchange-\($0.id)" }
         ids += followupEntries.map(\.id)
         ids += sends.map { "send-\($0.id)" }
@@ -227,13 +269,16 @@ struct MeetingThreadView: View {
     @ViewBuilder private func roomPart(roomKey: SessionKey?, meeting: MeetingConversation.Meeting,
                                        local: [MeetingAsk.Exchange]) -> some View {
         let role = entry.attendance?.role ?? .off
+        let ready = meeting.room?.known == .ready
         if let roomKey {
             let store = model.chat(roomKey)
             if store.hasMore { earlier(roomKey, identifier: "meeting-thread-earlier") }
-            ForEach(roomRows) { item in roomRow(item) }
+            ForEach(roomRows) { item in roomRow(item, roomReady: ready) }
+            ForEach(apart, id: \.self) { photoID in photoRow(photoID, inRoom: false, roomReady: ready) }
             MeetingLiveAnswer(store: store, markdown: false, identifier: "meeting-thread-answer-live")
-        } else if mode == .after {
-            ForEach(roomRows) { item in roomRow(item) }
+        } else {
+            if mode == .after { ForEach(roomRows) { item in roomRow(item, roomReady: ready) } }
+            ForEach(apart, id: \.self) { photoID in photoRow(photoID, inRoom: false, roomReady: ready) }
         }
         if mode == .live {
             if roomKey == nil, role.attends, meeting.room?.known == .starting {
@@ -260,9 +305,9 @@ struct MeetingThreadView: View {
         }
     }
 
-    @ViewBuilder private func roomRow(_ item: MeetingThread.RoomRow) -> some View {
+    @ViewBuilder private func roomRow(_ item: MeetingThread.RoomRow, roomReady: Bool) -> some View {
         switch item {
-        case .entry(let entry): row(entry, markdown: false)
+        case .entry(let entry): row(entry, markdown: false, roomReady: roomReady)
         case .ask(let pair): askRows(pair)
         }
     }
@@ -381,7 +426,7 @@ struct MeetingThreadView: View {
 
     // MARK: Rows
 
-    @ViewBuilder private func row(_ item: MeetingThread.Entry, markdown: Bool) -> some View {
+    @ViewBuilder private func row(_ item: MeetingThread.Entry, markdown: Bool, roomReady: Bool = false) -> some View {
         switch item {
         case .joined:
             quiet(String(localized: "Persona joined the meeting"))
@@ -423,6 +468,8 @@ struct MeetingThreadView: View {
             // Its Show All is a control of its own.
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("meeting-thread-material")
+        case .photo(_, _, let photoID):
+            photoRow(photoID, inRoom: true, roomReady: roomReady)
         }
     }
 
@@ -574,6 +621,29 @@ struct MeetingThreadView: View {
         }
     }
 
+    // MARK: Photos
+
+    /// A photo of the thread: its own view, which reads the recording's photos (`MeetingPhotos.Album`). `inRoom`: the
+    /// room's message of it, which says Photo removed once the hub's list no longer has it.
+    private func photoRow(_ photoID: String, inRoom: Bool, roomReady: Bool) -> some View {
+        MeetingPhotoRow(album: album, recording: entry.id, photoID: photoID, inRoom: inRoom, after: mode == .after,
+                        roomReady: roomReady, confirming: $confirming, viewing: $viewing)
+    }
+
+    private var confirmingBinding: Binding<Bool> {
+        Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })
+    }
+
+    /// Delete Photo, confirmed: the store deletes a stored one at the hub (the room's message of it then reads Photo
+    /// removed) and settles a failed one with the hub first (`MeetingPhotos.remove`); its row says Deleting… meanwhile.
+    /// No haptic: the microphone may be open.
+    private func delete(_ item: MeetingPhotoItem) {
+        confirming = nil
+        let recording = entry.id
+        let current = album.items[item.photoID] ?? item
+        Task { await MeetingPhotos.shared.remove(current, of: recording) }
+    }
+
     /// A photo in the thread: its thumbnail, or a chip when the item carries no picture.
     @ViewBuilder private func photo(_ image: ImagePayload?) -> some View {
         if let image {
@@ -588,11 +658,327 @@ struct MeetingThreadView: View {
     }
 }
 
-/// What the room's rows are derived from: its items as they are now (`signature`), and the hub's asks (an ask answered
-/// from the material, or answered at all, changes what shows without a new item).
+/// What the room's rows are derived from: its items as they are now (`signature`), the hub's asks (an ask answered
+/// from the material, or answered at all, changes what shows without a new item), and whether the meeting ended (only
+/// then may its last line say so).
 private struct RoomInput: Equatable {
     var items: String
     var asks: [MeetingAskWire.Ask]
+    var ended: Bool
+}
+
+// MARK: Photos
+
+/// What the photos drawn after the room's rows are derived from: the recording's photos in order, and those the room's
+/// thread holds.
+private struct PhotoInput: Equatable {
+    var order: [String]
+    var inRoom: Set<String>
+}
+
+/// One photo (#3862 phase 3): its thumbnail (a tap opens it), "Photo" and when it was taken, its caption or the first
+/// lines read in it, where it is in words (being prepared or uploaded, meeting material, why it couldn't go, being
+/// deleted), whether the minutes cite it, and under it the room's note, or while the room looks at it, that it does. A
+/// failed one shows Retry when Retry can help and Delete Photo; a long press offers Delete Photo on any it can delete.
+///
+/// VoiceOver reads the photo as one element (its label the time and words, its value the state; View Photo, Retry and
+/// Delete Photo as its actions, so nothing needs the long press), the buttons and the note as their own. The photo
+/// element's identifier names its state for the UI tests: `meeting-photo-preparing`, `-uploading`, `-material`,
+/// `-failed`, `-deleting`, or `meeting-photo-unlisted` before the hub's list is read.
+private struct MeetingPhotoRow: View {
+    let album: MeetingPhotos.Album
+    var recording: UUID
+    var photoID: String
+    var inRoom: Bool
+    var after: Bool
+    var roomReady: Bool
+    @Binding var confirming: MeetingPhotoItem?
+    @Binding var viewing: MeetingPhotoItem?
+
+    @Environment(\.dynamicTypeSize) private var size
+
+    var body: some View {
+        if let item = album.items[photoID] {
+            row(item)
+        } else if inRoom, album.loaded {
+            Text("Photo removed").font(Theme.Font.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("meeting-photo-removed")
+        } else if inRoom {
+            // Before the hub's list is read: the photo as far as the room's message tells.
+            row(MeetingPhotoItem(photoID: photoID))
+        }
+    }
+
+    private func row(_ item: MeetingPhotoItem) -> some View {
+        let busy = album.deleting.contains(item.photoID)
+        let problem = album.problems[item.photoID]
+        let layout = size.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.s))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Space.m))
+        return VStack(alignment: .leading, spacing: Theme.Space.s) {
+            layout {
+                Button { viewing = item } label: {
+                    MeetingPhotoThumb(recording: recording, photoID: item.photoID, n: item.n, ready: item.hasImage)
+                }
+                .buttonStyle(.plain)
+                .disabled(!item.hasImage)
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    heading(item)
+                    state(item, busy: busy)
+                    if after, item.listed?.cited == true {
+                        Label { Text("Cited in the minutes") } icon: { ThemedIcon(Theme.Icon.minutes).foregroundStyle(Theme.accent) }
+                            .font(Theme.Font.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .opacity(busy ? Theme.Recording.dimmed : 1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(label(item)))
+            .accessibilityValue(Text(value(item, busy: busy)))
+            .accessibilityAddTraits(item.hasImage ? .isImage : [])
+            .accessibilityAction { if item.hasImage { viewing = item } }
+            .accessibilityActions {
+                if item.hasImage { Button("View Photo") { viewing = item } }
+                if item.retryable, !busy, let local = item.local { Button("Retry") { MeetingPhotos.shared.retry(local.id) } }
+                if item.deletable, !busy { Button("Delete Photo") { confirming = item } }
+            }
+            .accessibilityIdentifier(stateIdentifier(item, busy: busy))
+            if item.failed, !busy { failedControls(item) }
+            if let problem {
+                Text(problem).font(Theme.Font.caption).foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("meeting-photo-delete-problem")
+            }
+            if let note = item.note {
+                MeetingAnswerRow(text: note, markdown: false, identifier: "meeting-photo-note")
+            } else if item.listed?.forwarded == true, roomReady, let added = item.addedAt {
+                MeetingPhotoReading(until: added.addingTimeInterval(Theme.Recording.photoNoteWait))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+        .contextMenu {
+            if item.deletable, !busy {
+                Button(role: .destructive) { confirming = item } label: { Label("Delete Photo", systemImage: Theme.Icon.delete) }
+                    .accessibilityIdentifier("meeting-photo-delete")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("meeting-photo-row")
+        // A failed delete is said, as any transient message is (DESIGN_SYSTEM 6.3, item 9).
+        .onChange(of: problem) { _, now in
+            if let now { AccessibilityNotification.Announcement(now).post() }
+        }
+    }
+
+    /// "Photo" and its time in the meeting, then its caption or the first lines read in it.
+    @ViewBuilder private func heading(_ item: MeetingPhotoItem) -> some View {
+        HStack(spacing: Theme.Space.s) {
+            Text("Photo").font(Theme.Font.captionStrong).foregroundStyle(.secondary)
+            if let at = item.at {
+                Text(RecordingFormat.clock(at)).font(Theme.Font.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+        }
+        if let words = item.preview {
+            Text(words).font(Theme.Font.secondary)
+                .lineLimit(Theme.Recording.photoTextLines)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Where the photo is, in words: being deleted, being prepared, being uploaded, stored as the meeting's material, or
+    /// why it couldn't go.
+    @ViewBuilder private func state(_ item: MeetingPhotoItem, busy: Bool) -> some View {
+        if busy {
+            progress(String(localized: "Deleting…"))
+        } else {
+            switch item.local?.state {
+            case .some(.preparing):
+                progress(String(localized: "Preparing…"))
+            case .some(.uploading):
+                progress(String(localized: "Uploading…"))
+            case .some(.failed(let message, _, _)):
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("Couldn't upload").font(Theme.Font.captionStrong).foregroundStyle(Theme.danger)
+                    Text(message).font(Theme.Font.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            case .some(.stored), .none:
+                if item.stored {
+                    Label { Text("Used as material") } icon: { ThemedIcon(Theme.Icon.successFilled).foregroundStyle(Theme.positive) }
+                        .font(Theme.Font.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// A failed photo's buttons: Retry when sending it again can help, and Delete Photo, so a refusal the hub would give
+    /// again never leaves the row with nothing to do but a hidden long press.
+    private func failedControls(_ item: MeetingPhotoItem) -> some View {
+        let layout = size.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.s))
+            : AnyLayout(HStackLayout(spacing: Theme.Space.s))
+        return layout {
+            if item.retryable, let local = item.local {
+                Button { MeetingPhotos.shared.retry(local.id) } label: { Label("Retry", systemImage: Theme.Icon.retry).lineLimit(1) }
+                    .themedButton()
+                    .accessibilityIdentifier("meeting-photo-retry")
+            }
+            Button(role: .destructive) { confirming = item } label: {
+                Label("Delete Photo", systemImage: Theme.Icon.delete).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .themedButton()
+            .accessibilityIdentifier("meeting-photo-remove")
+        }
+    }
+
+    private func progress(_ words: String) -> some View {
+        HStack(spacing: Theme.Space.s) {
+            ProgressView()
+            Text(words).font(Theme.Font.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// "Photo, 12:34, <its first lines>": what VoiceOver says first.
+    private func label(_ item: MeetingPhotoItem) -> String {
+        [String(localized: "Photo"), item.at.map { RecordingFormat.clock($0) }, item.preview].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// The state in words, as the row shows it (never the dimming alone), and whether the minutes cite it.
+    private func value(_ item: MeetingPhotoItem, busy: Bool) -> String {
+        var parts: [String] = []
+        if busy {
+            parts.append(String(localized: "Deleting…"))
+        } else {
+            switch item.local?.state {
+            case .some(.preparing): parts.append(String(localized: "Preparing…"))
+            case .some(.uploading): parts.append(String(localized: "Uploading…"))
+            case .some(.failed(let message, _, _)): parts += [String(localized: "Couldn't upload"), message]
+            case .some(.stored), .none: if item.stored { parts.append(String(localized: "Used as material")) }
+            }
+        }
+        if after, item.listed?.cited == true { parts.append(String(localized: "Cited in the minutes")) }
+        return parts.joined(separator: ", ")
+    }
+
+    private func stateIdentifier(_ item: MeetingPhotoItem, busy: Bool) -> String {
+        if busy { return "meeting-photo-deleting" }
+        switch item.local?.state {
+        case .some(.preparing): return "meeting-photo-preparing"
+        case .some(.uploading): return "meeting-photo-uploading"
+        case .some(.failed): return "meeting-photo-failed"
+        case .some(.stored), .none: return item.stored ? "meeting-photo-material" : "meeting-photo-unlisted"
+        }
+    }
+}
+
+/// A photo's thumbnail: the prepared JPEG on this phone, else the hub's copy, decoded off the main actor at the pixels
+/// it is drawn at (`MeetingPhotos.thumbnail`, cached there). `ready`: there is something to show yet (a photo still being
+/// prepared has no picture), so the load runs again once there is. The minutes' cited photos use it too.
+struct MeetingPhotoThumb: View {
+    var recording: UUID
+    var photoID: String
+    var n: Int?
+    var ready: Bool
+
+    @Environment(\.displayScale) private var scale
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var image: UIImage?
+
+    var body: some View {
+        let side = Int((Theme.Recording.photoThumbSide * Theme.sizeScale(typeSize) * scale).rounded(.up))
+        ZStack {
+            if let image {
+                // The whole photo, letterboxed on the well: a meeting's photos are boards and slides, whose edges hold words.
+                Image(uiImage: image).resizable().scaledToFit()
+            } else {
+                ThemedIcon(Theme.Icon.photo).font(Theme.Font.heading).foregroundStyle(.secondary)
+            }
+        }
+        .scaledFrame(width: Theme.Recording.photoThumbSide, height: Theme.Recording.photoThumbSide)
+        .background(Theme.Fill.well)
+        .clipShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
+        .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
+        .task(id: "\(photoID)|\(n ?? 0)|\(ready)|\(side)") {
+            guard ready else { return }
+            if let loaded = await MeetingPhotos.shared.thumbnail(recording, photoID: photoID, n: n, side: side) { image = loaded }
+        }
+    }
+}
+
+/// "Persona is looking at the photo…" while the room writes its note, until `until` (`Theme.Recording.photoNoteWait`
+/// after the photo was added): a schedule of that one date draws it again then, so a note that never comes doesn't keep
+/// it turning.
+private struct MeetingPhotoReading: View {
+    var until: Date
+
+    var body: some View {
+        TimelineView(.explicit([until])) { _ in
+            if Date.now < until {
+                HStack(spacing: Theme.Space.s) {
+                    ProgressView()
+                    Text("Persona is looking at the photo…").font(Theme.Font.secondary).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("meeting-photo-reading")
+            }
+        }
+    }
+}
+
+/// A photo full screen: the app's one image viewer (`ImageViewer`) once its bytes are here (this phone's copy, else the
+/// hub's), a spinner with Done until then, and what went wrong when neither has it. The minutes' cited photos open it too.
+struct MeetingPhotoViewer: View {
+    var recording: UUID
+    var item: MeetingPhotoItem
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var image: ViewerImage?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let image {
+                ImageViewer(items: [image], index: 0)
+            } else {
+                Group {
+                    if failed {
+                        EmptyStateView(symbol: Theme.Icon.error, title: String(localized: "Image didn't load"),
+                                       message: String(localized: "Couldn't get this image. Tap Retry to try again."),
+                                       action: (title: String(localized: "Retry"), run: { failed = false }), tint: Theme.caution)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .themedGroupedPage()
+                .overlay(alignment: .topTrailing) {
+                    RecordingSheetCloseButton(title: String(localized: "Done"), identifier: "meeting-photo-viewer-done") { dismiss() }
+                        .padding(.horizontal, Theme.Space.page)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("meeting-photo-viewer")
+        .task(id: failed) {
+            guard !failed, image == nil else { return }
+            await load()
+        }
+    }
+
+    private func load() async {
+        guard let data = await MeetingPhotos.shared.data(recording, photoID: item.photoID, n: item.n) else {
+            failed = true
+            return
+        }
+        // A megabyte of base64, made off the main actor; the viewer decodes it there too.
+        let encoded = await Task.detached(priority: .userInitiated) { data.base64EncodedString() }.value
+        let clock = item.at.map { RecordingFormat.clock($0) }
+        image = ViewerImage(payload: ImagePayload(mime: MeetingPhotoPipeline.mime, data: encoded),
+                            title: String(localized: "Photo"), detail: clock)
+    }
 }
 
 /// What the Just Me rows are derived from: the questions and the state of the chats they went to.

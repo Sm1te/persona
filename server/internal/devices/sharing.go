@@ -568,13 +568,13 @@ func (d *Devices) acknowledged(ctx context.Context, t *db.ShareTx, ack shareAck,
 
 // original input is sanitized before persistence; reserved creation fields are
 // always removed even for system callers. Nodes never accept owner UUIDs.
-func (d *Devices) prepareShareCall(ctx context.Context, p devicewire.NodeCall, params json.RawMessage) (json.RawMessage, string, error) {
+func (d *Devices) prepareShareCall(ctx context.Context, p devicewire.NodeCall, params json.RawMessage) (json.RawMessage, string, string, error) {
 	if !devicewire.IsSessionStart(p.Method) && p.Method != "session.send" {
-		return params, "", nil
+		return params, "", "", nil
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(params, &fields); err != nil {
-		return params, "", err
+		return params, "", "prepare_error", err
 	}
 	delete(fields, "creation_id")
 	delete(fields, "incarnation")
@@ -582,10 +582,23 @@ func (d *Devices) prepareShareCall(ctx context.Context, p devicewire.NodeCall, p
 	delete(fields, "submission")
 	delete(fields, "owner_subject")
 	store := d.shareDB()
+	result := ""
+	if devicewire.IsSessionStart(p.Method) {
+		result = "store_unavailable"
+		if store != nil {
+			result = "caller_unbound"
+			if p.Caller != nil && p.Caller.Kind == "device" && p.Caller.OwnerSubject != "" {
+				result = "authority_missing"
+			}
+		}
+	}
 	incarnation := ""
 	session := ""
 	_ = json.Unmarshal(fields["session_id"], &session)
 	if store != nil && p.Caller != nil && p.Authority != nil && p.Caller.Kind == "device" && p.Caller.OwnerSubject != "" {
+		if devicewire.IsSessionStart(p.Method) {
+			result = "authority_stale"
+		}
 		current, ok := d.currentShareAuthority(p.MachineID)
 		if ok && current == *p.Authority {
 			if devicewire.IsSessionStart(p.Method) {
@@ -601,14 +614,19 @@ func (d *Devices) prepareShareCall(ctx context.Context, p devicewire.NodeCall, p
 					}
 					m.mu.Unlock()
 				}
+				result = "resume_skipped"
+				if resume == "" {
+					result = "capability_missing"
+				}
 				if resume == "" && creationCapable {
 					intent, err := store.BeginSessionCreation(ctx, p.MachineID, *p.Caller, *p.Authority)
 					if err != nil {
-						return nil, "", err
+						return nil, "", "prepare_error", err
 					}
 					fields["creation_id"], _ = json.Marshal(intent.CreationID)
 					fields["incarnation"], _ = json.Marshal(intent.Incarnation)
 					incarnation = intent.Incarnation
+					result = "intent_created"
 				}
 			}
 			if p.Method == "session.send" {
@@ -624,12 +642,45 @@ func (d *Devices) prepareShareCall(ctx context.Context, p devicewire.NodeCall, p
 		if err == nil {
 			receipt = p.Submission.ID
 			if err = store.PutShareSubmission(ctx, receipt, p.MachineID, session, incarnation, shareHash([]byte(p.Submission.OriginalText)), transcript.ShareDisplayText(clean)); err != nil {
-				return nil, "", err
+				return nil, "", "prepare_error", err
 			}
 		}
 	}
 	raw, err := json.Marshal(fields)
-	return raw, receipt, err
+	return raw, receipt, result, err
+}
+
+// The new session ID is known only after start returns. Keep the preparation
+// outcome local to this call, then correlate it without logging intent IDs.
+func (d *Devices) observeCreationCall(p devicewire.NodeCall, prepared, out json.RawMessage, result string, callErr error) {
+	if !devicewire.IsSessionStart(p.Method) {
+		return
+	}
+	var response struct {
+		Session struct {
+			ID string `json:"session_id"`
+		} `json:"session"`
+		CreationID  string `json:"creation_id"`
+		Incarnation string `json:"incarnation"`
+	}
+	_ = json.Unmarshal(out, &response)
+	devicewire.ShareCreationLog(d.logf, response.Session.ID, "manager_prepare", result)
+	var request struct {
+		CreationID  string `json:"creation_id"`
+		Incarnation string `json:"incarnation"`
+	}
+	_ = json.Unmarshal(prepared, &request)
+	reply := "receipt_missing"
+	switch {
+	case callErr != nil:
+		reply = "start_failed"
+	case response.CreationID != "" || response.Incarnation != "":
+		reply = "receipt_mismatch"
+		if request.CreationID != "" && request.Incarnation != "" && request.CreationID == response.CreationID && request.Incarnation == response.Incarnation {
+			reply = "receipt_match"
+		}
+	}
+	devicewire.ShareCreationLog(d.logf, response.Session.ID, "node_reply", reply)
 }
 func (d *Devices) finishShareCall(ctx context.Context, p devicewire.NodeCall, id string, out json.RawMessage, callErr error) {
 	if id == "" || d.shareDB() == nil {

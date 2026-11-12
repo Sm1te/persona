@@ -1,6 +1,29 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "(photo %lld)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(photo %1$lld)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（照片 %1$lld）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（写真 %1$lld）"
+          }
+        }
+      }
+    },
     "After an upstream refusal, this session switched to a fallback model" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -70,6 +93,29 @@
         }
       }
     },
+    "Cited in the minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cited in the minutes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纪要引用了这张照片"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "議事録で引用されています"
+          }
+        }
+      }
+    },
     "Claude Code switched from %@ to %@ on its own" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -112,6 +158,144 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置的模型：%1$@"
+          }
+        }
+      }
+    },
+    "Couldn't delete the photo. Retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete the photo. Retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片没删掉。请重试。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を削除できませんでした。再試行してください。"
+          }
+        }
+      }
+    },
+    "Couldn't upload": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't upload"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没能上传"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロードできませんでした"
+          }
+        }
+      }
+    },
+    "Couldn't upload the photo. Retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't upload the photo. Retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片没传上去。请重试。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真をアップロードできませんでした。再試行してください。"
+          }
+        }
+      }
+    },
+    "Delete Photo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Photo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除照片"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を削除"
+          }
+        }
+      }
+    },
+    "Delete This Photo?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete This Photo?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这张照片？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真を削除しますか？"
+          }
+        }
+      }
+    },
+    "Deleting…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleting…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在删除…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除中…"
           }
         }
       }
@@ -208,6 +392,29 @@
         }
       }
     },
+    "It leaves the meeting's material and the minutes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It leaves the meeting's material and the minutes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会从会议资料和纪要中去掉。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会議の資料と議事録から外します。"
+          }
+        }
+      }
+    },
     "Later turns of this session may keep using it" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277,6 +484,29 @@
         }
       }
     },
+    "Persona already saw it. It is told not to use it again, and it leaves the minutes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona already saw it. It is told not to use it again, and it leaves the minutes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona 已经看过这张照片。会告诉它不要再用，纪要里也会去掉它。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona はこの写真をすでに見ています。今後は使わないよう伝え、議事録からも外します。"
+          }
+        }
+      }
+    },
     "Persona can't tell right now which model this session uses or is configured with, so nothing was closed. Try again later." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -296,6 +526,75 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Persona 现在读不到这个会话用哪个模型或配置的是哪个，没有关闭任何东西。稍后再试。"
+          }
+        }
+      }
+    },
+    "Persona is looking at the photo…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona is looking at the photo…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona 正在看这张照片…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona が写真を見ています…"
+          }
+        }
+      }
+    },
+    "Photo removed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo removed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片已移除"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真は削除されました"
+          }
+        }
+      }
+    },
+    "Preparing…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備中…"
           }
         }
       }
@@ -342,6 +641,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下次启动将使用配置的模型"
+          }
+        }
+      }
+    },
+    "The photo couldn't be read. Try another one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The photo couldn't be read. Try another one."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片读不出来，换一张试试。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真を読み込めませんでした。別の写真を試してください。"
           }
         }
       }
@@ -415,6 +737,75 @@
         }
       }
     },
+    "This hub doesn't take meeting photos.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This hub doesn't take meeting photos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 hub 不支持会议照片。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このハブは会議の写真に対応していません。"
+          }
+        }
+      }
+    },
+    "This meeting has 50 photos, the most it takes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This meeting has 50 photos, the most it takes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场会议已经有 50 张照片，达到上限了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この会議の写真は 50 枚に達しているため、これ以上追加できません。"
+          }
+        }
+      }
+    },
+    "This meeting's transcript has expired, so it takes no more photos.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This meeting's transcript has expired, so it takes no more photos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场会议的转写已过期，不能再添加照片。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この会議の文字起こしは期限切れのため、写真を追加できません。"
+          }
+        }
+      }
+    },
     "This session can't go back to the configured model from here. Use /model in its terminal." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -457,6 +848,75 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个会话已经没有在用回退模型了。"
+          }
+        }
+      }
+    },
+    "Uploading…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uploading…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード中…"
+          }
+        }
+      }
+    },
+    "Used as material": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used as material"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用作会议资料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会議の資料になりました"
+          }
+        }
+      }
+    },
+    "View Photo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Photo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看照片"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を表示"
           }
         }
       }
@@ -103060,19 +103520,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Read-only"
+            "value" : "Read-only requested"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "読み取り専用"
+            "value" : "読み取り専用を要求"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只读"
+            "value" : "已要求只读"
           }
         }
       },

@@ -250,6 +250,10 @@ struct LinkSheet: View {
         .padding(.horizontal, Theme.Space.l)
         .padding(.top, Theme.Space.l)
         .padding(.bottom, Theme.Space.s)
+        // A bar: it grows with the text up to the largest standard size, as the viewers' bars do. Beyond, its buttons
+        // left the title and the server chooser a letter each, and the room it took came off the page and the
+        // preview's comment panel above the keyboard (#5114); the page under it does not grow with the text anyway.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     @ViewBuilder private var browserItems: some View {

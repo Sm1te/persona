@@ -9,6 +9,5 @@
   "container": "Container {name}",
   "offline": "Main conversation · Offline",
   "stopped": "Main conversation · Stopped",
-  "last_location": "Last ran on {location}",
-  "new_launcher": "New conversation will use: {launcher}"
+  "last_location": "Last ran on {location}"
 }

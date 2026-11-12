@@ -50,7 +50,7 @@
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>Persona adds events to your calendar when you ask Claude to, for example to save a meeting it scheduled for you.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, for example when you first connect to your hub.</string>
+	<string>Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, and to take a photo you add to a chat or a meeting, for example a whiteboard during a meeting.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Persona lets Claude look up your contacts when you ask, for example to find a colleague's phone number or email before drafting a message.</string>
 	<key>NSFaceIDUsageDescription</key>

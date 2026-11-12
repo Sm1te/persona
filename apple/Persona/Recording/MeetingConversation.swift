@@ -21,7 +21,9 @@ final class MeetingConversation {
         var followup: RecordingUpload.SessionRef?
         /// `asks` of `GET …/live`, oldest first (the thread uses them to tell spoken/typed and to show asks answered from material).
         var asks: [MeetingAskWire.Ask] = []
-        /// The revision of each part read so far (`meeting_live` reads only newer ones).
+        /// The revision of each part read so far (`meeting_live` reads only newer ones); `photos`: the newest one a
+        /// `GET …/photos` that began after it was known has applied (`MeetingPhotos`), so a failed read leaves it behind
+        /// and the next event or `…/live` read tries again.
         var revs: [String: Int64] = [:]
         /// A full read came back at least once.
         var loaded = false
@@ -66,11 +68,14 @@ final class MeetingConversation {
         /// The hub has no upload of the recording (`404 recording_not_found`): it goes again now; whether the hub stored
         /// it within a few seconds (false: the request isn't made again).
         var reupload: (UUID) async -> Bool = { _ in false }
+        /// `GET …/photos` of a meeting that takes photos (`MeetingPhotos.refresh`); whether its list was applied.
+        var readPhotos: (UUID) async -> Bool = { await MeetingPhotos.shared.refresh($0) }
     }
 
     /// Longest Just me or `…/followup` text (the contract's limit, in characters).
     nonisolated static let maxText = 8000
-    /// The parts of `GET …/live` phase 1 reads; a later phase's (`lines`, `topics`, `photos`, …) are left to it.
+    /// The parts of `GET …/live` phase 1 reads; a later phase's (`lines`, `topics`, …) are left to it. `photos` (phase 3)
+    /// is read only for a meeting that takes photos (`partsRead(for:)`), and never as a part: `GET …/photos` holds them.
     static let readParts = ["room", "asks", "private", "followup"]
     /// How long after its end a room meeting recorded here still follows `meeting_live` unwatched (the hub's 12 hours).
     static let followsEnded: TimeInterval = 12 * 3600
@@ -159,10 +164,11 @@ final class MeetingConversation {
         reading.remove(id)
     }
 
-    /// The page is on screen (inserts `owner` and reads everything again) / gone.
+    /// The page is on screen (inserts `owner` and reads everything again, its photos too) / gone.
     func watch(_ id: UUID, by owner: UUID) {
         if watched[id]?.contains(owner) != true { watched[id, default: []].insert(owner) }
         Task { await refresh(id) }
+        if takesPhotos(id) { photosChanged(id, rev: nil) }
     }
 
     func unwatch(_ id: UUID, by owner: UUID) {
@@ -171,19 +177,46 @@ final class MeetingConversation {
         watched[id] = owners.isEmpty ? nil : owners
     }
 
-    /// A `meeting_live` event: reads the parts newer than those read so far, of those phase 1 reads (only for watched
-    /// recordings or room meetings recorded here, running or ended within the last 12 hours).
+    /// A `meeting_live` event: reads the parts newer than those read so far, of those the phone reads (only for watched
+    /// recordings or room meetings recorded here, running or ended within the last 12 hours). Newer `photos` read the
+    /// photos (`GET …/photos`), not `…/live`, whose `photos` part is only a revision.
     func event(recordingID: String, changed: [String], revs: [String: Int64]) {
         guard let id = UUID(uuidString: recordingID), follows(id) else { return }
-        let parts = Self.newerParts(changed: changed, revs: revs, known: meetings[id]?.revs ?? [:]).filter { Self.readParts.contains($0) }
-        guard !parts.isEmpty else { return }
-        Task { await refresh(id, parts: parts) }
+        let wanted = partsRead(for: id)
+        let parts = Self.newerParts(changed: changed, revs: revs, known: meetings[id]?.revs ?? [:]).filter { wanted.contains($0) }
+        if parts.contains("photos") { photosChanged(id, rev: revs["photos"]) }
+        let live = parts.filter { $0 != "photos" }
+        guard !live.isEmpty else { return }
+        Task { await refresh(id, parts: live) }
     }
 
-    /// The socket came back (`hello`): every watched meeting is read again (its events while it was down are gone).
+    /// The socket came back (`hello`): every watched meeting is read again, its photos too (its events while it was down
+    /// are gone).
     func reconnected() {
         for (id, owners) in watched where !owners.isEmpty {
             Task { await refresh(id) }
+            if takesPhotos(id) { photosChanged(id, rev: nil) }
+        }
+    }
+
+    /// The parts of a `meeting_live` event the phone follows for `id`: phase 1's, and `photos` for a meeting that started
+    /// with them (`RecordingAttendance.photos`).
+    func partsRead(for id: UUID) -> [String] { takesPhotos(id) ? Self.readParts + ["photos"] : Self.readParts }
+
+    /// The meeting started while the hub took photos: the page shows them, and the hub's changes to them are read.
+    private func takesPhotos(_ id: UUID) -> Bool { library.entry(id)?.attendance?.photos == true }
+
+    /// The photos moved at the hub (added, noted, cited, deleted), as of `rev` when it is known: `GET …/photos` reads
+    /// them, and only once that list applied is `rev` kept, so the same event isn't read twice. A read that fails
+    /// (offline, a timeout, the hub switching) keeps the revision before it: the next event, or the `…/live` read after a
+    /// reconnect, still sees a newer one and reads again.
+    private func photosChanged(_ id: UUID, rev: Int64?) {
+        let read = deps.readPhotos
+        Task {
+            guard await read(id), let rev else { return }
+            var m = meetings[id] ?? Meeting()
+            m.revs["photos"] = max(rev, m.revs["photos"] ?? rev)
+            if meetings[id] != m { meetings[id] = m }
         }
     }
 
@@ -416,7 +449,12 @@ final class MeetingConversation {
             if parts.contains("asks") { m.asks = answer.asks ?? [] }
         }
         m.missing = false
-        for (part, rev) in answer.revs ?? [:] { m.revs[part] = max(rev, m.revs[part] ?? rev) }
+        // The photos' revision moves only with a read of the photos that applied: a `…/live` read answered just after a
+        // photo changed would otherwise take the revision of a change `GET …/photos` never saw, and the event for it
+        // would read nothing. One newer than the last read (an event lost while the socket was down, or a read that
+        // failed) reads them again, and is kept once that read applied.
+        if let rev = answer.revs?["photos"], rev > (m.revs["photos"] ?? -1), takesPhotos(id) { photosChanged(id, rev: rev) }
+        for (part, rev) in answer.revs ?? [:] where part != "photos" { m.revs[part] = max(rev, m.revs[part] ?? rev) }
         if meetings[id] != m { meetings[id] = m }
     }
 
