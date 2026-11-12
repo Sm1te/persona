@@ -36,7 +36,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 // the Mac has a launcher the Studio lacks; a gateway (relay) lists a model a Codex launcher lists too
 const LAUNCHERS: Record<string, Launcher[]> = {
-  mac: [{ name: "claude", agent: "claude" }, { name: "relay", agent: "claude" }, { name: "codex", agent: "codex" }, { name: "only-mac", agent: "claude" }],
+  // codex: this computer opens Codex with no first message too (#4961), so a start may leave it empty
+  mac: [{ name: "claude", agent: "claude" }, { name: "relay", agent: "claude" }, { name: "codex", agent: "codex", prompt_optional: true }, { name: "only-mac", agent: "claude" }],
   studio: [{ name: "claude", agent: "claude" }, { name: "relay", agent: "claude" }],
   mini: [{ name: "claude", agent: "claude" }, { name: "relay", agent: "claude" }],
 };
