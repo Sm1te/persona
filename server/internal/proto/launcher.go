@@ -91,6 +91,13 @@ type LauncherModels struct {
 	Locked string `json:"locked,omitempty"`
 }
 
+// ModelPrice is the catalog's reference price in USD per one million tokens. It is display metadata, not a gateway quote.
+type ModelPrice struct {
+	Input     float64  `json:"input"`
+	Output    float64  `json:"output"`
+	CacheRead *float64 `json:"cache_read,omitempty"`
+}
+
 // AgentModel is one model of the list: Claude Code's initialize, Codex's model/list.
 type AgentModel struct {
 	ID          string `json:"id"` // what --model takes (Claude's aliases too: opus, sonnet…)
@@ -107,6 +114,8 @@ type AgentModel struct {
 	// and launcher after it ran (#1644, assistant/models_custom.go); listed after the agent's own, most recent first.
 	// Its efforts are not known, so none are given.
 	Custom bool `json:"custom,omitempty"`
+	// Price is the built-in catalog's exact-entry reference price; nil when unknown or inherited from another model.
+	Price *ModelPrice `json:"price,omitempty"`
 }
 
 type LauncherEnv struct {
@@ -237,6 +246,8 @@ type ProviderModel struct {
 	// InheritedFrom is the catalog id an unlisted newer generation took a missing context window or thinking
 	// level from. Empty for an exact catalog entry, and when the gateway already reported every one of those.
 	InheritedFrom string `json:"inherited_from,omitempty"`
+	// Price is the exact catalog entry's reference price. It is never inherited from an earlier generation.
+	Price *ModelPrice `json:"price,omitempty"`
 }
 
 // The assistant's runtimes for a Claude launcher (model_config.assistant's "runtime", the assistant.send / .start /

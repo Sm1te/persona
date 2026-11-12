@@ -14,18 +14,35 @@ import (
 // runtimes and engine runtimes. Resume never establishes new ownership.
 func (n *Node) creationResult(s *proto.Session, err error, resume, creation, incarnation string) (any, error) {
 	out := map[string]any{"session": s}
+	result, id := "start_failed", ""
+	if s != nil {
+		id = s.SessionID
+	}
 	if err != nil || s == nil || resume != "" || creation == "" || incarnation == "" {
+		if err == nil && s != nil {
+			result = "identity_missing"
+			if resume != "" {
+				result = "resume_skipped"
+			}
+		}
+		devicewire.ShareCreationLog(n.logf, id, "node_receipt", result)
 		return out, err
 	}
 	state, ok := n.state.get(s.SessionID)
 	if ok && state.CreationID != "" && (state.CreationID != creation || state.Incarnation != incarnation) {
+		devicewire.ShareCreationLog(n.logf, id, "node_receipt", "identity_conflict")
 		return out, err
 	}
 	if !ok {
 		state = sessionState{Launcher: s.Launcher, Cwd: s.Cwd, StartedAt: time.Now().UTC()}
 	}
 	state.CreationID, state.Incarnation = creation, incarnation
-	n.state.put(s.SessionID, state)
+	persistAvailable := n.state.put(s.SessionID, state)
+	result = "state_updated"
+	if !persistAvailable {
+		result = "persist_unavailable"
+	}
+	devicewire.ShareCreationLog(n.logf, id, "node_receipt", result)
 	out["creation_id"], out["incarnation"] = creation, incarnation
 	return out, nil
 }

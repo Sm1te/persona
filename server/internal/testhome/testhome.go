@@ -9,16 +9,25 @@
 // A package whose tests start Persona processes calls Main from its TestMain: the tests run with HOME set to an empty
 // directory and PERSONA_HOME unset, and the run fails if anything created <HOME>/.persona. A test that needs state
 // sets PERSONA_HOME (t.Setenv) to a directory of its own.
+//
+// Go tools a test starts (`go list` in the hub's architecture guard) still find the developer's Go env file, module
+// cache and build cache: Main pins GOENV, GOPATH, GOMODCACHE and GOCACHE to what they were under the real HOME.
+// Without that a child lost settings such as `go env -w GOPROXY=…`, fell back to the default proxy with an empty
+// cache and timed out where that proxy is unreachable (#5191).
 package testhome
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // isolated names the throw-away home once Main made it: a test binary a test starts again inherits the variable and
@@ -50,7 +59,11 @@ func runIn(run func() int, stderr io.Writer) int {
 		home = resolved
 	}
 	defer os.RemoveAll(home)
-	restore := set(map[string]string{"HOME": home, "USERPROFILE": home, "PERSONA_HOME": "", isolated: home})
+	vars := map[string]string{"HOME": home, "USERPROFILE": home, "PERSONA_HOME": "", isolated: home}
+	for k, v := range goEnv() { // read under the real HOME, before it changes
+		vars[k] = v
+	}
+	restore := set(vars)
 	defer restore()
 	code := run()
 	if left := leftBehind(home); len(left) > 0 {
@@ -62,6 +75,35 @@ func runIn(run func() int, stderr io.Writer) int {
 		}
 	}
 	return code
+}
+
+// goPaths are the Go settings whose defaults come from the home directory.
+var goPaths = []string{"GOENV", "GOPATH", "GOMODCACHE", "GOCACHE"}
+
+// goEnv returns goPaths as the go tool resolves them now, leaving out empty ones; nothing when there is no go tool.
+// A variable, so a test can stand in for the go tool.
+var goEnv = func() map[string]string {
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, goBin, append([]string{"env", "-json"}, goPaths...)...).Output()
+	if err != nil {
+		return nil
+	}
+	var all map[string]string
+	if json.Unmarshal(out, &all) != nil {
+		return nil
+	}
+	pinned := map[string]string{}
+	for _, k := range goPaths {
+		if v := all[k]; v != "" {
+			pinned[k] = v
+		}
+	}
+	return pinned
 }
 
 // set changes the variables (an empty value unsets) and returns how to put them back.

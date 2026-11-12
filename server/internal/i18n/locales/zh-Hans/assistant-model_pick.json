@@ -1,0 +1,16 @@
+{
+  "err_role": "更改对话的模型需要完整权限。",
+  "err_launcher_required": "请为这个对话选择一个模型供应商",
+  "err_effort": "不认识的思考等级 {effort}",
+  "err_no_conversation": "{machine} 上没有这个助手对话",
+  "err_guest": "访客对话沿用开始时的模型",
+  "err_not_main_chat": "「{launcher}」能在 {machine} 上开 Agent，但跑不了助手对话。请换一个。",
+  "err_locked": "「{launcher}」自己指定了模型，不能再为它选别的模型。请不带模型选择它。",
+  "err_no_model": "「{launcher}」不支持选择模型。请不带模型选择它。",
+  "unavailable_not_main_chat": "能在 {machine} 上开 Agent，但跑不了助手对话",
+  "unavailable_api_responses": "通过 Responses API 接入。助手对话需要 Claude Code 或 Messages API 接入",
+  "unavailable_api_chat": "通过 Chat Completions API 接入。助手对话需要 Claude Code 或 Messages API 接入",
+  "unavailable_api_other": "通过 {api} API 接入。助手对话需要 Claude Code 或 Messages API 接入",
+  "err_invalid_id": "这不是一个对话 ID",
+  "err_unreadable": "读不到各对话选的模型，请稍后再试。"
+}

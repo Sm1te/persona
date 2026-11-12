@@ -190,17 +190,18 @@ final class MeetingRecordingUITests: XCTestCase {
                                    "-ui.scheme", look == "dark" ? "dark" : "light"]
                 + (look == "large" ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] : [])
             app.launchPinned()
-            // At the largest text the meeting's own card fills the first screens, and a list builds no rows away from the
-            // screen: sweep slowly down and back up while the minutes load, since swiping on past them before they come
-            // leaves them unbuilt above the transcript.
+            // At the largest text the meeting's own card fills the first screens, the minutes run many screens more, and a
+            // list builds no rows away from the screen: go down slowly to the transcript, then back up until Copy (at the
+            // minutes' top) has been on the screen, again while they load (#5144).
             let copy = app.buttons["minutes-copy"]
-            var swipes = 0
-            XCTAssertTrue(wait(60) {
+            let transcript = app.descendants(matching: .any)["recording-sentence"].firstMatch
+            var down = true, swipes = 0
+            XCTAssertTrue(wait(150) {
                 if copy.exists { return true }
-                if look == "large" {
-                    if swipes % 10 < 5 { app.swipeUp(velocity: .slow) } else { app.swipeDown(velocity: .slow) }
-                    swipes += 1
-                }
+                guard look == "large" else { return false }
+                if down { app.swipeUp(velocity: .slow) } else { app.swipeDown(velocity: .slow) }
+                swipes += 1
+                if (down && transcript.exists) || swipes >= 30 { down.toggle(); swipes = 0 }
                 return false
             }, "\(look): no minutes:\n\(app.debugDescription)")
             let regenerate = app.buttons["minutes-regenerate"]

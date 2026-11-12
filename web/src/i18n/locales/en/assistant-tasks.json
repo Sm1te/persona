@@ -59,7 +59,7 @@
   "plan_start": "Start",
   "plan_dismiss": "Don't start",
   "default_model": "Default model",
-  "readonly": "Read-only",
+  "readonly": "Read-only requested",
   "needs_answer": "Waiting for your answer",
   "interrupted_reason": "Interrupted by a model service error: {reason}",
   "interrupted": "Interrupted by a model service error",

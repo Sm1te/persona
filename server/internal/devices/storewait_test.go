@@ -40,7 +40,7 @@ func (stalledStore) NodeSessions(ctx context.Context, _ string) (map[string]db.N
 // must not hold it (and every reply and event of that node behind it) for longer than the machine's storeWait.
 func TestStoreStallDoesNotHoldTheNodesEvents(t *testing.T) {
 	for _, c := range []struct{ event, params, logged string }{
-		{"state.put", `{"session_id":"s1","state":{"launcher":"claude","cwd":"/w"}}`, "save session state: context deadline exceeded"},
+		{"state.put", `{"session_id":"s1","state":{"launcher":"claude","cwd":"/w"}}`, `"result":"store_error"`},
 		{"claude.dirs", `{"dirs":["/home/me/.config/cc/work"]}`, "remember claude dirs: read: context deadline exceeded"},
 	} {
 		t.Run(c.event, func(t *testing.T) {

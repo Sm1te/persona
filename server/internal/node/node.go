@@ -504,10 +504,14 @@ func (n *Node) reloadState(ctx context.Context) bool {
 // connection ended (it runs on to its end) goes to the next connection's Node, which writes it (switch_share.go).
 func (n *Node) persistState(id string, v sessionState) {
 	if n.peer == nil {
+		devicewire.ShareCreationLog(n.logf, id, "node_notify", "peer_unavailable")
 		return
 	}
 	if err := n.peer.Notify("state.put", map[string]any{"session_id": id, "state": v}); err != nil {
+		devicewire.ShareCreationLog(n.logf, id, "node_notify", "send_error")
 		n.switches().keep(n, id, v)
+	} else if v.CreationID != "" || v.Incarnation != "" {
+		devicewire.ShareCreationLog(n.logf, id, "node_notify", "sent_unacknowledged")
 	}
 }
 

@@ -688,6 +688,33 @@ class PrivacyCheckIntegrationTests(unittest.TestCase):
         result = self.scan()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_public_site_address_is_allowed_only_in_public_entry_points(self):
+        config = self.home / ".config/persona/config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"publish": {"site_url": "https://public-site.notexample.com",
+                                                    "privacy_url": "https://privacy.notexample.com"},
+                                      "lan_host": "hub.notexample.com"}))
+        for path in pc.PUBLIC_SITE_DOCS | {"site/public/index.html"}:
+            target = self.repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("Install from https://public-site.notexample.com.\n")
+        (self.repo / "notes.md").write_text(
+            "https://public-site.notexample.com https://privacy.notexample.com hub.notexample.com\n")
+        (self.repo / "README.md").write_text(
+            (self.repo / "README.md").read_text() +
+            "Private privacy host: https://privacy.notexample.com; private hub: hub.notexample.com.\n")
+        (self.repo / "README.md.notexample.com").write_text("plain\n")
+        self.git("add", ".")
+        result = self.scan()
+        self.assertNotEqual(result.returncode, 0)
+        output = result.stdout + result.stderr
+        self.assertIn("notes.md:1: private value", output)
+        self.assertIn("README.md:2: private value", output)
+        self.assertIn("README.md.notexample.com:path: private value", output)
+        for path in pc.PUBLIC_SITE_DOCS | {"site/public/index.html"}:
+            self.assertNotIn(path + ":1:", output)
+        self.assertNotIn("notexample", output)
+
     def test_config_loopback_is_not_flagged_but_private_ip_is(self):
         config = self.home / ".config/persona/config.json"
         config.parent.mkdir(parents=True)

@@ -18,6 +18,7 @@ import { acknowledgeLaunch } from "../../lib/new-agent";
 import { useRuntimeSession } from "../../lib/runtime-session";
 import { ArchivedNotice, SessionDetailNotice } from "../../ui/SessionDetailNotice";
 import { REVIEW_FEATURE } from "../../lib/session-review";
+import { isBackgroundSupervisor } from "../../lib/background-supervisor";
 import { getSession, getState, hubHas, listenSession, refresh, refreshTodos, saveMutes, useStore, viewSession } from "../../lib/store";
 import { foldRows } from "../../lib/folded-rows";
 import { PREVIEW_FEATURE } from "../../lib/preview";
@@ -56,8 +57,9 @@ import { CloseoutCard } from "./CloseoutCard";
 import { shownCloseout } from "../../lib/closeout";
 import { AWAIT_MS, awaitingTurn, DOCK_MAX, turnStart } from "./dock";
 import { HEADER_SLOT, HEADER_SLOT_END, HEADER_SLOT_START } from "./header";
+import { contextUsage } from "../../lib/context-usage";
 import { ContextMeter } from "./ContextMeter";
-import { AgentModelPill } from "./ModelPill";
+import { AgentModelPill, AssistantModelPill } from "./ModelPill";
 import { switchRefused } from "../../lib/session-models";
 import { NARROW, NO_HOVER, PHONE, SHORT, useFinePointer, useMedia } from "../../lib/viewport";
 import { UserBubble } from "./SegmentView";
@@ -102,7 +104,7 @@ import { chatFiles } from "../../lib/mentions";
 import { sameMessage } from "../../lib/queue";
 import { OutboxBubbles } from "./OutboxBubbles";
 import { MainRuntimeSlot } from "../assistant/MainRuntimeSlot";
-import { AssistantFace, AssistantLauncherChip, CompactionStrip, useAssistantMenu } from "../assistant/AssistantChat";
+import { AssistantFace, CompactionStrip, useAssistantMenu } from "../assistant/AssistantChat";
 import { Segmented } from "../assistant/parts";
 import { PageBoundary } from "../PageBoundary";
 import { ViewLayer } from "../session/ViewLayer";
@@ -1489,8 +1491,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // the main conversation's /clear (#5095, lib/main-clear.ts): Persona's other conversations take no commands
   const commands = useMemo(() => (assistant ? (clears ? mainCommands() : []) : agentCommands(AGENT_COMMANDS, session)), [assistant, clears, session]);
   const footer = useMemo(() => (session ? <ComposerFooter session={session} assistant={assistant} /> : null), [session, assistant]);
-  // an Agent's model pill (#5032); a Persona conversation keeps its launcher chip in the footer for now (#5033)
-  const trailing = useMemo(() => (session && !assistant ? <AgentModelPill session={session} /> : null), [session, assistant]);
+  // the model pill: an Agent's (#5032), a Persona conversation's (#5033, its pick kept for the conversation)
+  const trailing = useMemo(() => (session ? assistant ? <AssistantModelPill session={session} /> : <AgentModelPill session={session} /> : null), [session, assistant]);
 
   const pendingCards = (
     <PendingCards
@@ -1744,6 +1746,9 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
           voice={voiceEntry.offer}
         />
         )}
+        {!stoppedLine && session && !assistant && contextUsage(session) !== null && (
+          <div data-composer-usage className="flex items-center justify-end px-2 pt-0.5"><ContextMeter session={session} /></div>
+        )}
         </div>
       </div>
       </ViewLayer>
@@ -1853,17 +1858,15 @@ function JumpPill({ label, onClick, inline }: { label: string; onClick: () => vo
 }
 
 export function ComposerFooter({ session, assistant }: { session: Session; assistant?: boolean }) {
-  // the launcher and model are the composer's model pill (an Agent's, #5032) or the launcher chip (a Persona
-  // conversation's): they switch there, so the line keeps only where the chat comes from and runs
+  // the launcher, model and effort are the composer's model pill (an Agent's, #5032; a Persona conversation's, #5033):
+  // they switch there, so the line keeps only where the chat comes from and runs
   const parts = [sourceSubtitle(session), ...(assistant ? [] : [shortPath(session.cwd)])].filter(Boolean);
   const info = useMenu();
-  // a Persona conversation (the main one too) switches its modes whatever its state: the hub applies them (#2416). An
-  // Agent's effort (a Codex thread's too) is on its model pill
+  // a Persona conversation (the main one too) switches its permission mode whatever its state: the hub applies it (#2416)
   const modes = assistant || (hasModes(session) && stateOf(session) !== "offline");
   return (
     <span className="flex min-w-0 items-center gap-2">
-      {modes && <ModeChips session={session} assistant={assistant} withInfo={parts.length > 0} />}
-      {assistant && <AssistantLauncherChip session={session} />}
+      {modes && <ModeChips session={session} assistant={assistant} />}
       {parts.length > 0 && <span className="min-w-0 truncate max-sm:hidden" title={[sourceSubtitle(session), session.cwd].filter(Boolean).join(" · ")}>{parts.join(" · ")}</span>}
       {/* phone width (#3533): the line would show a letter or two, so it is a button that lists the parts in full */}
       {parts.length > 0 && <IconButton icon="info" label={t("chat-chatview.session_info")} onClick={info.open} active={Boolean(info.anchor)} size={22} iconSize={13} className="sm:hidden" />}
@@ -1973,6 +1976,8 @@ export const Header = memo(function Header({
   // archived (the Archived page listed it, or it was archived here): the menu offers Restore instead of archive / delete
   const archived = useArchived(session?.machine_id ?? "", session?.session_id ?? "");
   const [dialog, setDialog] = useState<"info" | "rename" | "space" | "delete" | null>(null);
+  // the background supervisor is built in (#5082): not renamed here either, as in its row's menu
+  const builtIn = useStore((s) => isBackgroundSupervisor(s.assistant, session?.session_id));
   const muted = Boolean(session && !assistant && isMuted(session, mutes));
   const pinned = useStore((s) => Boolean(session && isPinned(session, s.pins)));
   // "Mute": the hub stops pushing this agent's "Needs you" / "Finished" (an agent's switch sits on top of its space's)
@@ -2091,7 +2096,7 @@ export const Header = memo(function Header({
         ...(feishu ? [{ key: "feishu", label: t("chat-chatview.open_in_lark"), icon: "external" as const, onSelect: () => openLink(feishu) }] : []),
         ...(onSearch ? [{ key: "search", label: t("chat-chatsearch.menu"), icon: "search" as const, onSelect: onSearch }] : []),
         { key: "info", label: t("chat-chatview.session_info"), icon: "info", onSelect: () => setDialog("info") },
-        ...(!main && sessionCan(session, "send") && (session.assistant || !session.source_kind) ? [{ key: "rename", label: t("chat-chatview.rename"), icon: "pencil" as const, onSelect: () => setDialog("rename") }] : []),
+        ...(!main && !builtIn && sessionCan(session, "send") && (session.assistant || !session.source_kind) ? [{ key: "rename", label: t("chat-chatview.rename"), icon: "pencil" as const, onSelect: () => setDialog("rename") }] : []),
         ...(!assistant && session.space_id && !session.source_kind ? [{ key: "space", label: t("chat-chatview.rename_space"), icon: "folder" as const, onSelect: () => setDialog("space") }] : []),
         ...(!assistant ? [{ key: "mute", label: muted ? t("chat-chatview.unmute") : t("chat-chatview.mute"), icon: muted ? ("bell" as const) : ("bellOff" as const), onSelect: () => void flipMute() }] : []),
         ...(!assistant ? [{ key: "pin", label: pinned ? t("chat-chatview.unpin") : t("chat-chatview.pin"), icon: "pin" as const, onSelect: () => void flipPin(session) }] : []),
@@ -2121,12 +2126,6 @@ export const Header = memo(function Header({
           <h1 className="truncate text-[14px] font-semibold text-ink">{title}</h1>
           {/* wide, the pill gives the dot's state its words, not a second dot (#3956: the state is said once) */}
           {session && !assistant && (state !== "idle" || awaiting) && <span className="hidden @min-[800px]:contents"><StatePill state={state} awaiting={awaiting} waiting={Boolean(session && backgroundWaiting(session))} dot={false} /></span>}
-          {/* narrow: the context bar gives way to the title too (#3532); "Session info" still has the token count. The header's own
-              width decides (a container), so a side panel beside the chat narrows it as a phone does; the pill and the
-              bar go below 800px, the chips' words below 640px, so the title keeps room in between (#3670) */}
-          {session && !assistant && <span className="hidden @min-[800px]:contents"><ContextMeter session={session} /></span>}
-          {/* 680–800px (an iPad in landscape with the sidebar open, #4443): the share alone, so what is left stays in sight */}
-          {session && !assistant && <span className="hidden @min-[680px]:contents @min-[800px]:hidden"><ContextMeter session={session} compact /></span>}
         </div>
         {sub && !todoLine && <div title={sub} className="truncate text-[11.5px] text-ink-3">{sub}</div>}
         {/* the todo it works for, up top (#1836): opens the todo, "Change to-do…" picks another */}

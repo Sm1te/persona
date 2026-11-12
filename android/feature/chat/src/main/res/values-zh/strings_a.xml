@@ -285,7 +285,7 @@
     </plurals>
     <string name="chat_tasks_plan_single">这样开</string>
     <string name="chat_tasks_default_model">默认模型</string>
-    <string name="chat_tasks_read_only">只读</string>
+    <string name="chat_tasks_read_only">已要求只读</string>
     <string name="chat_tasks_plan_remember">这类以后直接开</string>
     <plurals name="chat_tasks_plan_start_count">
         <item quantity="other">开始 %1$d 个任务</item>

@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import { t } from "../../i18n";
 import { agentName } from "../../lib/agent-kind";
-import { contextSize, flyoutPlace, shownEffort, type EngineChoice, type PanelConfig, type PanelRow } from "../../lib/model-panel";
+import { contextSize, flyoutPlace, priceAmount, priceTier, shownEffort, type EngineChoice, type PanelConfig, type PanelRow } from "../../lib/model-panel";
 import { effortTitle } from "../../lib/session-actions";
 import { AgentMark } from "../AgentMark";
 import { cx } from "../atoms";
@@ -100,6 +100,7 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
   // none set and no default known (a Claude Code model for a new Agent): the slider says so rather than sit on the lowest
   const effort = shownEffort(setup, model);
   const name = model.name;
+  const price = priceTier(model.price) ? model.price : undefined;
   const star = mode === "favorite" ? t("ui-modelpanel.remove_favorite") : t("ui-modelpanel.save_favorite");
 
   return createPortal(
@@ -190,6 +191,16 @@ export function Flyout({ rowEl, panelEl, row, setup, mode, starred, disabled, fo
           </div>
         )}
       </div>
+      {price && (
+        <div data-model-price className="mt-2 border-t border-line pt-2 text-[12px] leading-[1.7] text-ink-3">
+          <div>{t("ui-modelpanel.price_per_million")}</div>
+          <div className="flex flex-wrap items-baseline gap-x-1.5 tabular-nums">
+            <span className="whitespace-nowrap">{t("ui-modelpanel.price_input")} <span className="font-medium text-ink">${priceAmount(price.input)}</span></span>
+            <span className="whitespace-nowrap">{t("ui-modelpanel.price_output")} <span className="font-medium text-ink">${priceAmount(price.output)}</span></span>
+            {price.cache_read !== undefined && <span className="whitespace-nowrap">{t("ui-modelpanel.price_cache_read")} <span className="font-medium text-ink">${priceAmount(price.cache_read)}</span></span>}
+          </div>
+        </div>
+      )}
       <div className="mt-2 flex min-h-[22px] items-center justify-between gap-2 border-t border-line pt-2 text-[11px]">
         <span className={cx("min-w-0 truncate", mode === "recommended" ? "text-ink-3" : "text-ink-2")}>
           {mode === "favorite" ? t("ui-modelpanel.setup_saved") : mode === "customized" ? t("ui-modelpanel.setup_customized") : t("ui-modelpanel.setup_recommended")}

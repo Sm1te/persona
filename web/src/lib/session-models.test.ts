@@ -15,7 +15,7 @@ const claudeList: LauncherModels = {
   agent: "claude",
   models: [
     { id: "default", name: "Default (recommended)", default: true, resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high" },
-    { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high", description: "Most capable" },
+    { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, default_effort: "high", description: "Most capable", price: { input: 4, output: 20, cache_read: 0.2 } },
     { id: "haiku", name: "Haiku 5.5", resolved: "claude-haiku-5-5", efforts: ["low", "high"] },
     { id: "vendor/model-x", name: "vendor/model-x", custom: true },
   ],
@@ -49,7 +49,7 @@ describe("the providers of an Agent's chat", () => {
     const own = providers.find((p) => p.id === "gateway")!;
     expect(own.models).toEqual([
       { id: "default", name: "Default (recommended)", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high" },
-      { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high", description: "Most capable", context: 200000 },
+      { id: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: ALL, defaultEffort: "high", description: "Most capable", context: 200000, price: { input: 4, output: 20, cache_read: 0.2 } },
       { id: "haiku", name: "Haiku 5.5", resolved: "claude-haiku-5-5", efforts: ["low", "high"] },
       // a typed ID's efforts aren't known: Claude Code takes any
       { id: "vendor/model-x", name: "vendor/model-x", efforts: ALL, custom: true },

@@ -9,6 +9,5 @@
   "container": "容器 {name}",
   "offline": "主会话 · 离线",
   "stopped": "主会话 · 已停止",
-  "last_location": "上次运行于 {location}",
-  "new_launcher": "新对话将使用：{launcher}"
+  "last_location": "上次运行于 {location}"
 }

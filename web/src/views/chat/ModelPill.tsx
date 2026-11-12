@@ -4,17 +4,21 @@
 // it (ui/model-panel/ModelPanel.tsx), and so does `/model` Enter in the composer. The composer card is a container: under
 // 600 px the pill is 148 px wide, under 520 px its text and marks are a step smaller, under 420 px it keeps only the
 // provider's tile and the chevron (64 px). An agent that can switch neither its model nor its effort gets the same
-// words as a label, not a button.
+// words as a label, not a button. A Persona chat (and the new-chat page) has `AssistantModelPill` (#5033): the same pill
+// over what the assistant's computer can run Persona chats on, its panel saying whether the chat follows the default.
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { t } from "../../i18n";
 import { agentName } from "../../lib/agent-kind";
 import { onModelPicker, sessionLauncher } from "../../lib/model-switch";
 import { effortTitle } from "../../lib/session-actions";
-import { modelList, pendingView, pillView, readForPanel, readModels, sessionSwitches, useModelLists, type PillSetup } from "../../lib/session-models";
+import { dropPick, launcherOffered, usePickedEffort, usePickedLauncher, usePickedModel } from "../../lib/assistant-chat";
+import { ASSISTANT_MODEL_PICK_FEATURE, assistantPickKey, assistantPillView, assistantSetup, type AssistantChat } from "../../lib/assistant-models";
+import { assistantLaunchers, modelList, pendingView, pillView, readAssistantLaunchers, readForPanel, readModels, sessionSwitches, useModelLists, type PillSetup } from "../../lib/session-models";
+import { hubHas, useStore } from "../../lib/store";
 import { CODEX_ULTRA, ultracodeOn } from "../../lib/ultracode";
 import type { Session } from "../../lib/types";
 import { AgentMark } from "../../ui/AgentMark";
-import { cx, Spinner } from "../../ui/atoms";
+import { cx, Spinner, toast } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { ProviderMark } from "../../ui/model-panel/ProviderMark";
 import { lazyOverlay } from "../LazyOverlay";
@@ -198,6 +202,63 @@ export const AgentModelPill = memo(function AgentModelPill({ session }: { sessio
         buttonRef={button}
       />
       {shown && anchor && <SessionModelPanel session={session} anchor={anchor} onClose={close} />}
+    </>
+  );
+});
+
+const AssistantModelPanel = lazyOverlay(() => import("./AssistantModelPanel").then((m) => m.AssistantModelPanel));
+
+/** A Persona chat's pill (#5033): the launcher, model and effort its next message runs on (its own pick, the default, or
+ *  what it started with: lib/assistant-models.ts), opening the unified panel (scope "assistant"). `session` absent: the
+ *  new-conversation page, whose pick goes with the start. Persona chats switch whatever their state: the hub applies a
+ *  pick from the next message. */
+export const AssistantModelPill = memo(function AssistantModelPill({ session }: { session?: Session }) {
+  useModelLists();
+  const assistant = useStore((s) => s.assistant);
+  const kept = useStore((s) => hubHas(s.features, ASSISTANT_MODEL_PICK_FEATURE));
+  const mid = session?.machine_id ?? assistant?.machine_id ?? "";
+  const chat: AssistantChat = { session, isMain: Boolean(session && assistant?.main === session.session_id), kept, config: assistant?.launcher };
+  const key = assistantPickKey(chat);
+  // this page's picks (an older hub, the new-conversation page) draw it again
+  const picked = usePickedLauncher(key);
+  usePickedModel(key);
+  usePickedEffort(key);
+  const { info } = assistantLaunchers(mid);
+  // the computer's default and what can run a Persona chat: once for the pill, again behind it on each opening
+  useEffect(() => {
+    if (mid) void readAssistantLaunchers(mid);
+  }, [mid]);
+  // a pick of this page's that the list no longer offers (gone, or it can't run the assistant) goes back to the default,
+  // its model and effort with it: on the new-conversation page they would otherwise go with the start
+  useEffect(() => {
+    if (!picked || (session && kept) || launcherOffered(info?.launchers ?? null, picked)) return;
+    dropPick(key);
+    toast(t("chat-modelpill.pick_dropped", { launcher: picked }), "info");
+  }, [key, picked, info, session, kept]);
+  const setup = assistantSetup(chat, info);
+  useEffect(() => {
+    if (mid) void readModels(mid, setup.provider, { first: true });
+  }, [mid, setup.provider]);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setAnchor(null), []);
+  const shown = Boolean(anchor) && Boolean(mid);
+  // every list again behind the one shown, once per opening
+  useEffect(() => {
+    if (!shown) return;
+    void readModels(mid, setup.provider, { again: true, first: true });
+    void readAssistantLaunchers(mid, { again: true }).then(() => {
+      for (const l of assistantLaunchers(mid).info?.launchers ?? []) if (l.name !== setup.provider) void readModels(mid, l.name, { again: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening
+  }, [shown, mid]);
+  if (!mid) return null;
+  const view = assistantPillView(chat, setup, info, modelList(mid, setup.provider));
+  const workflow = view.engine === "codex" && view.effort === CODEX_ULTRA ? { label: t("ultracode.codex_ultra_title"), title: t("ultracode.codex_ultra_title") } : undefined;
+  return (
+    <>
+      <ModelPill current={view} loading={view.loading} failed={view.failed} open={Boolean(anchor)} onOpen={(el) => setAnchor((a) => (a ? null : el))} workflow={workflow} buttonRef={button} />
+      {shown && anchor && <AssistantModelPanel chat={chat} mid={mid} anchor={anchor} onClose={close} />}
     </>
   );
 });

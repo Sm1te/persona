@@ -132,5 +132,8 @@
   "background_folded_footer": "主对话里由别的对话、定时任务或跟进发起的轮次折成一行，点开能看全部；问过你或通知过你的轮次照常显示。",
   "idle_close": "Agent 闲置多久后停止",
   "idle_close_hint": "它的终端会保留。0 表示不自动停止。",
-  "idle_close_unit": "小时"
+  "idle_close_unit": "小时",
+  "main_supervises": "主对话自己督办它派出的任务",
+  "main_supervises_hint": "默认关闭：Persona 派出的任务由内置的后台督办对话跟进和验收，主对话随时能回你；开启后改回由主对话自己跟进和验收",
+  "background_supervisor_model": "后台督办的模型"
 }

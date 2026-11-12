@@ -31,6 +31,7 @@ import type { OutboxEntry } from "./outbox";
 import { NO_LINK, RESTARTING_MS, type ConnLink } from "./connection";
 import { setOfflineProbe } from "./feedback";
 import { readDirectionTree } from "./direction-names";
+import { unnamedTaskConversations } from "./background-supervisor";
 import { directionTreeAwaitsHello } from "./direction-tree";
 import { afterEvent, afterHello, graceUntil, isResumed, NO_CURSOR, RESTART_FAST_MS, retryDelay, shownConn, wsQuery, type Drop, type EventCursor } from "./reconnect";
 
@@ -1002,11 +1003,20 @@ export function upsertSession(s: Session) {
   set({ sessions: { ...state.sessions, [s.machine_id]: next }, ...syncAssistant(s.machine_id, [s]) });
 }
 
+/** The conversations the assistant was read again for (unnamedTaskConversations): once each, whatever it answered. */
+const askedForUnnamed = new Set<string>();
+
 // The assistant's conversations are sessions on its machine too: the change that keeps the copy in `assistant`
 // current, to go with the sessions' own (one update, not two).
 function syncAssistant(mid: string, list: Session[]): Partial<State> {
   const a = state.assistant;
   if (!a || a.machine_id !== mid) return {};
+  // a background supervisor the hub made since the assistant was read (#5082): read again, so it is the built-in one
+  const unnamed = unnamedTaskConversations(a, list).filter((id) => !askedForUnnamed.has(id));
+  if (unnamed.length) {
+    unnamed.forEach((id) => askedForUnnamed.add(id));
+    void refreshAssistant().catch(() => {});
+  }
   let changed = false;
   const convs = a.conversations.map((c) => {
     const s = list.find((x) => x.session_id === c.session_id);

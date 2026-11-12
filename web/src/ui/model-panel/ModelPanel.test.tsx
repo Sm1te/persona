@@ -7,6 +7,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PanelProvider, PanelState } from "../../lib/model-panel";
+import type { LauncherQuotaAnswer } from "../../lib/quota";
 
 vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
@@ -68,6 +69,7 @@ interface Opts {
   onApplyCurrent?: (p: { effort?: string; fast?: boolean }) => Promise<boolean>;
   onReload?: (p: string) => void;
   onForget?: (p: string, m: string) => void;
+  quotas?: Readonly<Record<string, LauncherQuotaAnswer>>;
   header?: React.ReactNode;
 }
 
@@ -87,6 +89,7 @@ async function open(o: Opts = {}) {
         onApplyCurrent={onApplyCurrent}
         onReload={o.onReload}
         onForget={o.onForget}
+        quotas={o.quotas}
         header={o.header}
       />,
     );
@@ -121,6 +124,37 @@ describe("the model panel", () => {
     expect(document.body.querySelector('[role="listbox"]')).not.toBeNull();
     // the rail: Recent, Favorites, All (on), one cell per provider
     expect([...document.body.querySelectorAll("[data-rail-cell]")].map((c) => `${c.getAttribute("data-rail-cell")}${c.getAttribute("aria-pressed") === "true" ? "*" : ""}`)).toEqual(["recent", "favorites", "all*", "claude", "codex"]);
+  });
+
+  it("draws a provider's weekly quota bar and reset tooltip, and no bar when it is unknown", async () => {
+    await open({ quotas: { claude: { quota: { gateway: "g", budget: [{ label: "每周预算", used_ratio: 0.62 }], pools: [{ name: "b", windows: [{ label: "每周", used_ratio: 0.77, resets_at: "2099-01-01T00:00:00Z" }] }] } } } });
+    const cell = document.body.querySelector<HTMLButtonElement>('[data-rail-cell="claude"]')!;
+    expect(cell.querySelector("[data-weekly-remaining]")?.getAttribute("data-weekly-remaining")).toBe("23");
+    expect(cell.querySelector("[data-weekly-remaining]")?.className).toContain("bg-orange");
+    expect(cell.title).toContain("每周");
+    expect(cell.title).toContain("重置");
+    expect(document.body.querySelector('[data-rail-cell="codex"] [data-weekly-remaining]')).toBeNull();
+  });
+
+  it("uses the accent tone for a healthy weekly quota", async () => {
+    await open({ quotas: { claude: { quota: { gateway: "g", budget: [{ label: "weekly", used_ratio: 0.5 }] } } } });
+    expect(document.body.querySelector('[data-rail-cell="claude"] [data-weekly-remaining]')?.className).toContain("bg-accent");
+  });
+
+  it("shows a known model's price tier and per-million flyout details, with nothing when price is unknown", async () => {
+    const priced = claude({ models: [
+      { id: "opus", name: "Opus 5.5", efforts: EFFORTS, price: { input: 4, output: 20, cache_read: 0.2 } },
+      { id: "unknown", name: "Unknown", efforts: [] },
+    ] });
+    await open({ providers: [priced], state: { current: null, recommended: ["claude"] } });
+    expect(row("Opus").querySelector("[data-price-tier]")?.getAttribute("data-price-tier")).toBe("3");
+    expect(row("Unknown").querySelector("[data-price-tier]")).toBeNull();
+    act(() => row("Opus").querySelector<HTMLButtonElement>("[data-row-customize]")!.click());
+    await flush();
+    expect(flyout()!.textContent).toContain("每 100 万 token");
+    expect(flyout()!.textContent).toContain("输入 $4");
+    expect(flyout()!.textContent).toContain("输出 $20");
+    expect(flyout()!.textContent).toContain("缓存读取 $0.2");
   });
 
   it("a pick waits for the chat: applied, it goes into Recent and the panel closes", async () => {

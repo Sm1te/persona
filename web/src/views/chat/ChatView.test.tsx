@@ -26,7 +26,7 @@ vi.mock("./Composer", async (importOriginal) => {
     Composer: ({ onSend }: { onSend: (out: Outgoing) => Promise<boolean> }) => {
       captured.onSend = onSend;
       captured.linkManager = useLinkManager();
-      return null;
+      return <div data-testid="composer" />;
     },
   };
 });
@@ -66,7 +66,6 @@ vi.mock("../../lib/router", async (importOriginal) => ({
 vi.mock("../assistant/Persona", () => ({ usePersona: () => ({ name: "Persona" }) }));
 vi.mock("../assistant/AssistantChat", () => ({
   AssistantFace: () => null,
-  AssistantLauncherChip: () => null,
   CompactionStrip: () => null,
   useAssistantMenu: () => ({ items: [], dialogs: null }),
 }));
@@ -154,6 +153,25 @@ describe("ChatView message context availability", () => {
   });
 });
 
+describe("Agent context usage", () => {
+  it("leaves the header and appears in the row below the composer, with no empty row when unknown", () => {
+    const was = captured.session;
+    try {
+      captured.session = { ...was, agent: "claude", context_tokens: 78000, context_window: 200000 };
+      const html = renderToStaticMarkup(<ChatView mid="hub" sid="c1" />);
+      const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
+      expect(header).not.toContain("61%");
+      expect(html).toContain('data-composer-usage');
+      expect(html).toContain('aria-valuenow="61"');
+      expect(html.indexOf('data-testid="composer"')).toBeLessThan(html.indexOf("data-composer-usage"));
+      captured.session = { ...was, agent: "claude", context_tokens: undefined, context_window: undefined };
+      expect(renderToStaticMarkup(<ChatView mid="hub" sid="c1" />)).not.toContain('data-composer-usage');
+    } finally {
+      captured.session = was;
+    }
+  });
+});
+
 describe("links in the chat", () => {
   it("open what they open as the chat's manager (docs/assistant/managers.md \"Grouping\")", () => {
     const was = captured.session;
@@ -207,8 +225,11 @@ describe("composer footer rows (#3533)", () => {
     // a Codex thread (effort only): its effort is on the pill, the footer has no chip at all
     const codex = renderToStaticMarkup(<ComposerFooter session={{ ...s, agent: "codex", source_kind: "codex_app_server", capabilities: { send: true }, efforts: ["low", "high"] } as Session} />);
     expect(codex).not.toContain("<button type=\"button\" title=");
-    // a Persona conversation keeps its effort chip
-    expect(renderToStaticMarkup(<ComposerFooter session={{ ...s, assistant: true }} assistant />)).toContain(`title="${t("chat-sessiondialogs.effort")}"`);
+    // a Persona conversation: its permission chip too, its launcher, model and effort on its pill (#5033)
+    const persona = renderToStaticMarkup(<ComposerFooter session={{ ...s, assistant: true }} assistant />);
+    expect(persona).toContain(`title="${t("chat-sessiondialogs.permission_mode")}"`);
+    expect(persona).not.toContain(`title="${t("chat-sessiondialogs.effort")}"`);
+    expect(persona).not.toContain("gateway-cc");
   });
   it("leaves out what is missing, and in a Persona conversation the folder too", () => {
     const s = { machine_id: "m", session_id: "s", launcher: "claude", model: "opus", cwd: "/code" } as Session;

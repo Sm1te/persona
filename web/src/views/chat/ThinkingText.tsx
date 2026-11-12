@@ -1,10 +1,10 @@
 // A thought's words with their lightweight inline emphasis (lib/thinking-text.ts, after cindy's ThinkingText.tsx): paired
 // `**strong**` in medium weight, backtick code in monospace and upright; nothing else is interpreted.
-import { Fragment, memo, useMemo } from "react";
-import { tokenizeThinkingText } from "../../lib/thinking-text";
+// The caller tokenizes (tokenizeThinkingText) once and hands the tokens here, so its hover text reads the same ones.
+import { Fragment, memo } from "react";
+import type { ThinkingTextToken } from "../../lib/thinking-text";
 
-export const ThinkingText = memo(function ThinkingText({ content }: { content: string }) {
-  const tokens = useMemo(() => tokenizeThinkingText(content), [content]);
+export const ThinkingText = memo(function ThinkingText({ tokens }: { tokens: readonly ThinkingTextToken[] }) {
   return (
     <>
       {tokens.map((token, i) =>

@@ -53,7 +53,7 @@
   "plan_start": "開始",
   "plan_dismiss": "開始しない",
   "default_model": "デフォルトモデル",
-  "readonly": "読み取り専用",
+  "readonly": "読み取り専用を要求",
   "needs_answer": "回答待ち",
   "interrupted_reason": "モデルサービスのエラーで中断しました：{reason}",
   "interrupted": "モデルサービスのエラーで中断しました",

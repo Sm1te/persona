@@ -41,6 +41,9 @@ export interface WorkProps {
   workflowCalls?: WorkflowCalls;
   /** Inside an open group: a timeline's inner groups, which open with it (nestedLineDefault). */
   nested?: boolean;
+  /** Inside an open group: whether its outermost group is live. A call without its result spins while it is, in every
+   *  inner group, a finished one too (the run was over, the call may not be); nested groups keep their outer's. */
+  rowsLive?: boolean;
   /** The exchange these steps are of (its segment's id): what of it the reader opened is kept under it. */
   segment?: string;
   /** Show every tool's original input/result in place in an opened supervision trace. */
@@ -86,7 +89,8 @@ export const WorkGroup = memo(function WorkGroup({ g, p }: { g: WorkGroupNode; p
   const [loading, setLoading] = useState(false);
   const opens = workLineOpens(g, style, turnLive);
   const open = workLineOpen({ style, turnLive, remembered, liveOverride }) && opens;
-  const inside = useMemo(() => ({ ...p, nested: true }), [p]);
+  const rowsLive = p.nested ? Boolean(p.rowsLive) : g.live;
+  const inside = useMemo(() => ({ ...p, nested: true, rowsLive }), [p, rowsLive]);
   const toggle = () => {
     const next = !open;
     setOpen(next);
@@ -151,7 +155,7 @@ export const WorkGroup = memo(function WorkGroup({ g, p }: { g: WorkGroupNode; p
       )}
       <Collapse open={open} lazy>
         <div className="mt-1 flex min-w-0 flex-col gap-2 border-l-2 border-tool-rail py-[2px] pl-3" data-work-detail>
-          <WorkNodes nodes={g.children} p={inside} live={g.live} />
+          <WorkNodes nodes={g.children} p={inside} live={rowsLive} />
           {/* once, in the innermost live group: a live timeline's last run is live too */}
           {g.live && !g.children.some((c) => c.kind === "group" && c.live) && <LiveThinking mid={p.mid} sid={p.sid} />}
         </div>
@@ -210,8 +214,7 @@ export const StepView = memo(function StepView({ step, p, live, fade }: { step: 
       if (workflowCard(step, p)) return <WorkflowCallCard step={step} mid={p.mid} sid={p.sid} scope={p.scope} />;
       return <ActionRow step={step} running={live && !step.result} mid={p.mid} sid={p.sid} />;
     case "thinking":
-      // a thought without words is no row: not worth a chunk
-      return step.item.text?.trim() ? <Suspense fallback={null}><ThinkingRow item={step.item} scope={p.scope} /></Suspense> : null;
+      return <Suspense fallback={null}><ThinkingRow item={step.item} scope={p.scope} /></Suspense>;
     case "text":
       return fade ? <FreshAnswer item={step.item} mid={p.mid} sid={p.sid} /> : <Answer item={step.item} mid={p.mid} sid={p.sid} />;
     case "notice":

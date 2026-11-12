@@ -260,6 +260,19 @@ describe("the timeline inside a summary", () => {
     expect(groups(b)[0].children.map(shape)).toEqual([["t1", "blank", "t2"], "n1", ["t3"]]);
   });
 
+  it("thoughts without words are no steps (cindy draws none): no summary of them alone, no empty inner group, no split run", () => {
+    const only = blocks([user("u1", 0), think("blank", 1000, ""), say("final", "Done.", 3000)]);
+    expect(only.map((n) => (n.kind === "group" ? "g" : idOf(n)))).toEqual(["final"]);
+    expect(blocks([user("u1", 0), think("blank", 1000, "  ")], true)).toEqual([]);
+    const b = blocks([user("u1", 0), ...tool("t1", "Read", 1000), think("x1", 1500, ""), ...tool("t2", "Grep", 2000, undefined, { pattern: "x" }),
+      say("n1", "First.", 3000), think("x2", 3500, ""), say("n2", "Second.", 4000), ...tool("t3", "Bash", 5000), say("final", "Done.", 6000)]);
+    expect(groups(b)[0].children.map(shape)).toEqual([["t1", "t2"], "n1", "n2", ["t3"]]);
+    expect(folded(b, "x1")).toBe(false);
+    // the first run counts from your message as before; the call is still found
+    expect(groups(groups(b)[0].children)[0].durationMs).toBe(3000);
+    expect(groupsHolding(b, "tu-t2")).toEqual([groups(b)[0].id, groups(groups(b)[0].children)[0].id]);
+  });
+
   it("inner groups keep their keys from live to done and when narration arrives; the outer keeps its own", () => {
     const identity = "exchange-1";
     const draw = (items: Item[], live: boolean) => {

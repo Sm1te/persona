@@ -174,14 +174,17 @@ describe("thought rows (cindy's ThinkingActivityRow, #5155)", () => {
     expect(html).toContain("rounded-[8px] px-2 py-[3px]");
     expect(html).toContain("size-[18px]");
     // it fits: nothing to open (measured once drawn), so no chevron and no toggle
-    expect(html).toContain('disabled=""');
+    expect(html).not.toContain('role="button"');
     expect(html).not.toContain("aria-expanded");
+    expect(html).toContain("cursor-default");
   });
 
   it("a thought with a line break opens in place", () => {
     const html = renderToStaticMarkup(<ThinkingRow item={thought("先看测试\n再看实现")} />);
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain('disabled=""');
+    // a div with the button role, not a <button>: opened, its words can be selected
+    expect(html).toMatch(/<div role="button" tabindex="0" aria-expanded="false"/);
+    expect(html).not.toContain("<button");
     expect(html).toContain(">先看测试 再看实现<");
   });
 

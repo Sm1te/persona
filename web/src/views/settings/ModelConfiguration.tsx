@@ -2,10 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, ApiError, enc, errorText } from "../../lib/api";
 import { extRoot } from "../../lib/extension-api";
 import {
-  agentsOverride, chooseProvider, draftFor, providerAgent, providerName, modelConfiguration, modelPurpose, modelSummary, providersFor, runtimeChoices, runtimeLabel, saveModelPurpose, supportsField,
+  agentsOverride, chooseProvider, draftFor, providerAgent, providerName, modelConfiguration, modelPurpose, modelSummary, providersFor, runtimeChoices, runtimeLabel, saveModelPurpose, supportsField, withPurposeAfter,
   type ModelBinding, type ModelConfigurationBody, type ModelDraft, type ModelProvider, type ModelPurpose, type ModelPurposeBody,
 } from "../../lib/model-config";
-import { executionForm, purposeGroups, purposeLaunch } from "../../lib/model-config-execution";
+import { executionForm, purposeDescription, purposeGroups, purposeLaunch } from "../../lib/model-config-execution";
+import { SUPERVISE_PURPOSE } from "../../lib/background-supervisor";
 import { effortChoices, providerModels, takesEffort } from "../../lib/launcher-models";
 import { useStore } from "../../lib/store";
 import { t } from "../../i18n";
@@ -34,7 +35,11 @@ function ModelConfigurationForManager({ manager, open, onOpen, onProviders }: { 
   const [query, setQuery] = useState("");
   const load = async () => {
     try {
-      setData(await modelConfiguration(manager));
+      // the background supervisor's purpose is read by its own id and listed after Main chat (#5082). Only a hub that
+      // says it has none (404) lists none: any other failure is the page's error, with its retry, not a missing row
+      const absent = (e: unknown) => { if (e instanceof ApiError && e.status === 404) return undefined; throw e; };
+      const [catalog, supervise] = await Promise.all([modelConfiguration(manager), modelPurpose(SUPERVISE_PURPOSE, manager).catch(absent)]);
+      setData(withPurposeAfter(catalog, supervise?.purpose, "assistant"));
       setError("");
     } catch (e) {
       setError(e instanceof ApiError && e.status === 404 ? t("settings-modelconfiguration.unsupported") : errorText(e));
@@ -94,6 +99,7 @@ function PurposeRow({ purpose: p, providers, sourceName, onOpen }: { purpose: Mo
   const inheritance = agentsOverride(p) ? (p.override.provider || p.override.model || p.override.effort ? agentsOverrideStatus(p.override) : t("settings-modelconfiguration.lark_headless_inheritance"))
     : p.inherited_from ? t("settings-modelconfiguration.follows", { name: sourceName(p.inherited_from) ?? "" })
     : !p.status ? t("settings-modelconfiguration.custom") : "";
+  const description = purposeDescription(p);
   return <div ref={row} data-model-purpose={p.id} onMouseLeave={() => { if (!pinned) setHelp(false); }}
     onKeyDown={(event) => { if (event.key === "Escape") { setHelp(false); setPinned(false); event.stopPropagation(); } }}>
     <div className="flex items-center pr-1">
@@ -105,6 +111,7 @@ function PurposeRow({ purpose: p, providers, sourceName, onOpen }: { purpose: Mo
             {inheritance && <span className="whitespace-normal">{inheritance}</span>}
             {p.status && <span>{p.status}</span>}
           </div>
+          {description && <div data-testid="purpose-description" className="mt-1 whitespace-normal">{description}</div>}
         </>} />
       </div>
       <button type="button" className="flex size-11 shrink-0 items-center justify-center rounded-control text-ink-3 hover:bg-hover focus-visible:outline-accent"

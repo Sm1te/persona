@@ -8,6 +8,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/compat"
 	"github.com/nwverse/persona/server/internal/i18n"
+	"github.com/nwverse/persona/server/internal/proto"
 )
 
 // ---- which launchers can run the assistant's conversations ----
@@ -162,4 +163,101 @@ func agentKind(agent string) string { return cmp.Or(agent, "claude") }
 func (s *Service) mainChatRefusal(ctx context.Context, machine, launcher string) error {
 	d, _ := s.device(ctx, machine)
 	return i18n.Err("assistant-start.launcher_not_main_chat", i18n.Args{"launcher": launcher, "machine": firstNonEmpty(d.Name, machine)})
+}
+
+// ---- what can't run the assistant's conversations, and why ----
+
+// Why a launcher or provider is in the main chat picker's unavailable list (GET /api/v1/machines/{mid}/launchers?purpose=
+// assistant, #5033), besides proto.CodeLauncherOutOfScope and proto.CodeLauncherOwnService.
+const (
+	unavailableAPIProtocol = "api_protocol"  // a direct API provider speaking Responses or Chat Completions, not Messages
+	unavailableNotMainChat = "not_main_chat" // its agent or engine can't run the assistant (a Paseo provider, managed Codex…)
+)
+
+// unavailableLauncher is one launcher or provider the main chat can't run on a machine, and why in the user's words.
+type unavailableLauncher struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"` // a Persona-managed provider's own name ("" shows Name)
+	Kind        string `json:"kind"`                   // launcher | api
+	Agent       string `json:"agent,omitempty"`
+	API         string `json:"api,omitempty"` // a direct API provider's protocol: messages | responses | chat
+	Code        string `json:"code"`
+	Reason      string `json:"reason"`
+}
+
+// mainChatUnavailable lists what the main chat's model panel shows as unavailable on machine, with why in lang: the
+// machine's launchers (picker, pickerLaunchers) that can't run the assistant (fits, assistantLaunchersOf, are the ones
+// that can), then Settings › Model providers' providers that can't run it here: a direct API that speaks Responses or
+// Chat Completions, one whose agent can't, one out of the computer's device scope or skipping a computer with its
+// own sign-in. Hidden launchers stay out, and so does a provider that would run here but is not listed for another
+// reason (a failed health check, a list that has not come yet): nothing here refuses it.
+func (s *Service) mainChatUnavailable(ctx context.Context, machine string, picker, fits []ConfiguredLauncher, lang i18n.Lang) []unavailableLauncher {
+	ctx = withSettingsMemo(ctx)
+	out := []unavailableLauncher{}
+	seen := map[string]bool{}
+	for _, l := range fits {
+		seen[l.Name] = true
+	}
+	for _, name := range s.hiddenLaunchers(ctx) {
+		seen[name] = true
+	}
+	stored := s.storedLaunchers(ctx)
+	managed := func(name string) (storedLauncher, bool) {
+		i := slices.IndexFunc(stored, func(l storedLauncher) bool { return l.Name == name })
+		if i < 0 {
+			return storedLauncher{}, false
+		}
+		return stored[i], true
+	}
+	d, _ := s.device(ctx, machine)
+	notMainChat := i18n.T(lang, "assistant-model_pick.unavailable_not_main_chat", i18n.Args{"machine": firstNonEmpty(d.Name, machine)})
+	for _, l := range picker {
+		if seen[l.Name] {
+			continue
+		}
+		seen[l.Name] = true
+		u := unavailableLauncher{Name: l.Name, Kind: "launcher", Agent: cmp.Or(l.AgentType, l.Agent), Code: unavailableNotMainChat, Reason: notMainChat}
+		if m, ok := managed(l.Name); ok {
+			u.DisplayName = m.DisplayName
+		}
+		out = append(out, u)
+	}
+	p, err := s.modelPurposeDef(ctx, "assistant")
+	p.MachineID = "" // what the provider is, its scope apart: that is the next reason
+	for _, l := range stored {
+		if seen[l.Name] {
+			continue
+		}
+		seen[l.Name] = true
+		kind := cmp.Or(l.Kind, "launcher")
+		u := unavailableLauncher{Name: l.Name, DisplayName: l.DisplayName, Kind: kind, Agent: l.Agent}
+		if kind == "api" {
+			u.Agent, u.API = "", cmp.Or(l.API, "messages")
+		}
+		switch {
+		case kind == "api" && !messagesAPI(l.API):
+			u.Code, u.Reason = unavailableAPIProtocol, apiProtocolText(lang, l.API)
+		case err == nil && !s.modelProviderCompatible(p, ModelProvider{ID: "launcher." + l.Name, Kind: kind, Agent: l.Agent, API: l.API}, stored):
+			u.Code, u.Reason = unavailableNotMainChat, notMainChat
+		case s.scopeReason(l, machine) != "":
+			u.Code, u.Reason = proto.CodeLauncherOutOfScope, s.scopeText(ctx, lang, s.scopeReason(l, machine), l, machine)
+		case !s.usableOn(ctx, l, machine): // its own-service rule, as the node said
+			u.Code, u.Reason = proto.CodeLauncherOwnService, s.ownServiceErr(ctx, lang, l, machine).Error()
+		default:
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
+}
+
+// apiProtocolText says in lang why a direct API provider speaking api can't run the assistant's conversations.
+func apiProtocolText(lang i18n.Lang, api string) string {
+	switch api {
+	case "responses":
+		return i18n.T(lang, "assistant-model_pick.unavailable_api_responses")
+	case "chat":
+		return i18n.T(lang, "assistant-model_pick.unavailable_api_chat")
+	}
+	return i18n.T(lang, "assistant-model_pick.unavailable_api_other", i18n.Args{"api": api})
 }

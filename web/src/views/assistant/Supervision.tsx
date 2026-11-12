@@ -110,33 +110,43 @@ function ReportBody({ item, title, onOpenTask }: { item: FeedItem; title: string
 }
 
 /** A review in the conversation (feed kind "review"): the verdict and the supervisor's note. A note cut at the line's
- *  end opens in full on a click (what to decide, what is missing, #4861), as an answered card's line does. */
-export function ReviewLine({ item, title, onOpenTask }: { item: FeedItem; title: string; onOpenTask?: () => void }) {
+ *  end opens in full on a click (what to decide, what is missing, #4861), as an answered card's line does. `by`: who
+ *  reviewed when it was not this conversation (the background supervisor, #5082), said before the task. With it the
+ *  line has one more thing to fit: the reviewer and the task give way (each cut with an ellipsis) and the verdict and
+ *  the note's arrow keep their room, so a phone's width cuts names, never the verdict (`fit`). */
+export function ReviewLine({ item, title, by, onOpenTask }: { item: FeedItem; title: string; by?: string; onOpenTask?: () => void }) {
   const body = (item.body ?? {}) as { verdict?: string; round?: number; note?: string };
   const [open, setOpen] = useState(false);
   const { ref, cut } = useClamped<HTMLSpanElement>(open, "x");
   const expandable = Boolean(body.note) && (cut || open);
+  const fit = Boolean(by);
   return (
     <div data-testid="review-line" className={cx("flex max-w-full min-w-0 flex-col self-start bg-field text-[12px] text-ink-2", open ? "w-full rounded-card" : "rounded-full")}>
       <div className="flex min-w-0 items-center gap-1.5 px-3 py-1.5">
         <Icon name="target" size={12} className="shrink-0" />
+        {by && (
+          <span className="flex min-w-0 items-center gap-1">
+            <span data-testid="review-by" className="min-w-0 truncate">{by}</span>
+            <span className="shrink-0">·</span>
+          </span>
+        )}
         {onOpenTask ? (
-          <button type="button" onClick={onOpenTask} className="max-w-[45%] shrink-0 truncate text-left hover:text-ink hover:underline">
+          <button type="button" onClick={onOpenTask} className={cx("max-w-[45%] truncate text-left hover:text-ink hover:underline", fit ? "min-w-0" : "shrink-0")}>
             {title}
           </button>
         ) : (
-          <span className="max-w-[45%] shrink-0 truncate">{title}</span>
+          <span className={cx("max-w-[45%] truncate", fit ? "min-w-0" : "shrink-0")}>{title}</span>
         )}
         <button
           type="button"
           aria-expanded={expandable ? open : undefined}
           disabled={!expandable}
           onClick={() => setOpen(!open)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left enabled:cursor-pointer"
+          className={cx("flex flex-1 items-center gap-1.5 text-left enabled:cursor-pointer", fit ? "min-w-max" : "min-w-0")}
         >
           <span className="shrink-0 whitespace-nowrap font-semibold">· {reviewVerdictLabel(body.verdict ?? "", body.round)}</span>
           {body.note && !open && (
-            <span ref={ref} className="min-w-0 flex-1 truncate">
+            <span ref={ref} className={cx("min-w-0 flex-1 truncate", fit && "w-0")}>
               {body.note}
             </span>
           )}

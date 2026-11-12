@@ -1,0 +1,16 @@
+{
+  "err_role": "会話のモデルを変更するにはフルアクセスが必要です。",
+  "err_launcher_required": "この会話のモデルプロバイダーを選んでください",
+  "err_effort": "不明な思考レベルです：{effort}",
+  "err_no_conversation": "このアシスタントの会話は {machine} にありません",
+  "err_guest": "ゲストの会話は開始時のモデルのままです",
+  "err_not_main_chat": "「{launcher}」は {machine} で Agent を起動できますが、アシスタントの会話は実行できません。別のものを選んでください。",
+  "err_locked": "「{launcher}」は自分でモデルを指定しているため、ほかのモデルは選べません。モデルを指定せずに選んでください。",
+  "err_no_model": "「{launcher}」ではモデルを選べません。モデルを指定せずに選んでください。",
+  "unavailable_not_main_chat": "{machine} で Agent を起動できますが、アシスタントの会話は実行できません",
+  "unavailable_api_responses": "Responses API で接続しています。アシスタントの会話には Claude Code か Messages API の接続が必要です",
+  "unavailable_api_chat": "Chat Completions API で接続しています。アシスタントの会話には Claude Code か Messages API の接続が必要です",
+  "unavailable_api_other": "{api} API で接続しています。アシスタントの会話には Claude Code か Messages API の接続が必要です",
+  "err_invalid_id": "会話 ID ではありません",
+  "err_unreadable": "会話ごとのモデルの選択を読み込めませんでした。少し待ってからもう一度お試しください。"
+}

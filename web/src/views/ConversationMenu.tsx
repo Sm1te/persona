@@ -1,6 +1,7 @@
 // A Persona conversation's menu in the sidebar (the iOS sidebar's long press, Android's drawer): "设为常驻" / "取消常驻",
 // "Rename…", "Archive", "Copy session ID", then "End…" while it runs. The main conversation is never a lead, renamed or
-// archived. All of it is the hub's (the same calls as "All chats"): 设为常驻 makes the chat a leader (#4331,
+// archived; the background supervisor (#5082, lib/background-supervisor.ts) is built in and only has "Copy session ID".
+// All of it is the hub's (the same calls as "All chats"): 设为常驻 makes the chat a leader (#4331,
 // POST …/directions/{id}/make), 取消常驻 ends it (…/end; the tasks it handed out keep their supervisor).
 import { api, enc, errorText, sessionPath } from "../lib/api";
 import { sessionTitle } from "../lib/format";
@@ -69,8 +70,11 @@ export function leaderItem(s: Session, leader: boolean, deps: ConversationMenuDe
   };
 }
 
-/** `leader`: the conversation is a leader (常驻) now. */
-export function conversationMenuItems(s: Session, o: { main: boolean; leader?: boolean }, deps: ConversationMenuDeps = conversationMenuDeps): MenuItem[] {
+/** `leader`: the conversation is a leader (常驻) now. `builtIn`: it is the background supervisor, which the hub keeps
+ *  listed and running: no 设为常驻, Rename, Archive or End. */
+export function conversationMenuItems(s: Session, o: { main: boolean; leader?: boolean; builtIn?: boolean }, deps: ConversationMenuDeps = conversationMenuDeps): MenuItem[] {
+  const copy: MenuItem = { key: "copy", label: t("conversation-menu.copy_id"), icon: "copy", accel: "c", onSelect: () => void deps.copy(s.session_id) };
+  if (o.builtIn) return [copy];
   const title = sessionTitle(s);
   const own: MenuItem[] = o.main
     ? []
@@ -110,7 +114,7 @@ export function conversationMenuItems(s: Session, o: { main: boolean; leader?: b
       ];
   return [
     ...own,
-    { key: "copy", label: t("conversation-menu.copy_id"), icon: "copy", accel: "c", onSelect: () => void deps.copy(s.session_id) },
+    copy,
     ...(conversationLive(s)
       ? [
           {
@@ -134,8 +138,8 @@ export function conversationMenuItems(s: Session, o: { main: boolean; leader?: b
 }
 
 /** The menu of a row (`at`: where a right click opened it; without it, beside `anchor`). */
-export function ConversationRowMenu({ s, main, leader, anchor, at, onClose }: { s: Session; main: boolean; leader?: boolean; anchor: HTMLElement; at?: MenuAt; onClose: () => void }) {
+export function ConversationRowMenu({ s, main, leader, builtIn, anchor, at, onClose }: { s: Session; main: boolean; leader?: boolean; builtIn?: boolean; anchor: HTMLElement; at?: MenuAt; onClose: () => void }) {
   const p = at ?? { anchor };
-  return <Menu anchor={p.anchor ?? null} point={p.point} onClose={onClose} align="right" width={200} items={conversationMenuItems(s, { main, leader })} />;
+  return <Menu anchor={p.anchor ?? null} point={p.point} onClose={onClose} align="right" width={200} items={conversationMenuItems(s, { main, leader, builtIn })} />;
 }
 

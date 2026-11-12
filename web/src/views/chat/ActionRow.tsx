@@ -25,7 +25,7 @@ import { edgeMask, useEdgeFade } from "./edge-fade";
 import { Thumb } from "./Steps";
 import { t } from "../../i18n";
 
-/** The row's chrome, shared with the thought rows (ThinkingCard.tsx) so a mixed list reads as one (cindy's
+/** The row's chrome, shared with the thought rows (ThinkingRow.tsx) so a mixed list reads as one (cindy's
  *  activityRowChrome): radius, padding, the hover lift. On a touch screen a row is a finger tall (40). */
 export const ROW_CHROME = "flex w-full min-w-0 gap-1.5 rounded-[8px] px-2 py-[3px] [@media(pointer:coarse)]:min-h-10 text-left";
 export const ROW_HOVER = "group select-none transition-colors duration-150 hover:bg-tool-hover motion-reduce:transition-none";

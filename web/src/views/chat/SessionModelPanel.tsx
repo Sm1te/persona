@@ -2,9 +2,11 @@
 // tap (ModelPill.tsx AgentModelPill, which also starts reading the lists): the shared panel (ui/model-panel) fed with the
 // session's providers and state (lib/session-panel.ts), its picks applied through POST …/modes. On a hub with the
 // in-session switch (#5035) a pick on another launcher is recorded for the next message, which a toast says.
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { t } from "../../i18n";
+import { api, enc, pastHub } from "../../lib/api";
 import type { PanelConfig } from "../../lib/model-panel";
+import type { LauncherQuotaAnswer } from "../../lib/quota";
 import { sessionLauncher } from "../../lib/model-switch";
 import { LAUNCHER_SWITCH_FEATURE, pickPlan, sessionPanel, speedStep, type ModeStep } from "../../lib/session-panel";
 import { forgetModel, machineLauncherList, modelList, pendingView, readModels, useModelLists } from "../../lib/session-models";
@@ -32,6 +34,25 @@ export function SessionModelPanel({ session, anchor, onClose }: { session: Sessi
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` stands for what was read
     [session, launchers, mid, version, switching],
   );
+  const [quotas, setQuotas] = useState<Readonly<Record<string, LauncherQuotaAnswer>>>({});
+  const providerIDs = JSON.stringify(providers.map((p) => p.id));
+  useEffect(() => {
+    let dead = false;
+    setQuotas({});
+    for (const name of JSON.parse(providerIDs) as string[]) {
+      // No refresh=1: the hub's one-minute answer is the cheap read; unsupported gateways simply draw no bar.
+      api<LauncherQuotaAnswer>(`/launchers/${enc(name)}/quota?machine=${enc(mid)}`, { timeout: pastHub(45_000) })
+        .then((answer) => {
+          if (!dead) setQuotas((was) => ({ ...was, [name]: answer }));
+        })
+        .catch(() => {});
+    }
+    return () => {
+      dead = true;
+    };
+    // providerIDs stands for the launchers, not every model-list refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mid, providerIDs]);
 
   const apply = async (steps: ModeStep[]) => {
     for (const step of steps) {
@@ -72,6 +93,7 @@ export function SessionModelPanel({ session, anchor, onClose }: { session: Sessi
       onApplyCurrent={onApplyCurrent}
       onReload={onReload}
       onForget={onForget}
+      quotas={quotas}
       currentExtra={ultracode ? <UltracodeSwitchRow session={session} /> : undefined}
     />
   );

@@ -56,6 +56,7 @@ import { StatusMark } from "../../ui/StatusMark";
 import { useClamped } from "../../ui/use-clamped";
 import { Icon, type IconName } from "../../ui/icons";
 import { ReportLine, ReviewBadge, ReviewLine } from "./Supervision";
+import { reviewedInBackground } from "../../lib/background-supervisor";
 import { AcceptRow, BriefCard } from "./Brief";
 
 // A plan task's brief (#3822) comes with the first plan card that has one, as the decision row does.
@@ -667,6 +668,19 @@ export function TaskLine({ todoId }: { todoId: string }) {
 
 // ── the hub's lines ──
 
+/** A review the background supervisor made (#5082, lib/background-supervisor.ts), in one line: who, the task (which it
+ *  opens), the verdict. A task the page no longer lists keeps the title the entry was written with. */
+function BackgroundReviewLine({ item, title, known }: { item: FeedItem; title: string; known: boolean }) {
+  return (
+    <ReviewLine
+      item={item}
+      title={known ? title : field(item, "title") || title}
+      by={t("assistant-conversations.background_supervisor")}
+      onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined}
+    />
+  );
+}
+
 // Memoized: the chat re-renders on every streamed item and session push, while an item keeps its identity until its body
 // changes (mergeInto); the plan, todo and "Later" it shows come through its own selectors.
 export const FeedLineView = memo(function FeedLineView({ item, simplified = false }: { item: FeedItem; simplified?: boolean }) {
@@ -685,6 +699,8 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
     if (item.kind === "task") return planned ? null : <TaskHandoffs item={item} />;
     // an interrupted receipt the hub worked out stays as its record (#3834): one card for a batch, a grey line once handled
     if (item.kind === "receipt" && interruptLook(item)) return <ReceiptCard item={item} />;
+    // a review the background supervisor made took no turn of this chat, so its line is what says it happened (#5082)
+    if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
     if (item.kind === "review" || item.kind === "receipt" || item.kind === "report") return null;
     if (item.kind === "message" && !cardSent(item) && !cardFiled(item)) return null;
   }
@@ -698,6 +714,7 @@ export const FeedLineView = memo(function FeedLineView({ item, simplified = fals
     case "receipt":
       return <ReceiptCard item={item} />;
     case "review":
+      if (reviewedInBackground(item)) return <BackgroundReviewLine item={item} title={title} known={known} />;
       return <ReviewLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;
     case "report":
       return <ReportLine item={item} title={title} onOpenTask={known && item.ref ? () => openTask(item.ref!) : undefined} />;

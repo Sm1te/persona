@@ -1373,8 +1373,10 @@ struct ChatView: View {
         case .apiError(let item, let info, let count):
             // Retry only when the error is the last thing, the agent is not working (someone may have retried already) and
             // trying again can help (not a login or a bad request).
+            // Not when the fallback model is missing (#4489): Continue would go to the same model.
             APIErrorCard(info: info, count: count, at: item.ts,
                          retry: info.transient != false && !status.isActive && currentLines().last?.id == line.id
+                             && model.session(key)?.turnErrorCode != ModelFallbackText.unavailableCode
                              ? { model.sendNow(key, text: "继续") } : nil) // i18n-ignore
         case .userImages(_, let items):
             // Close to the bubble below it, like the photos on a message being sent (the list's spacing is 14).
@@ -4883,6 +4885,11 @@ struct Composer: View, Equatable {
             // A resume turned ultracode off (#1307): one line to turn it back on, or dismiss.
             if let s = model.session(key), Ultracode.lostShown(s, features: model.features(key.group)) {
                 UltracodeLostNote(key: key, session: s)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            // After an upstream refusal the session runs on a fallback model (#4489): which, and the way back.
+            if let s = model.session(key), s.modelFallback != nil {
+                ModelFallbackCard(key: key, session: s, working: status.isActive)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if isMain {

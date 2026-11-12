@@ -389,10 +389,14 @@ func fullIndexItems(mid string, list []proto.Session, encoded []sentSession) []s
 		}
 		kids := row.Children()
 		foldedWaiting := row.BackgroundWaiting && kids.Working == 0 && kids.NeedsYou == 0
+		var fold *sessionlist.Fold // none: folded under nothing, shown with its own state and background wait
+		if f := (sessionlist.Fold{Root: root, State: row.FoldedState(), BackgroundWaiting: foldedWaiting}); f != (sessionlist.Fold{State: row.State, BackgroundWaiting: row.BackgroundWaiting}) {
+			fold = &f
+		}
 		items = append(items, sessionlist.Item{
 			ID: string(id), Machine: mid, Project: cmp.Or(row.RepoRoot, row.WorkspaceCwd, row.Cwd), Group: cmp.Or(row.SpaceID, row.WorkspaceID),
 			PaneSource: sessionorigin.Of(row), State: row.State, BackgroundWaiting: row.BackgroundWaiting, Source: row.SourceKind,
-			Provider: row.Agent, UpdatedAt: row.UpdatedAt, Root: root, FoldedState: row.FoldedState(), FoldedBackgroundWaiting: foldedWaiting,
+			Provider: row.Agent, UpdatedAt: row.UpdatedAt, Fold: fold,
 			SearchText: strings.Join([]string{row.Title, row.Cwd, row.RepoRoot, row.Branch, row.SpaceName, row.SlotName, row.AgentName, row.LastText}, "\n"),
 			Summary:    json.RawMessage(summary),
 			Full: runtimeListFields(full[row.SessionID], struct {

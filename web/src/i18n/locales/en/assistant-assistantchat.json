@@ -1,17 +1,4 @@
 {
-  "launchers_failed": "Couldn't load launchers: {error}",
-  "launchers_loading": "Loading launchers…",
-  "launchers_none": "No launcher on this computer can run Persona",
-  "using_model": "Using {launcher} · {model} from the next message",
-  "using_default_model": "Using {launcher}'s default model from the next message",
-  "back_to_launchers": "← Launchers",
-  "default_model": "Default model",
-  "models_loading": "Loading models…",
-  "launcher_chip_title": "Launcher, used from the next message",
-  "models_header": "Models: {launcher}",
-  "from_next_message": "Used from the next message",
-  "new_chat_launcher_title": "Launcher for new chats",
-  "new_chat_uses": "New chats use",
   "details": "Details",
   "knowledge": "Knowledge",
   "back_to_main": "Back to main chat",
@@ -33,11 +20,5 @@
   "new_main": "New main chat",
   "new_main_body": "The current main chat will be archived as \"{title}\" and you can find it under Archived. The new main chat starts with your next message.",
   "carry_summary": "Bring a summary of the old chat",
-  "carry_summary_hint": "Without compacting, only the last few messages come along. For a full summary, compact the context first.",
-  "typed_before": "Typed before",
-  "other_model": "Other model…",
-  "model_id_placeholder": "Model ID, e.g. vendor/model-name",
-  "forget_typed": "Forget a typed model",
-  "forget_failed": "Couldn't forget “{id}”: {error}",
-  "pick_dropped": "{launcher} can’t run assistant chats, so this is back on the default launcher"
+  "carry_summary_hint": "Without compacting, only the last few messages come along. For a full summary, compact the context first."
 }

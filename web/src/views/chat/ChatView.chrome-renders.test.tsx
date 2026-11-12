@@ -164,6 +164,15 @@ it("the assistant: the header draws again only when what its face reads changes"
   expect(renders.chips).toBe(0);
 });
 
+it("a Persona conversation's composer has the model pill, an Agent's too (#5032, #5033)", async () => {
+  await open(<ChatView mid="mac" sid="s1" assistant />);
+  expect(host.querySelector("button[data-model-pill]")).not.toBeNull();
+  expect(host.querySelector(`button[title="${t("chat-sessiondialogs.effort")}"]`)).toBeNull(); // no effort chip
+  act(() => root.render(<></>));
+  await open(<ChatView mid="mac" sid="s1" inPage />);
+  expect(host.querySelector("[data-model-pill]")).not.toBeNull();
+});
+
 it("a Persona conversation's subtitle: its age moves on with the clock while nothing is pushed", async () => {
   // only the clock and intervals are fake: the pushes and fetches above still settle on real timeouts
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });

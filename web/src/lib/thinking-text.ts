@@ -94,5 +94,5 @@ export function tokenizeThinkingText(value: string): ThinkingTextToken[] {
   return tokens;
 }
 
-/** The thought as plain words, markers dropped (a row's hover text). */
-export const thinkingPlainText = (value: string): string => tokenizeThinkingText(value).map((t) => t.value).join("");
+/** The thought as plain words, markers dropped (a row's hover text), from the tokens it is drawn with. */
+export const thinkingPlainText = (tokens: readonly ThinkingTextToken[]): string => tokens.map((t) => t.value).join("");

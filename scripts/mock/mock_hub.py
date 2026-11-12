@@ -705,9 +705,9 @@ SESSIONS = [
          "搜索做好了，支持按食材和用时筛选。", space_kind=None, space_id=None, space_name=None, slot_id=None, slot_name=None),
 ]
 
-# #2430 agent-details: what the node reads off a transcript for the "Show details on agent rows" line and the session header's
-# context bar — the model id as Claude Code records it, the latest reply's input tokens, the model's window. Some
-# sessions say nothing (no reply yet, a model the node does not know), as real ones do.
+# #2430 agent-details: what the node reads off a transcript for the "Show details on agent rows" line and the usage row
+# below the composer (#5056) — the model id as Claude Code records it, the latest reply's input tokens, the model's window.
+# Some sessions say nothing (no reply yet, a model the node does not know), as real ones do.
 _CONTEXT = {
     WIDGET: ("claude-opus-5-5", 78_000, 200_000),            # 39% used, 61% left
     TESTS: ("claude-sonnet-5-5", 31_000, 200_000),           # 16% used
@@ -5937,6 +5937,15 @@ if MOCK_TASKS:
             _feed("feed_r3", 3.5, "report", "todo_task_tests", {"kind": "question", "text": "统一用 snake_case 还是 camelCase 命名新接口？", "later": True}),
             _feed("feed_r2", 3, "routed", "todo_task_tests", {"text": "用协议注入，先改网络层那 6 个文件", "interrupted": True, "from": "assistant"}),
         ]
+    # MOCK_BACKGROUND_SUPERVISOR=1 (#5082): the reviews in the main chat's feed are the background supervisor's (`by`),
+    # so the chat shows each as its line; without MOCK_TASKS_REPORTS there is one, the release notes accepted.
+    if BACKGROUND_SUPERVISOR:
+        if not any(_i["kind"] == "review" for _i in TASK_FEED[ASK1]):
+            TASK_FEED[ASK1].append(_feed("feed_bg1", 18, "review", "todo_task_release", {
+                "title": "整理发布说明", "verdict": "accepted", "note": "写在 docs/release-notes.md，7 个 PR 都在里面"}))
+        for _i in TASK_FEED[ASK1]:
+            if _i["kind"] == "review":
+                _i["body"]["by"] = "background"
     # MOCK_BRIEFS=1 (#3822, docs/assistant/unified-entry.md "Briefs"): tasks carry the brief they are held to. The open
     # plan's task has a real one (the owner's own words, long enough to be cut, the goal, criteria, time and what is out
     # of bounds). The widget fix has a real one too, taken over twice (a lineage of three), with one scope change and an
@@ -10632,9 +10641,9 @@ _CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 LAUNCHER_MODELS = {
     "claude": {"agent": "claude", "models": [
         {"id": "default", "name": "Default (recommended)", "description": "Use the default model (currently claude-opus-5-5)", "resolved": "claude-opus-5-5", "default": True, "efforts": _CLAUDE_EFFORTS},
-        {"id": "fable", "name": "Fable", "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks", "resolved": "claude-fable-5-1", "efforts": _CLAUDE_EFFORTS},
-        {"id": "opus", "name": "Opus 5.5", "description": "Opus 5.5 · Best for everyday complex work", "resolved": "claude-opus-5-5", "efforts": _CLAUDE_EFFORTS},
-        {"id": "sonnet", "name": "Sonnet 5.5", "description": "Sonnet 5.5 · Fast and capable", "resolved": "claude-sonnet-5-5", "efforts": ["low", "medium", "high", "max"]},
+        {"id": "fable", "name": "Fable", "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks", "resolved": "claude-fable-5-1", "efforts": _CLAUDE_EFFORTS, "price": {"input": 10, "output": 50, "cache_read": 0.25}},
+        {"id": "opus", "name": "Opus 5.5", "description": "Opus 5.5 · Best for everyday complex work", "resolved": "claude-opus-5-5", "efforts": _CLAUDE_EFFORTS, "price": {"input": 4, "output": 20, "cache_read": 0.2}},
+        {"id": "sonnet", "name": "Sonnet 5.5", "description": "Sonnet 5.5 · Fast and capable", "resolved": "claude-sonnet-5-5", "efforts": ["low", "medium", "high", "max"], "price": {"input": 2, "output": 10, "cache_read": 0.1}},
         {"id": "haiku", "name": "Haiku 5.5", "description": "Haiku 5.5 · Fastest for quick answers", "resolved": "claude-haiku-5-5"},
         {"id": "gateway/glm-5.3", "name": "glm-5.3", "description": "From gateway", "efforts": ["low", "medium", "high"]},
         {"id": "gateway/deepseek-v4", "name": "deepseek-v4", "description": "From gateway", "efforts": ["low", "medium", "high"]},
@@ -10763,6 +10772,10 @@ LAUNCHER_QUOTAS = {  # as a quota plugin would answer (docs/extensions/extension
              "models": [{"model": "example-flash", "windows": [_w("TPM", 0.02, 8400, 500000, "tokens")]}]},
             {"name": "供应商 B", "state": "unsupported", "detail": "上游没有额度接口，只有网关统计"}]},
 }
+if os.environ.get("MOCK_MODEL_PANEL_USAGE"):
+    # A critical weekly bar beside cc_main's / cc_team's ordinary ones (#5056); all values are synthetic.
+    LAUNCHER_QUOTAS["claude"] = {"gateway": "example-subscription", "pools": [
+        {"name": "示例订阅", "state": "available", "windows": [_w("每周", 0.95, resets=later(hours=36))]}]}
 # "Add provider" › "Add from plugin" (docs/extensions/extensions.md "Model providers"): the providers made-up plugins offer (GET /api/v1/launchers/presets).
 LAUNCHER_PRESETS = [
     {"id": "example-gateway/team", "plugin": "example-gateway", "name": "示例网关 · 团队", "description": "团队共用的 Claude Code 网关，按 Key 计费",
@@ -10904,6 +10917,8 @@ def machine_launchers(mid=""):
     display name."""
     out = [{"name": "claude", "model": "opus"}, {"name": "sonnetcc", "model": "sonnet"},
            {"name": "codex", "model": "gpt-5.5", "agent": "codex", "agent_type": "codex"}]
+    if os.environ.get("MOCK_MODEL_PANEL_USAGE"):
+        out += [{"name": "cc_main", "model": "opus"}, {"name": "cc_team", "model": "example-pro"}]
     if NEW_AGENT_PANEL and mid == "studio":
         out = [l for l in out if l["name"] != "codex"]
     if MOCK_PROVIDERS:
@@ -22858,7 +22873,7 @@ def work_timeline_live(send, mid, sid):
     threading.Thread(target=run, daemon=True).start()
 
 
-MOCK_HELP.append("MOCK_WORK_TIMELINE=1  工作摘要展开成 cindy 的时间线（#5155）：天气 Agent（WORKTL）一轮做完、一轮在做，中间有叙述、有字和没字的思考；Persona 主对话同样一轮做完一轮在做；声明了 session_live 的连接订阅这两个会话时每 5 秒推一次「在思考」")
+MOCK_HELP.append("MOCK_WORK_TIMELINE=1  work summaries that open to cindy's timeline (#5155): the weather Agent (WORKTL) and the Persona main conversation each have a finished and a live turn, with narration between runs of steps and thoughts with and without words; a connection that declared session_live and subscribes to either is told every 5 s that it is thinking")
 
 
 # ---------- MOCK_CHAT_CARDS: a crowded composer on a phone (#1996) ----------
@@ -23886,6 +23901,112 @@ MOCK_HELP.append("MOCK_ULTRACODE=1  Claude Code 的 ultracode 开关（#3428）�
 MOCK_HELP.append("MOCK_CUSTOM_MODELS=1|forgetfail|empty|fail  手动输入模型 ID（#1644）：features 带 typed_models；Claude Code / Codex 的模型列表后面带输入过的 ID（custom），"
                  "DELETE …/models/custom?model= 忘掉；新建和 …/modes 用了列表里没有的 ID 就记下。forgetfail：忘掉回 500；empty：Claude Code 的列表是空的；"
                  "fail：读不到列表（502）。GET /mock/custom_models 看记着的，?reset=1 复原")
+
+# A Persona chat's own model (#5033, docs/assistant/model-config.md "A conversation's own model"): MOCK_MODEL_PICK=1
+# advertises `assistant_model_pick`; the main chat's launchers (`?purpose=assistant`) are plain claude, the locked
+# sonnetcc, a Messages-protocol direct API ("Team API", which has no /model list) and codex, with the default and an
+# `unavailable` list (a Responses direct API, a provider out of the computer's scope); PUT / DELETE
+# /api/v1/assistant/conversations/{id}/model keep or drop `model_pick` on the conversation (the out-of-scope one is 409
+# launcher_out_of_scope, an unknown one 409 launcher_missing, another agent than the chat's 409 launcher_other_kind, a
+# model with sonnetcc 400). =picked: the second chat starts
+# with a pick. GET /mock/model_pick: the requests; ?reset=1 drops every pick.
+MODEL_PICK_MODE = os.environ.get("MOCK_MODEL_PICK", "")
+MODEL_PICK_LOG = []
+MODEL_PICK_LAUNCHERS = [
+    {"name": "claude", "model": "opus", "source": "builtin"},
+    {"name": "sonnetcc", "model": "sonnet", "source": "zshrc"},
+    {"name": "team-api", "display_name": "Team API", "model": "claude-sonnet-5-5", "source": "persona"},
+    {"name": "codex", "model": "gpt-5.5", "agent": "codex", "agent_type": "codex", "source": "builtin"},
+]
+MODEL_PICK_REASONS = {
+    "api_protocol": {"en": "This direct API speaks the Responses protocol, which can't run Persona chats",
+                     "zh-Hans": "这个直连 API 用的是 Responses 协议，跑不了 Persona 对话",
+                     "ja": "この直接 API は Responses プロトコルのため、Persona のチャットを実行できません"},
+    "launcher_out_of_scope": {"en": "This provider is only for MacBook, not this computer",
+                              "zh-Hans": "这个服务商只给 MacBook 用，不在这台电脑上",
+                              "ja": "このプロバイダーは MacBook 専用で、このコンピューターでは使えません"},
+    "launcher_other_kind": {"en": "This conversation runs on another agent; start a new conversation to use this launcher",
+                            "zh-Hans": "这个对话跑在另一种 Agent 上，要用这个启动器得新开对话",
+                            "ja": "この会話は別のエージェントで動いています。このランチャーを使うには新しい会話を始めてください"},
+}
+if MODEL_PICK_MODE:
+    LAUNCHER_MODELS["team-api"] = {"agent": "claude", "models": []}
+
+
+def model_pick_reset():
+    for s in ASSISTANT:
+        s.pop("model_pick", None)
+    if MODEL_PICK_MODE == "picked":
+        for s in ASSISTANT:
+            if s["session_id"] == ASK2:
+                s["model_pick"] = {"launcher": "team-api", "effort": "medium"}
+
+
+def model_pick_route(handler, p, body):
+    """MOCK_MODEL_PICK: the main chat's launchers with `unavailable`, PUT / DELETE …/conversations/{id}/model. False otherwise."""
+    if not MODEL_PICK_MODE: return False
+    query = parse_qs(urlparse(handler.path).query)
+    lang = cron_lang(handler.headers.get("Accept-Language"))
+    if p == "/mock/model_pick":
+        if query.get("reset"):
+            model_pick_reset()
+            push_machine(ASSISTANT_CONFIG["machine_id"])
+        return handler.send_json({"requests": MODEL_PICK_LOG}) or True
+    if handler.command == "GET" and re.fullmatch(r"/api/v1/machines/[^/]+/launchers", p) and query.get("purpose") == ["assistant"]:
+        return handler.send_json({
+            "launchers": [dict(l) for l in MODEL_PICK_LAUNCHERS],
+            "default": {"provider": "claude", "model": "opus", "effort": "high"},
+            "unavailable": [
+                {"name": "gpt-direct", "display_name": "GPT direct", "kind": "api", "api": "responses", "code": "api_protocol", "reason": MODEL_PICK_REASONS["api_protocol"][lang]},
+                {"name": "far-gw", "display_name": "Far gateway", "kind": "launcher", "code": "launcher_out_of_scope", "reason": MODEL_PICK_REASONS["launcher_out_of_scope"][lang]},
+            ]}) or True
+    m = re.fullmatch(r"/api/v1/assistant/conversations/([^/]+)/model", p)
+    if not m or handler.command not in ("PUT", "DELETE"): return False
+    s = next((x for x in ASSISTANT if x["session_id"] == m.group(1)), None)
+    if s is None: return handler.send_json({"error": "conversation not found"}, 404) or True
+    req = json.loads(body or b"{}") if handler.command == "PUT" else {}
+    MODEL_PICK_LOG.append({"method": handler.command, "session_id": s["session_id"], **{k: req[k] for k in ("launcher", "model", "effort") if k in req}})
+    if handler.command == "DELETE":
+        s.pop("model_pick", None)
+        push_machine(s["machine_id"])
+        return handler.send_json({"ok": True}) or True
+    launcher = req.get("launcher") or ""
+    if launcher == "far-gw":
+        return handler.send_json({"error": MODEL_PICK_REASONS["launcher_out_of_scope"][lang], "code": "launcher_out_of_scope"}, 409) or True
+    if launcher not in {l["name"] for l in MODEL_PICK_LAUNCHERS}:
+        return handler.send_json({"error": "%s is not on this computer" % launcher, "code": "launcher_missing"}, 409) or True
+    picked = next((l.get("agent_type") or "claude" for l in MODEL_PICK_LAUNCHERS if l["name"] == launcher), "claude")
+    if picked != (s.get("agent") or "claude"):
+        return handler.send_json({"error": MODEL_PICK_REASONS["launcher_other_kind"][lang], "code": "launcher_other_kind"}, 409) or True
+    if launcher == "sonnetcc" and req.get("model"):
+        return handler.send_json({"error": "sonnetcc sets its own model"}, 400) or True
+    pick = {k: req[k] for k in ("launcher", "model", "effort") if req.get(k)}
+    s["model_pick"] = pick
+    push_machine(s["machine_id"])
+    return handler.send_json({"ok": True, "model_pick": pick}) or True
+
+
+if MODEL_PICK_MODE:
+    model_pick_reset()
+
+_plugins_route_without_model_pick = plugins_route
+
+
+def plugins_route(handler, p, body):
+    return model_pick_route(handler, p, body) or _plugins_route_without_model_pick(handler, p, body)
+
+
+_features_without_model_pick = features
+
+
+def features():
+    return _features_without_model_pick() + (["assistant_model_pick"] if MODEL_PICK_MODE else [])
+
+
+MOCK_HELP.append("MOCK_MODEL_PICK=1|picked  Persona 对话自己的模型（#5033）：features 带 assistant_model_pick；主对话的启动器（?purpose=assistant）带默认和 unavailable"
+                 "（一个 Responses 直连 API、一个不对这台电脑开放的服务商）；PUT / DELETE /api/v1/assistant/conversations/{id}/model 记下或清掉 model_pick。"
+                 "picked：第二个对话一开始就有自己的选择。GET /mock/model_pick 看请求，?reset=1 复原")
+
 
 # Switching a running Agent to another provider (#5035, docs/protocol/protocol.md "Switching a running Agent to another
 # provider"): MOCK_LAUNCHER_SWITCH=1 advertises `launcher_switch`, gives every computer a second Claude Code launcher

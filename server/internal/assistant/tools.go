@@ -410,7 +410,7 @@ func (s *Service) runTool(ctx context.Context, machine, self, name string, args 
 		if err := s.applyModel(ctx, "agent.new", run); err != nil {
 			return "", err
 		}
-		swapped, err := s.fitLauncher(ctx, am, own, run)
+		swapped, agent, err := s.fitLauncher(ctx, am, own, run)
 		if err != nil {
 			return "", fmt.Errorf("%w; no agent was started", err)
 		}
@@ -465,6 +465,13 @@ func (s *Service) runTool(ctx context.Context, machine, self, name string, args 
 		if moved {
 			a.Cwd = rehome(a.Cwd, am, alt)
 			params["cwd"], am = a.Cwd, alt
+			// The same launcher name may mean a different agent on the destination. Reuse its list before choosing permissions.
+			if _, agent, err = s.fitLauncher(ctx, am, own, params); err != nil {
+				return "", fmt.Errorf("%w; no agent was started", err)
+			}
+		}
+		if agent == "claude" {
+			params["permission_mode"] = "bypassPermissions"
 		}
 		if note != "" {
 			note = " Note: " + note + "."

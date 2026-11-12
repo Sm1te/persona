@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gatewayName, poolTrouble, quotaAmount, quotaCount, quotaFooter, quotaPercent, quotaReset, quotaTone, quotaUnlimited, quotaUsage } from "./quota";
+import { gatewayName, poolTrouble, quotaAmount, quotaCount, quotaFooter, quotaPercent, quotaReset, quotaTone, quotaUnlimited, quotaUsage, weeklyQuota } from "./quota";
 
 describe("launcher quota", () => {
   it("names the gateway by the hub's name, else its id", () => {
@@ -25,6 +25,20 @@ describe("launcher quota", () => {
     expect(quotaCount(210552323)).toBe("2.1 亿");
     expect(quotaUsage({ label: "今日", requests: 287, tokens: 210552323, cost_usd: 123.12 })).toBe("287 次 · 2.1 亿 token · $123");
     expect(quotaUsage({ label: "今日", requests: 1, tokens: 2 })).toBe("1 次 · 2 token");
+  });
+
+  it("selects the tightest weekly window for a provider's rail bar, and nothing when it is unknown", () => {
+    const answer = { quota: { gateway: "g", budget: [{ label: "每周预算", used_ratio: 0.62 }], pools: [
+      { name: "a", windows: [{ label: "5 小时", used_ratio: 0.99 }, { label: "每周", used_ratio: 0.77, resets_at: "2099-01-01T00:00:00Z" }] },
+      { name: "b", windows: [{ label: "monthly", used_ratio: 0.95 }] },
+    ] } };
+    expect(weeklyQuota(answer)).toMatchObject({ remaining: 23, tone: "orange", window: { label: "每周", resets_at: "2099-01-01T00:00:00Z" } });
+    expect(weeklyQuota({ quota: { gateway: "g", budget: [{ label: "weekly", used_ratio: 0.95 }] } })).toMatchObject({ remaining: 5, tone: "red" });
+    expect(weeklyQuota({ quota: { gateway: "g", budget: [{ label: "weekly", used_ratio: 0.1, exhausted: true }] } })).toMatchObject({ remaining: 0, tone: "red" });
+    expect(weeklyQuota({ quota: { gateway: "g", budget: [{ label: "weekly", used_ratio: 0.2 }, { label: "weekly", exhausted: true }] } })).toMatchObject({ remaining: 0, tone: "red", window: { exhausted: true } });
+    expect(weeklyQuota({ quota: { gateway: "g", budget: [{ label: "weekly", used: 8, limit: 10 }] } })).toMatchObject({ remaining: 20, tone: "orange" });
+    expect(weeklyQuota({ quota: { gateway: "g", budget: [{ label: "monthly", used_ratio: 0.5 }] } })).toBeUndefined();
+    expect(weeklyQuota({ unsupported: true, error: "no" })).toBeUndefined();
   });
 
   it("tones a bar by how much is used", () => {

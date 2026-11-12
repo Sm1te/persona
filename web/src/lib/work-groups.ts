@@ -124,10 +124,11 @@ function createGroup(run: Step[], next: Step | undefined, live: boolean, prevBou
 /** cindy's createCompletedWorkGroup: a summary whose steps hold intermediate narration opens to that narration in order,
  *  each maximal run of other steps between two pieces of it an inner group (its clock from the narration before it, or
  *  the turn's start, to the narration after it, else its latest end). Null without narration: the steps stay direct.
- *  `latest` (drawn in the slot) is no boundary, as it is not in the summary; but when the last run ended before it, the
- *  run is over and ends there, and otherwise, while the turn is live, it is the run still going. */
-function timeline(items: Step[], latest: number, turnStart: number | null, live: boolean): WorkNode[] | null {
-  if (!items.some((s, i) => i !== latest && isAnswer(s))) return null;
+ *  `work` is the summary's steps: the latest text (in the slot) is not among them, so it is no boundary. `answer`: that
+ *  text when it came after the last run, which is then over and ends there; otherwise, while the turn is live, the last
+ *  run is the one still going. */
+function timeline(work: Step[], answer: Step | undefined, turnStart: number | null, live: boolean): WorkNode[] | null {
+  if (!work.some(isAnswer)) return null;
   const out: WorkNode[] = [];
   let run: Step[] = [];
   let prev = turnStart;
@@ -137,15 +138,16 @@ function timeline(items: Step[], latest: number, turnStart: number | null, live:
     else out.push(...run.map((step) => ({ kind: "step" as const, step })));
     run = [];
   };
-  items.forEach((s, i) => {
-    if (i === latest || isCompactStep(s)) return;
-    if (!isAnswer(s)) return void run.push(s);
+  for (const s of work) {
+    if (!isAnswer(s)) {
+      run.push(s);
+      continue;
+    }
     flush(s, false);
     out.push({ kind: "step", step: s });
     prev = stepStart(s);
-  });
-  const answered = latest >= 0 && items.slice(latest + 1).every((s) => s.kind === "text");
-  flush(answered ? items[latest] : undefined, live && !answered);
+  }
+  flush(answer, live && !answer);
   return out;
 }
 
@@ -165,7 +167,9 @@ function groupTurn(items: Step[], turnStart: number | null, live: boolean, strea
   const answer = latest >= 0 ? items[latest] : undefined;
   const group = work.length ? createGroup(work, answer, live, turnStart) : undefined;
   if (group) {
-    const children = timeline(items, latest, turnStart, live);
+    // the latest text ends the last run when nothing but words came after it
+    const answered = answer && items.slice(latest + 1).every((s) => s.kind === "text") ? answer : undefined;
+    const children = timeline(work, answered, turnStart, live);
     if (identity) group.id = `work-turn-${identity}`;
     if (children) {
       group.children = children;
@@ -182,6 +186,10 @@ function groupTurn(items: Step[], turnStart: number | null, live: boolean, strea
   return [...(group ? [group] : []), ...kept, ...(answer ? [{ kind: "step" as const, step: answer }] : [])];
 }
 
+/** A thought without words (Claude Code writes most of them so) says nothing: it is no step of the work, as in cindy
+ *  (thinkingActivityForMessage), so a turn of nothing else has no summary and it never splits a run of rows (#5155). */
+const isWordlessThought = (s: Step) => s.kind === "thinking" && !s.item.text?.trim();
+
 /** One exchange's steps (the answer among them, in order) as what the chat draws. */
 export function workBlocks(steps: Step[], opts: WorkGroupOptions): WorkNode[] {
   const out: WorkNode[] = [];
@@ -194,6 +202,7 @@ export function workBlocks(steps: Step[], opts: WorkGroupOptions): WorkNode[] {
     turn = [];
   };
   for (const s of steps) {
+    if (isWordlessThought(s)) continue;
     if (isCompactStep(s)) {
       flush(false);
       out.push({ kind: "step", step: s });
@@ -325,11 +334,11 @@ export const workLineOpens = (g: WorkGroupNode, _style: WorkLineStyle, _turnLive
  *  super rule 2 does not allow), each remembering its own choice after that. */
 export const nestedLineDefault = (_style: WorkLineStyle): boolean => true;
 
-/** cindy's formatSessionDuration: under an hour `6s`, `1m 5s`, `2m` in every language (at least a second); from an hour
- *  the page's language, always with the minutes ("1h 0m", "1 小时 0 分", "1時間0分"; "1d 2h 5m"). */
+/** cindy's formatSessionDuration: under an hour `6s`, `1m 5s`, `2m` (the same in every language's catalog; at least a
+ *  second); from an hour the language's form, always with the minutes ("1h 0m", "1 小时 0 分", "1時間0分"; "1d 2h 5m"). */
 export function workDuration(msValue: number): string {
   const total = Math.max(1, Math.round((Number.isFinite(msValue) ? msValue : 0) / 1000));
-  if (total < 60) return `${total}s`;
+  if (total < 60) return t("lib-work-groups.dur_seconds", { s: total });
   if (total >= 3600) {
     const d = Math.floor(total / 86_400);
     const h = Math.floor((total % 86_400) / 3600);
@@ -338,7 +347,7 @@ export function workDuration(msValue: number): string {
   }
   const m = Math.floor(total / 60);
   const s = total % 60;
-  return s ? `${m}m ${s}s` : `${m}m`;
+  return s ? t("lib-work-groups.dur_minutes_seconds", { m, s }) : t("lib-work-groups.dur_minutes", { m });
 }
 
 /** A finished group's title: "Worked for 1m 5s" ("Work details" without its times), and what it read when that is all

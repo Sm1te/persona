@@ -851,7 +851,8 @@ struct NoticeRow: View {
     @Environment(\.chatPin) private var pin
 
     var body: some View {
-        if item.compact != nil { CompactDivider(item: item) }
+        if let r = item.modelRefusal { RefusalNotice(refusal: r) } // an upstream refusal (#4489)
+        else if item.compact != nil { CompactDivider(item: item) }
         else if item.wake == true { wake } else if item.task != nil { TaskNoteRow(item: item) } else if Self.isShort(item.text ?? "") { plain } else { long }
     }
 

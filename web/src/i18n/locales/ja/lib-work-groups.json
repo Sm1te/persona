@@ -5,6 +5,9 @@
   "working": "作業中…",
   "worked_for": "{duration} 作業しました",
   "work": "作業内容",
+  "dur_seconds": "{s}s",
+  "dur_minutes_seconds": "{m}m {s}s",
+  "dur_minutes": "{m}m",
   "dur_hours_minutes": "{h}時間{m}分",
   "dur_days_hours_minutes": "{d}日{h}時間{m}分"
 }

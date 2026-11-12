@@ -1,5 +1,5 @@
-// The session header's context bar (#2430): always shown, whatever "Show details in Agent rows" says. The model is the
-// composer's model pill (#5032), not the header's.
+// The context bar below the composer (#2430, moved by #5056): shown whenever context is known, whatever "Show details in
+// Agent rows" says. The model is the composer's model pill (#5032), not the usage row's.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setAgentDetails, setContextAsUsed } from "../../lib/context-usage";

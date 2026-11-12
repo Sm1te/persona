@@ -9,6 +9,5 @@
   "container": "コンテナ {name}",
   "offline": "メイン会話 · オフライン",
   "stopped": "メイン会話 · 停止中",
-  "last_location": "前回の実行場所：{location}",
-  "new_launcher": "新規会話で使用：{launcher}"
+  "last_location": "前回の実行場所：{location}"
 }

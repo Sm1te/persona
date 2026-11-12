@@ -33,6 +33,7 @@ function panelModel(m: AgentModel, engine: string, current: boolean, s: Session,
   if (m.resolved) out.resolved = m.resolved;
   if (m.default_effort) out.defaultEffort = m.default_effort;
   if (m.custom) out.custom = true;
+  if (m.price) out.price = m.price;
   if (current && engine === "codex" && hasFast(s)) out.fast = true;
   if (current && s.context_window) out.context = s.context_window;
   return out;

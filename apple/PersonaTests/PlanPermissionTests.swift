@@ -10,4 +10,8 @@ import Testing
         #expect(PlanTaskRow.permissionLabel("default") == "每步都问")
         #expect(Set(PlanTaskRow.permissions.map(PlanTaskRow.permissionLabel)).count == PlanTaskRow.permissions.count)
     }
+
+    @Test func readOnlyIsARequestNotASandbox() {
+        #expect(String(localized: "Read-only") == "已要求只读")
+    }
 }

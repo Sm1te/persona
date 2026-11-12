@@ -169,6 +169,7 @@ let calls: { method: string; url: string; body?: unknown }[];
 let listAnswer: (url: string) => Response;
 let modesAnswer: (body: unknown) => Response;
 let forgetAnswer: () => Response;
+let quotaAnswer: () => Response;
 // lists answer once this settles (a test that wants to see what shows while one is read holds it)
 let hold: Promise<unknown>;
 let machine = 0;
@@ -185,12 +186,14 @@ beforeEach(() => {
   listAnswer = (url) => (url.includes("/cx/") ? json({ agent: "codex", models: [{ id: "gpt-5.5", name: "gpt-5.5", efforts: ["low", "high"] }] }) : json(claudeList()));
   modesAnswer = () => json({ ok: true });
   forgetAnswer = () => json({ ok: true });
+  quotaAnswer = () => json({ unsupported: true });
   hold = Promise.resolve();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method: init?.method ?? "GET", url, body });
     if (url.includes("/models/custom")) return forgetAnswer();
+    if (url.includes("/quota")) return quotaAnswer();
     if (url.includes("/models")) return hold.then(() => listAnswer(url));
     if (/\/launchers(\?|$)/.test(url)) return json({ launchers: [{ name: "claude" }, { name: "gateway" }, { name: "cx", agent: "codex" }] });
     if (url.endsWith("/modes")) return modesAnswer(body);
@@ -237,6 +240,16 @@ describe("an Agent's pill", () => {
     // a second click closes it
     await act(async () => pill()!.click());
     expect(host.querySelector('[data-testid="panel"]')).toBeNull();
+  });
+
+  it("reads each provider's cached quota for this computer, without forcing a refresh", async () => {
+    quotaAnswer = () => json({ machine: `mac-${machine}`, checked_at: "2026-11-12T00:00:00Z", quota: { gateway: "example", pools: [{ name: "a", windows: [{ label: "每周", used_ratio: 0.77 }] }] } });
+    await show(agent());
+    await open();
+    for (const name of ["claude", "gateway", "cx"]) {
+      expect(calls.some((c) => c.url.includes(`/launchers/${name}/quota?machine=mac-${machine}`) && !c.url.includes("refresh="))).toBe(true);
+      expect(panel.props!.quotas?.[name]?.quota?.pools?.[0]?.windows?.[0]).toMatchObject({ label: "每周", used_ratio: 0.77 });
+    }
   });
 
   it("applies a pick the model first, then the effort, and stops at a failure", async () => {

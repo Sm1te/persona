@@ -486,7 +486,7 @@ func (s *Service) deliverViewAction(parent context.Context, conversation, key st
 // typed is (what it runs on, UserSpoke, and a round they did not start preempted: owner_preempt.go).
 func (s *Service) viewActionParams(ctx context.Context, a db.AssistantViewActionRow) (map[string]any, error) {
 	params := map[string]any{"session_id": a.Conversation, "client_msg_id": a.MessageID, "text": a.Text, "resume_only": true}
-	if err := s.sendModel(ctx, a.MachineID, a.Conversation, params); err != nil {
+	if err := s.sendModel(ctx, a.MachineID, a.Conversation, params, s.lang(ctx)); err != nil {
 		return nil, err
 	}
 	s.UserSpoke(ctx, SessionRef{MachineID: a.MachineID, SessionID: a.Conversation})

@@ -36,7 +36,7 @@ describe("tokenizeThinkingText", () => {
   });
 
   it("plain words drop the markers", () => {
-    expect(thinkingPlainText("**Reviewing** the `diff` now")).toBe("Reviewing the diff now");
-    expect(thinkingPlainText("")).toBe("");
+    expect(thinkingPlainText(tokenizeThinkingText("**Reviewing** the `diff` now"))).toBe("Reviewing the diff now");
+    expect(thinkingPlainText(tokenizeThinkingText(""))).toBe("");
   });
 });

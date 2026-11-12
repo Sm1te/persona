@@ -3,7 +3,9 @@ package testhome
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -87,5 +89,57 @@ func TestMainLeavesAChildAlone(t *testing.T) {
 	})
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
+	}
+}
+
+// The Go settings that hang off the home directory keep their values inside the run and come back afterwards.
+func TestMainPinsTheGoPathsToTheRealHome(t *testing.T) {
+	t.Setenv("HOME", "/real/home")
+	t.Setenv(isolated, "")
+	_ = os.Unsetenv(isolated)
+	t.Setenv("GOMODCACHE", "")
+	_ = os.Unsetenv("GOMODCACHE")
+	stub := map[string]string{"GOENV": "/real/home/.config/go/env", "GOMODCACHE": "/real/home/go/pkg/mod"}
+	real := goEnv
+	goEnv = func() map[string]string { return stub }
+	t.Cleanup(func() { goEnv = real })
+	code := quiet(func() int {
+		for k, v := range stub {
+			if got := os.Getenv(k); got != v {
+				t.Errorf("%s=%q inside the run, want %q", k, got, v)
+			}
+		}
+		return 0
+	})
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	if _, ok := os.LookupEnv("GOMODCACHE"); ok {
+		t.Fatal("GOMODCACHE is still set after the run")
+	}
+}
+
+// With the real go tool, a child `go env` under the throw-away HOME reports the same module cache and env file.
+func TestMainKeepsTheGoToolsSettings(t *testing.T) {
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go tool:", err)
+	}
+	t.Setenv(isolated, "")
+	_ = os.Unsetenv(isolated)
+	query := func() string {
+		out, err := exec.Command(goBin, "env", "GOENV", "GOMODCACHE", "GOCACHE", "GOPROXY").Output()
+		if err != nil {
+			t.Fatalf("go env: %v", err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	want := query()
+	var got string
+	if code := quiet(func() int { got = query(); return 0 }); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	if got != want {
+		t.Fatalf("go env under the throw-away HOME:\n%s\nwant\n%s", got, want)
 	}
 }

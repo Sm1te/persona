@@ -183,6 +183,7 @@ func TestMissingFieldPanics(t *testing.T) {
 func TestSmallPrompts(t *testing.T) {
 	for got, want := range map[string]string{
 		RenderReadonlyTaskPlanExit():       "This task is read-only. Stay in plan mode; do not request implementation approval. Return your findings and report completion to your supervisor with report_to_supervisor.",
+		RenderReadonlyTaskConstraint():     "本任务只读：不改项目文件、不提交、不对外写入",
 		RenderQuestionCancelled():          "The user closed this question without answering. Continue without an answer; do not repeat this question.",
 		RenderQuestionUserSpoke():          "The user did not pick an option: they wrote a new message in this conversation instead. It is delivered when you end this turn, so end the turn now and do not call ask_user again in it. Read their message then: it may be the answer; if you still need one, ask again after reading it.",
 		RenderRefused("他说不行"):              "（没有执行）他说不行",

@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { api, ApiError, enc, pastHub } from "./api";
 import { cleanModelId, validModelId } from "./model-id";
 import type { ModelBinding } from "./model-config";
+import type { PanelPrice } from "./model-panel";
 import { EFFORTS } from "./session-actions";
 import { launcherTitle, type Named } from "./provider-names";
 import type { Launcher } from "./types";
@@ -26,6 +27,8 @@ export interface AgentModel {
   /** An ID the user typed before that ran here, remembered on the hub for this computer and launcher (#1644): listed
    *  after the agent's own, most recent first, with no efforts (not known). It can be forgotten. */
   custom?: boolean;
+  /** Exact catalog reference price in USD per one million tokens, when the hub knows it. */
+  price?: PanelPrice;
 }
 
 export interface LauncherModels {
@@ -67,6 +70,23 @@ export interface MachineLaunchers {
   tiers?: PickerTier[];
   /** The profile the presets come from (they follow its switches). */
   tiers_profile?: { id: string; name: string };
+  /** `?purpose=assistant` on a hub with `assistant_model_pick` (#5033): what can't run the main chat on this computer, with
+   *  why in the request's language (shown off, not hidden). */
+  unavailable?: UnavailableLauncher[];
+}
+
+/** One of MachineLaunchers.unavailable: a launcher of the computer or a Model provider that can't run assistant chats here. */
+export interface UnavailableLauncher {
+  name: string;
+  display_name?: string;
+  /** launcher | api */
+  kind?: string;
+  agent?: string;
+  /** A direct API's protocol (responses, chat…). */
+  api?: string;
+  /** not_main_chat, api_protocol, launcher_out_of_scope, launcher_own_service */
+  code?: string;
+  reason: string;
 }
 
 /** The launchers on `mid` with the default of `purpose` (the hub's own when absent: "New agent"). */
