@@ -2,7 +2,7 @@
 
 Status: proposal (#4757). The owner took decisions 1 to 5 of section 7 as recommended; decision 6 is open. The server
 steps M1, F1, F2, B1, Q1, R1 and R2 are in review (#4924 to #4930); B2 is built for the web (#5082) and the Apple apps
-(#5083) and Android (#5084); R3 and K1 are not started. Covers the assistant
+(#5083) and Android (#5084); K1 is built (#5086); R3 is not started. Covers the assistant
 manager and its prompts; the clients change only where a step says so.
 
 ## 1. Goal
@@ -316,4 +316,21 @@ Two notes on the table:
 - The read of section 5 gains, per supervisor model and effort: tasks accepted, tasks reopened after acceptance,
   rework rounds per task and tokens per accepted task. That is the chart the guides ask for; the weekly block (4c)
   suggests a tier change only when a cheaper point on it did not review worse.
+
+As built (K1, #5086; `docs/assistant/model-config.md` "Models for each role" and `docs/assistant/assistant.md`
+"Supervision by model" are authoritative):
+
+- The table is in `docs/assistant/model-config.md` with the tiers named first and the Claude models as examples. Every
+  built-in purpose carries a one-sentence `description` from the manager in three languages; no app draws it yet (the
+  web keeps its own sentence for the background supervisor), so "in Model Settings" is the hub's half only.
+- The main chat's rule speaks of tiers, not models, and covers the task-leader row too. It knows tiers only from the
+  Agent presets of the model profile in use or from what the owner said; when it cannot tell them apart it leaves the
+  model empty and the configured default applies.
+- **Tokens per accepted task is not reported.** Nothing recorded attributes a supervisor's tokens to a task, so the
+  read gives, per day and supervisor conversation, its output tokens (output only, the conversation's whole output)
+  next to the tasks it accepted that day. Accepted, reopened and rework rounds are per model and effort as proposed.
+- `assistant.supervise` stays out of the catalog `GET /api/v1/model-config` returns. The web, the Apple apps and
+  Android as of B2 each skip their own request's row when the catalog already lists the purpose, so adding it would
+  not break them; an app from before B2 has no words for the row, and the catalog's list is also what a provider's
+  "in use" check reads, so it is left as B1 built it.
 

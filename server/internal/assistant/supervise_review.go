@@ -223,6 +223,9 @@ func (s *Service) toolTaskReview(ctx context.Context, self string, args json.Raw
 	if a.Verdict == reviewRework { // after the judge's done, a wrong "done" in the work stats (agents_work_wrong_done.go)
 		s.workEvent("", "", reviewReworkEvent, map[string]any{"todo": t.ID, "judged_done": judgedDone})
 	}
+	if verdict != reviewAccepted || t.DoneAt == nil { // by the reviewer's model and effort (availability_supervision.go)
+		s.taskReviewed(ctx, self, t.ID, verdict, v.Round)
+	}
 	if verdict == reviewRework || verdict == reviewNeedsUser || a.UserCheck || a.Outcome == outcomeCannot {
 		s.setTaskStageKind(ctx, t.ID, "unverified", "", "", false)
 	}

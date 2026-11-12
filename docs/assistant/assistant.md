@@ -976,6 +976,63 @@ do not collide with the north star's, so they can be served from that read later
 starts when the hub takes the owner's message (`session.user_spoke`), before the node accepts it; the hub's message
 outcome (`session.assistant_sent`) only takes back the wait of a message that was not sent.
 
+## Supervision by model (#5086)
+
+Step K1 of the same proposal (section 9c): what supervision costs per accepted task, by the model the supervisor ran
+on, so a cheaper or a stronger model for the background supervisor (`assistant.supervise`,
+`docs/assistant/model-config.md` "Models for each role") can be judged on this install. It is the `supervision` field
+of `GET /api/v1/assistant/availability`; nothing shows it in an app or a briefing, and nothing acts on it. Each number
+in one sentence:
+
+- **Accepted** (`by_model[].accepted`): the tasks a conversation's `task_review` accepted and closed in the window,
+  by the model and effort that conversation ran on when it reviewed.
+- **Reopened** (`by_model[].reopened`): how many of those acceptances were followed by the task being reopened,
+  whichever way (by hand, a change asked on its "Please verify" card, its agent set to work again).
+- **Rework rounds** (`by_model[].rework_rounds`, `rework_rounds_per_task`): the rework rounds the accepted tasks had
+  been sent back for before they were accepted, whoever sent them back, in all and divided by the accepted tasks.
+- **Output tokens per day** (`days[].output_tokens`, next to `days[].accepted`): per day and supervisor conversation,
+  the output tokens the conversation generated in the rounds that ended that day, beside the tasks it accepted that
+  day.
+
+**Tokens are not attributed to tasks.** Nothing recorded says which task a supervisor's turn was spent on: one
+supervision message gathers several tasks' signals, the token usage the nodes report (`docs/server/usage-windows.md`,
+the usage buckets) is per computer, model and launcher with no conversation, and a conversation's own count is one
+running total. So the read does not give "tokens per accepted task"; it puts a supervisor conversation's day of output
+next to that day's acceptances and leaves the division to the reader, who knows what else the conversation did that
+day. The count is **output tokens only** (no input, no cache reads or writes, which are most of a long conversation's
+cost) and is **the conversation's whole output**: for the main conversation that includes its talk with the owner, for
+the background supervisor nearly all of it is supervision.
+
+How they are recorded (`server/internal/assistant/availability_supervision.go`), as work events with no new table:
+
+- One `task_reviewed` row per `task_review` (any verdict; an acceptance of a task that was closed already is not
+  recorded): the task, the verdict as written, the task's rework rounds so far, the reviewing conversation, its role
+  (`main`, `background`, `leader`, or `conversation` for a side conversation reviewing what it handed out) and the
+  model and effort it ran on. Those are what the conversation's node lists for it (`Session.model`, `Session.effort`);
+  for the main conversation and the background supervisor, what the node does not say is filled from their purpose's
+  binding. Both read `""` when neither says (the launcher's own default, which the manager cannot name).
+- The `round` row of "Availability metrics" also carries the conversation's `model`, `effort` and `output_tokens` as
+  its node listed them when the round ended; `output_tokens` is the conversation's running total
+  (`Session.output_tokens`), and the read counts the difference between two rounds.
+- A reopen is the `todo_reopened` row that already existed (`docs/assistant/agent-work.md` "Evaluation"); it counts
+  against the task's latest acceptance before it, once.
+
+What the numbers do and do not say:
+
+- Only a conversation's own `task_review` counts. A task the done judge closed for its supervisor
+  (`review_sample_percent` below 100) has no reviewing conversation and is in none of these numbers.
+- `by_model` is keyed by model and effort alone: the main conversation, the background supervisor and leaders on the
+  same model and effort share a row. `days` has one row per conversation with its role, for telling them apart.
+- A model's name is whatever the node lists (an alias, a gateway's own id), so one model may appear under two names
+  when a binding was changed from one form to the other.
+- The first round recorded for a conversation counts no tokens: there is nothing to take the difference from. Rounds
+  from up to 48 hours before the window supply that for the window's first round. A count that goes down (a new
+  transcript) counts from zero again. A node that lists no output count (a runtime that reports none) gives 0.
+- A day's `model` and `effort` are those of the conversation's last round that day; a conversation whose model was
+  changed during the day has one row for it.
+- Reopens are counted up to the time of the read, acceptances from the window's start; an acceptance from before the
+  window that is reopened inside it is not counted.
+
 ## Chat titles
 
 Requested: "Generate titles after starting new chats; standardize as ‘MMDD | Type | Topic’." Implemented as follows:

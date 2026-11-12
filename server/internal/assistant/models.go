@@ -52,10 +52,13 @@ type ModelUse struct {
 
 // ModelPurpose is one purpose (a category, or a use under one) with what it runs on.
 type ModelPurpose struct {
-	ID            string       `json:"id"`
-	CategoryID    string       `json:"category_id,omitempty"`
-	Uses          []ModelUse   `json:"uses,omitempty"`
-	Name          string       `json:"name"`
+	ID         string     `json:"id"`
+	CategoryID string     `json:"category_id,omitempty"`
+	Uses       []ModelUse `json:"uses,omitempty"`
+	Name       string     `json:"name"`
+	// Description is what the use is for, in a sentence in the request's language (#5086): wording only, it names no
+	// model and changes no binding. Built-in uses have one; a scheduled task's own, an extension's and a plugin's do not.
+	Description   string       `json:"description,omitempty"`
 	Group         string       `json:"group"`
 	Kind          string       `json:"kind"`
 	Launch        string       `json:"launch,omitempty"` // derived from the purpose, never stored or edited
@@ -136,8 +139,8 @@ var modelPurposes = []ModelPurpose{
 	// by default, which is not logged in on every hub machine).
 	{ID: "schedule", Group: "group_assistant", Kind: "launcher", Parent: "assistant"},
 	// The background supervisor (supervise_background.go, #4927): the main chat's model until it is given its own, which
-	// may be a cheaper or a stronger one. Not in the catalog the apps list yet (modelConfigIDs); read and set through
-	// its own purpose.
+	// may be a cheaper or a stronger one. Not in the catalog the apps list (modelConfigIDs): they read and set it
+	// through its own purpose, and an app from before they did has no words for the row (#5086 left it so).
 	{ID: purposeSupervise, Group: "group_assistant", Kind: "launcher", Parent: "assistant"},
 }
 
@@ -158,9 +161,14 @@ func purposeName(l i18n.Lang, id string) string {
 	return mc(l, "name_"+strings.ReplaceAll(id, ".", "_"))
 }
 
+// purposeDescription is what a built-in use is for, in a sentence in l (assistant-models desc_<id>).
+func purposeDescription(l i18n.Lang, id string) string {
+	return mc(l, "desc_"+strings.ReplaceAll(id, ".", "_"))
+}
+
 // localized is a built-in use's definition with its texts in l.
 func (p ModelPurpose) localized(l i18n.Lang) ModelPurpose {
-	p.Name, p.Group = purposeName(l, p.ID), mc(l, p.Group)
+	p.Name, p.Group, p.Description = purposeName(l, p.ID), mc(l, p.Group), purposeDescription(l, p.ID)
 	if len(p.Uses) > 0 {
 		uses := make([]ModelUse, len(p.Uses))
 		for i, u := range p.Uses {

@@ -482,7 +482,7 @@ func TestSummarizeAvailability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"hours":24,"reply_wait":{"all":{},"main":{},"main_days":[]},"background_share":[],"queue_wait":{"by_kind":{},"main_by_kind":{},"queued_now":[]},"ask_outcome":{}}`; string(empty) != want {
+	if want := `{"hours":24,"reply_wait":{"all":{},"main":{},"main_days":[]},"background_share":[],"queue_wait":{"by_kind":{},"main_by_kind":{},"queued_now":[]},"ask_outcome":{},"supervision":{"by_model":[],"days":[]}}`; string(empty) != want {
 		t.Fatalf("no events:\n%s\nwant\n%s", empty, want)
 	}
 }
