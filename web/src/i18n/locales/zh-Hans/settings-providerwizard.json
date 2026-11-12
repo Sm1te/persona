@@ -166,5 +166,12 @@
   "discovering": "正在获取模型列表…",
   "testing": "正在测试连接…",
   "retry": "重试",
-  "check_leave_url": "离开地址输入框后开始检查。"
+  "check_leave_url": "离开地址输入框后开始检查。",
+  "paste_title": "粘贴配置",
+  "paste_detail": "粘贴你现在用的配置，比如 alias、配置文件或 curl 命令，自动填好供应商。",
+  "paste_continue": "继续",
+  "found_title": "在你的电脑上发现",
+  "found_hint": "通过网关运行 Claude Code、还没加到 Persona 的 alias。选一个即可导入。",
+  "found_on": "在 {computer} 上",
+  "found_on_offline": "在 {computer} 上（离线）"
 }
