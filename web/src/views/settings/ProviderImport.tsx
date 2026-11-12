@@ -26,7 +26,7 @@ import { useStore } from "../../lib/store";
 import { Button, cx, Dialog, Loading, toast } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { Pill } from "./SettingsParts";
-import { CheckMark, INPUT, Labelled } from "./ProviderFields";
+import { CheckMark, ChoiceRows, INPUT, Labelled } from "./ProviderFields";
 import { formatList, t } from "../../i18n";
 
 export function ProviderImport({ open, onClose, onImported, machine: start, alias }: {
@@ -268,33 +268,10 @@ function ImportItem({ p, on, split, onToggle, onSplit }: { p: ImportedProvider; 
 
 /** "A provider for each alias" / "One provider": a radio group, arrow keys move between the two. */
 function SplitChoice({ name, first, split, onSplit }: { name: string; first: string; split: boolean; onSplit: (on: boolean) => void }) {
-  const options = [
-    { on: true, label: t("settings-providerimport.split"), hint: t("settings-providerimport.split_hint") },
-    { on: false, label: t("settings-providerimport.merge"), hint: t("settings-providerimport.merge_hint", { alias: first }) },
-  ];
-  const key = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
-    e.preventDefault();
-    onSplit(!split);
-    const next = e.currentTarget.querySelector<HTMLButtonElement>(`[data-split="${!split}"]`);
-    next?.focus();
-  };
   return (
-    <div role="radiogroup" aria-label={t("settings-providerimport.choice_label", { name })} onKeyDown={key}
-      className="divide-y divide-line overflow-hidden rounded-card bg-inset shadow-hairline">
-      {options.map((o) => {
-        const checked = o.on === split;
-        return (
-          <button key={String(o.on)} type="button" role="radio" aria-checked={checked} tabIndex={checked ? 0 : -1} data-split={String(o.on)}
-            onClick={() => onSplit(o.on)} className="touch-hit flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-hover">
-            <CheckMark on={checked} round className="mt-0.5" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12.5px] font-medium text-ink">{o.label}</span>
-              <span className="block text-[11.5px] text-ink-3">{o.hint}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
+    <ChoiceRows label={t("settings-providerimport.choice_label", { name })} at={split ? 0 : 1} onPick={(i) => onSplit(i === 0)} options={[
+      { label: t("settings-providerimport.split"), hint: t("settings-providerimport.split_hint") },
+      { label: t("settings-providerimport.merge"), hint: t("settings-providerimport.merge_hint", { alias: first }) },
+    ]} />
   );
 }

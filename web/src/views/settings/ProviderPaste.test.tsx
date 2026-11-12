@@ -210,7 +210,7 @@ describe("paste a configuration", () => {
     await openPaste();
     await pasteText("same key");
     expect(text()).toContain(t("settings-providerpaste.matched", { count: 1 }));
-    const merge = buttons().find((b) => b.getAttribute("data-action") === "0")!;
+    const merge = buttons().find((b) => b.getAttribute("data-choice") === "0")!;
     expect(merge.textContent).toContain(t("settings-providerpaste.merge", { name: "Team gateway" }));
     expect(merge.getAttribute("aria-checked")).toBe("true");
     await click(continueButton());
@@ -222,7 +222,7 @@ describe("paste a configuration", () => {
     parse = () => json(answer([{ ...GW, matches: [{ name: "gw_other", display_name: "Other gateway", same_key: false }] }]));
     await openPaste();
     await pasteText("other key");
-    const option = (i: number) => buttons().find((b) => b.getAttribute("data-action") === String(i))!;
+    const option = (i: number) => buttons().find((b) => b.getAttribute("data-choice") === String(i))!;
     expect(option(0).textContent).toContain(t("settings-providerpaste.key", { name: "Other gateway" }));
     // another key: a new provider unless the user picks replacing
     expect(option(1).getAttribute("aria-checked")).toBe("true");

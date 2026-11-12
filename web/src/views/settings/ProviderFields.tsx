@@ -1,5 +1,6 @@
 // The provider wizard's form pieces (#2455): a labelled input, a secret one (keys, headers: never offered to the
-// browser's password manager, shown only on request), the "Advanced" disclosure, and a check's status line.
+// browser's password manager, shown only on request), the "Advanced" disclosure, a radio group of choices, and a check's
+// status line.
 import { useId, useState } from "react";
 import { Collapse, cx, SECRET_INPUT, Spinner } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
@@ -7,6 +8,9 @@ import { inputClass, textareaClass } from "../assistant/parts";
 import { t } from "../../i18n";
 
 export const INPUT = inputClass;
+/** How long typed text has to stay the same before it is checked (a gateway's address and key) or read (a pasted
+ *  configuration) on its own. */
+export const AUTO_TEST_MS = 700;
 /** A field's look without its size, for the inline ones (SMALL: in a model row). */
 export const FIELD = "rounded-control bg-field text-ink shadow-inset-field outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent)] disabled:opacity-60";
 export const SMALL = `${FIELD} h-7 px-2 text-[12px]`;
@@ -105,6 +109,41 @@ export function CheckMark({ on, round, className }: { on: boolean; round?: boole
     <span aria-hidden className={cx("flex size-4 shrink-0 items-center justify-center transition-colors duration-150", round ? "rounded-full" : "rounded-chip", on ? "bg-accent text-white" : "shadow-[inset_0_0_0_1.5px_var(--line-strong)]", className)}>
       {on && <Icon name="check" size={10} stroke={3} />}
     </span>
+  );
+}
+
+/** Arrow keys move a radio group's choice to the next or previous of `count` (around the ends; from none, the first or
+ *  the last), and focus follows (`attr` holds each option's index). */
+export function arrowKeys(count: number, at: number, attr: string, pick: (i: number) => void) {
+  return (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const i = at < 0 ? (step > 0 ? 0 : count - 1) : (at + step + count) % count;
+    pick(i);
+    e.currentTarget.querySelector<HTMLElement>(`[${attr}="${i}"]`)?.focus();
+  };
+}
+
+/** A radio group of rows, each a label with a hint under it; `at` is the chosen one (-1: none, the first takes the tab). */
+export function ChoiceRows({ label, options, at, onPick }: { label: string; options: { label: string; hint: string }[]; at: number; onPick: (i: number) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} onKeyDown={arrowKeys(options.length, at, "data-choice", onPick)}
+      className="divide-y divide-line overflow-hidden rounded-card bg-inset shadow-hairline">
+      {options.map((o, i) => {
+        const checked = i === at;
+        return (
+          <button key={i} type="button" role="radio" aria-checked={checked} tabIndex={checked || (at < 0 && i === 0) ? 0 : -1} data-choice={i}
+            onClick={() => onPick(i)} className="touch-hit flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-hover">
+            <CheckMark on={checked} round className="mt-0.5" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] font-medium text-ink">{o.label}</span>
+              <span className="block text-[11.5px] text-ink-3">{o.hint}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -73,7 +73,7 @@ import { Icon, type IconName } from "../../ui/icons";
 import { Segmented } from "../assistant/parts";
 import { InstallClaudeHelp } from "../assistant/Readiness";
 import { Pill, Switch } from "./SettingsParts";
-import { BusyLine, CheckMark, Disclosure, FIELD, INPUT, Labelled, LineAction, SecretField, SMALL, TextField } from "./ProviderFields";
+import { AUTO_TEST_MS, BusyLine, CheckMark, Disclosure, FIELD, INPUT, Labelled, LineAction, SecretField, SMALL, TextField } from "./ProviderFields";
 import { ProviderPaste } from "./ProviderPaste";
 import { ProviderScope } from "./ProviderScope";
 import { t } from "../../i18n";
@@ -117,9 +117,6 @@ type KeyTest = { running: true } | { running: false; result: TestResult };
 /** What fetching a gateway's models found: how many, or why not; `check` when it was the Connect step's check
  *  (which goes on to test), `seq` the request it answers. */
 type Found = { n: number; error?: string; check: boolean; seq: number };
-
-/** How long a pasted or typed key (a gateway's address and key) has to stay the same before it is tested on its own. */
-const AUTO_TEST_MS = 700;
 
 export function ProviderWizard({ existing, onClose, onSaved, draft = null, found: aliases = [], onImportAlias, onEditWith }: {
   existing: ProviderView | "new" | null;

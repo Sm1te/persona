@@ -62,7 +62,7 @@ const q = <T extends Element = HTMLElement>(selector: string) => {
 const click = async (el: Element) => { act(() => (el as HTMLElement).click()); await flush(); };
 const importButton = () => [...document.body.querySelectorAll("button")].find((b) => b.textContent?.startsWith(t("settings-providerimport.import")))!;
 const posted = () => calls.find((c) => c.method === "POST")!.body!;
-const radio = (group: string, split: boolean) => q(`[role="radiogroup"][aria-label="${t("settings-providerimport.choice_label", { name: group })}"] [data-split="${split}"]`);
+const radio = (group: string, split: boolean) => q(`[role="radiogroup"][aria-label="${t("settings-providerimport.choice_label", { name: group })}"] [data-choice="${split ? 0 : 1}"]`);
 
 async function draw(machines: Machine[] = MACHINES, one: { machine?: string; alias?: string } = {}) {
   Object.assign(getState(), { machines });

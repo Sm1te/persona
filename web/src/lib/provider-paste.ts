@@ -6,7 +6,8 @@
 // one opens the import preview (#5057) for that alias alone. Pure: views/settings/ProviderPaste.tsx and
 // ProviderWizard.tsx render it.
 import { managedProvider } from "./compatibility";
-import { formFromView, formModel, names, newForm, type ProviderForm, type ProviderModel, type ProviderView, type SkipReason } from "./providers";
+import { byReason, formFromView, formModel, names, newForm, type ProviderForm, type ProviderModel, type ProviderView, type SkipReason } from "./providers";
+import type { ListedLauncher } from "./launcher-list";
 import type { TierSource } from "./provider-tiers";
 import type { Machine } from "./types";
 import { t } from "../i18n";
@@ -77,6 +78,7 @@ export interface PasteState {
   result: { text: string; answer: PasteResult } | null;
   /** The chosen draft's index, -1 for none. */
   draft: number;
+  /** What the user picked Continue to do; null: the chosen draft's default (defaultAction). */
   action: PasteAction | null;
 }
 
@@ -93,8 +95,7 @@ export function pasteChoice(s: PasteState): { draft: PasteDraft; action: PasteAc
 export function answered(s: PasteState, text: string, r: PasteResult): PasteState {
   if (s.text !== text) return s;
   const answer = { format: r.format ?? "", drafts: r.drafts ?? [], notes: r.notes ?? [] };
-  const one = answer.drafts.length === 1;
-  return { ...s, result: { text, answer }, draft: one ? 0 : -1, action: one ? defaultAction(answer.drafts[0]!) : null };
+  return { ...s, result: { text, answer }, draft: answer.drafts.length === 1 ? 0 : -1, action: null };
 }
 
 /** The draft's models with its default among them: what a new provider lists, and what merging adds. */
@@ -169,17 +170,10 @@ const HEADER_REASONS = ["credential", "protocol", "unsupported"];
 /** The headers a draft sends and leaves out, a line each (as the import says its variables, lib/providers.ts). */
 export function headerLines(d: PasteDraft): string[] {
   const kept = (d.provider.headers ?? "").split("\n").filter((l) => l.includes(":")).map((l) => l.slice(0, l.indexOf(":")).trim()).filter(Boolean);
-  const out = kept.length ? [t("lib-provider-paste.headers_kept", { names: names(kept), count: kept.length })] : [];
-  const by = new Map<string, string[]>();
-  for (const s of d.skipped_headers ?? []) {
-    const reason = HEADER_REASONS.includes(s.reason) ? s.reason : "other";
-    by.set(reason, [...(by.get(reason) ?? []), s.name]);
-  }
-  for (const r of [...HEADER_REASONS, "other"]) {
-    const list = by.get(r);
-    if (list) out.push(t(`lib-provider-paste.headers_left_${r}`, { names: names(list), count: list.length }));
-  }
-  return out;
+  return [
+    ...(kept.length ? [t("lib-provider-paste.headers_kept", { names: names(kept), count: kept.length })] : []),
+    ...byReason(d.skipped_headers ?? [], HEADER_REASONS).map(([r, list]) => t(`lib-provider-paste.headers_left_${r}`, { names: names(list), count: list.length })),
+  ];
 }
 
 /** The most drafts the hub reads from one text (too_many). */
@@ -232,14 +226,7 @@ export function noteText(n: PasteNote): string {
 // ── Found on your computers ────────────────────────────────
 
 /** The fields of GET /api/v1/launchers' entries that finding aliases reads. */
-export interface ListedAlias {
-  name: string;
-  source: string;
-  hidden?: boolean;
-  base_url?: string;
-  machines?: string[];
-  origin?: string;
-}
+export type ListedAlias = Pick<ListedLauncher, "name" | "source" | "hidden" | "machines"> & { base_url?: string; origin?: string };
 
 /** An rc-file alias that reaches a gateway and is not in Persona yet, with the computer to read it on (its first
  *  online one, else its first) and that computer's name. */

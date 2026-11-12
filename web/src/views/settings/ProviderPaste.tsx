@@ -7,17 +7,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, errorText } from "../../lib/api";
 import { providerTitle } from "../../lib/provider-names";
-import { answered, defaultAction, draftModels, headerLines, noteText, pasteActions, sameAction, type PasteAction, type PasteDraft, type PasteNote, type PasteResult, type PasteState } from "../../lib/provider-paste";
+import { answered, draftModels, headerLines, noteText, pasteActions, pasteChoice, sameAction, type PasteAction, type PasteDraft, type PasteNote, type PasteResult, type PasteState } from "../../lib/provider-paste";
 import { hostOf, importBrings, importLeftOut } from "../../lib/providers";
 import { cx, SECRET_INPUT } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { textareaClass } from "../assistant/parts";
 import { Pill } from "./SettingsParts";
-import { BusyLine, CheckMark, Labelled, LineAction } from "./ProviderFields";
+import { arrowKeys, AUTO_TEST_MS, BusyLine, CheckMark, ChoiceRows, Labelled, LineAction } from "./ProviderFields";
 import { t } from "../../i18n";
 
-/** How long the text has to stay the same before it is read (as the wizard's AUTO_TEST_MS); a paste is read at once. */
-const READ_MS = 700;
 /** The edits that put a whole text in at once. */
 const PASTED = new Set(["insertFromPaste", "insertFromDrop"]);
 const EXAMPLE = "export ANTHROPIC_BASE_URL=https://…\nexport ANTHROPIC_AUTH_TOKEN=…";
@@ -68,15 +66,15 @@ export function ProviderPaste({ paste, setPaste }: { paste: PasteState; setPaste
     // read already (back from "Connect")
     if (paste.result?.text === paste.text) return;
     if (at) return void read(paste.text, mine);
-    const timer = setTimeout(() => void read(paste.text, mine), READ_MS);
+    const timer = setTimeout(() => void read(paste.text, mine), AUTO_TEST_MS);
     return () => clearTimeout(timer);
   }, [paste.text]);
 
   const answer = paste.result?.answer;
   const stale = !!paste.result && paste.result.text !== paste.text;
   const drafts = answer?.drafts ?? [];
-  const chosen = stale ? undefined : drafts[paste.draft];
-  const pick = (i: number) => setPaste((s) => ({ ...s, draft: i, action: defaultAction(s.result!.answer.drafts[i]!) }));
+  const chosen = pasteChoice(paste);
+  const pick = (i: number) => setPaste((s) => ({ ...s, draft: i, action: null }));
   return (
     <div className="flex flex-col gap-3">
       <Labelled label={t("settings-providerpaste.label")} hint={t("settings-providerpaste.hint")} htmlFor={id} describedById={hintId}>
@@ -118,27 +116,14 @@ export function ProviderPaste({ paste, setPaste }: { paste: PasteState; setPaste
               </div>
             </div>
           )}
-          {chosen && !!chosen.matches?.length && (
-            <ActionChoice d={chosen} action={paste.action} onAction={(action) => setPaste((s) => ({ ...s, action }))} />
+          {chosen && !!chosen.draft.matches?.length && (
+            <ActionChoice d={chosen.draft} action={chosen.action} onAction={(action) => setPaste((s) => ({ ...s, action }))} />
           )}
           <Notes notes={answer.notes} label={t("settings-providerpaste.notes_label")} className="text-ink-2" />
         </div>
       )}
     </div>
   );
-}
-
-/** Arrow keys move a radio group's choice, as the import's SplitChoice: to the next or previous of `count` (around the
- *  ends; from none, the first or the last), and focus follows (`attr` holds each option's index). */
-function arrowKeys(count: number, at: number, attr: string, pick: (i: number) => void) {
-  return (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
-    if (!step) return;
-    e.preventDefault();
-    const i = at < 0 ? (step > 0 ? 0 : count - 1) : (at + step + count) % count;
-    pick(i);
-    e.currentTarget.querySelector<HTMLElement>(`[${attr}="${i}"]`)?.focus();
-  };
 }
 
 /** Why parts were not used, a line each. */
@@ -205,9 +190,8 @@ function DraftCard({ d, radio }: { d: PasteDraft; radio?: { index: number; check
 
 /** For a draft on an address a stored provider has: add its models there (same key), replace that provider's key
  *  (another key), or add it as a new provider. */
-function ActionChoice({ d, action, onAction }: { d: PasteDraft; action: PasteAction | null; onAction: (a: PasteAction) => void }) {
+function ActionChoice({ d, action, onAction }: { d: PasteDraft; action: PasteAction; onAction: (a: PasteAction) => void }) {
   const options = pasteActions(d);
-  const at = options.findIndex((o) => sameAction(action, o));
   const text = (o: (typeof options)[number]) => {
     const name = o.match ? providerTitle(o.match) : "";
     if (o.type === "merge") return { label: t("settings-providerpaste.merge", { name }), hint: t("settings-providerpaste.merge_hint", { name }) };
@@ -217,23 +201,8 @@ function ActionChoice({ d, action, onAction }: { d: PasteDraft; action: PasteAct
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-[12px] text-ink-2">{t("settings-providerpaste.matched", { count: d.matches!.length })}</p>
-      <div role="radiogroup" aria-label={t("settings-providerpaste.action_label")} onKeyDown={arrowKeys(options.length, at, "data-action", (i) => onAction(options[i]!))}
-        className="divide-y divide-line overflow-hidden rounded-card bg-inset shadow-hairline">
-        {options.map((o, i) => {
-          const checked = i === at;
-          const { label, hint } = text(o);
-          return (
-            <button key={i} type="button" role="radio" aria-checked={checked} tabIndex={checked || (at < 0 && i === 0) ? 0 : -1} data-action={i}
-              onClick={() => onAction(o)} className="touch-hit flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-hover">
-              <CheckMark on={checked} round className="mt-0.5" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium text-ink">{label}</span>
-                <span className="block text-[11.5px] text-ink-3">{hint}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <ChoiceRows label={t("settings-providerpaste.action_label")} options={options.map(text)} at={options.findIndex((o) => sameAction(action, o))}
+        onPick={(i) => onAction(options[i]!)} />
     </div>
   );
 }

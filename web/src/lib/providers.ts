@@ -582,14 +582,19 @@ export const importBrings = (p: Pick<ImportedProvider, "env_names">) => (p.env_n
 
 const SKIP_ORDER = ["credential", "shell", "computer", "limit"];
 
-/** The variables left out, a line per reason in plain words; an unknown reason reads as the generic one. */
-export function importLeftOut(p: Pick<ImportedProvider, "skipped_env">): string[] {
+/** Names left out grouped by why: the reasons of `order` that have any, in that order, then "other" for the unknown ones. */
+export function byReason(items: readonly { name: string; reason: string }[], order: readonly string[]): [string, string[]][] {
   const by = new Map<string, string[]>();
-  for (const s of p.skipped_env ?? []) {
-    const reason = SKIP_ORDER.includes(s.reason) ? s.reason : "other";
+  for (const s of items) {
+    const reason = order.includes(s.reason) ? s.reason : "other";
     by.set(reason, [...(by.get(reason) ?? []), s.name]);
   }
-  return [...SKIP_ORDER, "other"].filter((r) => by.has(r)).map((r) => t(`lib-providers.left_out_${r}`, { names: names(by.get(r)!), max: ENV_LIMIT }));
+  return [...order, "other"].filter((r) => by.has(r)).map((r) => [r, by.get(r)!]);
+}
+
+/** The variables left out, a line per reason in plain words; an unknown reason reads as the generic one. */
+export function importLeftOut(p: Pick<ImportedProvider, "skipped_env">): string[] {
+  return byReason(p.skipped_env ?? [], SKIP_ORDER).map(([r, list]) => t(`lib-providers.left_out_${r}`, { names: names(list), max: ENV_LIMIT }));
 }
 
 const DIFFERS = ["tiers", "effort", "args", "limits", "proxy", "headers", "env", "auth", "custom_model"];

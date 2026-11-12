@@ -71,7 +71,7 @@ function type(input: HTMLInputElement, value: string) {
   });
 }
 const keyInput = () => document.body.querySelector<HTMLInputElement>('input[type="password"]')!;
-// The key auto-test debounce (AUTO_TEST_MS in ProviderWizard.tsx); timers are fake, so this costs no real time.
+// The key auto-test debounce (AUTO_TEST_MS in ProviderFields.tsx); timers are fake, so this costs no real time.
 const AUTO_TEST_MS = 700;
 const advance = async (ms: number) => {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });

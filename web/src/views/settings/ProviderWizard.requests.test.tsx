@@ -72,7 +72,7 @@ async function save() {
   return calls.find((c) => c.method === "PUT")!;
 }
 // The Connect step's automatic check waits this long after the address and key stop changing (AUTO_TEST_MS in
-// ProviderWizard.tsx). Timers are fake, so nothing fires unless a test advances them.
+// ProviderFields.tsx). Timers are fake, so nothing fires unless a test advances them.
 const AUTO = 700;
 async function advance(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });

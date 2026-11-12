@@ -102,7 +102,7 @@ describe("drafts on a stored provider", () => {
 describe("the paste state", () => {
   it("chooses a single draft by itself and waits for a choice among several", () => {
     const one = answered({ ...newPaste(), text: "x" }, "x", result([draft({ matches: [{ name: "gw", same_key: true }] })]));
-    expect(one).toMatchObject({ draft: 0, action: { type: "merge", provider: "gw" } });
+    expect(one).toMatchObject({ draft: 0, action: null });
     expect(pasteChoice(one)?.action).toEqual({ type: "merge", provider: "gw" });
     const two = answered({ ...newPaste(), text: "x" }, "x", result([draft(), draft({ label: "b" })]));
     expect(two).toMatchObject({ draft: -1, action: null });
