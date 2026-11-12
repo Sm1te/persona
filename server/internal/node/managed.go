@@ -23,6 +23,7 @@ import (
 	"github.com/nwverse/persona/server/internal/osproc"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // Launchers kept by the hub ("Settings › Model", docs/integrations/launchers.md): the manager names the ones in this
@@ -600,7 +601,7 @@ var secretValue = lazyre.New(`(?i)((?:key|token|secret|password|passwd|auth)[A-Z
 // launcherDefinition is a ~/.zshrc launcher's function body (a wrapper script's text, pathlaunchers.go), for its page
 // in "Settings › Model", with anything that looks like a key or token replaced by •••.
 func (n *Node) launcherDefinition(ctx context.Context, name string) (string, error) {
-	if !nameRe.MatchString(name) {
+	if !shellcmd.NameRe.MatchString(name) {
 		return "", fmt.Errorf("invalid launcher %q", name)
 	}
 	if path := n.scriptLauncher(ctx, name); path != "" {

@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/nwverse/persona/server/internal/prompts"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // memoryReaders are the commands readsOnlyMemory lets through, with the flags that would make one write or run
@@ -20,17 +21,17 @@ func readsOnlyMemory(command, cwd, dir string) bool {
 	if dir == "" {
 		return false
 	}
-	segs, ok := shellSegments(command)
+	segs, ok := shellcmd.Split(command)
 	if !ok || len(segs) == 0 {
 		return false
 	}
 	touched := false
 	for _, sg := range segs {
-		w := sg.words
+		w := sg.Words
 		if len(w) > 2 && w[0] == "timeout" && timeoutArg.MatchString(w[1]) {
 			w = w[2:]
 		}
-		if len(w) == 0 || sg.subst || !safeRedirect(sg.redirect) || strings.Contains(sg.redirect, "/tmp/") {
+		if len(w) == 0 || sg.Subst || !safeRedirect(sg.Redirect) || strings.Contains(sg.Redirect, "/tmp/") {
 			return false
 		}
 		bad, known := memoryReaders[w[0]]

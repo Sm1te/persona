@@ -3,11 +3,11 @@ package node
 import (
 	"errors"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
+
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // launchers.zshrc (#2455, #5024, docs/assistant/model-config.md "Importing providers from shell aliases"): the claude
@@ -84,60 +84,11 @@ func (n *Node) shellAliases(shell string) ([]zshrcAlias, error) {
 	return out, nil
 }
 
-// parseZshrcAliases is the claude aliases of a shell file (~/.zshrc, ~/.bashrc), in the order they are defined (one
-// defined again is where its last definition is, as the shell keeps the last). Lines are split as the shell would
-// (shellwords.go); one it does not follow is skipped.
+// parseZshrcAliases is the claude aliases of a shell file (shellcmd.ClaudeAliases) as launchers.zshrc answers them.
 func parseZshrcAliases(src string) []zshrcAlias {
 	out := []zshrcAlias{}
-	for line := range strings.Lines(src) {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "alias ") {
-			continue
-		}
-		segs, ok := shellSegments(line)
-		if !ok || len(segs) == 0 {
-			continue
-		}
-		for _, w := range segs[0].words[1:] { // `alias a=b; …`: the rest is another command
-			name, value, ok := strings.Cut(w, "=")
-			if !ok || !nameRe.MatchString(name) {
-				continue // a flag (-g) or a lookup (`alias x`)
-			}
-			a, ok := claudeAlias(value)
-			if !ok {
-				continue
-			}
-			a.Alias = name
-			out = append(slices.DeleteFunc(out, func(o zshrcAlias) bool { return o.Alias == name }), a)
-		}
+	for _, a := range shellcmd.ClaudeAliases(src) {
+		out = append(out, zshrcAlias{Alias: a.Name, Env: a.Env, Args: a.Args, Command: "claude"})
 	}
 	return out
-}
-
-// claudeAlias is an alias's value when one of its commands is claude (by path or not): the variables set in front of
-// it (and by an `export` before it in the alias), and its arguments.
-func claudeAlias(value string) (zshrcAlias, bool) {
-	segs, ok := shellSegments(value)
-	if !ok {
-		return zshrcAlias{}, false
-	}
-	exported := map[string]string{}
-	for _, seg := range segs {
-		cmd := seg.words
-		if len(cmd) > 0 && cmd[0] == "export" {
-			for _, w := range cmd[1:] {
-				if k, v, ok := strings.Cut(w, "="); ok && assignRe.MatchString(w) {
-					exported[k] = v
-				}
-			}
-			continue
-		}
-		env := maps.Clone(exported)
-		i := commandIndex(cmd, env) // launchers.go
-		if i < 0 || filepath.Base(cmd[i]) != "claude" {
-			continue
-		}
-		return zshrcAlias{Env: env, Args: slices.Clone(cmd[i+1:]), Command: "claude"}, true
-	}
-	return zshrcAlias{}, false
 }

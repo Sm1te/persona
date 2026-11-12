@@ -8,6 +8,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 var (
@@ -58,7 +59,7 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 		v.deny = "不要读或改 lark-cli 的配置和凭据（~/.lark-cli）：飞书用 lark-cli 命令，它自己带登录。"
 		return v
 	}
-	segs, ok := shellSegments(cmd)
+	segs, ok := shellcmd.Split(cmd)
 	if !ok {
 		v.other, v.unparsed, v.unknown = true, true, v.unknown || larkCLIRe.MatchString(cmd) || shellCommandUnknown(cmd, true, depth)
 		return v
@@ -66,11 +67,11 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 	vars := map[string]string{}
 	executableEnv := false
 	for _, s := range segs {
-		if s.argSubst {
+		if s.ArgSubst {
 			v.unsure, v.other = true, true
 			v.unknown = v.unknown || larkCLIRe.MatchString(cmd)
 		}
-		for _, nested := range s.nested {
+		for _, nested := range s.Nested {
 			child := classifyLarkDepth(nested, gates, cwd, risk, depth+1)
 			if len(child.calls) > 0 || child.unknown || child.unparsed {
 				v.other = true
@@ -80,7 +81,7 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 		if v.deny != "" {
 			return v
 		}
-		words := s.words
+		words := s.Words
 		// Loop bodies may prefix the invocation with both a shell keyword and environment assignments.
 		for len(words) > 0 && (words[0] == "do" || words[0] == "then" || words[0] == "else") {
 			words = words[1:]
@@ -120,7 +121,7 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 		words, parsed = unwrapCommand(words)
 		if !parsed {
 			v.other = true
-			v.unknown = v.unknown || larkCLIRe.MatchString(s.text)
+			v.unknown = v.unknown || larkCLIRe.MatchString(s.Text)
 			for _, word := range words {
 				v.unknown = v.unknown || strings.ContainsAny(word, "$`*?[]{}")
 			}
@@ -183,7 +184,7 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 			c.Gate = gate
 			v.calls = append(v.calls, c)
 		case name == "curl" || name == "wget" || name == "http" || name == "xh":
-			if g, ok := gateAimed(gates, s.text); ok {
+			if g, ok := gateAimed(gates, s.Text); ok {
 				v.deny = "不要直接 curl " + g.Title + " 的接口：用 " + g.Command + "，写操作要先在手机上确认。"
 				return v
 			}
@@ -191,7 +192,7 @@ func classifyLarkDepth(cmd string, gates []proto.CommandGate, cwd string, risk l
 		case larkFilters[name] && len(env) == 0:
 		default:
 			v.other = true
-			if larkCLIRe.MatchString(s.text) || dynamicCommandName(name) || larkCLIRe.MatchString(cmd) && indirectLarkCommand(name) {
+			if larkCLIRe.MatchString(s.Text) || dynamicCommandName(name) || larkCLIRe.MatchString(cmd) && indirectLarkCommand(name) {
 				v.unknown = true // an interpreter, wrapper or script may invoke the CLI
 			}
 		}

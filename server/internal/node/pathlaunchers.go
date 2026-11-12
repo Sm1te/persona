@@ -16,6 +16,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // Wrapper scripts on PATH (#5954): a claude entry point many people write as an executable file, not a ~/.zshrc
@@ -122,7 +123,7 @@ func scanPath(pathVar string, taken map[string]bool) *pathScan {
 		}
 		for _, e := range entries {
 			name := e.Name()
-			if first[name] || !nameRe.MatchString(name) || !(e.Type().IsRegular() || e.Type()&fs.ModeSymlink != 0) {
+			if first[name] || !shellcmd.NameRe.MatchString(name) || !(e.Type().IsRegular() || e.Type()&fs.ModeSymlink != 0) {
 				continue
 			}
 			path := filepath.Join(dir, name)
@@ -305,13 +306,13 @@ func wrapperScript(text string) (wrapper, bool) {
 				return ref
 			})
 		}
-		segs, ok := shellSegments(line)
+		segs, ok := shellcmd.Split(line)
 		if !ok {
 			continue
 		}
 		seps := separators(line, segs)
 		for si, seg := range segs {
-			cmd := seg.words
+			cmd := seg.Words
 			if len(cmd) == 0 {
 				continue
 			}
@@ -333,9 +334,9 @@ func wrapperScript(text string) (wrapper, bool) {
 			switch {
 			case cmd[0] == "export":
 				for _, w := range cmd[1:] {
-					if k, v, ok := strings.Cut(w, "="); ok && assignRe.MatchString(w) {
+					if k, v, ok := strings.Cut(w, "="); ok && shellcmd.AssignRe.MatchString(w) {
 						vars[k], exported[k] = expand(v), true
-					} else if nameRe.MatchString(w) {
+					} else if shellcmd.NameRe.MatchString(w) {
 						exported[w] = true
 					}
 				}
@@ -344,7 +345,7 @@ func wrapperScript(text string) (wrapper, bool) {
 					delete(vars, k)
 					delete(exported, k)
 				}
-			case !slices.ContainsFunc(cmd, func(w string) bool { return !assignRe.MatchString(w) }): // A=1 B=2
+			case !slices.ContainsFunc(cmd, func(w string) bool { return !shellcmd.AssignRe.MatchString(w) }): // A=1 B=2
 				for _, w := range cmd {
 					k, v, _ := strings.Cut(w, "=")
 					vars[k] = expand(v)
@@ -354,7 +355,7 @@ func wrapperScript(text string) (wrapper, bool) {
 			default:
 				words := slices.Clone(cmd)
 				for i, w := range words { // /usr/bin/env claude: env in the command's place only
-					if assignRe.MatchString(w) || w == "exec" || w == "command" || w == "noglob" || w == "nocorrect" || i > 0 && strings.HasPrefix(w, "-") {
+					if shellcmd.AssignRe.MatchString(w) || w == "exec" || w == "command" || w == "noglob" || w == "nocorrect" || i > 0 && strings.HasPrefix(w, "-") {
 						continue
 					}
 					if filepath.Base(w) == "env" {
@@ -364,7 +365,7 @@ func wrapperScript(text string) (wrapper, bool) {
 					break
 				}
 				front := map[string]string{}
-				i := commandIndex(words, front)
+				i := shellcmd.CommandIndex(words, front)
 				if i < 0 {
 					continue
 				}
@@ -413,16 +414,16 @@ func envIgnored(front []string) bool {
 
 // separators are what joins each segment of line to the next: "|", "||", "&&", ";", "&" or "" (a new line); a
 // segment the text cannot be found again for gives "".
-func separators(line string, segs []shellSeg) []string {
+func separators(line string, segs []shellcmd.Segment) []string {
 	out := make([]string, max(0, len(segs)-1))
 	at, ends := 0, make([]int, len(segs))
 	starts := make([]int, len(segs))
 	for i, s := range segs {
-		j := strings.Index(line[at:], s.text)
+		j := strings.Index(line[at:], s.Text)
 		if j < 0 {
 			return out
 		}
-		starts[i], ends[i] = at+j, at+j+len(s.text)
+		starts[i], ends[i] = at+j, at+j+len(s.Text)
 		at = ends[i]
 	}
 	for i := range out {

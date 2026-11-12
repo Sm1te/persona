@@ -20,6 +20,7 @@ import (
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/screen"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // Starting a Codex from the phone (docs/integrations/codex.md "Starting from the phone"). A Codex launcher (plain `codex`, or an alias whose
@@ -430,7 +431,7 @@ func CodexStart(args []string) error {
 	if f.Agent != "" {
 		env = append(withoutEnv(env, []string{herdrAgentEnv}), herdrAgentEnv+"="+f.Agent)
 	}
-	for len(words) > 0 && assignRe.MatchString(words[0]) {
+	for len(words) > 0 && shellcmd.AssignRe.MatchString(words[0]) {
 		env = append(env, words[0])
 		words = words[1:]
 	}

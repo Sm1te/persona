@@ -13,6 +13,7 @@ import (
 	"github.com/nwverse/persona/server/internal/host"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // Switching a running Claude Code Agent to another launcher (model provider) of the same engine (#5035,
@@ -322,7 +323,7 @@ func asSwitchError(err error) error {
 // model when one is given, and keeps Claude Code's data where the conversation is. It returns that config directory
 // and whether it could be told (launcherClaudeDir).
 func (n *Node) checkSwitchLauncher(ctx context.Context, id, launcher, model string) (string, bool, error) {
-	if !nameRe.MatchString(launcher) {
+	if !shellcmd.NameRe.MatchString(launcher) {
 		return "", false, fmt.Errorf("invalid launcher %q", launcher)
 	}
 	// A provider whose secrets this computer has not fetched yet: its environment (which may name a config

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // What a runtime that is a machine's engine needs beyond listing and driving its sessions (Paseo, docs/integrations/paseo.md):
@@ -34,8 +35,8 @@ const (
 	maxLauncherText     = 200
 )
 
-// cleanLaunchers keeps the launchers a runtime may offer: names a launcher may have (nameRe, the shell's rule), each
-// once, agents that are ids, text clipped, the lists bounded.
+// cleanLaunchers keeps the launchers a runtime may offer: names a launcher may have (shellcmd.NameRe, the shell's
+// rule), each once, agents that are ids, text clipped, the lists bounded.
 func cleanLaunchers(list []runtimeLauncher) []runtimeLauncher {
 	clip := func(s string) string {
 		if r := []rune(strings.TrimSpace(s)); len(r) > maxLauncherText {
@@ -49,7 +50,7 @@ func cleanLaunchers(list []runtimeLauncher) []runtimeLauncher {
 		if len(out) == maxRuntimeLaunchers {
 			break
 		}
-		if !nameRe.MatchString(l.Name) || seen[l.Name] || l.Agent != "" && !runtimeIDRe.MatchString(l.Agent) {
+		if !shellcmd.NameRe.MatchString(l.Name) || seen[l.Name] || l.Agent != "" && !runtimeIDRe.MatchString(l.Agent) {
 			continue
 		}
 		seen[l.Name] = true

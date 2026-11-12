@@ -16,6 +16,7 @@ import (
 	"github.com/nwverse/persona/server/internal/nodeclient"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // serve answers a request from the app-server. Approvals may wait for the phone, so each runs on its own.
@@ -251,11 +252,11 @@ func withReason(s, reason string) string {
 
 // unwrapShell shortens command text for display. Approval classification uses the original command.
 func unwrapShell(cmd string) string {
-	segs, ok := shellSegments(cmd)
+	segs, ok := shellcmd.Split(cmd)
 	if !ok || len(segs) != 1 {
 		return cmd
 	}
-	w := segs[0].words
+	w := segs[0].Words
 	if len(w) == 3 && (w[1] == "-c" || w[1] == "-lc") {
 		switch filepath.Base(w[0]) {
 		case "sh", "bash", "zsh":

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // workStartOptions describes the exact path session.start.work will take. A runtime
@@ -26,7 +27,7 @@ type workStartOptions struct {
 
 func (n *Node) workSessionOptions(ctx context.Context, name, configuredAgent, host string, configured, readCatalog bool) (workStartOptions, error) {
 	opts := workStartOptions{ModelMode: "default"}
-	if !nameRe.MatchString(name) {
+	if !shellcmd.NameRe.MatchString(name) {
 		return opts, workStartRefused("work_launcher_unavailable", "Choose an available launcher on this computer.")
 	}
 	if runtime, model := n.startRuntime(name); runtime != nil {

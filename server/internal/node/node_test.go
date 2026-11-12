@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 func TestParseLaunchersSimple(t *testing.T) {
@@ -81,7 +82,7 @@ func TestParseLaunchersSkipsJunk(t *testing.T) {
 	out := "\n  \n_loading…\n123bad model\nok_1 \n"
 	got := parseLaunchers(out)
 	for _, l := range got {
-		if l.Name != "ok_1" && !nameRe.MatchString(l.Name) {
+		if l.Name != "ok_1" && !shellcmd.NameRe.MatchString(l.Name) {
 			t.Fatalf("junk line accepted: %+v", l)
 		}
 	}

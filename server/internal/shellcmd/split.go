@@ -1,39 +1,42 @@
-package node
+// Package shellcmd reads shell command lines the way a POSIX shell splits them, before it expands anything: nothing
+// is expanded or run. The node's command gates and launcher lists and the manager's reading of a pasted configuration
+// share it.
+package shellcmd
 
 import "strings"
 
-// shellSeg is one simple command of a Bash command line, for the Feishu gate (larkgate.go).
-type shellSeg struct {
-	words    []string // quotes removed
-	text     string   // as written
-	subst    bool     // holds $(…), `…` or <(…): it runs something else too
-	argSubst bool     // the substitution is in a command word, not only a redirect target
-	nested   []string // command substitutions, classified separately without executing them
-	redirect string   // its redirections, e.g. "> /tmp/x 2>&1"
+// Segment is one simple command of a command line.
+type Segment struct {
+	Words    []string // quotes removed
+	Text     string   // as written
+	Subst    bool     // holds $(…), `…` or <(…): it runs something else too
+	ArgSubst bool     // the substitution is in a command word, not only a redirect target
+	Nested   []string // command substitutions, classified separately without executing them
+	Redirect string   // its redirections, e.g. "> /tmp/x 2>&1"
 }
 
-// shellSegments splits a command line at |, ||, &&, ;, & and newlines outside quotes, each part into words. ok is
-// false for what it does not follow (heredocs, subshells and groups, unbalanced quotes): the gate then decides nothing.
-func shellSegments(cmd string) (segs []shellSeg, ok bool) {
+// Split splits a command line at |, ||, &&, ;, & and newlines outside quotes, each part into words. ok is false for
+// what it does not follow (heredocs, subshells and groups, unbalanced quotes): a caller then decides nothing.
+func Split(cmd string) (segs []Segment, ok bool) {
 	r := []rune(cmd)
-	var seg shellSeg
+	var seg Segment
 	var word strings.Builder
 	inWord := false
 	start := 0
 	endWord := func() {
 		if inWord {
-			seg.words = append(seg.words, word.String())
+			seg.Words = append(seg.Words, word.String())
 			word.Reset()
 			inWord = false
 		}
 	}
 	endSeg := func(at int) {
 		endWord()
-		seg.text = strings.TrimSpace(string(r[start:at]))
-		if len(seg.words) > 0 || seg.redirect != "" {
+		seg.Text = strings.TrimSpace(string(r[start:at]))
+		if len(seg.Words) > 0 || seg.Redirect != "" {
 			segs = append(segs, seg)
 		}
-		seg = shellSeg{}
+		seg = Segment{}
 		start = at
 	}
 	// skipGroup copies $( … ) / `…` / <( … ) into the word, nesting and quotes respected; false when it never closes.
@@ -58,7 +61,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			case r[i] == close:
 				depth--
 				if depth == 0 {
-					seg.nested = append(seg.nested, string(r[begin:i]))
+					seg.Nested = append(seg.Nested, string(r[begin:i]))
 					return i, true
 				}
 			}
@@ -96,7 +99,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 					j++
 					word.WriteRune(r[j])
 				case r[j] == '$' && j+1 < len(r) && r[j+1] == '(', r[j] == '`':
-					seg.subst, seg.argSubst = true, true
+					seg.Subst, seg.ArgSubst = true, true
 					at := j
 					open, close := rune('`'), rune('`')
 					if r[j] == '$' {
@@ -118,7 +121,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			}
 			i = j
 		case c == '$' && i+1 < len(r) && r[i+1] == '(':
-			seg.subst, seg.argSubst, inWord = true, true, true
+			seg.Subst, seg.ArgSubst, inWord = true, true, true
 			word.WriteRune('$')
 			end, closed := skipGroup(i+1, '(', ')')
 			if !closed {
@@ -126,7 +129,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			}
 			i = end
 		case c == '`':
-			seg.subst, seg.argSubst, inWord = true, true, true
+			seg.Subst, seg.ArgSubst, inWord = true, true, true
 			end, closed := skipGroup(i, '`', '`')
 			if !closed {
 				return nil, false
@@ -154,7 +157,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 			}
 			for i < len(r) && !strings.ContainsRune(" \t\n|;&<>()", r[i]) {
 				if r[i] == '$' && i+1 < len(r) && r[i+1] == '(' || r[i] == '`' {
-					seg.subst = true
+					seg.Subst = true
 					open, close := '`', '`'
 					at := i
 					if r[i] == '$' {
@@ -179,7 +182,7 @@ func shellSegments(cmd string) (segs []shellSeg, ok bool) {
 				i++
 			}
 			i--
-			seg.redirect = strings.TrimSpace(seg.redirect + " " + op)
+			seg.Redirect = strings.TrimSpace(seg.Redirect + " " + op)
 		case c == '|' || c == ';' || c == '&' || c == '\n':
 			endSeg(i)
 			if i+1 < len(r) && (c == '|' && r[i+1] == '|' || c == '&' && r[i+1] == '&') {

@@ -13,6 +13,7 @@ import (
 	"github.com/nwverse/persona/server/internal/host"
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/screen"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 func newUUID() string {
@@ -332,7 +333,7 @@ func (n *Node) checkStart(cwd, launcher, resume, mode, effort string) (string, s
 	if launcher == "" {
 		launcher = "claude"
 	}
-	if !nameRe.MatchString(launcher) {
+	if !shellcmd.NameRe.MatchString(launcher) {
 		return "", "", fmt.Errorf("invalid launcher %q", launcher)
 	}
 	if resume != "" && !validID(resume) {
