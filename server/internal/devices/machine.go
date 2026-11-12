@@ -731,14 +731,27 @@ func (m *Machine) onEvent(event string, params json.RawMessage) {
 			SessionID string         `json:"session_id"`
 			State     db.NodeSession `json:"state"`
 		}
-		if s, ok := m.d.opts.Store.(nodeStateStore); ok && json.Unmarshal(params, &p) == nil && p.SessionID != "" {
+		if json.Unmarshal(params, &p) != nil || p.SessionID == "" {
+			devicewire.ShareCreationLog(m.d.logf, "", "manager_persist", "invalid_state")
+			return
+		}
+		received, committed := "received_without_receipt", "committed_without_receipt"
+		if p.State.CreationID != "" && p.State.Incarnation != "" {
+			received, committed = "received_with_receipt", "committed_with_receipt"
+		}
+		devicewire.ShareCreationLog(m.d.logf, p.SessionID, "manager_persist", received)
+		if s, ok := m.d.opts.Store.(nodeStateStore); ok {
 			// Written here, in order (the latest put of a session wins), but bounded: a store that does not answer must
 			// not hold the node's read loop, and with it every reply and event of the node (nodeStoreWait).
 			ctx, cancel := m.storeCtx()
 			if err := s.PutNodeSession(ctx, m.cfg.ID, p.SessionID, p.State); err != nil {
-				m.d.logf("[%s] save session state: %v", m.cfg.ID, err)
+				devicewire.ShareCreationLog(m.d.logf, p.SessionID, "manager_persist", "store_error")
+			} else {
+				devicewire.ShareCreationLog(m.d.logf, p.SessionID, "manager_persist", committed)
 			}
 			cancel()
+		} else {
+			devicewire.ShareCreationLog(m.d.logf, p.SessionID, "manager_persist", "store_unavailable")
 		}
 		return // the manager's alone
 	case "claude.dirs":

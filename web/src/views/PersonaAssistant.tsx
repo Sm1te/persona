@@ -13,7 +13,7 @@ import { codedFailure, helpTopic, passesBySelf, refreshReadiness, type CodedFail
 import { conversationPage } from "../lib/conversation-page";
 import { navigate } from "../lib/router";
 import { hubHas, refreshAssistant, useStore } from "../lib/store";
-import { effectiveLauncher, NEW_CONVERSATION, pickedLauncher, pickLauncher } from "../lib/assistant-chat";
+import { effectiveLauncher, NEW_CONVERSATION, pickedEffort, pickedLauncher, pickedModel, pickEffort, pickLauncher } from "../lib/assistant-chat";
 import { adoptedConversation, noteSent, outboxMessage } from "../lib/outbox";
 import { CLEAR_MAIN_FEATURE, isClearCommand, mainCommands, useMainCleared } from "../lib/main-clear";
 import { Button, cx, EASE, IconButton, Loading } from "../ui/atoms";
@@ -22,7 +22,7 @@ import { ChatView, Header } from "./chat/ChatView";
 import { MainRuntimeSlot } from "./assistant/MainRuntimeSlot";
 import { UserBubble } from "./chat/SegmentView";
 import { Composer, type Outgoing } from "./chat/Composer";
-import { StarterLauncherChip } from "./assistant/AssistantChat";
+import { AssistantModelPill } from "./chat/ModelPill";
 import { PersonaAvatar, usePersona } from "./assistant/Persona";
 import { ChatOnlyNote, FailureCard, ReadinessCard, useReadinessGate } from "./assistant/Readiness";
 import { DayLine } from "./assistant/Tasks";
@@ -275,8 +275,9 @@ function Starter({ main, cleared, onToggleSidebar }: { main?: boolean; cleared?:
   };
 
   const startOnce = async (out: Outgoing): Promise<boolean> => {
+    // what the model pill picked for this new chat (#5033): the launcher, its model, the effort
     const launcher = pickedLauncher(NEW_CONVERSATION);
-    const body = { prompt: out.text, images: out.images.length ? out.images : undefined, launcher, main: main || undefined };
+    const body = { prompt: out.text, images: out.images.length ? out.images : undefined, launcher, model: launcher ? pickedModel(NEW_CONVERSATION) : undefined, effort: pickedEffort(NEW_CONVERSATION), main: main || undefined };
     // written for the manager shown now: its retries go there even if the switcher moves meanwhile
     const chosen = chosenManager() ?? undefined;
     const headers = ownerHeaders(chosen);
@@ -292,6 +293,7 @@ function Starter({ main, cleared, onToggleSidebar }: { main?: boolean; cleared?:
         // the prompt shows in the conversation at once (it started with it), until its transcript has it
         noteSent(r.session.machine_id, r.session.session_id, out);
         if (launcher) pickLauncher(NEW_CONVERSATION, undefined);
+        pickEffort(NEW_CONVERSATION, undefined);
         void refreshAssistant().catch(() => {});
         navigate(conversationPage(r.session.session_id, r.session.machine_id, from));
         return true;
@@ -410,7 +412,7 @@ function Starter({ main, cleared, onToggleSidebar }: { main?: boolean; cleared?:
           {gate.dialog}
           {/* the box: in the page's middle, or docked at the bottom as the conversation's (ChatView's dock) while the start is on its way */}
           <div ref={box} className={docked ? "mx-auto flex w-full max-w-[880px] flex-col justify-end gap-2 px-4 pb-4 sm:px-7 [@media(max-height:500px)]:pb-2" : undefined}>
-            <Composer key={seed} blocked={offline ? undefined : gate.blocked} disabled={Boolean(offline) || Boolean(sending)} draftKey="persona-new" placeholder={offline ? offline.composer : t("personaassistant.ask_placeholder", { name: persona.name })} machineId={assistant?.machine_id} mention={NEW_MENTION} onSend={start} autoFocus commands={commands} footer={assistant && !sending ? <StarterLauncherChip /> : undefined} />
+            <Composer key={seed} blocked={offline ? undefined : gate.blocked} disabled={Boolean(offline) || Boolean(sending)} draftKey="persona-new" placeholder={offline ? offline.composer : t("personaassistant.ask_placeholder", { name: persona.name })} machineId={assistant?.machine_id} mention={NEW_MENTION} onSend={start} autoFocus commands={commands} trailing={assistant && !sending ? <AssistantModelPill /> : undefined} />
           </div>
           {!docked && (
           <div className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2">

@@ -1,17 +1,4 @@
 {
-  "launchers_failed": "ランチャーを読み込めません：{error}",
-  "launchers_loading": "ランチャーを読み込み中…",
-  "launchers_none": "このコンピューターにはPersonaを実行できるランチャーがありません",
-  "using_model": "次のメッセージから{launcher}・{model}を使用します",
-  "using_default_model": "次のメッセージから{launcher}のデフォルトモデルを使用します",
-  "back_to_launchers": "← ランチャー",
-  "default_model": "デフォルトモデル",
-  "models_loading": "モデルを読み込み中…",
-  "launcher_chip_title": "ランチャー（次のメッセージから使用）",
-  "models_header": "モデル：{launcher}",
-  "from_next_message": "次のメッセージから使用",
-  "new_chat_launcher_title": "新しいチャットのランチャー",
-  "new_chat_uses": "新しいチャットで使用",
   "details": "詳細",
   "knowledge": "ナレッジ",
   "back_to_main": "メインチャットに戻る",
@@ -33,11 +20,5 @@
   "new_main": "新規作成",
   "new_main_body": "現在のメインチャットは「{title}」という名前でアーカイブされ、「アーカイブ済み」から確認できます。新しいメインチャットは次に送るメッセージから始まります。",
   "carry_summary": "以前のチャットの要約を引き継ぐ",
-  "carry_summary_hint": "圧縮していない場合は直近の数件だけを引き継ぎます。完全な要約を引き継ぐには、先にコンテキストを圧縮してください。",
-  "typed_before": "以前入力したもの",
-  "other_model": "その他のモデル…",
-  "model_id_placeholder": "モデルID（例：vendor/model-name）",
-  "forget_typed": "入力したモデルを削除",
-  "forget_failed": "「{id}」を削除できませんでした：{error}",
-  "pick_dropped": "「{launcher}」はアシスタントの会話を実行できないため、既定のランチャーに戻しました"
+  "carry_summary_hint": "圧縮していない場合は直近の数件だけを引き継ぎます。完全な要約を引き継ぐには、先にコンテキストを圧縮してください。"
 }

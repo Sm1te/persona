@@ -66,7 +66,6 @@ vi.mock("../../lib/router", async (importOriginal) => ({
 vi.mock("../assistant/Persona", () => ({ usePersona: () => ({ name: "Persona" }) }));
 vi.mock("../assistant/AssistantChat", () => ({
   AssistantFace: () => null,
-  AssistantLauncherChip: () => null,
   CompactionStrip: () => null,
   useAssistantMenu: () => ({ items: [], dialogs: null }),
 }));
@@ -226,8 +225,11 @@ describe("composer footer rows (#3533)", () => {
     // a Codex thread (effort only): its effort is on the pill, the footer has no chip at all
     const codex = renderToStaticMarkup(<ComposerFooter session={{ ...s, agent: "codex", source_kind: "codex_app_server", capabilities: { send: true }, efforts: ["low", "high"] } as Session} />);
     expect(codex).not.toContain("<button type=\"button\" title=");
-    // a Persona conversation keeps its effort chip
-    expect(renderToStaticMarkup(<ComposerFooter session={{ ...s, assistant: true }} assistant />)).toContain(`title="${t("chat-sessiondialogs.effort")}"`);
+    // a Persona conversation: its permission chip too, its launcher, model and effort on its pill (#5033)
+    const persona = renderToStaticMarkup(<ComposerFooter session={{ ...s, assistant: true }} assistant />);
+    expect(persona).toContain(`title="${t("chat-sessiondialogs.permission_mode")}"`);
+    expect(persona).not.toContain(`title="${t("chat-sessiondialogs.effort")}"`);
+    expect(persona).not.toContain("gateway-cc");
   });
   it("leaves out what is missing, and in a Persona conversation the folder too", () => {
     const s = { machine_id: "m", session_id: "s", launcher: "claude", model: "opus", cwd: "/code" } as Session;

@@ -7,5 +7,14 @@
   "loading": "正在读取模型…",
   "failed": "模型读取失败",
   "default_model": "默认模型",
-  "effort_xhigh_short": "很高"
+  "effort_xhigh_short": "很高",
+  "header_default": "跟随默认 · {setup}",
+  "header_own": "沿用这个对话开始时的模型 · {setup}",
+  "header_picked": "本对话单独选择 · {setup}",
+  "header_picked_page": "本对话单独选择，刷新页面后恢复 · {setup}",
+  "header_new": "用于这个新对话 · {setup}",
+  "follow_default": "恢复跟随默认",
+  "undo_pick": "撤销单独选择",
+  "provider_gone": "这台电脑上已经没有这个服务商了",
+  "pick_dropped": "「{launcher}」跑不了 Persona 对话，已换回默认"
 }

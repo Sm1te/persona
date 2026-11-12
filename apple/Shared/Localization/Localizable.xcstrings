@@ -103060,19 +103060,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Read-only"
+            "value" : "Read-only requested"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "読み取り専用"
+            "value" : "読み取り専用を要求"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只读"
+            "value" : "已要求只读"
           }
         }
       },

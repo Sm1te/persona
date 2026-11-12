@@ -33,6 +33,7 @@ var Features = []string{
 	"ultracode",                // session-only Claude Code workflow switch, queued changes and resume-loss notices
 	"model_configuration",      // unified per-purpose models and provider selection
 	"typed_models",             // a model ID the launcher's list lacks: starts, POST …/modes, the Persona chat's pick; custom rows, DELETE …/models/custom (#1644)
+	"assistant_model_pick",     // PUT / DELETE /api/v1/assistant/conversations/{id}/model, model_pick on assistant conversations, unavailable on …/launchers?purpose=assistant (#5033)
 	"launcher_switch",          // POST …/modes {launcher, model?, effort?} switches a running Claude Code Agent to another launcher with its next message; Session.pending_switch (#5035)
 	"client_msg_id",            // session.send dedupes retries
 	"client_ops",               // durable operation receipts and read-only status queries

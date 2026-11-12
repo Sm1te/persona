@@ -145,7 +145,7 @@ func TestTaskPromptCarriesTheDeliveryStandard(t *testing.T) {
 	}
 	edit, _ := f.starts[0]["prompt"].(string)
 	read, _ := f.starts[1]["prompt"].(string)
-	if !strings.HasPrefix(edit, "修好登录\n\n") || !strings.Contains(edit, "交付：<已上线并实测") || read != "查一下" {
+	if !strings.HasPrefix(edit, "修好登录\n\n") || !strings.Contains(edit, "交付：<已上线并实测") || read != "查一下\n\n本任务只读：不改项目文件、不提交、不对外写入" {
 		t.Fatalf("prompts:\n%s\n---\n%s", edit, read)
 	}
 }

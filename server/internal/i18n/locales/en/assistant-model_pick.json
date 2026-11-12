@@ -1,0 +1,16 @@
+{
+  "err_role": "Full access is required to change a conversation's model.",
+  "err_launcher_required": "Choose a model provider for this conversation",
+  "err_effort": "Unknown reasoning effort {effort}",
+  "err_no_conversation": "This assistant conversation isn't on {machine}",
+  "err_guest": "A guest conversation keeps the model it started with",
+  "err_not_main_chat": "{launcher} can start Agents on {machine} but can’t run assistant chats. Choose another one.",
+  "err_locked": "{launcher} sets its own model, so no other model can be chosen for it. Choose it without a model.",
+  "err_no_model": "{launcher} doesn’t take a model choice. Choose it without a model.",
+  "unavailable_not_main_chat": "Can start Agents on {machine} but can’t run assistant chats",
+  "unavailable_api_responses": "Connects through the Responses API. Assistant chats need Claude Code or a Messages API connection",
+  "unavailable_api_chat": "Connects through the Chat Completions API. Assistant chats need Claude Code or a Messages API connection",
+  "unavailable_api_other": "Connects through the {api} API. Assistant chats need Claude Code or a Messages API connection",
+  "err_invalid_id": "That isn’t a conversation ID",
+  "err_unreadable": "The conversations’ model picks couldn’t be read. Try again in a moment."
+}

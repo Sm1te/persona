@@ -329,9 +329,9 @@ For every component: use the design-system one, not a lookalike. Counts are appr
 - Source: `apple/Persona/DesignSystem/ShellComposerBar.swift:11`, `apple/Persona/DesignSystem/ComposerButtons.swift`.
 - Platforms: web composer (14 px radius, 28 px buttons, `web/src/views/chat/Composer.tsx:648`); Android `ComposerFrame` (radius 32 in Glass).
 - Web bottom row (#5032): `[+][@][/] [permission chip · source · folder] … [model pill][voice][stop/send]`. The model pill
-  sits in the composer's `trailing` slot, right before voice / Stop / Send, in an Agent chat (a Persona chat keeps its
-  effort and launcher chips until #5033). The card is the `composer` container whose width sets the pill's modes ("Model
-  pill and unified model panel" in 3.8).
+  sits in the composer's `trailing` slot, right before voice / Stop / Send, in an Agent chat and in a Persona chat
+  (#5033; the new-chat page too), where the permission chip is the only chip on the left. The card is the `composer`
+  container whose width sets the pill's modes ("Model pill and unified model panel" in 3.8).
 - Editing state (web, #4503): editing the last message puts its words and quotes back into the box under a one-line bar at the box's top, above the context chips and quote bars. The bar has an accent pencil, **Editing last message** (`ink-2`, medium), a truncating hint (`ink-3`, precise pointers only) and a × with the quote bar's 24 px look. It is the only sign of the state, and the text field stays the same field. The irreversible step (the rewind) waits for an explicit send, which the bar's hint names. Esc or × leaves with nothing changed (`docs/web/web.md` "Pages", **Edit last message**).
 - Duplicates: four composer implementations exist (DS-19).
 
@@ -549,8 +549,8 @@ copy; none is presented as the current location.
 
 **Model pill and unified model panel** (web, #5032; `docs/web/web.md` "Model pill and model panel"). This part follows
 Cindy's model selector at the user's request (2026-11-12): where an earlier rule here differs, this entry wins for the
-pill and panel, built from Persona's tokens. Who it serves: people working with coding Agents; a Persona chat moves to it
-in #5033.
+pill and panel, built from Persona's tokens. Who it serves: people working with coding Agents, and everyone in a Persona
+chat (#5033), where the panel only offers models and says plainly which one the chat uses.
 
 - Pill (`web/src/views/chat/ModelPill.tsx`): 30 px tall capsule, 10 px side padding, 4 px gaps, 13 px text
   (`ink`), no frame at rest; hover and open draw a 1 px `--line-strong` border on `--hover`. Contents in order: the
@@ -580,6 +580,12 @@ in #5033.
   the header or the model-pill container. Unknown context mounts no row. Quota bars use the established accent / orange /
   red quota tones (≤ 30% left warning, ≤ 10% or exhausted critical); price marks use neutral `ink-2`, one to three `$` by
   standard output price, and the flyout's values use tabular numerals. Unknown data never creates placeholder marks.
+- Header strip (Persona chats, #5033, `PickStrip` in `web/src/views/chat/AssistantModelPanel.tsx`): one line above the
+  search, 14 px side and 8 px vertical padding, a `line` rule below, 12 px `ink-2` text that truncates. It says where the
+  chat's setup comes from in plain words ("Following the default · …", "Picked for this chat · …", "For this new chat ·
+  …") and, when the chat has its own pick, ends with a text button in `accent-ink` (medium weight, one line):
+  **Follow default** in the main chat, **Undo pick** in another. Providers that can't run Persona chats on that computer
+  are the panel's last groups: the header and the hub's reason, no rows.
 - Tokens: the effort levels have one colour each in both themes (`--effort-low` / `--effort-minimal` #2AAE5B,
   `--effort-medium` #14B8A6, `--effort-high` #3B82F6, `--effort-xhigh` #4F46E5, `--effort-max` #8B5CF6, Codex's ultra on
   max) and `--fast` (#3B9EFF), used inside the flyout only: the pill never colours its effort or its bolt.
@@ -1100,11 +1106,10 @@ style or motion.
 ## Codex speed controls (#3865)
 
 An Agent's Codex thread sets its speed with Fast in the model panel's flyout of the model it runs (#5032, the model pill
-and unified model panel in 3.8); a Persona chat running Codex keeps its effort chip and radio menu. A Speed submenu there
-reveals native model speed choices and their current value, including Unknown before native settings arrive. Its Fast choice explains increased usage or cost.
-Selection waits for native acknowledgment and the session push. Standard is the reversible choice. This requested
-control reuses Menu typography, spacing, focus behavior and light/dark tokens. Settings > Agents > Codex uses the
-existing agent-settings row for the native default. No account or session is automatically switched to Fast.
+and unified model panel in 3.8); a Persona chat running Codex does the same since #5033, its effort chip and Speed
+submenu retired. Fast is a toggle showing the current value, and its label explains the increased usage. A change
+waits for native acknowledgment and the session push; turning Fast off is the reversible choice. Settings > Agents >
+Codex uses the existing agent-settings row for the native default. No account or session is automatically switched to Fast.
 
 ## Hub connection password (#4474)
 

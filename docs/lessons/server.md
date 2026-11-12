@@ -1,5 +1,17 @@
 # Lessons: hub / node and networking
 
+## A creation reply is not a durable receipt (#5215)
+
+A successful runtime reply and `ownership_unbound` do not reveal whether the
+manager prepared an intent, the node emitted its receipt, or the database accepted
+its state. Trace each boundary with bounded session IDs and fixed outcome codes;
+compare prepared/returned identities in memory without logging them. A one-way
+notification's successful write is not a database acknowledgement. Log its failure
+without raw error text, which may contain private input, and preserve existing
+reconnect handling. Missing diagnostics from an old node or inaccessible stream
+are not evidence of a missing receipt. Keep the actual-node callback regression
+separate from the HTTP/manager/stub-node durable integration test.
+
 ## Virtual-file sizes and EOF (#4425)
 
 Some Linux sysfs attributes report a stable page-sized length even when their readable contents are shorter. A short

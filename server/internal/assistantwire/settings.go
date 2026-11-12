@@ -77,6 +77,7 @@ type StartParams struct {
 	Text           string        `json:"text"`
 	Images         []proto.Image `json:"images,omitempty"`
 	Launcher       string        `json:"launcher,omitempty"`
+	Model          string        `json:"model,omitempty"`      // the first message's model, picked as a message's is (#5033)
 	ConfigDir      string        `json:"config_dir,omitempty"` // Claude profile on the target machine; "" private, "legacy" old resolution, "default" unset
 	PermissionMode string        `json:"permission_mode,omitempty"`
 	Effort         string        `json:"effort,omitempty"`

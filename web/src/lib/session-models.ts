@@ -12,7 +12,10 @@ import { ApiError, errorText } from "./api";
 import { agentId, sessionAgent } from "./agent-kind";
 import { modelShort } from "./context-usage";
 import { stateOf } from "./format";
-import { defaultModel, forgetCustomModel, launcherModels, machineLaunchers, modelName, withoutCustom, type AgentModel, type LauncherModels } from "./launcher-models";
+import { runsAssistant, type AssistantLauncher } from "./assistant-chat";
+import {
+  defaultModel, forgetCustomModel, launcherModels, machineLaunchers, modelName, withoutCustom, type AgentModel, type LauncherDefault, type LauncherModels, type UnavailableLauncher,
+} from "./launcher-models";
 import { canSwitchModel, isCurrentModel, sessionLauncher } from "./model-switch";
 import { hasEffortOnly, hasModes } from "./session-actions";
 import type { Launcher, Session } from "./types";
@@ -55,6 +58,40 @@ export const modelList = (mid: string, launcher: string): ModelList => lists.get
 
 /** The launchers of `mid` as last read; undefined before the first answer. */
 export const machineLauncherList = (mid: string): Launcher[] | undefined => machines.get(mid)?.launchers;
+
+/** What a Persona chat's pill and panel read of its computer (`?purpose=assistant`, #5033): the launchers that can run
+ *  assistant chats, the main chat's default (Model configuration › Main chat), and what can't run them, with why. */
+export interface AssistantLaunchers {
+  launchers: AssistantLauncher[];
+  def?: LauncherDefault | null;
+  unavailable: UnavailableLauncher[];
+}
+
+const assistantMachines = new Map<string, { info?: AssistantLaunchers; loading?: boolean; error?: string }>();
+const assistantReads = new Map<string, Promise<void>>();
+
+/** The Persona chats' launchers of `mid` as last read (`info` undefined before the first answer). */
+export const assistantLaunchers = (mid: string): { info?: AssistantLaunchers; loading?: boolean; error?: string } => assistantMachines.get(mid) ?? {};
+
+/** Reads them: once (a pill that needs the default), or `again` behind the ones shown (an opening of the panel). */
+export function readAssistantLaunchers(mid: string, o: { again?: boolean } = {}): Promise<void> {
+  const reading = assistantReads.get(mid);
+  if (reading) return reading;
+  const had = assistantMachines.get(mid);
+  if (had?.info && !o.again) return Promise.resolve();
+  assistantMachines.set(mid, { info: had?.info, loading: true });
+  changed();
+  const read = machineLaunchers(mid, { purpose: "assistant" }).then(
+    (r) => void assistantMachines.set(mid, { info: { launchers: (r.launchers ?? []).filter(runsAssistant), def: r.default, unavailable: r.unavailable ?? [] } }),
+    // the ones shown stay; with none, say why
+    (e) => void assistantMachines.set(mid, had?.info ? { info: had.info } : { error: errorText(e) }),
+  ).finally(() => {
+    assistantReads.delete(mid);
+    changed();
+  });
+  assistantReads.set(mid, read);
+  return read;
+}
 
 // at most three lists are read at a time (each may start the agent's CLI on the computer); `first` jumps the queue
 const MAX_READS = 3;

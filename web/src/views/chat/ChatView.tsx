@@ -59,7 +59,7 @@ import { AWAIT_MS, awaitingTurn, DOCK_MAX, turnStart } from "./dock";
 import { HEADER_SLOT, HEADER_SLOT_END, HEADER_SLOT_START } from "./header";
 import { contextUsage } from "../../lib/context-usage";
 import { ContextMeter } from "./ContextMeter";
-import { AgentModelPill } from "./ModelPill";
+import { AgentModelPill, AssistantModelPill } from "./ModelPill";
 import { switchRefused } from "../../lib/session-models";
 import { NARROW, NO_HOVER, PHONE, SHORT, useFinePointer, useMedia } from "../../lib/viewport";
 import { UserBubble } from "./SegmentView";
@@ -104,7 +104,7 @@ import { chatFiles } from "../../lib/mentions";
 import { sameMessage } from "../../lib/queue";
 import { OutboxBubbles } from "./OutboxBubbles";
 import { MainRuntimeSlot } from "../assistant/MainRuntimeSlot";
-import { AssistantFace, AssistantLauncherChip, CompactionStrip, useAssistantMenu } from "../assistant/AssistantChat";
+import { AssistantFace, CompactionStrip, useAssistantMenu } from "../assistant/AssistantChat";
 import { Segmented } from "../assistant/parts";
 import { PageBoundary } from "../PageBoundary";
 import { ViewLayer } from "../session/ViewLayer";
@@ -1491,8 +1491,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // the main conversation's /clear (#5095, lib/main-clear.ts): Persona's other conversations take no commands
   const commands = useMemo(() => (assistant ? (clears ? mainCommands() : []) : agentCommands(AGENT_COMMANDS, session)), [assistant, clears, session]);
   const footer = useMemo(() => (session ? <ComposerFooter session={session} assistant={assistant} /> : null), [session, assistant]);
-  // an Agent's model pill (#5032); a Persona conversation keeps its launcher chip in the footer for now (#5033)
-  const trailing = useMemo(() => (session && !assistant ? <AgentModelPill session={session} /> : null), [session, assistant]);
+  // the model pill: an Agent's (#5032), a Persona conversation's (#5033, its pick kept for the conversation)
+  const trailing = useMemo(() => (session ? assistant ? <AssistantModelPill session={session} /> : <AgentModelPill session={session} /> : null), [session, assistant]);
 
   const pendingCards = (
     <PendingCards
@@ -1858,17 +1858,15 @@ function JumpPill({ label, onClick, inline }: { label: string; onClick: () => vo
 }
 
 export function ComposerFooter({ session, assistant }: { session: Session; assistant?: boolean }) {
-  // the launcher and model are the composer's model pill (an Agent's, #5032) or the launcher chip (a Persona
-  // conversation's): they switch there, so the line keeps only where the chat comes from and runs
+  // the launcher, model and effort are the composer's model pill (an Agent's, #5032; a Persona conversation's, #5033):
+  // they switch there, so the line keeps only where the chat comes from and runs
   const parts = [sourceSubtitle(session), ...(assistant ? [] : [shortPath(session.cwd)])].filter(Boolean);
   const info = useMenu();
-  // a Persona conversation (the main one too) switches its modes whatever its state: the hub applies them (#2416). An
-  // Agent's effort (a Codex thread's too) is on its model pill
+  // a Persona conversation (the main one too) switches its permission mode whatever its state: the hub applies it (#2416)
   const modes = assistant || (hasModes(session) && stateOf(session) !== "offline");
   return (
     <span className="flex min-w-0 items-center gap-2">
-      {modes && <ModeChips session={session} assistant={assistant} withInfo={parts.length > 0} />}
-      {assistant && <AssistantLauncherChip session={session} />}
+      {modes && <ModeChips session={session} assistant={assistant} />}
       {parts.length > 0 && <span className="min-w-0 truncate max-sm:hidden" title={[sourceSubtitle(session), session.cwd].filter(Boolean).join(" · ")}>{parts.join(" · ")}</span>}
       {/* phone width (#3533): the line would show a letter or two, so it is a button that lists the parts in full */}
       {parts.length > 0 && <IconButton icon="info" label={t("chat-chatview.session_info")} onClick={info.open} active={Boolean(info.anchor)} size={22} iconSize={13} className="sm:hidden" />}

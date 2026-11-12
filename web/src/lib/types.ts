@@ -107,6 +107,13 @@ export interface Subagent {
   tokens?: number;
 }
 
+/** Session.model_pick (#5033): model absent is the launcher's default, effort absent the one it runs with. */
+export interface ModelPick {
+  launcher: string;
+  model?: string;
+  effort?: string;
+}
+
 /** Session.pending_switch (#5035). */
 export interface PendingSwitch {
   launcher: string;
@@ -239,6 +246,10 @@ export interface Session {
   /** The client the agent runs in: "desktop" (its desktop app) or "cli" (its command line); absent when unknown (#6390). */
   agent_surface?: string;
   launcher?: string;
+  /** A Persona chat's own pick (feature `assistant_model_pick`, #5033): the launcher, model and effort its next messages
+   *  run on, kept on the hub for every device. Absent: it follows the default (the main chat) or keeps what it runs
+   *  (docs/assistant/model-config.md "A conversation's own model"). */
+  model_pick?: ModelPick;
   /** A switch of this running Claude Code Agent to another launcher (feature `launcher_switch`, #5035) that its next
    *  message carries out: the launcher, the model and effort picked (absent: the launcher's default, the effort it runs
    *  with now). `launcher` above stays the one it runs on until then (docs/protocol/protocol.md "Switching a running Agent
