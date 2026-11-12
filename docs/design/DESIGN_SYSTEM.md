@@ -1276,3 +1276,22 @@ effort fields are gone. What the panel gained for it, each part optional and abs
 Reason: one place to choose a model for chats and new Agents (principle 4), the engine visible without a field of its
 own (principle 2), the default as one row that can always be gone back to (principles 1 and 3). The deviations from
 Cindy are listed in `docs/web/web.md` "New Agent's model choice (#5104)"; iOS and Android follow in #5117.
+
+## Starting from what you already have (#5193)
+
+Where a form sets something up that the user may already have working elsewhere (the web provider wizard's first step),
+the usual choices stay first and unchanged, and two more ways in follow them, each a row of the same list style:
+**Paste a configuration**, and, only when there is something to show, a group **Found on your computers** listing what
+the hub can import as it is, each row opening the import that already exists for it. The paste view is one monospace
+text area with one plain line saying what it accepts and that nothing is saved until the user confirms; it is read by
+itself 0.7 s after the text stops changing and at once on a paste, with the status line of "Checking typed credentials
+by themselves" (a spinner while reading, then the result). What it found is a list of cards (a radio choice when there
+are several): what it is, its address and how many models, then in secondary text what it brings along and what it
+leaves out, by name and never by value. A draft that lands on something saved offers the existing choice as a radio
+group (add its models to that provider, or replace only its key) beside adding a new one, and both open the existing
+edit flow with the change filled in, so the user sees it before Save. Every part of the text that was not used gets a
+line of its own (by line number or name), never dropped silently. The footer keeps one primary action, **Continue**,
+enabled once something is chosen, with **Back** to the list. Reason: retyping an address, key and models the user
+already has is slow and error-prone, and an import that fills the form instead of saving keeps the user in control
+(principles 1 and 3); reusing the wizard's rows, status line, radio cards and the import dialog keeps one way to set a
+provider up (principle 4). It adds no setting, style or motion.
