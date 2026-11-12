@@ -23,6 +23,8 @@ type fakeCodexBus struct {
 	later  string
 	turns  chan map[string]any
 	asked  chan bool // the client answered the bus's discovery question
+
+	dropTurnResponse atomic.Bool // accept a turn, then disconnect before acknowledging it
 }
 
 func startFakeCodexBus(t *testing.T, owned string) (home string, bus *fakeCodexBus) {
@@ -94,6 +96,9 @@ func (b *fakeCodexBus) serve(conn net.Conn) {
 			ok(map[string]any{"supportsUntrustedAppInput": true})
 		case method == "thread-follower-start-turn" && version == 2 && m["targetClientId"] == "window" && (params["conversationId"] == b.owned || b.opened.Load() && params["conversationId"] == b.later):
 			b.turns <- params
+			if b.dropTurnResponse.Load() {
+				return
+			}
 			ok(map[string]any{"result": map[string]any{"turn": map[string]any{"id": "turn-1", "status": "inProgress"}}})
 		default:
 			fail()

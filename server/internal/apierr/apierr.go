@@ -201,6 +201,8 @@ func LocalizedBody(status int, code string, err error, l i18n.Lang) map[string]a
 }
 
 var rpcFailureKeys = map[string]string{
+	"desktop_question_unconfirmed": "rpc-errors.desktop_question_unconfirmed",
+
 	"timeout":                  "rpc-errors.timeout",
 	"node_unreachable":         "rpc-errors.unreachable",
 	"internal":                 "rpc-errors.failed",

@@ -50,5 +50,6 @@
   "switch_failed_stopped": "The agent couldn’t start on the other model provider and has stopped; the switch was dropped. Your message wasn’t sent. Check its terminal, or use Resume on its terminal page.",
   "switch_stale": "The agent moved to another model provider since you picked this one. Look at the provider it runs on now, then pick again.",
   "switch_pick_model": "Persona can’t see which model that model provider runs by default, and without one the conversation would keep its current model. Pick a model of that provider.",
-  "switch_under_way": "The agent is moving to another model provider right now. Try again once it runs; nothing was done."
+  "switch_under_way": "The agent is moving to another model provider right now. Try again once it runs; nothing was done.",
+  "desktop_question_unconfirmed": "Could not confirm whether Codex App received this answer. Finish this question in Codex App on your computer; Persona will not send it again."
 }

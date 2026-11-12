@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/nwverse/persona/server/internal/host"
+	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 	"github.com/nwverse/persona/server/internal/screen"
 	"github.com/nwverse/persona/server/internal/transcript"
 )
@@ -230,6 +232,10 @@ func (c *codexCards) forget(live map[string]codexAgent) {
 	// A card handed back stays the computer's while Codex asks it; once it has been off the list for codexHold (a
 	// screen read can fail now and then), the same approval asked again is a new one and goes to the phone (#3766).
 	for id, d := range c.dismissed {
+		if a, live := live[d.session]; live && a.desktop && strings.HasPrefix(id, "cxq_") {
+			// A desktop question handed back after uncertain delivery must never be sent again under the same ID.
+			continue
+		}
 		if time.Since(d.seen) > codexHold {
 			delete(c.dismissed, id)
 		}
@@ -491,6 +497,15 @@ func (n *Node) codexAnswer(ctx context.Context, session, id string, r proto.Reso
 	if card == nil {
 		return refusal(screen.PromptChanged, "Codex 已经不在等这个回答了（可能在电脑上答过了，或者这一轮被中断了），这次什么都没输入。", nil)
 	}
+	desktop := card.pane == "" && card.ask != nil && card.ask.Async && !n.codexJoined(session)
+	if desktop {
+		n.cx.mu.Lock()
+		_, handedBack := n.cx.dismissed[id]
+		n.cx.mu.Unlock()
+		if handedBack {
+			return refusal(screen.PromptChanged, i18n.T(i18n.Default, "rpc-errors.desktop_question_unconfirmed"), nil)
+		}
+	}
 	var err error
 	switch {
 	case card.approval != nil:
@@ -504,6 +519,11 @@ func (n *Node) codexAnswer(ctx context.Context, session, id string, r proto.Reso
 	}
 	if err == nil {
 		n.cx.hold(session, id)
+	} else if desktop && maybeDelivered(err) {
+		// A lost IPC response or a late rollout cannot prove the answer failed. Hand it back instead of resending.
+		n.cx.dismiss(session, id)
+		data, _ := json.Marshal(map[string]any{"delivered": deliveredUnknown, "retryable": false, "detail": err.Error()})
+		err = &rpc.Error{Code: "desktop_question_unconfirmed", Message: i18n.T(i18n.Default, "rpc-errors.desktop_question_unconfirmed"), Data: data}
 	}
 	return err
 }

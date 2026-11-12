@@ -1,8 +1,10 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/proto"
 	"github.com/nwverse/persona/server/internal/rpc"
+	"github.com/nwverse/persona/server/internal/screen"
 )
 
 func desktopQuestionNode(t *testing.T, lines ...string) (*Node, *fakeCodexBus, string, string) {
@@ -149,6 +152,135 @@ func TestCodexDesktopQuestionDoesNotRestoreExpiredQuestion(t *testing.T) {
 	}
 	if cards := n.codexCardsNow(context.Background(), id); len(cards) != 0 {
 		t.Fatalf("expired question restored: %+v", cards)
+	}
+}
+
+func TestCodexDesktopQuestionUnknownDeliveryCannotBeRetried(t *testing.T) {
+	for _, disconnect := range []bool{true, false} {
+		t.Run(fmt.Sprint("disconnect=", disconnect), func(t *testing.T) {
+			n, bus, id, _ := desktopQuestionNode(t, cxAsyncCall, cxAsyncOut)
+			bus.dropTurnResponse.Store(disconnect)
+			card := onlyCard(t, n)
+			oldPoll, oldConfirm := codexPoll, codexConfirm
+			codexPoll, codexConfirm = time.Millisecond, 15*time.Millisecond
+			t.Cleanup(func() { codexPoll, codexConfirm = oldPoll, oldConfirm })
+			answer := proto.Resolution{Answers: map[string]string{"Which color should the banner be?": "Green"}}
+			if err := n.codexAnswer(context.Background(), id, card.ix.ID, answer); !maybeDelivered(err) {
+				t.Fatalf("unconfirmed IPC answer must remain uncertain: %v", err)
+			}
+			select {
+			case <-bus.turns:
+			default:
+				t.Fatal("the App did not take the first turn")
+			}
+			<-bus.asked
+			if err := n.codexAnswer(context.Background(), id, card.ix.ID, answer); refusalCode(err) != screen.PromptChanged {
+				t.Fatalf("retry should refuse without delivery, got %v", err)
+			}
+			// A watcher pause must not make an unconfirmed answer retryable after the normal card hold expires.
+			n.cx.mu.Lock()
+			d := n.cx.dismissed[card.ix.ID]
+			d.seen = time.Now().Add(-2 * codexHold)
+			n.cx.dismissed[card.ix.ID] = d
+			n.cx.mu.Unlock()
+			n.syncCodexCards(context.Background())
+			err := n.codexAnswer(context.Background(), id, card.ix.ID, answer)
+			if code := refusalCode(err); code != screen.PromptChanged {
+				t.Fatalf("retry should refuse without delivery, got %v", err)
+			}
+			select {
+			case p := <-bus.turns:
+				t.Fatalf("unknown answer sent a second turn: %v", p)
+			default:
+			}
+		})
+	}
+}
+
+func TestCodexDesktopQuestionRejectsChangedQuestion(t *testing.T) {
+	n, bus, id, path := desktopQuestionNode(t, cxAsyncCall, cxAsyncOut)
+	card := onlyCard(t, n)
+	appendLine(t, path, cxUserLine("a newer request"))
+	appendLine(t, path, cxToday(strings.ReplaceAll(cxAsyncItemLine, "call_a1", "call_a2")))
+	err := n.codexAnswer(context.Background(), id, card.ix.ID, proto.Resolution{Answers: map[string]string{"Which color should the banner be?": "Green"}})
+	if refusalCode(err) != screen.PromptChanged {
+		t.Fatalf("stale question accepted: %v", err)
+	}
+	select {
+	case p := <-bus.turns:
+		t.Fatalf("stale answer reached App IPC: %v", p)
+	default:
+	}
+	if now := onlyCard(t, n); now.ix.ID == card.ix.ID || now.ask.CallID != "call_a2" {
+		t.Fatalf("replacement question = %+v", now)
+	}
+}
+
+func TestCodexDesktopQuestionFiltersArchivedAndSubagent(t *testing.T) {
+	for _, kind := range []string{"archived", "subagent"} {
+		t.Run(kind, func(t *testing.T) {
+			n, _, id, path := desktopQuestionNode(t, cxAsyncCall, cxAsyncOut)
+			if kind == "archived" {
+				src, _ := n.codexSource(id)
+				dir := filepath.Join(src.home, "archived_sessions")
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(path, filepath.Join(dir, filepath.Base(path))); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data = bytes.Replace(data, []byte(`"source":"vscode"`), []byte(`"source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent","depth":1}}}`), 1)
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if cards := n.codexCardsNow(context.Background(), id); len(cards) != 0 {
+				t.Fatalf("%s question exposed: %+v", kind, cards)
+			}
+		})
+	}
+}
+
+func TestCodexDesktopQuestionPartialReplyKeepsRemainingQuestionAnswerable(t *testing.T) {
+	var line map[string]any
+	if err := json.Unmarshal([]byte(cxAsyncItemLine), &line); err != nil {
+		t.Fatal(err)
+	}
+	item := line["payload"].(map[string]any)["item"].(map[string]any)
+	item["questions"] = append(item["questions"].([]any), map[string]any{"title": "Which size?", "options": []string{"Small", "Large"}})
+	data, _ := json.Marshal(line)
+	n, bus, id, path := desktopQuestionNode(t, string(data))
+	oldPoll, oldConfirm := codexPoll, codexConfirm
+	codexPoll, codexConfirm = time.Millisecond, time.Second
+	t.Cleanup(func() { codexPoll, codexConfirm = oldPoll, oldConfirm })
+	for _, answer := range []map[string]string{{"Which color should the banner be?": "Green"}, {"Which size?": "Large"}} {
+		card := onlyCard(t, n)
+		recorded := make(chan error, 1)
+		go func() {
+			p := <-bus.turns
+			text := p["turnStart"].(map[string]any)["request"].(map[string]any)["input"].([]any)[0].(map[string]any)["text"].(string)
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+			if err == nil {
+				_, err = f.WriteString(cxUserLine(text) + "\n")
+				f.Close()
+			}
+			recorded <- err
+		}()
+		if err := n.codexAnswer(context.Background(), id, card.ix.ID, proto.Resolution{Answers: answer}); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-recorded; err != nil {
+			t.Fatal(err)
+		}
+		<-bus.asked
+	}
+	if cards := n.codexCardsNow(context.Background(), id); len(cards) != 0 {
+		t.Fatalf("fully answered question remains: %+v", cards)
 	}
 }
 
