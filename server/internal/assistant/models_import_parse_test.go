@@ -171,6 +171,23 @@ func TestParsePasteShell(t *testing.T) {
 				}(), Notes: notes(pasteNote{Code: noteNoKey})}}},
 		},
 		{
+			name: "an alias defined again counts where its last definition is",
+			text: "alias k='ANTHROPIC_BASE_URL=https://old.example.com claude'\nalias j='ANTHROPIC_BASE_URL=https://j.example.com claude'\n" +
+				"alias k='ANTHROPIC_BASE_URL=https://new.example.com claude'\n",
+			want: pasteResult{Format: "shell", Notes: []pasteNote{}, Drafts: []pasteDraft{
+				{Label: "j", Aliases: []string{"j"}, Provider: func() pastedProvider {
+					p := gateway("https://j.example.com", "api_key", "")
+					p.Name, p.Args = "j", []string{}
+					return p
+				}(), Notes: notes(pasteNote{Code: noteNoKey})},
+				{Label: "k", Aliases: []string{"k"}, Provider: func() pastedProvider {
+					p := gateway("https://new.example.com", "api_key", "")
+					p.Name, p.Args = "k", []string{}
+					return p
+				}(), Notes: notes(pasteNote{Code: noteNoKey})},
+			}},
+		},
+		{
 			name: "variables without a gateway",
 			text: "export ANTHROPIC_MODEL=opus\n",
 			want: pasteResult{Format: "shell", Notes: notes(pasteNote{Code: noteNoGateway}), Drafts: []pasteDraft{}},
