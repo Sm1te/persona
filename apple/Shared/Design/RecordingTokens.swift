@@ -77,5 +77,17 @@ nonisolated extension Theme {
         /// How often the page after the meeting asks the hub for the minutes while they are on their way, in seconds,
         /// as the wrap-up and the recording's page do.
         static let minutesPoll: TimeInterval = 15
+        /// A meeting photo's thumbnail in the thread (#3862 phase 3), in points (its pixels: × the screen's scale): the
+        /// side of the room's other pictures, so the two look alike, and large enough to tell one whiteboard from another.
+        static let photoThumbSide: CGFloat = photoSide
+        /// How many lines of a photo's caption, or of the text read in it, show beside its thumbnail: what it is about,
+        /// not all of it (the room's note says what matters).
+        static let photoTextLines = 3
+        /// How many photos the library's picker takes at once: each is prepared and uploaded on its own, about a
+        /// megabyte each, while the meeting records.
+        static let photoPickLimit = 4
+        /// How long "Persona is looking at the photo…" waits for the room's note after the photo was added, in seconds:
+        /// a room that never writes one doesn't keep the spinner turning for the rest of the meeting.
+        static let photoNoteWait: TimeInterval = 120
     }
 }

@@ -43,7 +43,6 @@ vi.mock("../../lib/router", async (importOriginal) => ({
 vi.mock("../assistant/Persona", () => ({ usePersona: () => ({ name: "Persona" }) }));
 vi.mock("../assistant/AssistantChat", () => ({
   AssistantFace: () => null,
-  AssistantLauncherChip: () => null,
   CompactionStrip: () => null,
   useAssistantMenu: () => ({ items: [], dialogs: null }),
 }));

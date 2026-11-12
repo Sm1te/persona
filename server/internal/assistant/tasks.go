@@ -123,8 +123,8 @@ type PlanTask struct {
 	planIndex int
 }
 
-// Readonly is a launch constraint, including for older saved plans and card edits.
-// Never let an omitted mode inherit a writable launcher default.
+// Readonly starts conservatively in plan. The launcher fit changes Claude to bypassPermissions while preserving Codex's sandbox.
+// Never let an omitted mode inherit a writable launcher default before that fit.
 func (t *PlanTask) normalizeReadonlyPermission() {
 	if t.Readonly {
 		t.Permission = "plan"

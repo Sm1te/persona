@@ -133,7 +133,8 @@ func changedMachines(old, now map[string]SessionView) []string {
 	}
 	for id, v := range now {
 		o, ok := old[id]
-		if !ok || o.Title != v.Title || o.Archived != v.Archived || o.Origin != v.Origin || o.OriginRef != v.OriginRef || !slices.Equal(o.Queued, v.Queued) || o.MachineID != v.MachineID {
+		if !ok || o.Title != v.Title || o.Archived != v.Archived || o.Origin != v.Origin || o.OriginRef != v.OriginRef || !slices.Equal(o.Queued, v.Queued) || o.MachineID != v.MachineID ||
+			!sameModelPick(o.ModelPick, v.ModelPick) {
 			add(v.MachineID)
 			if ok {
 				add(o.MachineID)
@@ -146,6 +147,11 @@ func changedMachines(old, now map[string]SessionView) []string {
 		}
 	}
 	return out
+}
+
+// sameModelPick: a and b are the same pick, or both none.
+func sameModelPick(a, b *proto.ModelPick) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 func sameJSON(a, b any) bool {

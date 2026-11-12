@@ -31,14 +31,15 @@ takes only `plan` from it (`assistant/tasks_permission.go`).
 
 ## Read-only planned tasks
 
-`task_plan` treats `readonly: true` as a launch constraint. The assistant saves `permission: plan`, overriding an
-omitted mode, `default`, or an explicit writable mode. It reapplies this constraint after plan-card edits and at
-dispatch, including old saved plans and retries. Tasks without `readonly` keep their requested permissions.
-This preserves automatic dispatch for read-only work without inheriting a writable launcher default; waiting for
-Start alone would not make an unsafe permission mode read-only.
+`task_plan` treats `readonly: true` as task metadata and a first-prompt constraint. Claude-family launchers save and start with
+`permission: bypassPermissions`, whether the task is read-only or writable. A read-only task's first message adds
+`本任务只读：不改项目文件、不提交、不对外写入` after its own prompt, without changing the saved prompt or duplicating the
+constraint on retries. Codex read-only tasks keep `permission: plan` and the hard read-only sandbox. Planning, card edits,
+legacy plans, retries, and the final dispatch all resolve the launcher before applying this rule; a permission change is
+saved with the resolved launcher and model.
 
-The node must honor `plan` or refuse the start. Claude Code terminal starts through herdr or Orca pass
-`--permission-mode plan`. Codex terminal starts and supported terminal resumes use `--sandbox read-only
+Ordinary plan-mode starts keep their existing behavior. For Codex read-only tasks, the node must honor `plan` or refuse
+the start. Terminal starts and supported terminal resumes use `--sandbox read-only
 --ask-for-approval never`: no approval can escalate past the sandbox. The node retains that constraint for later
 resumes, including a message that reopens the session. The terminal policy uses `never` because Codex 0.167 no
 longer accepts `untrusted` on its CLI; the separate thread API policy is unchanged.
@@ -56,9 +57,9 @@ Update both the assistant and nodes for this behavior. This is the runtime's pla
 promise that the runtime writes no session metadata or plan files, and it does not prevent a later explicit mode
 change by the user.
 
-Health-space plans and mixed plans still wait for Start. Existing clients show the Read-only label on a waiting
-plan, and collapse a started plan to "Started N tasks"; the saved task's `permission` is `plan`. Displaying both
-labels on the clients is separate client work.
+Health-space plans and mixed plans still wait for Start. Clients show the Read-only requested label on a waiting plan and
+collapse a started plan to "Started N tasks". The saved task's `permission` is the actual launch mode:
+`bypassPermissions` for Claude and `plan` for Codex read-only tasks.
 
 ## Data model
 

@@ -105,7 +105,7 @@ func (f filters) matches(r *record) bool {
 	}
 	v := r.item
 	return (f.ID == "" || f.ID == v.ID) &&
-		(!f.Roots || v.Root == "") && (f.Under == "" || f.Under == v.Root) &&
+		(!f.Roots || v.root() == "") && (f.Under == "" || f.Under == v.root()) &&
 		(f.State == "" || f.State == stateOf(v, f.Roots)) &&
 		(f.Machine == "" || f.Machine == v.Machine) &&
 		(f.Project == "" || f.Project == v.Project) &&
@@ -156,11 +156,11 @@ func emptyCounts(revision string) Counts {
 	return Counts{Machine: make(map[string]int), Project: make(map[string]int), Group: make(map[string]int), State: make(map[string]int), PaneSource: make(map[string]int), Revision: revision}
 }
 
-// stateOf is the state v is filtered and counted by: its folded state for Options.Roots (Item.FoldedState, its own
-// state when the adapter gives none).
+// stateOf is the state v is filtered and counted by: its folded state for Options.Roots (Fold.State, its own state
+// when the adapter gives none).
 func stateOf(v Item, roots bool) string {
-	if roots && v.FoldedState != "" {
-		return v.FoldedState
+	if roots && v.Fold != nil && v.Fold.State != "" {
+		return v.Fold.State
 	}
 	return v.State
 }
@@ -173,7 +173,7 @@ func addCount(c *Counts, v Item, roots bool, delta int) {
 			delete(c.PaneSource, v.PaneSource)
 		}
 	}
-	if v.BackgroundWaiting && (!roots || v.FoldedBackgroundWaiting) {
+	if v.BackgroundWaiting && (!roots || v.Fold == nil || v.Fold.BackgroundWaiting) {
 		c.BackgroundWaiting += delta
 	}
 	for _, pair := range []struct {

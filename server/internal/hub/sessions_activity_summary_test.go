@@ -54,3 +54,13 @@ func TestRuntimeSummaryLegacyBackgroundKinds(t *testing.T) {
 		t.Fatalf("legacy work kinds lost: %+v", got)
 	}
 }
+
+// An assistant conversation's model pick stays on its summary row: Android swaps its Persona chats for the list's rows
+// whole, and Apple keeps only the fields it copies back (#5033).
+func TestRuntimeSummaryKeepsTheModelPick(t *testing.T) {
+	got := runtimeSummary(proto.Session{SessionID: "chat", Assistant: true, ModelPick: &proto.ModelPick{Launcher: "cx", Model: "gpt-5"}})
+	b, err := json.Marshal(&got)
+	if err != nil || !strings.Contains(string(b), `"model_pick":{"launcher":"cx","model":"gpt-5"}`) {
+		t.Fatalf("%s %v", b, err)
+	}
+}

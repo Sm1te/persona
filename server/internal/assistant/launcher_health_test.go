@@ -420,6 +420,27 @@ func TestLauncherHealthMovesPlannedTasks(t *testing.T) {
 	}
 }
 
+func TestAgentStartDetourRecomputesLauncherPermission(t *testing.T) {
+	s, f := launcherHealthHub(t)
+	f.zshrc = map[string][]proto.Launcher{
+		"l4":     {{Name: "work", Agent: "claude"}},
+		"server": {{Name: "work", Agent: "codex"}},
+		"box":    {{Name: "work", Agent: "claude"}},
+	}
+	ctx := context.Background()
+	s.healthRound(ctx, true) // l4/work is blocked, so the start moves to box.
+	res, err := s.runTool(ctx, "server", "conv9", "agent_start", json.RawMessage(`{"machine":"l4","cwd":"/home/me/code/app","prompt":"修 CI"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "runs on server instead") || len(f.starts) != 1 {
+		t.Fatalf("start was not detoured: %v, %s", f.starts, res)
+	}
+	if got := f.starts[0]["permission_mode"]; got != nil {
+		t.Fatalf("detour to Codex inherited Claude permission %v", got)
+	}
+}
+
 // A start aimed at a machine whose launcher has a failing record probes that machine once on the spot: when the
 // launcher works now (fixed since the record), the record is cleared and the start stays on the asked machine (#2018).
 func TestLauncherHealthRecheckClearsStaleRecord(t *testing.T) {

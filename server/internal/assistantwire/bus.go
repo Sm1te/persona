@@ -221,6 +221,8 @@ var Routes = []string{
 	"GET /api/v1/assistant/capabilities",
 	"POST /api/v1/assistant/conversations",
 	"POST /api/v1/assistant/conversations/{id}/compact",
+	"PUT /api/v1/assistant/conversations/{id}/model", // the model a conversation's next messages run on (model_pick.go, #5033)
+	"DELETE /api/v1/assistant/conversations/{id}/model",
 	"POST /api/v1/assistant/main/new",
 	"POST /api/v1/assistant/main/clear",
 	"POST /api/v1/assistant/origins/backfill",

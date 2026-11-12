@@ -252,7 +252,7 @@ struct BackgroundSupervisorTests {
         #expect(review.verdict == "accepted" && review.round == nil && review.note == "已合并，测试补了" && review.title == "补测试")
         let lines = ChatLines.mergeFeed([], res.items)
         #expect(lines.count == 1)
-        guard case .feed(let drawn)? = lines.first else {
+        guard case .feed(let drawn)? = lines.first?.content else {
             Issue.record("the review is not a feed line")
             return
         }

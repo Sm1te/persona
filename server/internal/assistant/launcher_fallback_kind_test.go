@@ -95,7 +95,7 @@ func TestAgentStartKeepsAHiddenDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	params := map[string]any{"launcher": "gateway"}
-	note, err := s.fitLauncher(ctx, Device{ID: "box", Name: "box", ClaudeVersion: "2.1.0"}, startPick{}, params)
+	note, _, err := s.fitLauncher(ctx, Device{ID: "box", Name: "box", ClaudeVersion: "2.1.0"}, startPick{}, params)
 	if err != nil || note != "" || params["launcher"] != "gateway" {
 		t.Fatalf("hidden default: %v %q %v", params, note, err)
 	}

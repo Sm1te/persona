@@ -20,17 +20,21 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
         var dueDate: String?
         /// The to-do an action item became once the user confirmed it (#4062); absent or empty while it is a suggestion.
         var todoID: String?
+        /// The meeting photo it cites instead of a transcript line (#3862 phase 3): its number at the hub (`n`); `at` is
+        /// then the photo's. The page shows that photo with the item, or Photo removed once the hub no longer lists it.
+        var photo: Int?
 
         init(text: String, at: Double? = nil, who: String? = nil, by: String? = nil, id: String? = nil, dueDate: String? = nil,
-             todoID: String? = nil) {
+             todoID: String? = nil, photo: Int? = nil) {
             self.text = text; self.at = at; self.who = who; self.by = by; self.id = id; self.dueDate = dueDate; self.todoID = todoID
+            self.photo = photo
         }
 
         /// An action item already confirmed as a to-do.
         var added: Bool { todoID?.isEmpty == false }
 
         enum CodingKeys: String, CodingKey {
-            case text, what, at, who, by, id
+            case text, what, at, who, by, id, photo
             case dueDate = "due_date", todoID = "todo_id"
         }
 
@@ -43,6 +47,8 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
             id = try c.decodeIfPresent(String.self, forKey: .id)
             dueDate = try c.decodeIfPresent(String.self, forKey: .dueDate)
             todoID = try c.decodeIfPresent(String.self, forKey: .todoID)
+            // A number from 1; anything else reads as no citation rather than losing the minutes.
+            photo = (try? c.decodeIfPresent(Int.self, forKey: .photo)).flatMap { $0 }.flatMap { $0 > 0 ? $0 : nil }
         }
 
         func encode(to encoder: Encoder) throws {
@@ -54,6 +60,7 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
             try c.encodeIfPresent(id, forKey: .id)
             try c.encodeIfPresent(dueDate, forKey: .dueDate)
             try c.encodeIfPresent(todoID, forKey: .todoID)
+            try c.encodeIfPresent(photo, forKey: .photo)
         }
     }
 
@@ -137,6 +144,9 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// How Copy and Share name a cited photo after its item, as the hub's own `markdown` does ("（照片 3）").
+    static func photoMention(_ n: Int) -> String { String(localized: "(photo \(n))") }
+
     /// What Copy and Share send: Markdown, headed by the title (the recording's name without one), then when and where.
     func text(title fallback: String) -> String {
         var out = ["# " + ((title?.isEmpty == false ? title : nil) ?? fallback)]
@@ -150,6 +160,7 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
                 var row = "- " + item.text
                 if let byline = Self.byline(item) { row += " (" + byline + ")" }
                 if let at = item.at { row += " [" + RecordingFormat.clock(at) + "]" }
+                if let photo = item.photo { row += " " + Self.photoMention(photo) }
                 out.append(row)
             }
         }

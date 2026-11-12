@@ -7,5 +7,14 @@
   "loading": "モデルを読み込み中…",
   "failed": "モデルを読み込めませんでした",
   "default_model": "デフォルトのモデル",
-  "effort_xhigh_short": "とても高い"
+  "effort_xhigh_short": "とても高い",
+  "header_default": "デフォルトに従っています · {setup}",
+  "header_own": "このチャットを始めたときのモデル · {setup}",
+  "header_picked": "このチャット用に選択 · {setup}",
+  "header_picked_page": "このチャット用に選択（再読み込みすると元に戻ります） · {setup}",
+  "header_new": "この新しいチャット用 · {setup}",
+  "follow_default": "デフォルトに戻す",
+  "undo_pick": "選択を取り消す",
+  "provider_gone": "このプロバイダーはもうこのコンピューターにありません",
+  "pick_dropped": "「{launcher}」では Persona のチャットを実行できないため、デフォルトに戻しました"
 }

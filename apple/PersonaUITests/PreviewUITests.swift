@@ -96,6 +96,11 @@ final class PreviewUITests: XCTestCase {
         let address = app.descendants(matching: .any)["preview-address"]
         see(address, "no address in the bar", app)
         XCTAssertGreaterThan(address.frame.width, app.frame.width * 0.8, "the address is not on a line of its own: \(address.frame)")
+        // The card's header is a bar capped at the largest standard size: the chooser beside its buttons, more than a letter.
+        let chooser = app.buttons["link-servers"], close = app.buttons["link-close"]
+        see(chooser, "no server chooser in the header", app)
+        XCTAssertLessThan(chooser.frame.minY, close.frame.maxY, "the header grew past a row: \(chooser.frame) \(close.frame)")
+        XCTAssertGreaterThan(chooser.frame.width, app.frame.width * 0.35, "the server chooser came down to a letter: \(chooser.frame)")
         sleep(1)
         shot(app, "page")
 
@@ -104,13 +109,18 @@ final class PreviewUITests: XCTestCase {
         sleep(1)
         shot(app, "picking")
         save.tap()
-        see(app.descendants(matching: .any)["preview-picked"], "the pick did not come back", timeout: 10, app)
+        let picked = app.descendants(matching: .any)["preview-picked"]
+        see(picked, "the pick did not come back", timeout: 10, app)
         let add = app.buttons["preview-note-add"], cancel = app.buttons["preview-note-cancel"]
         see(cancel, "no Cancel for the comment", timeout: 5, app)
         sleep(1)
         shot(app, "picked")
+        // The panel takes its room before the page: what was picked in sight, Add to Message above the keyboard.
         let panel = app.scrollViews["preview-note-panel"]
-        if !cancel.isHittable && panel.exists { panel.swipeUp() }
+        see(panel, "the comment panel does not scroll at this size", app)
+        XCTAssertGreaterThanOrEqual(picked.frame.minY, panel.frame.minY - 1, "what was picked is scrolled away: \(picked.frame) \(panel.frame)")
+        XCTAssertTrue(add.isHittable, "Add to Message is under the keyboard: \(add.frame) \(panel.frame)")
+        if !cancel.isHittable { panel.swipeUp() }
         XCTAssertLessThan(add.frame.maxY, cancel.frame.minY, "the buttons are not stacked with Add to Message first")
         cancel.tap()
         see(app.buttons["preview-pick"], "the bar did not come back after Cancel", timeout: 5, app)

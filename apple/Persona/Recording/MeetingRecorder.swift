@@ -35,6 +35,8 @@ import UserNotifications
         MeetingLive.shared.start()
         // The room of every upload 200 of a room meeting (#3862).
         MeetingConversation.shared.start()
+        // Meeting photos a relaunch left on their way (#3862 phase 3): they go on uploading.
+        MeetingPhotos.shared.start()
         // A call that ended while the app was away (or never said so): coming back carries on, unless another app's audio
         // (a VoIP call without CallKit, still going) holds the route: taking the session would cut into that call.
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { @Sendable _ in

@@ -23,8 +23,9 @@ final class ForwardMessageTests: XCTestCase {
     @MainActor private func launch(_ scheme: String) -> XCUIApplication {
         let url = hub.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? hub
         let app = XCUIApplication()
+        // Fresh chats: a forward cached by an earlier run would sit where the steps tap.
         app.launchArguments = ["-pairURL", "persona://pair?url=\(url)&token=mock", "-tab", "dev", "-openSession", review,
-                               "-ui.scheme", scheme]
+                               "-ui.scheme", scheme, "-openChatsFresh", "YES"]
         app.launchPinned()
         return app
     }
@@ -71,11 +72,22 @@ final class ForwardMessageTests: XCTestCase {
     @MainActor private func type(_ note: String, in app: XCUIApplication) {
         let fields = app.descendants(matching: .any).matching(identifier: "shell-composer-field")
         XCTAssertTrue(fields.firstMatch.waitForExistence(timeout: 10), "no composer:\n\(app.debugDescription)")
-        // The chat the card opened stays in the tree under Persona with its own composer: type into the one in use.
-        let all = fields.allElementsBoundByIndex
-        let field = all.first { ($0.value(forKey: "hasKeyboardFocus") as? Bool) == true } ?? all.first { $0.isHittable } ?? fields.firstMatch
+        // The chat the card opened stays in the tree under Persona with its own composer, and reports itself hittable:
+        // type into the one the forward focused, waiting for the focus to land.
+        let focused = fields.matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        if focused.waitForExistence(timeout: 5) {
+            focused.typeText(note)
+            return
+        }
+        let field = fields.allElementsBoundByIndex.last { $0.isHittable } ?? fields.firstMatch
         field.tap()
         field.typeText(note)
+    }
+
+    /// The keyboard away: a tap on the chat's empty left margin, clear of any bubble or card (the mock keeps the light
+    /// pass's forwards for the dark one).
+    @MainActor private func hideKeyboard(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.35)).tap()
     }
 
     @MainActor private func send(_ app: XCUIApplication) {
@@ -127,7 +139,7 @@ final class ForwardMessageTests: XCTestCase {
             waitSent(note)
             let card = app.descendants(matching: .any)["bubble.forward"].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10), "the sent bubble has no forward card")
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap() // the keyboard away
+            hideKeyboard(app)
             sleep(2)
             shot(app, "5-sent-agent-\(scheme)")
 
@@ -147,7 +159,7 @@ final class ForwardMessageTests: XCTestCase {
             send(app)
             waitSent(ask)
             XCTAssertTrue(app.descendants(matching: .any)["bubble.forward"].firstMatch.waitForExistence(timeout: 10))
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+            hideKeyboard(app)
             sleep(2)
             shot(app, "6-sent-persona-\(scheme)")
             app.terminate()

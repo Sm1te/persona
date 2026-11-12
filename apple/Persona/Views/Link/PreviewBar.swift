@@ -272,12 +272,16 @@ struct PreviewPage: View {
     private var machinePort: Int? { PortForwarder.shared.key(for: nav.url ?? url)?.port }
 
     var body: some View {
+        // At the accessibility sizes the comment panel has the room under the header to itself: shared with the page,
+        // it was a strip above the keyboard with what was picked scrolled away and its buttons under the keyboard (#5172).
+        let pageYields = picked != nil && typeSize.isAccessibilitySize
         VStack(spacing: Theme.Space.flush) {
             PooledWebView(url: url, title: $title, nav: nav, onPick: onSelect)
                 .overlay(alignment: .top) {
                     if picking && picked == nil { banner.transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .top).combined(with: .opacity)) }
                 }
-            Divider()
+                .frame(maxHeight: pageYields ? .zero : nil)
+            if !pageYields { Divider() }
             if let picked { notePanel(picked) } else { bar }
         }
         .animation(reduceMotion ? nil : Theme.Motion.state, value: picking)
@@ -457,8 +461,8 @@ struct PreviewPage: View {
     }
 
     /// The element picked: what it is, where its code is, and the line to write about it. At the accessibility sizes the
-    /// element and its page take a line each, the buttons stack with Add to Message first, and the panel scrolls: it can be
-    /// taller than the room above the keyboard (#5114).
+    /// element and its page take a line each, the buttons stack with Add to Message first (#5114), and the panel has the
+    /// room under the header to itself, scrolling when it is taller than the room above the keyboard (#5172).
     private func notePanel(_ el: PickedElement) -> some View {
         Group {
             if typeSize.isAccessibilitySize {

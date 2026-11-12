@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 )
 
 func workspaceTaskService(t *testing.T) (*Service, *fakeHub) {
@@ -379,4 +380,163 @@ func TestTaskWorkspaceSettingsHTTPAndApproval(t *testing.T) {
 	if err := s.resolveTaskWorkspace(context.Background(), &task); err != nil || task.Workspace.Mode != workspaceNew {
 		t.Fatalf("saved preference did not affect dispatch: %+v, %v", task, err)
 	}
+}
+
+// cannotPrepare is the node's answer to worktree.prepare on an engine without checkouts, as it crosses the wire:
+// the default engine is a runtime such as Paseo (no terminal host on the node) or a host without checkout support.
+func cannotPrepare(kind string) error {
+	return &rpc.Error{Code: "worktree_unsupported", Message: "unsupported: " + kind + " cannot do this"}
+}
+
+// busyCwdService is a machine whose worktree.prepare answers prepareErr (nil: it prepares checkouts), with /code/app
+// already written in by another task.
+func busyCwdService(t *testing.T, prepareErr error) (*Service, *fakeHub) {
+	t.Helper()
+	s, f := workspaceTaskService(t)
+	if prepareErr != nil {
+		f.nodes[DeviceWorktreePrepare] = func(string, json.RawMessage) (any, error) { return nil, prepareErr }
+	}
+	owner, err := s.createTodo(context.Background(), "Other writer", "", "other-chat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.linkTodoAgent(context.Background(), owner.ID, "box", "writer", owner.Title, "/code/app", ""); err != nil {
+		t.Fatal(err)
+	}
+	return s, f
+}
+
+func TestTaskWorkspaceInferredFallsBackToCwdWhenEngineCannotPrepare(t *testing.T) {
+	for _, kind := range []string{"paseo", "herdr-core"} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s, f := busyCwdService(t, cannotPrepare(kind))
+				p := workspacePlan(t, s, "")
+				if _, err := s.startPlan(context.Background(), p.ID, nil, false); err != nil {
+					t.Fatal(err)
+				}
+				synctest.Wait()
+				saved, _ := s.loadPlan(context.Background(), p.ID)
+				task := saved.Tasks[0]
+				if task.Error != "" || len(f.starts) != 1 || f.starts[0]["cwd"] != "/code/app" {
+					t.Fatalf("inferred task did not start in its cwd: error=%q starts=%v", task.Error, f.starts)
+				}
+				if task.Workspace.Mode != workspaceNone || task.WorkspaceResolved == nil || !task.WorkspaceResolved.Shared ||
+					task.WorkspaceResolved.Path != "/code/app" || task.WorkspaceResolved.Created {
+					t.Fatalf("fallback not recorded as a shared cwd: workspace=%+v resolved=%+v", task.Workspace, task.WorkspaceResolved)
+				}
+				for _, call := range f.worktrees {
+					if call["method"] == DeviceWorktreeCreate {
+						t.Fatalf("created a checkout on an engine that cannot: %v", f.worktrees)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestTaskWorkspaceSharedFallbackPersistsWhenBusyAppearsAtAdmission(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, f := workspaceTaskService(t)
+		f.nodes[DeviceWorktreePrepare] = func(string, json.RawMessage) (any, error) {
+			return nil, cannotPrepare("paseo")
+		}
+		args := `{"tasks":[
+			{"title":"Writer one","prompt":"Write one","machine":"box","cwd":"/code/app","permission":"bypassPermissions"},
+			{"title":"Writer two","prompt":"Write two","machine":"box","cwd":"/code/app","permission":"bypassPermissions"}
+		]}`
+		if _, err := s.toolTaskPlan(context.Background(), "workspace-chat", json.RawMessage(args)); err != nil {
+			t.Fatal(err)
+		}
+		p := readonlyFeedPlan(t, s, "workspace-chat")
+		if _, err := s.startPlan(context.Background(), p.ID, nil, false); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		saved, _ := s.loadPlan(context.Background(), p.ID)
+		if len(f.starts) != 2 {
+			t.Fatalf("starts=%v", f.starts)
+		}
+		shared := 0
+		for i, task := range saved.Tasks {
+			t.Logf("saved task %d: mode=%s resolved=%+v", i, task.Workspace.Mode, task.WorkspaceResolved)
+			if task.WorkspaceResolved != nil && task.WorkspaceResolved.Shared {
+				shared++
+				if task.Workspace.Mode != workspaceNone {
+					t.Fatalf("shared task is not none: %+v", task)
+				}
+			}
+		}
+		if shared != 1 {
+			t.Fatalf("one task actually shared the cwd, but saved plans mark %d shared: tasks=%+v", shared, saved.Tasks)
+		}
+	})
+}
+
+func TestTaskWorkspaceInferredPreferNewFallsBackToFreeCwd(t *testing.T) {
+	s, f := workspaceTaskService(t)
+	f.nodes[DeviceWorktreePrepare] = func(string, json.RawMessage) (any, error) { return nil, cannotPrepare("paseo") }
+	setSettings(t, s, func(v *Settings) { v.TaskWorkspacePreference = preferNew })
+	task := PlanTask{Machine: "box", Cwd: "/code/app"}
+	if err := s.resolveTaskWorkspace(context.Background(), &task); err != nil {
+		t.Fatal(err)
+	}
+	if task.Workspace.Mode != workspaceExisting || task.Workspace.Existing != "/code/app" ||
+		task.WorkspaceResolved.Path != "/code/app" || task.WorkspaceResolved.Shared {
+		t.Fatalf("free cwd not reused: workspace=%+v resolved=%+v", task.Workspace, task.WorkspaceResolved)
+	}
+}
+
+// Only the node's "cannot" code falls back: any other failure to prepare (a host missing from the machine, an old node
+// that sends no code) still stops the task rather than silently sharing a directory.
+func TestTaskWorkspaceInferredOtherPrepareFailuresStillFail(t *testing.T) {
+	for _, prepareErr := range []error{errors.New("no orca host on this machine"), errors.New("unsupported: herdr-core cannot do this")} {
+		s, f := workspaceTaskService(t)
+		f.nodes[DeviceWorktreePrepare] = func(string, json.RawMessage) (any, error) { return nil, prepareErr }
+		setSettings(t, s, func(v *Settings) { v.TaskWorkspacePreference = preferNew })
+		task := PlanTask{Machine: "box", Cwd: "/code/app"}
+		if err := s.resolveTaskWorkspace(context.Background(), &task); err == nil || !strings.Contains(err.Error(), prepareErr.Error()) {
+			t.Fatalf("%v: fell back instead of failing: err=%v workspace=%+v", prepareErr, err, task.Workspace)
+		}
+	}
+}
+
+func TestTaskWorkspaceExplicitNewStillFailsWhenEngineCannotPrepare(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, f := busyCwdService(t, cannotPrepare("paseo"))
+		args := `{"tasks":[{"title":"Fix login","prompt":"Fix login and add tests","machine":"box","cwd":"/code/app","permission":"bypassPermissions","workspace":"new"}]}`
+		_, err := s.toolTaskPlan(context.Background(), "workspace-chat", json.RawMessage(args))
+		reason := ""
+		if err != nil {
+			reason = err.Error()
+		} else {
+			p := readonlyFeedPlan(t, s, "workspace-chat")
+			if _, err := s.startPlan(context.Background(), p.ID, nil, false); err != nil {
+				reason = err.Error()
+			}
+			synctest.Wait()
+			saved, _ := s.loadPlan(context.Background(), p.ID)
+			reason += saved.Tasks[0].Error
+		}
+		if len(f.starts) != 0 || !strings.Contains(reason, "unsupported: paseo cannot do this") {
+			t.Fatalf("explicit new did not refuse: reason=%q starts=%v", reason, f.starts)
+		}
+	})
+}
+
+func TestTaskWorkspaceInferredBusyStillCreatesWhenEngineCanPrepare(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, f := busyCwdService(t, nil)
+		p := workspacePlan(t, s, "")
+		if _, err := s.startPlan(context.Background(), p.ID, nil, false); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		saved, _ := s.loadPlan(context.Background(), p.ID)
+		task := saved.Tasks[0]
+		if task.Workspace.Mode != workspaceNew || !task.WorkspaceResolved.Created || task.WorkspaceResolved.Shared ||
+			!strings.HasPrefix(task.WorkspaceResolved.Path, "/wt/app/") || len(f.starts) != 1 || f.starts[0]["cwd"] != task.WorkspaceResolved.Path {
+			t.Fatalf("supported engine lost its new checkout: workspace=%+v resolved=%+v starts=%v", task.Workspace, task.WorkspaceResolved, f.starts)
+		}
+	})
 }

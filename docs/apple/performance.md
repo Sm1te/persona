@@ -184,7 +184,10 @@ in one place, move that read into a small child view. Actions read unobserved va
 - Fixed before: the chat subtitle read `machines`, so every machine heartbeat recomputed the page and all its rows
   (`docs/apple/ios-state.md`, step 5); writing a trace array in `body` made `RootView` observe it and redraw for ever (commit `d2289dee5`).
 
-**Do.** Follow `docs/apple/ios-state.md` ("Keeping redraws small"). Write-only records are `@ObservationIgnored`.
+**Do.** Follow `docs/apple/ios-state.md` ("Keeping redraws small"). Write-only records are `@ObservationIgnored`. A store
+many pages share hands each one a projection of its own key, built per change: `MeetingPhotos.Album` is one recording's
+photos with each row's content worked out, so the meeting thread reads only their order, each photo row reads the rest,
+and another recording's uploads redraw neither.
 
 **Check.** `RenderBudgetTests` (views per push) and `AllSessionsReadersTests` (who may read `allSessions`) fail on
 regressions; add a `PerfTrace.body("Name")` to a new heavy view so its count shows up.
@@ -310,7 +313,9 @@ they draw and never load whole transcripts.
 lower limits than the app. A cache with no bound is a leak with extra steps.
 
 **Do.** Give caches a cost; drop them on `UIApplication.didReceiveMemoryWarningNotification`; release retained stores on
-`onTabVisibility` disappear.
+`onTabVisibility` disappear. Full-size decodes of user pictures run one at a time and let the original go as soon as it
+is downscaled (`MeetingPhotos` prepares a pick's photos in turn, and `MeetingPhotoPipeline.prepare` drops the original
+before Vision reads the small copy), so four 48 MP photos picked during a recording never sit in memory at once.
 
 **Check.** Allocations with generations (open and close a page 10 times; "Budgets"), the memory graph debugger for leaked
 stores and models, `XCTMemoryMetric` for a scenario test.

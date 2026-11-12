@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -14,6 +15,7 @@ import (
 	"github.com/nwverse/persona/server/internal/herdr"
 	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/rpc"
 )
 
 const (
@@ -85,6 +87,9 @@ type TaskWorkspaceResolved struct {
 	Branch      string `json:"branch,omitempty"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	Created     bool   `json:"created,omitempty"`
+	// Shared: the engine could not prepare a checkout for an inferred new workspace, so the task runs in a cwd
+	// another active task also writes in, as every task did before workspaces existed.
+	Shared bool `json:"shared,omitempty"`
 }
 
 func validWorkspacePreference(v string) bool {
@@ -106,6 +111,8 @@ func (s *Service) resolveTaskWorkspace(ctx context.Context, t *PlanTask) error {
 	if t.ReservedTodoID == "" {
 		t.ReservedTodoID = firstNonEmpty(t.ReuseTodo, t.TodoID, "todo_"+randomHex(8))
 	}
+	var sourceCwd string // the inferred cwd's workspace, and whether another task writes there
+	var busy bool
 	if t.Workspace == nil || t.WorkspaceInferred {
 		mode := workspaceNone
 		if !t.Readonly {
@@ -122,7 +129,8 @@ func (s *Service) resolveTaskWorkspace(ctx context.Context, t *PlanTask) error {
 				if !source.Available || !path.IsAbs(source.Cwd) {
 					return i18n.ErrEnglish("assistant-tasks_workspace.unavailable", i18n.Args{"path": t.Cwd})
 				}
-				if s.taskWorkspacePreference(ctx) == preferNew || s.taskWorkspaceOwner(ctx, t.Machine, source.Cwd, t.TodoID) != nil {
+				sourceCwd, busy = source.Cwd, s.taskWorkspaceOwner(ctx, t.Machine, source.Cwd, t.TodoID) != nil
+				if s.taskWorkspacePreference(ctx) == preferNew || busy {
 					mode = workspaceNew
 				}
 			}
@@ -177,6 +185,17 @@ func (s *Service) resolveTaskWorkspace(ctx context.Context, t *PlanTask) error {
 		res.Branch = firstNonEmpty(t.Workspace.Branch, "task/"+firstNonEmpty(t.TodoID, t.ReservedTodoID))
 		var prep proto.WorktreePrepare
 		if err := s.call(ctx, t.Machine, DeviceWorktreePrepare, map[string]any{"cwd": t.Cwd}, &prep); err != nil {
+			if t.WorkspaceInferred && sourceCwd != "" && engineCannotPrepare(err) {
+				// An engine without checkouts (Paseo, Cindy, or a host without checkout support) runs the task in its cwd,
+				// as tasks did before workspaces: a busy cwd is shared rather than claimed, a free one is reused.
+				res.Branch = ""
+				if busy {
+					t.Workspace, res.Shared = &TaskWorkspace{Mode: workspaceNone}, true
+				} else {
+					t.Workspace, res.Path = &TaskWorkspace{Mode: workspaceExisting, Existing: t.Cwd}, path.Clean(sourceCwd)
+				}
+				break
+			}
 			return fmt.Errorf("%s: %w", i18n.T(s.lang(ctx), "assistant-tasks_workspace.prepare", i18n.Args{"machine": t.Machine}), err)
 		}
 		if !path.IsAbs(prep.Path) {
@@ -188,6 +207,13 @@ func (s *Service) resolveTaskWorkspace(ctx context.Context, t *PlanTask) error {
 	}
 	t.WorkspaceResolved = res
 	return nil
+}
+
+// engineCannotPrepare: the machine's engine has no checkouts to prepare (a runtime such as Paseo or Cindy, or a host
+// without checkout support), as the node's error code says; any other failure, a missing host included, stays an error.
+func engineCannotPrepare(err error) bool {
+	var re *rpc.Error
+	return errors.As(err, &re) && re.Code == proto.CodeWorktreeUnsupported
 }
 
 // taskWorkspaceOwner checks durable active task links, and the gap between
@@ -266,7 +292,8 @@ func (s *Service) admitTaskWorkspace(ctx context.Context, t *PlanTask) error {
 			s.tasks.mu.Unlock()
 		}
 	}
-	if t.planID != "" && t.Workspace.Mode != workspaceNone {
+	// A shared fallback has mode none, but its resolved marker must still survive the start.
+	if t.planID != "" && (t.Workspace.Mode != workspaceNone || t.WorkspaceResolved != nil && t.WorkspaceResolved.Shared) {
 		// Persist the engine's answer before starting, so a retry never creates a second tree.
 		return s.patchPlanTask(ctx, t.planID, t.planIndex, func(pt *PlanTask) {
 			pt.Cwd, pt.Workspace, pt.WorkspaceResolved = t.Cwd, t.Workspace, t.WorkspaceResolved

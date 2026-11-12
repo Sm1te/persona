@@ -187,6 +187,22 @@ import Testing
         #expect(try JSONDecoder().decode(RecordingMinutes.self, from: JSONEncoder().encode(m)) == m)
     }
 
+    /// An item may cite a meeting photo instead of a transcript line (#3862 phase 3, `"photo": 3`): it is read and kept
+    /// (what the watch is sent too), Copy and Share name it after the item as the hub's Markdown does, and a citation of
+    /// another shape reads as none without losing the minutes.
+    @Test func anItemCitesAPhoto() throws {
+        let json = #"{"decisions":[{"text":"Cap exports at 4 MB.","at":1834.2,"photo":3},{"text":"Ship Friday.","at":40}],"#
+            + #""points":[{"text":"Odd","photo":"three"},{"text":"Zero","photo":0}]}"#
+        let m = try JSONDecoder().decode(RecordingMinutes.self, from: Data(json.utf8))
+        #expect(m.decisions.map(\.photo) == [3, nil])
+        #expect(m.points.map(\.photo) == [nil, nil])
+        #expect(try JSONDecoder().decode(RecordingMinutes.self, from: JSONEncoder().encode(m)) == m)
+        let rows = m.text(title: "Weekly").components(separatedBy: "\n")
+        #expect(rows.contains("- Cap exports at 4 MB. [30:34] " + RecordingMinutes.photoMention(3)), "\(rows)")
+        #expect(rows.contains("- Ship Friday. [0:40]"), "no photo, no mention: \(rows)")
+        #expect(RecordingMinutes.photoMention(3).contains("3"))
+    }
+
     @Test func minutesTextHasEverySection() throws {
         let m = try JSONDecoder().decode(RecordingMinutes.self, from: Data(minutesJSON.utf8))
         let text = m.text(title: "fallback")

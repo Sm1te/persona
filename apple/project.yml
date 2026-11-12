@@ -180,7 +180,7 @@ targets:
         # The hub is usually reached over plain HTTP inside a private network (docs/operations/config.md).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSCameraUsageDescription: "Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, for example when you first connect to your hub."
+        NSCameraUsageDescription: "Persona uses the camera to scan the pairing QR code printed by `personad hub pair`, and to take a photo you add to a chat or a meeting, for example a whiteboard during a meeting."
         NSFaceIDUsageDescription: "Persona asks for Face ID before it types a Mac's remembered password on that Mac's lock screen, when you tap One-Tap Unlock on the Mac's page."
         NSContactsUsageDescription: "Persona lets Claude look up your contacts when you ask, for example to find a colleague's phone number or email before drafting a message."
         # The iPhone system integrations (docs/apple/phone-tools.md, #2278 / #2284 / #2285).

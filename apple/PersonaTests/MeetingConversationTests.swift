@@ -179,6 +179,37 @@ import Testing
         #expect(!MeetingAttendees.startAttendance(model).room, "without the conversation: as #3746 starts it")
     }
 
+    /// The photos only with the hub's `meeting_photos` beside the conversation, as the last hello said (a cold start: no
+    /// hub in this model, so the remembered flags decide): a hello with all three starts a room meeting that takes photos,
+    /// one without `meeting_photos` or without the conversation starts one that takes none. Both ways round, so an always-on
+    /// and an always-off snapshot both fail here.
+    @Test func aStartTakesPhotosOnlyWhenTheHubListsThem() {
+        let store = UserDefaults.standard
+        let keys = [MeetingAttendanceDefaults.offeredKey, MeetingAttendanceDefaults.roleKey,
+                    MeetingAttendanceDefaults.conversationKey, MeetingAttendanceDefaults.photosKey]
+        let before = keys.map { store.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, before) { store.set(value, forKey: key) } }
+        let model = AppModel()
+        guard model.hubFeatures.isEmpty else { return } // a hello already in: the flags are the hub's, not this case's
+        let all: Set<String> = ["meeting_attendance", "meeting_conversation", "meeting_photos"]
+        MeetingAttendanceDefaults.remember(hello: all, role: .listener, store)
+        let with = MeetingAttendees.startAttendance(model)
+        #expect(with.room && with.photos, "all three flags: a room meeting with photos")
+        #expect(MeetingAttendees.photos(model))
+
+        MeetingAttendanceDefaults.remember(hello: ["meeting_attendance", "meeting_conversation"], role: .listener, store)
+        let without = MeetingAttendees.startAttendance(model)
+        #expect(without.room && !without.photos, "no meeting_photos: a room meeting without photos")
+        #expect(!MeetingAttendees.photos(model))
+
+        MeetingAttendanceDefaults.remember(hello: ["meeting_attendance", "meeting_photos"], role: .listener, store)
+        let older = MeetingAttendees.startAttendance(model)
+        #expect(!older.room && !older.photos, "photos come only with the conversation")
+
+        MeetingAttendanceDefaults.remember(hello: all, role: .listener, store)
+        #expect(MeetingAttendees.startAttendance(model).photos, "back on with the next hello that lists them")
+    }
+
     // MARK: The upload's 200
 
     /// A recording hub's side of the sync: its list (empty), and every upload answered by `answer` (the body sent).
@@ -387,6 +418,61 @@ import Testing
         c.event(recordingID: id.uuidString.lowercased(), changed: ["private"], revs: ["private": 9])
         try await Task.sleep(for: .milliseconds(100))
         #expect(hub.sent("GET", live).count == read, "a recording nobody watches and this phone isn't recording")
+    }
+
+    /// Answers each photos read in turn (true: its list applied), and counts them.
+    private final class PhotoReads {
+        var answers: [Bool]
+        var count = 0
+        init(_ answers: [Bool]) { self.answers = answers }
+        func next() -> Bool {
+            count += 1
+            return answers.isEmpty ? true : answers.removeFirst()
+        }
+    }
+
+    /// The photos' revision is kept only once `GET …/photos` applied: a read that failed (a timeout, the hub switching)
+    /// leaves the one before, so the same event, or a later `…/live` read with that revision, reads the photos again.
+    @Test func thePhotosRevisionIsKeptOnlyOnceTheirReadApplied() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "meeting-photos-rev-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lib = RecordingLibrary(root: root)
+        let made = meeting(RecordingAttendance.room(.participant, private: false, photos: true))
+        try lib.save(made)
+        let id = made.id
+        let hub = FakeHub()
+        hub.on("GET", path(id, "live"), json: #"{"room":{"state":"ready","machine_id":"server","session_id":"room-1"},"asks":[],"revs":{"room":2,"photos":9}}"#)
+        let reads = PhotoReads([false, true, false, true])
+        let client = hub.client
+        let c = MeetingConversation(deps: MeetingConversation.Deps(api: { client }, group: { "" }, now: { .now }, wait: { _ in },
+                                                                  readPhotos: { _ in reads.next() }),
+                                    library: lib, sync: RecordingSync(library: lib, api: { nil }))
+        #expect(c.partsRead(for: id).contains("photos"))
+
+        c.event(recordingID: id.uuidString.lowercased(), changed: ["photos"], revs: ["photos": 7])
+        await until("the first read") { reads.count == 1 }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(c.meeting(id).revs["photos"] == nil, "the read failed: nothing counts as read")
+
+        c.event(recordingID: id.uuidString.lowercased(), changed: ["photos"], revs: ["photos": 7])
+        await until("read again") { c.meeting(id).revs["photos"] == 7 }
+        #expect(reads.count == 2)
+        c.event(recordingID: id.uuidString.lowercased(), changed: ["photos"], revs: ["photos": 7])
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(reads.count == 2, "the same revision isn't read twice")
+        #expect(hub.sent("GET", path(id, "live")).isEmpty, "a photos event reads the photos, not …/live")
+
+        // An event lost meanwhile: `…/live` says 9. Its read fails, so 7 stands, and the next `…/live` read tries again.
+        await c.refresh(id)
+        await until("the catch-up read") { reads.count == 3 }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(c.meeting(id).revs["photos"] == 7)
+        await c.refresh(id)
+        await until("the catch-up read applied") { c.meeting(id).revs["photos"] == 9 }
+        #expect(reads.count == 4)
+        await c.refresh(id)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(reads.count == 4, "nothing newer: no read")
     }
 
     /// The follow-up waits while the hub would still answer `409 meeting_running`: the recording runs, or its end isn't

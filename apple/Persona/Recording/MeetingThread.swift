@@ -4,8 +4,9 @@ import Foundation
 /// A recorded meeting's one thread (#3862, docs/assistant/meeting-minutes.md "Meeting conversation (#3862)"): the room
 /// conversation's items, oldest first, and the follow-up's, read apart into what the meeting page shows. The room's
 /// first message is the meeting header, its batches carry message source `meeting` and collapse to "N lines from the
-/// meeting", a heard question shows as "What was just said (m:ss)", and the follow-up's first message holds the meeting's
-/// material in a context block before the owner's words.
+/// meeting", a heard question shows as "What was just said (m:ss)", a photo the owner added (phase 3) is one entry where
+/// the room got it, and the follow-up's first message holds the meeting's material in a context block before the owner's
+/// words.
 ///
 /// A port of the web's `web/src/lib/meeting-thread.ts`, so both apps tell the same items apart the same way. Pure: items
 /// in, entries out, no model and no views, so it runs off the main actor and is tested with fixtures shaped like the
@@ -41,6 +42,10 @@ nonisolated enum MeetingThread {
         case image(id: String, at: Date?, image: ImagePayload?)
         /// A context block of the owner's message; the follow-up's first (`seed`) is the meeting's material.
         case material(id: String, at: Date?, title: String, text: String, seed: Bool)
+        /// A meeting photo the hub forwarded to the room (phase 3): its image and its line from the meeting share the
+        /// `client_msg_id` `photo-<id>` and show as this one entry, at the first of them. `photoID` is the photo's own id,
+        /// lowercase: the page draws it from `GET …/photos`, or as removed once that no longer lists it.
+        case photo(id: String, at: Date?, photoID: String)
 
         /// The item's id (unique within its conversation); an end batch's `ended` adds `#end`, a material `#c<n>`.
         var id: String {
@@ -53,6 +58,7 @@ nonisolated enum MeetingThread {
             case .answer(let i, _, _): i
             case .image(let i, _, _): i
             case .material(let i, _, _, _, _): i
+            case .photo(let i, _, _): i
             }
         }
 
@@ -67,6 +73,7 @@ nonisolated enum MeetingThread {
             case .answer(_, let t, _): t
             case .image(_, let t, _): t
             case .material(_, let t, _, _, _): t
+            case .photo(_, let t, _): t
             }
         }
     }
@@ -81,13 +88,28 @@ nonisolated enum MeetingThread {
     // MARK: - The room
 
     /// The room's items as thread entries. `recordingID` names the header (`meeting-<recording id>`); `asks` tell a spoken
-    /// question from a typed one and give a heard question's time when its block has none.
-    static func room(_ items: [Item], recordingID: UUID, asks: [AskInfo] = []) -> [Entry] {
+    /// question from a typed one and give a heard question's time when its block has none. `ended`: the meeting is over,
+    /// so its last line from the meeting with words after its blocks (or none) is the end batch ("The meeting ended").
+    /// Any other such line (a withdrawn photo's "Photo N was withdrawn…", phase 3) is the hub talking to the room and
+    /// shows nothing.
+    static func room(_ items: [Item], recordingID: UUID, asks: [AskInfo] = [], ended: Bool = true) -> [Entry] {
         let header = "meeting-" + recordingID.uuidString.lowercased()
         let byID = Dictionary(asks.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { _, last in last })
+        // Only the meeting's last line can say it ended: a photo's lines and a withdrawal never do.
+        let last = ended ? items.lastIndex { item in
+            item.role == "user" && item.kind == .text && photoID(item.clientMsgID) == nil && !withdrawn(item.clientMsgID)
+                && (sourceKind(item).map { $0 == "meeting" } ?? raws(item.text ?? "").meeting)
+        } : nil
+        var photos: Set<String> = []
         var out: [Entry] = []
         out.reserveCapacity(items.count)
-        for item in items {
+        for (index, item) in items.enumerated() {
+            // A forwarded photo: its image and its line about it, one entry at the first of them (neither an image, a
+            // batch nor a question).
+            if item.role == "user", let photo = photoID(item.clientMsgID) {
+                if photos.insert(photo).inserted { out.append(.photo(id: item.id, at: item.ts, photoID: photo)) }
+                continue
+            }
             guard item.role == "user", item.kind == .text else {
                 pushReply(&out, item)
                 continue
@@ -113,7 +135,7 @@ nonisolated enum MeetingThread {
                 // after its block, or alone when nothing was new.
                 let found = lines(block?.text ?? "")
                 if !found.isEmpty { out.append(.lines(id: item.id, at: item.ts, lines: found)) }
-                if whole.endBatch { out.append(.ended(id: item.id + "#end", at: item.ts)) }
+                if whole.endBatch, index == last { out.append(.ended(id: item.id + "#end", at: item.ts)) }
             } else if sourceKind(item) == nil, item.injected == nil {
                 // The owner's own: an ask (typed, or spoken from a Talk span), or a message an app sent into the room.
                 let words = UserBubble.display(parsed.rest)
@@ -309,6 +331,21 @@ nonisolated enum MeetingThread {
         return firstGroup(askMessage, clientMsgID.lowercased())
     }
 
+    /// The photo id (lowercase) a room message is about: `photo-<uuid>`, the forwarded photo's image and its line. A
+    /// withdrawal (`photo-withdrawn-<uuid>`) is not one.
+    static func photoID(_ clientMsgID: String?) -> String? {
+        guard let clientMsgID, !clientMsgID.isEmpty else { return nil }
+        return firstGroup(photoMessage, clientMsgID.lowercased())
+    }
+
+    /// The photos the room thread holds, in its order (lowercase ids): the page draws the others after it.
+    static func photoIDs(_ entries: [Entry]) -> [String] {
+        entries.compactMap { entry in
+            if case .photo(_, _, let photo) = entry { return photo }
+            return nil
+        }
+    }
+
     /// The asks the room thread holds an attempt of (lowercase ids): those the page doesn't draw again from `GET …/live`.
     static func askIDs(_ entries: [Entry]) -> Set<String> {
         var ids = Set<String>()
@@ -337,6 +374,11 @@ nonisolated enum MeetingThread {
         } else if item.role == "user", item.kind == .image, item.toolUseID == nil {
             out.append(.image(id: item.id, at: item.ts, image: item.image))
         }
+    }
+
+    /// The hub's line telling the room a deleted photo must not be used again (`photo-withdrawn-<uuid>`).
+    private static func withdrawn(_ clientMsgID: String?) -> Bool {
+        clientMsgID?.lowercased().hasPrefix(withdrawnPrefix) == true
     }
 
     /// The item's `source.kind` when it has one (a string, not empty): it decides over anything in the text.
@@ -373,6 +415,8 @@ nonisolated enum MeetingThread {
     private static let blockEnd = try! NSRegularExpression(pattern: "</" + HubNaming.contextPattern + ">")
     private static let liveLine = try! NSRegularExpression(pattern: #"^\[([0-9]{1,2}(?::[0-9]{2}){1,2})\]\s?(.*)$"#)
     private static let askMessage = try! NSRegularExpression(pattern: #"^ask-([0-9a-f-]{36})-[0-9]+$"#)
+    private static let photoMessage = try! NSRegularExpression(pattern: #"^photo-([0-9a-f-]{36})$"#)
+    private static let withdrawnPrefix = "photo-withdrawn-"
     // The hub's own words (prompts/meeting), matched as the web matches them; they are never shown.
     private static let heardTitle = try! NSRegularExpression(pattern: #"^What was just said\b"#)
     private static let titleClock = try! NSRegularExpression(pattern: #"\(([0-9:]+)\)\s*$"#)

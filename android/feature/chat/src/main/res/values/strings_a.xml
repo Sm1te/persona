@@ -301,7 +301,7 @@
     </plurals>
     <string name="chat_tasks_plan_single">Start it like this</string>
     <string name="chat_tasks_default_model">Default model</string>
-    <string name="chat_tasks_read_only">Read-only</string>
+    <string name="chat_tasks_read_only">Read-only requested</string>
     <string name="chat_tasks_plan_remember">Start ones like these directly next time</string>
     <plurals name="chat_tasks_plan_start_count">
         <item quantity="one">Start %1$d task</item>

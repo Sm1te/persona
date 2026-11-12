@@ -294,7 +294,9 @@ func (s *stateFile) setPane(id, pane string) {
 	s.put(id, v)
 }
 
-func (s *stateFile) put(id string, v sessionState) {
+// put reports only whether its persistence callback was invoked, not whether the
+// one-way notification reached durable storage.
+func (s *stateFile) put(id string, v sessionState) bool {
 	s.mu.Lock()
 	if old, ok := s.Sessions[id]; ok && old.CreationID != "" {
 		v.CreationID, v.Incarnation = old.CreationID, old.Incarnation
@@ -304,5 +306,7 @@ func (s *stateFile) put(id string, v sessionState) {
 	s.mu.Unlock()
 	if persist != nil {
 		persist(id, v)
+		return true
 	}
+	return false
 }

@@ -1,5 +1,17 @@
 # Lessons: hub / node and networking
 
+## A creation reply is not a durable receipt (#5215)
+
+A successful runtime reply and `ownership_unbound` do not reveal whether the
+manager prepared an intent, the node emitted its receipt, or the database accepted
+its state. Trace each boundary with bounded session IDs and fixed outcome codes;
+compare prepared/returned identities in memory without logging them. A one-way
+notification's successful write is not a database acknowledgement. Log its failure
+without raw error text, which may contain private input, and preserve existing
+reconnect handling. Missing diagnostics from an old node or inaccessible stream
+are not evidence of a missing receipt. Keep the actual-node callback regression
+separate from the HTTP/manager/stub-node durable integration test.
+
 ## Virtual-file sizes and EOF (#4425)
 
 Some Linux sysfs attributes report a stable page-sized length even when their readable contents are shorter. A short
@@ -1858,6 +1870,7 @@ On TestFlight 224 an extension's **Review** spun for two minutes and then failed
 - `proto.Session` is copied row by row all over the hub, the manager and the node, and the allocator rounds every allocation up to a size class. #3897 added two fields (40 bytes) and took the struct from 1,528 to 1,568 bytes. A row copied on its own went from the 1,536-byte class to 1,792 (+256 B), every list copy grew by 40 B a row plus page rounding, and four allocation budgets in the assistant failed at once, none of them near the change. The readers copied no more rows than before.
 - When a budget is over by one size-class step per row it keeps, or by rows × a few bytes, compare the row type's `unsafe.Sizeof` at both commits before hunting for new copies.
 - Make room before raising a budget. The 17 bools sat in 10 separate words, 63 bytes of padding; moving bools beside other bools brought the row back to 1,528 bytes without dropping a field. Reordering fields reorders the reflect encoder's keys, so `appendSession` and `sessionWireLayout` follow, and byte goldens change only in key order (check that every line decodes to the same object). `TestSessionFitsItsSizeClass` now fails in `proto`, listing the bools that sit alone, instead of in another package's budgets.
+- The same happens to a type built as one slice per pass (2026-11-12, #5188). #5150 added three fold fields to `sessionlist.Item` (208 to 240 bytes); the hub reads a machine's 150 items as one `[]Item` each pass, and 36,000 B is past the largest size class (32 KiB), so it took whole pages, 40 KiB, 8 KB more a pass. Moving the fields behind one pointer (`Item.Fold`, nil for a row without a hierarchy) brought it back to 216 bytes. Then allocate the pointer only where it is new: `return &fold` moves `fold` to the heap where it is declared, for every row, even on the paths that return nil; copy it in the branch that returns it (`go build -gcflags=-m` says `moved to heap`).
 
 ## What the port relay costs, hop by hop (2026-11-10, #3067)
 

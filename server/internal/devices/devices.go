@@ -646,10 +646,11 @@ func (d *Devices) Call(ctx context.Context, p devicewire.NodeCall) (json.RawMess
 	if p.Method == "session.unwatch" && m.follows(params) {
 		return json.RawMessage(`{}`), nil // the manager still follows it: the node keeps sending its items
 	}
-	var receipt string
+	var receipt, preparation string
 	var prepareErr error
-	params, receipt, prepareErr = d.prepareShareCall(ctx, p, params)
+	params, receipt, preparation, prepareErr = d.prepareShareCall(ctx, p, params)
 	if prepareErr != nil {
+		d.observeCreationCall(p, nil, nil, preparation, prepareErr)
 		return nil, wireError(prepareErr)
 	}
 	if refusesHandoff(p.Method, params) { // and on what actually goes (prepareShareCall re-marshals it)
@@ -657,6 +658,7 @@ func (d *Devices) Call(ctx context.Context, p devicewire.NodeCall) (json.RawMess
 	}
 	var out json.RawMessage
 	err := m.call(ctx, p.Method, params, &out)
+	d.observeCreationCall(p, params, out, preparation, err)
 	d.finishShareCall(ctx, p, receipt, out, err)
 	m.noteOpened(p.Method, params, err)
 	if err != nil {

@@ -1,8 +1,9 @@
-// A Persona conversation's own controls (the app's AssistantTopBar): what "Copy info" copies, and switching its launcher
-// (the model) from the conversation itself (the "Launcher" menu). A pick holds for that conversation's next messages, sent
-// as `launcher` with each (POST …/messages), and the hub resumes the conversation on it. It lasts for this page's life,
-// like the app's `assistantLaunchers`: after a reload the conversation's own launcher (the one the hub ran it on) shows.
-// The new-conversation page has its own pick under NEW_CONVERSATION, sent with POST /assistant/conversations.
+// A Persona conversation's own controls (the app's AssistantTopBar): what "Copy info" copies, and the picks of its model
+// pill kept in this page (views/chat/ModelPill.tsx, #5033). On a hub with `assistant_model_pick` a conversation's pick is
+// kept on the hub (`model_pick`) and nothing here is used for it. On an older hub a pick holds for that conversation's next
+// messages, sent as `launcher` / `model` with each (POST …/messages), and the hub resumes the conversation on it; it lasts
+// for this page's life, like the app's `assistantLaunchers`. The new-conversation page has its own pick under
+// NEW_CONVERSATION (launcher, model and effort), sent with POST /assistant/conversations.
 import { useSyncExternalStore } from "react";
 import { t } from "../i18n";
 import { managedProvider } from "./compatibility";
@@ -14,8 +15,11 @@ export const NEW_CONVERSATION = "new";
 /** A launcher as GET /machines/{mid}/launchers lists it (the fields the assistant needs). */
 export interface AssistantLauncher {
   name: string;
+  /** A Persona-managed provider's name for people (lib/provider-names.ts). */
+  display_name?: string;
   model?: string;
   agent?: string;
+  agent_type?: string;
   base_url?: string;
   assistant?: boolean;
   source?: string;
@@ -105,6 +109,32 @@ export function pickModel(key: string, model: string | undefined) {
 
 export function usePickedModel(key: string): string | undefined {
   return useSyncExternalStore(subscribe, () => models.get(key));
+}
+
+/** The reasoning effort picked for key (the new-conversation page's, sent with its start); absent: the default's. */
+const efforts = new Map<string, string>();
+
+export function pickedEffort(key: string): string | undefined {
+  return efforts.get(key);
+}
+
+export function pickEffort(key: string, effort: string | undefined) {
+  if (effort) efforts.set(key, effort);
+  else efforts.delete(key);
+  listeners.forEach((l) => l());
+}
+
+export function usePickedEffort(key: string): string | undefined {
+  return useSyncExternalStore(subscribe, () => efforts.get(key));
+}
+
+/** Drop key's whole pick, launcher, model and effort together: none of it outlives the others (the new-conversation
+ *  page's would go with the start, and a hub that keeps picks would keep what nobody chose). */
+export function dropPick(key: string) {
+  picks.delete(key);
+  models.delete(key);
+  efforts.delete(key);
+  listeners.forEach((l) => l());
 }
 
 function subscribe(l: () => void) {

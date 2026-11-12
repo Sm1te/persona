@@ -1,6 +1,8 @@
 package node
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -461,5 +463,21 @@ func TestPanesListAdvertisesWorktrees(t *testing.T) {
 	setWorktreeSupport(t, false)
 	if !canWorktree(w.n.hosts.Get(host.Herdr)) {
 		t.Error("an older herdr gets the git way")
+	}
+}
+
+// A runtime engine (Paseo, Cindy) is no host on the node and has no checkouts to prepare: worktree.prepare says so with
+// a code the hub acts on across the wire, as any host without checkouts does, not as a missing host (#4946).
+func TestWorktreePrepareOnARuntimeEngineIsUnsupported(t *testing.T) {
+	n, _ := runtimeNode(t)
+	if err := n.useEngine(context.Background(), proto.EnginePaseo); err != nil {
+		t.Fatal(err)
+	}
+	_, err := nodeCall(t, n, "worktree.prepare", map[string]any{"cwd": "/w/app"})
+	if rpcCode(err) != "worktree_unsupported" || !errors.Is(err, host.ErrUnsupported) || err.Error() != "unsupported: paseo cannot do this" {
+		t.Fatalf("prepare on the paseo runtime = %v (code %q)", err, rpcCode(err))
+	}
+	if _, err := nodeCall(t, n, "worktree.prepare", map[string]any{"cwd": "/w/app", "kind": "orca"}); err == nil || rpcCode(err) != "" {
+		t.Fatalf("a missing host is not a runtime without checkouts: %v (code %q)", err, rpcCode(err))
 	}
 }
