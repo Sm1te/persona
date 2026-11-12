@@ -245,6 +245,9 @@ extension AppModel {
         guard let i = r.hubs.firstIndex(where: { $0.group == group && at($0) })
                 ?? r.hubs.firstIndex(where: { $0.group == group }) else { return }
         let paired = at(r.hubs[i])
+        // On an added address, a hello from another hub (the probe let through what it could not tell apart) changes
+        // nothing: the paired hub keeps who it is.
+        if paired, on != r.hubs[i].config, let known = r.hubs[i].hubID, !known.isEmpty, hello.hubID != known { return }
         if paired {
             if let id = hello.hubID, !id.isEmpty { r.hubs[i].hubID = id }
             if let name = hello.hubName, !name.isEmpty { r.hubs[i].hubName = name }

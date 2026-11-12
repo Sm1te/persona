@@ -144,7 +144,7 @@ nonisolated struct RecordingMinutes: Codable, Hashable, Sendable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// How Copy and Share name a cited photo after its item, as the hub's own `markdown` does ("（照片 3）").
+    /// How Copy and Share name a cited photo after its item, as the hub's own `markdown` does ("(photo 3)", in the app's language).
     static func photoMention(_ n: Int) -> String { String(localized: "(photo \(n))") }
 
     /// What Copy and Share send: Markdown, headed by the title (the recording's name without one), then when and where.

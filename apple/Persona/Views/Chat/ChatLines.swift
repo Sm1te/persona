@@ -271,9 +271,12 @@ struct ChatLines {
                         out += work.filter { if case .notice(let i) = $0 { i.compact != nil } else { false } }.map { .row($0) }
                     } else if !items.isEmpty || live {
                         let id = "w-" + (seg.user?.id ?? seg.rows.first?.id ?? t.id)
+                        // The answer and an interrupt end the exchange too; an idle compaction after it does not.
+                        let ending = seg.rows.indices.filter { !after.contains($0) }.map { seg.rows[$0] }
+                            + (k == segments.count - 1 ? t.trailing : [])
                         out.append(.work(id: id, items: items, live: live,
                                          start: seg.user?.firstTS ?? (k == 0 ? wokeAt : nil) ?? seg.rows.first?.firstTS ?? t.startedAt,
-                                         end: work.last?.lastTS ?? seg.rows.last?.lastTS))
+                                         end: Self.workEnd(ending) ?? seg.rows.last?.lastTS))
                     }
                     // Between the work and the answer: what the work looked at. Its id stays as pictures come in and
                     // the answer changes, so the strip grows sideways in place.
@@ -285,6 +288,17 @@ struct ChatLines {
             }
         }
         return Self.foldRecaps(Self.foldAPIErrors(out))
+    }
+
+    /// Where a finished work line's time stops (#5119): the latest thing its exchange recorded, the answer included,
+    /// and parallel calls at whichever finished last (web `work-groups.ts` counts the same span). The running line
+    /// counts to now, so ending at the last tool step took the wait for the answer off the time as the answer came in
+    /// (8m 17s, then 8m 12s); Claude Code writes its own end of the turn within a fraction of a second of the answer.
+    static func workEnd(_ rows: [ChatRow]) -> Date? {
+        rows.compactMap { row in
+            if case .tools(let steps) = row { return steps.compactMap(\.lastTS).max() }
+            return row.lastTS
+        }.max()
     }
 
     /// Claude Code writes a recap each time an idle session is looked at again: several in a row (nothing else

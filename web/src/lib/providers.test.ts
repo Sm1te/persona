@@ -115,6 +115,15 @@ describe("formProblems", () => {
     const models = [formModel({ id: "m1", context_window: 16000, efforts: ["high"], default_effort: "high" })];
     expect(providerBody({ ...draft, models }, null).models).toEqual([{ id: "m1", context_window: 16000, efforts: ["high"], default_effort: "high" }]);
   });
+  it("sends Send through only for a direct API connection, and only when it changed", () => {
+    const api = ready({ kind: "api", via_machine: "laptop" });
+    expect(providerBody(api, null).via_machine).toBe("laptop");
+    expect(providerBody(api, { name: "gw", kind: "api", via_machine: "laptop" })).not.toHaveProperty("via_machine");
+    expect(providerBody({ ...api, via_machine: "" }, { name: "gw", kind: "api", via_machine: "laptop" }).via_machine).toBe("");
+    expect(probeBody(api, "gw").via_machine).toBe("laptop");
+    expect(providerBody(ready({ via_machine: "laptop" }), null)).not.toHaveProperty("via_machine");
+    expect(formFromView({ name: "gw", kind: "api", via_machine: "laptop" }).via_machine).toBe("laptop");
+  });
   it("checks the models step", () => {
     expect(formProblems(ready({ model: "", models: [] }), true).models).toBe("至少勾选或添加一个模型");
     expect(formProblems(ready({ model: "" }), true).models).toBe("选一个默认模型");

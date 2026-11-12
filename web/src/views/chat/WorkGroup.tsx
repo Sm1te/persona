@@ -16,7 +16,6 @@ import { useFreshWords } from "./fresh-words";
 import { inOpenedFold, openFoldRange, useExpanded, useLiveOverride } from "./expanded";
 import { useReveal } from "./search-reveal";
 import { nodeItemIds } from "../../lib/chat-search";
-import { PlanCard } from "./PlanCard";
 import { Answer } from "./SegmentView";
 import { NoticeRow, Thumb } from "./Steps";
 import { WorkflowCallCard } from "./WorkflowCard";
@@ -25,6 +24,8 @@ import { t } from "../../i18n";
 
 // Subagent cards sit inside the folded work (super rule 2), drawn only once a reader opens it: off the first screen.
 const SubagentCard = lazy(() => import("./SubagentCard").then((m) => ({ default: m.SubagentCard })));
+// the plan's card loads with an opened summary, off the first screen (#5156)
+const PlanCard = lazy(() => import("./PlanCard").then((m) => ({ default: m.PlanCard })));
 // Thought rows too (#5155), with their emphasis parser: only an opened summary draws them.
 const ThinkingRow = lazy(() => import("./ThinkingRow").then((m) => ({ default: m.ThinkingRow })));
 // A child session's card (#5120) the same way: drawn only once the work summary it sits in is opened.
@@ -52,13 +53,17 @@ export interface WorkProps {
   lineStyle?: WorkLineStyle;
   /** The exchange these steps are of is still running. */
   turnLive?: boolean;
+  /** The step that draws the exchange's plan card (work-groups.ts planCardStep; "" for none): its other plan updates are
+   *  rows. Unset: every plan update draws a card. */
+  plan?: string;
 }
 
 /** A Workflow call that draws its run's card (the hub lists the run); one that does not is the row it always was. */
 const workflowCard = (s: ToolStep, p: WorkProps) => isWorkflowStep(s) && Boolean(s.use.tool_use_id && p.workflowCalls?.known.has(s.use.tool_use_id));
 
 /** A step drawn as an action row, sitting with the rows next to it. */
-const drawnAsRow = (s: Step, p: WorkProps): s is ToolStep => (p.trace && s.kind === "tool") || isRowStep(s) || (isWorkflowStep(s) && !workflowCard(s, p));
+const drawnAsRow = (s: Step, p: WorkProps): s is ToolStep =>
+  (p.trace && s.kind === "tool") || isRowStep(s) || (isWorkflowStep(s) && !workflowCard(s, p)) || (isPlanStep(s) && p.plan !== undefined && s.id !== p.plan);
 
 /** Every fold under a group, nested ones too: opening it fetches their steps. */
 function foldsOf(g: WorkGroupNode): Item[] {
@@ -210,7 +215,7 @@ export const StepView = memo(function StepView({ step, p, live, fade }: { step: 
       if (p.trace) return <ActionRow step={step} running={live && !step.result} mid={p.mid} sid={p.sid} trace />;
       if (isChildSessionStep(step)) return <Suspense fallback={null}><ChildSessionCard mid={p.mid} sid={childSessionOf(step)} scope={p.scope} /></Suspense>;
       if (isAgentStep(step)) return <Suspense fallback={null}><SubagentCard step={step} status={p.agentStatus(step)} mid={p.mid} sid={p.sid} scope={p.scope} /></Suspense>;
-      if (isPlanStep(step)) return <PlanCard id={step.id} todos={planTodos(step)} live={live} mid={p.mid} sid={p.sid} />;
+      if (isPlanStep(step)) return <Suspense fallback={null}><PlanCard id={step.id} todos={planTodos(step)} live={live} /></Suspense>;
       if (workflowCard(step, p)) return <WorkflowCallCard step={step} mid={p.mid} sid={p.sid} scope={p.scope} />;
       return <ActionRow step={step} running={live && !step.result} mid={p.mid} sid={p.sid} />;
     case "thinking":

@@ -340,16 +340,19 @@ struct InboxChainSection: View {
     var openSource: ((InboxSourceRoute) -> Void)?
     @State private var all = false
     @State private var opened: Set<String> = []
+    /// The whole chain of an item listed with part of it (`InboxItem.chainCut`, #4742), read when the section appears.
+    @State private var whole: [InboxItem.ChainEntry]?
 
     var body: some View {
-        let chain = item.chain ?? []
+        let chain = item.chainCut ? whole ?? item.chain ?? [] : item.chain ?? []
+        let count = max(chain.count, item.chainCount ?? 0)
         if !chain.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 HStack(spacing: Theme.Space.s) {
                     InboxBlockTitle(title: String(localized: "Timeline [Inbox Event Views 49991a]"))
                     Spacer(minLength: 0)
-                    if chain.count > 1 {
-                        Button(all ? String(localized: "Collapse") : String(localized: "Show all (\(chain.count))")) {
+                    if count > 1 {
+                        Button(all ? String(localized: "Collapse") : String(localized: "Show all (\(count))")) {
                             withAnimation(Theme.Motion.layout) { all.toggle() }
                         }
                         .font(Theme.Font.captionMedium)
@@ -363,7 +366,19 @@ struct InboxChainSection: View {
                 }
             }
             .accessibilityIdentifier("inbox.chain")
+            .task(id: CutChain(key: item.key, count: item.chainCount)) { await readWhole() }
         }
+    }
+
+    private struct CutChain: Hashable {
+        var key: String
+        var count: Int?
+    }
+
+    /// A cut chain's entries from the item itself; on failure the newest entry stays, as listed.
+    private func readWhole() async {
+        guard item.chainCut, let api = model.api?.manager(model.itemManager(item.manager)) else { return }
+        if let full = try? await api.inboxItem(item.id).chain, !Task.isCancelled { whole = full }
     }
 
     @ViewBuilder private func entry(_ e: InboxItem.ChainEntry) -> some View {

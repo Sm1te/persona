@@ -45,7 +45,10 @@ internal fun AssistantManagement.settingsApi(): AssistantSettingsApi {
     }
 }
 
-/** Whether the hub's time zone follows this phone's (the default, as on iOS); the choice stays on the phone. */
+/**
+ * Whether the hub's time zone follows this phone's (the default, as on iOS). The hub keeps the choice too (#1855,
+ * `timezone_picked`), so every device leaves a picked zone alone; the phone's copy is what a hub from before goes by.
+ */
 internal interface TimezoneChoice {
     val phoneZone: String
     var followPhone: Boolean
@@ -63,9 +66,17 @@ internal class StoredTimezoneChoice(context: Context) : TimezoneChoice {
 internal fun zoneToSync(choice: TimezoneChoice, hubZone: String?): String? =
     choice.phoneZone.takeIf { choice.followPhone && it.isNotBlank() && it != hubZone }
 
-/** Routines and the assistant's sense of "today" follow the phone's zone unless the user picked another one. */
+/**
+ * Routines and the assistant's sense of "today" follow the phone's zone unless the user picked another one. The hub's
+ * word on that wins and is kept on the phone (a zone picked on another phone stays); a hub that has none yet is told
+ * this phone's choice once a zone was picked here, so other devices stop changing it.
+ */
 internal suspend fun followPhoneZone(api: AssistantSettingsApi, choice: TimezoneChoice, known: AssistantConfig? = null): AssistantConfig {
     val config = known ?: api.config()
+    config.timezonePicked?.let { choice.followPhone = !it }
+    if (config.timezonePicked == null && !choice.followPhone && !config.timezone.isNullOrBlank()) {
+        return api.updateConfig(AssistantConfigUpdate(timezone = config.timezone, timezonePicked = true))
+    }
     val zone = zoneToSync(choice, config.timezone) ?: return config
     return api.updateConfig(AssistantConfigUpdate(timezone = zone))
 }
@@ -173,7 +184,7 @@ internal class AssistantSettingsState(
             quietly {
                 val synced = followPhoneZone(api, timezone, config)
                 currentCoroutineContext().ensureActive()
-                if (revision == configRevision) set { copy(config = synced) }
+                if (revision == configRevision) set { copy(config = synced, followPhone = timezone.followPhone) }
             }
         } catch (error: CancellationException) { throw error }
         catch (_: Exception) { if (revision == configRevision) set { copy(loadFailed = true) } }
@@ -232,20 +243,35 @@ internal class AssistantSettingsState(
         }
     }
 
+    /**
+     * Match phone: on, the hub takes this phone's zone and follows the devices again; off, the zone in effect becomes the
+     * picked one, which no device changes (#1855). Either way the hub is told, so every device goes by it; when it can't
+     * be, the switch goes back and says so.
+     */
     suspend fun setFollowPhone(follow: Boolean) {
         if (state.value.busy || follow == state.value.followPhone) return
         timezone.followPhone = follow
         set { copy(followPhone = follow) }
-        if (follow) perform(SettingsText(R.string.assistant_settings_zone_sync_failed)) {
-            val synced = followPhoneZone(api, timezone, state.value.config)
-            set { copy(config = synced) }
+        val failed = if (follow) R.string.assistant_settings_zone_sync_failed else R.string.assistant_settings_save_failed
+        val saved = perform(SettingsText(failed)) {
+            val update = if (follow) {
+                AssistantConfigUpdate(timezone = timezone.phoneZone.takeIf { it.isNotBlank() }, timezonePicked = false)
+            } else {
+                AssistantConfigUpdate(timezone = state.value.config?.timezone, timezonePicked = true)
+            }
+            val updated = api.updateConfig(update)
+            set { copy(config = updated) }
+        }
+        if (!saved) {
+            timezone.followPhone = !follow
+            set { copy(followPhone = !follow) }
         }
     }
 
     suspend fun chooseZone(zone: String) {
         if (state.value.followPhone || zone.isBlank() || zone == state.value.config?.timezone) return
         perform(SettingsText(R.string.assistant_settings_zone_failed)) {
-            val updated = api.updateConfig(AssistantConfigUpdate(timezone = zone))
+            val updated = api.updateConfig(AssistantConfigUpdate(timezone = zone, timezonePicked = true))
             set { copy(config = updated) }
             done(SettingsText(R.string.assistant_settings_zone_done, zone))
         }

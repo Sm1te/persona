@@ -1,8 +1,4 @@
 {
-  "updated": "ToDo を更新",
-  "open": "計画をサイドパネルで開く",
-  "plan": "計画",
-  "none": "この会話にはまだ計画がありません。",
-  "step_of": "全 {total} ステップ中 {step} ステップ目",
-  "all_done_other": "全 {count} ステップ完了"
+  "step_of": "ステップ {step} / {total}",
+  "close": "計画を閉じる"
 }

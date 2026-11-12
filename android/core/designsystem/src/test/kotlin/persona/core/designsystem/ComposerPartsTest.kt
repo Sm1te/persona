@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
@@ -112,7 +113,8 @@ class ComposerPartsTest {
         var enabled by mutableStateOf(true)
         rule.setContent {
             PersonaTheme(style = AppStyle.Brief, reduceMotion = true) {
-                QueueStrip("排队中 2 条，Claude 忙完会依次处理", listOf("一", "二"), onItem = { picked += it }, busy = busy, enabled = enabled)
+                QueueStrip("排队中 2 条 · Claude 忙完会依次处理", listOf("一", "二"), onItem = { picked += it }, busy = busy, enabled = enabled,
+                    initiallyExpanded = true)
             }
         }
         rule.onNodeWithContentDescription("第 2 条：二").assertIsEnabled().performClick()
@@ -122,5 +124,48 @@ class ComposerPartsTest {
         busy = false
         enabled = false
         rule.onNodeWithContentDescription("第 1 条：一").assertIsNotEnabled()
+    }
+
+    // iOS QueueStrip: folded to its line by default, the line opens and folds it, and Send Now stays on the line either way.
+    @Test fun queueFoldsToItsLineUntilTappedInEveryStyle() {
+        var style by mutableStateOf(AppStyle.Glass)
+        var busy by mutableStateOf(false)
+        var sent = 0
+        rule.setContent {
+            PersonaTheme(style = style, reduceMotion = true) {
+                androidx.compose.runtime.key(style) {
+                    QueueStrip("排队中 2 条 · Claude 忙完会依次处理", listOf("一", "二"), onItem = {}, busy = busy,
+                        sendNow = "立即发送", onSendNow = { sent++ })
+                }
+            }
+        }
+        for (s in AppStyle.entries) {
+            style = s
+            rule.waitForIdle()
+            rule.onNodeWithContentDescription("第 1 条：一").assertDoesNotExist()
+            rule.onNodeWithText("立即发送").performClick()
+            rule.onNodeWithContentDescription("第 1 条：一").assertDoesNotExist()
+            rule.onNodeWithContentDescription("排队中 2 条 · Claude 忙完会依次处理，已收起").performClick()
+            rule.onNodeWithContentDescription("第 2 条：二").assertIsEnabled()
+            rule.onNodeWithText("立即发送").assertHasClickAction()
+            // Busy: the spinner takes Send Now's place.
+            busy = true
+            rule.onNodeWithText("立即发送").assertDoesNotExist()
+            busy = false
+            rule.onNodeWithContentDescription("排队中 2 条 · Claude 忙完会依次处理，已展开").performClick()
+            rule.onNodeWithContentDescription("第 2 条：二").assertDoesNotExist()
+        }
+        assertEquals(AppStyle.entries.size, sent)
+    }
+
+    @Test fun anOpenedQueueShowsAboutThreeRowsBeforeItScrolls() {
+        assertEquals(null, queueListCap(0, 2))
+        assertEquals(null, queueListCap(120, 0))
+        // Fewer than three: all of them.
+        assertEquals(120, queueListCap(120, 2))
+        assertEquals(180, queueListCap(180, 3))
+        // More: three rows' worth of the measured average (spacing included).
+        assertEquals(180, queueListCap(240, 4))
+        assertEquals(150, queueListCap(500, 10))
     }
 }

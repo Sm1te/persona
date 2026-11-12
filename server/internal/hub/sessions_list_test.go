@@ -479,8 +479,9 @@ func TestIndexRowReuseMatchesFullPath(t *testing.T) {
 		},
 		func(r *proto.Session, n int) { r.Rev++ },
 		func(r *proto.Session, n int) { r.Archived = n%2 == 0 }, // hidden from the lists while archived
-		func(r *proto.Session, n int) { // folded under a row listed or not, a rollup of its own (#5120)
-			r.SetFold(cycle(n, "", "s01", "s02", "missing"), []*proto.SessionChildren{nil, {Total: 2, Working: 1}, {Total: 1, NeedsYou: 1}}[n%3])
+		func(r *proto.Session, n int) { // folded under a row listed or not, as a tab's worker or not, a rollup of its own (#5120, #5180)
+			r.SetFold(cycle(n, "", "s01", "s02", "missing"), cycle(n, "", "", proto.FoldedAsWorker),
+				[]*proto.SessionChildren{nil, {Total: 2, Working: 1, Workers: 1}, {Total: 1, NeedsYou: 1}}[n%3])
 		},
 	}
 	listEdits := []func(list []proto.Session, n int) []proto.Session{

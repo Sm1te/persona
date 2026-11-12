@@ -501,12 +501,14 @@ const CODE_BOX = "max-h-48 overflow-auto rounded-[8px] bg-inset px-2.5 py-2 font
 const FROM_MAX = 48;
 
 /** "From subagent · <type>" for a subagent's card, its type on one line and cut to FROM_MAX; for a child session's card
- *  on its parent's page (#5120, `folded_under`), the child's title the same way; empty otherwise. */
-export function permissionFrom(ix: Pick<Interaction, "agent_id" | "agent_type" | "folded_under" | "session_title">): string {
+ *  on its parent's page (#5120, `folded_under`), the child's title the same way, and "From worker · <title>" for a lead's
+ *  worker's (#5180, `folded_as`); empty otherwise. */
+export function permissionFrom(ix: Pick<Interaction, "agent_id" | "agent_type" | "folded_under" | "folded_as" | "session_title">): string {
   const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
   const name = ix.folded_under ? oneLine(ix.session_title) || t("chat-subagentcard.untitled_task") : ix.agent_id?.trim() ? oneLine(ix.agent_type) : "";
   if (!name || (!ix.folded_under && name.toLowerCase() === "main")) return "";
-  return t("lib-elicitation.from_subagent", { agent: name.length > FROM_MAX ? `${name.slice(0, FROM_MAX - 1)}…` : name });
+  const agent = name.length > FROM_MAX ? `${name.slice(0, FROM_MAX - 1)}…` : name;
+  return ix.folded_under && ix.folded_as === "worker" ? t("lib-elicitation.from_worker", { agent }) : t("lib-elicitation.from_subagent", { agent });
 }
 
 function PermissionBody({ ix }: { ix: Interaction }) {

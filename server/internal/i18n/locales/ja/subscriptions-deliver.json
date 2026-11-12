@@ -1,6 +1,7 @@
 {
   "digest_more": "ほか{count}件",
   "digest_title": "{label}：オンにする前の1日分が{count}件あります",
+  "digest_title_recipe": "{label}：取得方法を変えたときに{count}件見つかりました",
   "due": "期限：{when}",
   "failing_title": "{label}：{since}から取得できていません",
   "failing_why": "ルール：購読の取得が1日失敗しています",

@@ -4,7 +4,7 @@
 // when the page left the session, so one the user closed (×, Esc, ⌘B, its button) before leaving is not brought back,
 // and one brought back is kept again only if it is still open when the page leaves. Kept per browser tab
 // (sessionStorage), for the last few sessions. A Persona chat keeps its panel the same way, and it is any panel but a
-// link (a task's or an agent's chat, the plan, a file): opened from that chat, it goes and comes back with it (#6199).
+// link (a task's or an agent's chat, a file): opened from that chat, it goes and comes back with it (#6199).
 import { useEffect, useRef } from "react";
 import { closePanel, directoryPanelKey, getPanel, openPanel, type Panel } from "./panel";
 
@@ -59,9 +59,9 @@ export function arriving(memory: PanelMemory, session: string, open: Panel | nul
   return { memory: rest, back };
 }
 
-// The kinds a panel can be now: one kept by an older version of the page (the task and Agent panels before #5096) is
-// not brought back.
-const KINDS = new Set<Panel["kind"]>(["files", "git", "review", "file", "link", "plan", "preview"]);
+// The kinds a panel can be now: one kept by an older version of the page (the task and Agent panels before #5096, the
+// plan's before #5156) is not brought back.
+const KINDS = new Set<Panel["kind"]>(["files", "git", "review", "file", "link", "preview"]);
 
 function load(): PanelMemory {
   try {

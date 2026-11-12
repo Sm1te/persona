@@ -60,6 +60,9 @@ nonisolated struct InboxItem: Codable, Identifiable, Hashable, Sendable {
     var handling: Handling?
     var suggestion: Suggestion?
     var chain: [ChainEntry]?
+    /// A done item listed with only its newest chain entry (the app asks with `chain=last`, #4742): how many it has.
+    /// GET /api/v1/inbox/{id} has them all (InboxChainSection reads it when the item opens). nil: `chain` is all of it.
+    var chainCount: Int?
     var related: [Related]?
 
     /// One thing an item can be muted by: a repository, a chat or a sender of its source.
@@ -267,9 +270,12 @@ nonisolated struct InboxItem: Codable, Identifiable, Hashable, Sendable {
         case id, source, kind, account, title, sender, avatar, preview, count, tier, summary, reason, read, lark, mail, doc, moment, context, agent, translations, connector, mutes, version, parent
         case status, urgent, recap, handling, suggestion, chain, related, manager
         case accountName = "account_name", startedAt = "started_at", updatedAt = "updated_at", doneAt = "done_at", doneBy = "done_by"
+        case chainCount = "chain_count"
     }
 
     var isDone: Bool { doneAt != nil }
+    /// Listed with part of its chain: the rest is read when it opens.
+    var chainCut: Bool { (chainCount ?? 0) > (chain?.count ?? 0) }
     var isLark: Bool { source == "lark" }
 
     /// The list's sections of open items, in order: Needs You, In Progress (the AI or an Agent on it, or waiting for the
@@ -488,8 +494,10 @@ extension APIClient {
 
     /// The list asked with `since` (docs/protocol/protocol.md "Inbox delta", #4740): a cursor of a list this app holds, or
     /// `InboxListing.noCursor` for the whole list and its cursor. A hub without deltas answers the whole list, no cursor.
+    /// Done items come with their newest chain entry alone (`chain=last`, #4742): about half of a busy hub's list was
+    /// done items' chains, which are drawn only once an item opens. An older hub ignores it.
     func inboxListing(connectors: Bool, since: String) async throws -> InboxListing {
-        var query = ["since": since]
+        var query = ["since": since, "chain": "last"]
         if connectors { query["sources"] = "all" }
         return try await Self.decodeInbox(request("GET", "/api/v1/inbox", query: query))
     }

@@ -2,9 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Item } from "../../lib/types";
 import type { Step } from "../../lib/turns";
-import { planProgress, type ToolStep, type WorkGroupNode } from "../../lib/work-groups";
+import type { ToolStep, WorkGroupNode } from "../../lib/work-groups";
 import { ActionRow, argumentLines, DIFF_FOLD_LINES, diffStats, editDiffs, foldDiffs, inlineInput, lineDiff, presentAction, truncateParam } from "./ActionRow";
-import { latestPlan, PlanCard, PlanList, PlanPill, planSummary } from "./PlanCard";
+import { PlanCard } from "./PlanCard";
 import { Answer, bubbleLines, SegmentView, UserBubble } from "./SegmentView";
 import { SubagentCard } from "./SubagentCard";
 import { LiveThinking } from "./ThinkingCard";
@@ -204,33 +204,6 @@ describe("thought rows (cindy's ThinkingActivityRow, #5155)", () => {
     expect(html).toContain(">正在思考<");
     expect(html.match(/size-1 rounded-full/g)).toHaveLength(3);
     expect(html).toMatch(/tabular-nums">1s</);
-  });
-});
-
-describe("PlanCard", () => {
-  it("finds the newest plan in a fold the hub made too (#5602)", () => {
-    const fold: Item = { id: "f#0", seq: 5, role: "assistant", kind: "fold", fold: { items: 6, tools: 3, thoughts: 0, through_seq: 10,
-      tasks: [{ replace: "todo", entries: [{ id: "todo:0", subject: "读代码", status: "completed" }, { id: "todo:1", subject: "改实现", status: "in_progress" }], source_item_id: "tw#0", source_tool_use_id: "tw", source_seq: 7 }] } };
-    const seg = { id: "s", steps: [{ kind: "fold" as const, id: fold.id, item: fold }], tools: 3, thoughts: 0, replies: 0, folds: [fold] };
-    expect(latestPlan([seg])).toEqual({ id: "tw#0", todos: [{ content: "读代码", status: "completed" }, { content: "改实现", status: "in_progress" }] });
-  });
-
-  it("is one line in the chat: which step of how many · that step, the bar under it (#5602)", () => {
-    const todos = [{ content: "读代码", status: "completed" as const }, { content: "改实现", status: "in_progress" as const }, { content: "跑测试", status: "pending" as const }];
-    const html = renderToStaticMarkup(<PlanCard id="p" todos={todos} mid="m" sid="s" />);
-    expect(html).toContain("更新了待办");
-    expect(html).toContain(">第 2 步，共 3 步<");
-    expect(html).toContain(">改实现<");
-    expect(html).toContain("data-plan-progress");
-    expect(html).not.toContain(">跑测试<"); // the whole list is in the side panel
-    const done = renderToStaticMarkup(<PlanCard id="p" todos={todos.map((t) => ({ ...t, status: "completed" as const }))} mid="m" sid="s" />);
-    expect(done).toContain(">3 步全部完成<");
-    expect(done).not.toContain(">跑测试<"); // all done: no step to name
-    const pill = renderToStaticMarkup(<PlanPill todos={todos} onClick={() => {}} />);
-    expect(pill).toContain(">第 2 步，共 3 步<"); // the pill and the line say it the same way
-    expect(planSummary(planProgress(todos))).toBe("第 2 步，共 3 步 · 改实现"); // and so does the panel's header
-    const list = renderToStaticMarkup(<PlanList todos={todos} />);
-    expect(list.match(/min-h-\[30px\]/g)).toHaveLength(3);
   });
 });
 

@@ -155,7 +155,7 @@ func mergeLaunchers(out string) (list []proto.Launcher, codex map[string][]strin
 	codex = map[string][]string{}
 	ls, words := parseCodexAliases(aliases)
 	if strings.TrimSpace(codexPath) != "" && words["codex"] == nil {
-		list = append(list, proto.Launcher{Name: "codex", Model: "默认", Agent: "codex", Source: "zshrc"})
+		list = append(list, proto.Launcher{Name: "codex", Model: "默认", Agent: "codex", Source: "zshrc", PromptOptional: true})
 		codex["codex"] = []string{"codex"}
 	}
 	for _, l := range ls {
@@ -277,7 +277,7 @@ func parseCodexAliases(out string) ([]proto.Launcher, map[string][]string) {
 		if model == "" {
 			model = "默认"
 		}
-		list = append(list, proto.Launcher{Name: w[0], Model: model, Agent: "codex", Source: "zshrc"})
+		list = append(list, proto.Launcher{Name: w[0], Model: model, Agent: "codex", Source: "zshrc", PromptOptional: true})
 		words[w[0]] = argv
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })

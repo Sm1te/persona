@@ -145,6 +145,8 @@ data class HubLauncher(
     @SerialName("key_machines") val keyMachines: List<String> = emptyList(),
     /** Saved before scopes existed: every computer, work ones too, each with a copy, until a scope field is saved. */
     @SerialName("legacy_scope") val legacyScope: Boolean = false,
+    /** A direct API connection's "Send through": the computer whose node sends its requests; none: the hub itself. */
+    @SerialName("via_machine") val viaMachine: String? = null,
 ) {
     val managed: Boolean get() = ProtocolCompatibility.managedProvider(source)
     val pathScript: Boolean get() = source == "path"
@@ -355,6 +357,8 @@ data class ProviderUpdate(
     @SerialName("delivery") val delivery: String? = null,
     @SerialName("own_service") val ownService: String? = null,
     @SerialName("machine_keys") val machineKeys: Map<String, String>? = null,
+    /** "Send through" (kind api): a computer's id, "" the hub itself; left out keeps what is stored. */
+    @SerialName("via_machine") val viaMachine: String? = null,
 )
 
 /** `POST /api/v1/launchers`' answer: [assigned] / [kept] only when `assign` was sent (an older hub leaves them out). */
@@ -390,6 +394,8 @@ data class ProviderProbe(
     @SerialName("headers") val headers: String? = null,
     /** messages | responses | chat */
     @SerialName("api") val api: String? = null,
+    /** "Send through" as chosen: tested from where it will be sent; left out, the stored one. */
+    @SerialName("via_machine") val viaMachine: String? = null,
 )
 
 @Serializable

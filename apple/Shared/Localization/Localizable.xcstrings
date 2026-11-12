@@ -1,6 +1,121 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The app asks every address at once and uses the first in this order that answers; a later one when the earlier ones don't answer quickly. The paired address always comes first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app asks every address at once and uses the first in this order that answers; a later one when the earlier ones don't answer quickly. The paired address always comes first."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリはすべてのアドレスに同時に問い合わせ、この順序で最初に応答したものを使います。前のアドレスがすぐに応答しないときは、後のアドレスを使います。ペアリングしたアドレスは常に先頭です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 会同时探测所有地址，按这里的顺序用第一个有响应的；排在前面的没能很快响应时，会用后面的。配对时的地址始终排第一。"
+          }
+        }
+      }
+    },
+    "Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in both Cloudflare Access fields only if this address is behind Access; the token is sent to this address only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in both Cloudflare Access fields only if this address is behind Access; the token is sent to this address only."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ hub に届く別の経路です（ペアリングしたアドレスが VPN のものなら公開ドメインなど）。Cloudflare Access のトークンは、このアドレスが Access の背後にあるときだけ両方の欄に入力してください。このアドレスにだけ送られます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接同一个 hub 的另一条路，比如配对地址走 VPN 时再加一个公网域名。只有这个地址在 Cloudflare Access 后面时才需要填令牌，两项都要填；令牌只发给这个地址。"
+          }
+        }
+      }
+    },
+    "Send Through" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Through"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过…发送"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信経由"
+          }
+        }
+      }
+    },
+    "The Hub Itself" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Hub Itself"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hub 自己"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ハブ自身"
+          }
+        }
+      }
+    },
+    "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由哪台机器把这个接入的请求发给供应商。hub 连不上供应商、而你的某台电脑能连上时，选那台电脑；发请求时它得在线。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この接続のリクエストをどのマシンから送るかを選びます。ハブからプロバイダーに届かず、お使いのコンピューターからは届く場合はそのコンピューターを選んでください。リクエストを送るときはオンラインである必要があります。"
+          }
+        }
+      }
+    },
     "(photo %lld)": {
       "extractionState": "manual",
       "localizations": {
@@ -20003,29 +20118,6 @@
       },
       "extractionState" : "manual"
     },
-    "Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in the Cloudflare Access token only if this address is behind Access; it's sent to this address only." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another way to reach this same hub, such as a public domain when the paired address is a VPN one. Fill in the Cloudflare Access token only if this address is behind Access; it's sent to this address only."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同じ hub に届く別の経路です（ペアリングしたアドレスが VPN のものなら公開ドメインなど）。Cloudflare Access のトークンは、このアドレスが Access の背後にあるときだけ入力してください。このアドレスにだけ送られます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接同一个 hub 的另一条路，比如配对地址走 VPN 时再加一个公网域名。只有这个地址在 Cloudflare Access 后面时才需要填令牌，令牌只发给这个地址。"
-          }
-        }
-      }
-    },
     "Answer" : {
       "localizations" : {
         "en" : {
@@ -34333,6 +34425,29 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Codex is open on %@. Send its first message below, or type it in its terminal." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex is open on %1$@. Send its first message below, or type it in its terminal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codexは「%1$@」で開いています。下で最初のメッセージを送るか、ターミナルに直接入力してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 已在「%1$@」上打开。在下面发第一条消息，或直接在它的终端里输入。"
+          }
+        }
+      }
     },
     "Codex live" : {
       "localizations" : {
@@ -131039,29 +131154,6 @@
         }
       }
     },
-    "The app asks every address at once and uses the first in this order that answers; a later one only when the earlier ones don't. The paired address always comes first." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The app asks every address at once and uses the first in this order that answers; a later one only when the earlier ones don't. The paired address always comes first."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリはすべてのアドレスに同時に問い合わせ、この順序で最初に応答したものを使います。後のアドレスは、それより前のものが応答しないときだけ使います。ペアリングしたアドレスは常に先頭です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App 会同时探测所有地址，按这里的顺序用第一个有响应的；排在前面的都连不上，才会用后面的。配对时的地址始终排第一。"
-          }
-        }
-      }
-    },
     "The app can't get the App Group container (%@ isn't in the signature): avatar pack images can't reach the extension, so it draws the default avatar in the pack's colors" : {
       "localizations" : {
         "en" : {
@@ -154013,6 +154105,29 @@
       },
       "extractionState" : "manual"
     },
+    "Waiting for its first message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for its first message"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最初のメッセージ待ち"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等第一条消息"
+          }
+        }
+      }
+    },
     "Waiting for microphone access" : {
       "localizations" : {
         "en" : {
@@ -155507,6 +155622,29 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "What should Codex do? (Optional: you can also send it later, here or in its terminal)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What should Codex do? (Optional: you can also send it later, here or in its terminal)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codexに何をさせますか？（任意：あとでここかターミナルで送ることもできます）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "想让 Codex 做什么？（可选：也可以之后在这里或它的终端里再发）"
+          }
+        }
+      }
     },
     "What should Codex do? (Required: Codex starts a session only after the first message)" : {
       "localizations" : {

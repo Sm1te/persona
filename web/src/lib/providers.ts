@@ -58,6 +58,8 @@ export interface ProviderView extends ScopeView {
   effort?: string;
   /** ManagedLauncher.Source: "" made by hand, "zshrc:<alias>@<machine>", "preset:<id>". */
   origin?: string;
+  /** A direct API connection's "Send through": the computer whose node sends its requests; none: the hub itself. */
+  via_machine?: string;
 }
 
 /** One model row of step 3: numbers as typed. */
@@ -109,6 +111,8 @@ export interface ProviderForm {
   custom_model_name: string;
   custom_model_description: string;
   args: string;
+  /** Send through (kind api): a computer's id, "" the hub itself. */
+  via_machine: string;
 }
 
 /** A compatible gateway's form, typed by hand (the providers the hub knows are presets, lib/launcher-presets.ts). */
@@ -147,6 +151,7 @@ export function newForm(): ProviderForm {
     custom_model_name: "",
     custom_model_description: "",
     args: "",
+    via_machine: "",
   };
 }
 
@@ -192,6 +197,7 @@ export function formFromView(v: ProviderView): ProviderForm {
     custom_model: v.custom_model ?? "",
     custom_model_name: v.custom_model_name ?? "",
     custom_model_description: v.custom_model_description ?? "",
+    via_machine: v.via_machine ?? "",
     args: (v.args ?? []).join(" "),
   };
 }
@@ -458,6 +464,7 @@ export function providerBody(f: ProviderForm, old: ProviderView | null, clearLeg
   if (!chat && f.headers_touched) body.headers = f.headers.trim();
   if (!chat && f.env_touched) body.env = f.env.replace(/\s+$/, ""); // the start kept: the hub's line numbers match the box
   if (chat && clearLegacyChat) Object.assign(body, legacyChatClears(old));
+  if (api && f.via_machine !== (old?.via_machine ?? "")) body.via_machine = f.via_machine;
   return body;
 }
 
@@ -468,6 +475,7 @@ export function probeBody(f: ProviderForm, stored: string | null, model?: string
   if (f.api_key.trim()) b.api_key = f.api_key.trim();
   if (!(f.kind === "api" && f.api === "chat") && f.headers_touched) b.headers = f.headers.trim();
   if (model !== undefined) b.model = model;
+  if (f.kind === "api") b.via_machine = f.via_machine; // tested from where it will be sent
   return b;
 }
 

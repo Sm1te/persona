@@ -1,0 +1,7 @@
+{
+  "strip_label": "Worker",
+  "summary": "Worker {count} 件 · 実行中 {running} 件",
+  "waiting": "Worker を待機中",
+  "scroll_left": "前の Worker へスクロール",
+  "scroll_right": "次の Worker へスクロール"
+}

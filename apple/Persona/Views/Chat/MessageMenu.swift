@@ -259,8 +259,10 @@ struct LongPressAt: UIGestureRecognizerRepresentable {
 extension View {
     /// The pressable part of a message (the bubble / the text). preview: the same part again, lifted over the dimmed chat
     /// when pressed; card: it is words on the page with nothing around them (an answer), lifted on a card of its own.
-    func messageLongPress<P: View>(id: String, card: Bool = false, @ViewBuilder preview: @escaping () -> P) -> some View {
-        modifier(MessageLongPress(id: id, card: card, preview: preview))
+    /// part: this is one of the rows a message is drawn in (a long answer, #4970), and preview draws all of the message,
+    /// this part marked with `liftPressedPart` (`MessageLift.part`).
+    func messageLongPress<P: View>(id: String, card: Bool = false, part: Bool = false, @ViewBuilder preview: @escaping () -> P) -> some View {
+        modifier(MessageLongPress(id: id, card: card, part: part, preview: preview))
     }
     /// The whole row of a message: hosts the action bar above the press point and lifts the row above its neighbours.
     /// pending: your message not in the transcript yet (`PendingBubble`, #6427): Copy, Select Text and Share only, no
@@ -295,6 +297,7 @@ private struct MessageLongPress<P: View>: ViewModifier {
     @Environment(\.messageBar) private var bar
     let id: String
     let card: Bool
+    let part: Bool
     let preview: () -> P
     /// Where the part is, kept without drawing anything again (it changes on every scrolled frame).
     @State private var place = LiftPlace()
@@ -345,10 +348,12 @@ private struct MessageLongPress<P: View>: ViewModifier {
         LiftLines.shared.lift = ""
         LiftLines.shared.select = ""
         #endif
+        // All of a message drawn in parts is as tall as it takes, at the part's width.
+        let offer = part ? place.offer.map { ProposedViewSize(width: $0.width, height: nil) } : place.offer
         withAnimation(Theme.Motion.state) {
             menu.selected = id
             menu.lift = MessageLift(bar: bar, frame: f.global, press: press, preview: AnyView(shown), card: card,
-                                    offer: place.offer, environment: place.environment)
+                                    offer: offer, environment: place.environment, part: part)
         }
     }
 }

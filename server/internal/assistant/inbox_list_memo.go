@@ -44,11 +44,26 @@ type inboxListMemo struct {
 }
 
 // inboxListed is one item's bytes as listed, for that item (pointer): nil raw is an encoding in flight, stored only by
-// the GET holding tok, and only while nothing forgot it meanwhile.
+// the GET holding tok, and only while nothing forgot it meanwhile. lean is the item as a list asked with chain=last
+// lists it (leanListed): the same slice as raw unless the item is done with more than one chain entry.
 type inboxListed struct {
-	it  *InboxItem
-	raw []byte
-	tok uint64
+	it   *InboxItem
+	raw  []byte
+	lean []byte
+	tok  uint64
+}
+
+// leanListed is a listed copy as a list asked with chain=last lists it (#4742): a done item keeps its newest chain
+// entry and says how many it has. Nearly every listed item is a done one, kept for undo; their chains were about half
+// of a busy hub's list (1.7 of 3.5 MB), and an app draws one only when the item is opened, where it reads the item
+// itself. nil when the copy is listed the same either way.
+func leanListed(c *InboxItem) *InboxItem {
+	if c.DoneAt == nil || len(c.Chain) < 2 {
+		return nil
+	}
+	l := *c
+	l.Chain, l.ChainCount = c.Chain[len(c.Chain)-1:], len(c.Chain)
+	return &l
 }
 
 // inboxListOrder is the list's order: newest first, and by id among items of the same moment (mail and Feishu items
@@ -80,17 +95,19 @@ type inboxListRow struct {
 // inboxListRaw is inboxListAt as GET /api/v1/inbox writes it: each item's JSON, newest first, and as_of. Only the
 // items without kept bytes are copied (under b.mu) and encoded (after it). False when an item cannot be encoded.
 func (s *Service) inboxListRaw(all bool) ([][]byte, time.Time, bool) {
-	out, _, now, ok := s.inboxListBytes(all, false)
+	out, _, now, ok := s.inboxListBytes(inboxShape{all: all}, false)
 	return out, now, ok
 }
 
-// inboxListRawIDs is inboxListRaw with each item's id beside its bytes (GET /api/v1/inbox?since, inbox_delta.go).
-func (s *Service) inboxListRawIDs(all bool) ([][]byte, []string, time.Time, bool) {
-	return s.inboxListBytes(all, true)
+// inboxListRawIDs is inboxListRaw with each item's id beside its bytes (GET /api/v1/inbox?since, inbox_delta.go), lean
+// ones when shape says so.
+func (s *Service) inboxListRawIDs(shape inboxShape) ([][]byte, []string, time.Time, bool) {
+	return s.inboxListBytes(shape, true)
 }
 
 // inboxListBytes is inboxListRaw, with the ids too when withIDs (a plain GET allocates nothing more for them).
-func (s *Service) inboxListBytes(all, withIDs bool) ([][]byte, []string, time.Time, bool) {
+func (s *Service) inboxListBytes(shape inboxShape, withIDs bool) ([][]byte, []string, time.Time, bool) {
+	all := shape.all
 	b := &s.inbox
 	m := &b.listMemo
 	b.mu.Lock()
@@ -109,8 +126,11 @@ func (s *Service) inboxListBytes(all, withIDs bool) ([][]byte, []string, time.Ti
 		row := inboxListRow{it: it, at: it.UpdatedAt}
 		if e := m.kept[it.ID]; e.it == it && e.raw != nil {
 			row.raw = e.raw
+			if shape.lean {
+				row.raw = e.lean
+			}
 			if inboxMemoVerify {
-				verifyListed(it, e.raw)
+				verifyListed(it, e.raw, e.lean)
 			}
 		} else {
 			c := it.listed()
@@ -131,6 +151,10 @@ func (s *Service) inboxListBytes(all, withIDs bool) ([][]byte, []string, time.Ti
 	b.mu.Unlock()
 	slices.SortFunc(rows, func(x, y inboxListRow) int { return inboxListOrder(x.at, x.it.ID, y.at, y.it.ID) })
 	out := make([][]byte, len(rows))
+	var encoded []inboxListed // the misses' bytes, both shapes, to keep (tok is the row's)
+	if misses > 0 {
+		encoded = make([]inboxListed, 0, misses)
+	}
 	var ids []string
 	if withIDs {
 		ids = make([]string, len(rows))
@@ -144,18 +168,25 @@ func (s *Service) inboxListBytes(all, withIDs bool) ([][]byte, []string, time.Ti
 			if err != nil {
 				return nil, nil, now, false
 			}
+			lean := raw
+			if l := leanListed(rows[i].c); l != nil {
+				if lean, err = json.Marshal(l); err != nil {
+					return nil, nil, now, false
+				}
+			}
+			encoded = append(encoded, inboxListed{it: rows[i].it, raw: raw, lean: lean, tok: rows[i].tok})
 			rows[i].raw = raw
+			if shape.lean {
+				rows[i].raw = lean
+			}
 		}
 		out[i] = rows[i].raw
 	}
 	if misses > 0 {
 		b.mu.Lock()
-		for _, r := range rows {
-			if r.c == nil {
-				continue
-			}
+		for _, r := range encoded {
 			if e, ok := m.kept[r.it.ID]; ok && e.raw == nil && e.tok == r.tok {
-				m.kept[r.it.ID] = inboxListed{it: r.it, raw: r.raw}
+				m.kept[r.it.ID] = inboxListed{it: r.it, raw: r.raw, lean: r.lean}
 			}
 		}
 		m.encoded += misses
@@ -211,11 +242,20 @@ func writeInboxItems(w http.ResponseWriter, items [][]byte, asOf time.Time, tria
 
 var comma = []byte{','}
 
-// verifyListed (tests) notes an item whose kept bytes are not its encoding now. Under b.mu.
-func verifyListed(it *InboxItem, kept []byte) {
+// verifyListed (tests) notes an item whose kept bytes, either of them, are not its encoding now. Under b.mu.
+func verifyListed(it *InboxItem, kept, keptLean []byte) {
 	c := it.listed()
-	if fresh, err := json.Marshal(&c); err == nil && !bytes.Equal(fresh, kept) {
-		inboxMemoStale.note(fmt.Sprintf("inbox item %s listed from stale bytes\nkept:  %s\nfresh: %s\n%s", it.ID, kept, fresh, debug.Stack()))
+	lean := &c
+	if l := leanListed(&c); l != nil {
+		lean = l
+	}
+	for _, v := range []struct {
+		kept []byte
+		c    *InboxItem
+	}{{kept, &c}, {keptLean, lean}} {
+		if fresh, err := json.Marshal(v.c); err == nil && !bytes.Equal(fresh, v.kept) {
+			inboxMemoStale.note(fmt.Sprintf("inbox item %s listed from stale bytes\nkept:  %s\nfresh: %s\n%s", it.ID, v.kept, fresh, debug.Stack()))
+		}
 	}
 }
 

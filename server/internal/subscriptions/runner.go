@@ -309,6 +309,10 @@ func (s *Service) execute(ctx context.Context, sub Subscription, asked bool, sta
 	run := Run{At: start, MS: ms, Trigger: trigger}
 	var seen []Seen
 	var items []Item
+	// The first run that succeeds after a recipe changed with existing baseline records what it finds as seen and
+	// keeps none of it: only what arrives later comes in.
+	baseline := sub.Baseline
+	next.Baseline = nil
 	if pl.snapshot != nil {
 		run.Count = 1
 		if pl.snapHash != sub.SnapshotHash {
@@ -343,6 +347,9 @@ func (s *Service) execute(ctx context.Context, sub Subscription, asked bool, sta
 		next.SinceAt = newest
 		next.WeakDedup = pl.weak
 	}
+	if baseline != nil {
+		run.Baseline, items = len(items), nil
+	}
 	run.New = len(items)
 	next.Shape, next.ShapeMisses = pl.shape, 0
 	next.RunState, next.Error, next.FailCount, next.FailingSince = StateOK, nil, 0, nil
@@ -354,11 +361,14 @@ func (s *Service) execute(ctx context.Context, sub Subscription, asked bool, sta
 	}
 	n := s.nextRun(next, start, false)
 	next.NextRunAt = &n
-	if !s.commit(ctx, sub, next, &commitData{seen: seen, items: items}, &run, start, true) {
+	if !s.commit(ctx, sub, next, &commitData{seen: seen, items: items, baseline: baseline}, &run, start, true) {
 		return
 	}
 	if len(items) > 0 {
 		s.o.Logf("subscription %s: %d new of %d", sub.ID, len(items), run.Count)
+	}
+	if baseline != nil {
+		s.o.Logf("subscription %s: baseline after a recipe change: %d of %d recorded as seen", sub.ID, run.Baseline, run.Count)
 	}
 	if len(items) > 0 || caughtUp {
 		s.o.Delivered(next)
@@ -447,8 +457,9 @@ func (s *Service) needsRecipe(ctx context.Context, sub, next Subscription, p *Pr
 }
 
 type commitData struct {
-	seen  []Seen
-	items []Item
+	seen     []Seen
+	items    []Item
+	baseline *time.Time // the baseline mark this run took
 }
 
 // commit writes a run's outcome (a run with a Run, a skipped round without) and tells the apps; false when it could
@@ -468,7 +479,7 @@ func (s *Service) commit(ctx context.Context, sub, next Subscription, d *commitD
 	}
 	c := RunCommit{Sub: next, Revision: sub.Revision, Now: now}
 	if d != nil {
-		c.Seen, c.Items = d.seen, d.items
+		c.Seen, c.Items, c.Baseline = d.seen, d.items, d.baseline
 	}
 	if err := s.o.Store.CommitRun(ctx, c); err != nil {
 		// Nothing of the run is kept; its lease runs out and the run is made again, deduplicated.

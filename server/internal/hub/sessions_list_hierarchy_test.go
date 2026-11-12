@@ -25,7 +25,7 @@ func hierarchyHub(t *testing.T) (*Hub, *Machine) {
 	at := func(n int) time.Time { return time.Unix(int64(1000+n), 0) }
 	row := func(id, state string, n int, under string, kids *proto.SessionChildren) proto.Session {
 		s := proto.Session{MachineID: "demo", SessionID: id, Title: id, State: state, Cwd: "/demo/app", UpdatedAt: at(n)}
-		s.SetFold(under, kids)
+		s.SetFold(under, "", kids)
 		return s
 	}
 	m.sessions = []proto.Session{
@@ -109,6 +109,69 @@ func TestRuntimeListHierarchy(t *testing.T) {
 	}
 }
 
+// A tab's workers come folded under its lead (folded_as worker, children.workers, #5180): roots=1 leaves them out of
+// the rows and every count and counts the lead by its folded state, parent_session_id=<lead> lists them, both kinds of
+// row carrying the keys; the tab's offline row and a tab of peers stay rows of their own.
+func TestRuntimeListTabTeam(t *testing.T) {
+	h := newTestHub(t)
+	m := newMachine(h, MachineConfig{ID: "demo"})
+	h.machines, h.byID["demo"] = []*Machine{m}, m
+	row := func(id, state string, n int, under, as string, kids *proto.SessionChildren) proto.Session {
+		s := proto.Session{MachineID: "demo", SessionID: id, Title: id, State: state, Cwd: "/demo/app", UpdatedAt: time.Unix(int64(1000+n), 0),
+			SpaceKind: "herdr", SpaceID: "w1", SlotID: "t1"}
+		s.SetFold(under, as, kids)
+		return s
+	}
+	m.sessions = []proto.Session{
+		row("lead", proto.StateIdle, 1, "", "", &proto.SessionChildren{Total: 2, Working: 1, NeedsYou: 1, Workers: 2}),
+		row("busy", proto.StateWorking, 2, "lead", proto.FoldedAsWorker, nil),
+		row("asks", proto.StateNeedsYou, 3, "lead", proto.FoldedAsWorker, nil),
+		row("stopped", proto.StateOffline, 4, "", "", nil),
+		row("peer", proto.StateWorking, 5, "", "", nil),
+	}
+	m.sessions[4].SlotID = "t2"
+	w := httptest.NewRecorder()
+	h.listSessions(w, httptest.NewRequest("GET", "/api/v1/sessions?summary=1&limit=50&roots=1", nil))
+	var roots listTestPage
+	if err := json.Unmarshal(w.Body.Bytes(), &roots); err != nil || w.Code != 200 {
+		t.Fatalf("roots: %d %s %v", w.Code, w.Body, err)
+	}
+	if got := pageIDs(roots); !slices.Equal(got, []string{"demo/peer", "demo/stopped", "demo/lead"}) || roots.Total != 3 {
+		t.Fatalf("roots: %v (total %d)", got, roots.Total)
+	}
+	if !strings.Contains(w.Body.String(), `"children":{"total":2,"working":1,"needs_you":1,"workers":2}`) {
+		t.Fatalf("the lead's summary row has no workers: %s", w.Body)
+	}
+	if lead := roots.Sessions[2]; lead.Children().Workers != 2 || lead.FoldedState() != proto.StateNeedsYou {
+		t.Fatalf("the lead: %+v shows %s", lead.Children(), lead.FoldedState())
+	}
+	c := hierarchyCounts(t, h, "roots=1")
+	if c.Total != 3 || c.State[proto.StateNeedsYou] != 1 || c.State[proto.StateWorking] != 1 || c.State[proto.StateOffline] != 1 ||
+		c.State[proto.StateIdle] != 0 || c.Machine["demo"] != 3 {
+		t.Fatalf("roots counts: %+v", c)
+	}
+	if page := runtimePage(t, h, "summary=1&roots=1&state=needs_you"); !slices.Equal(pageIDs(page), []string{"demo/lead"}) {
+		t.Fatalf("roots, needs you: %v", pageIDs(page))
+	}
+	for _, summary := range []string{"1", "0"} {
+		under := runtimePage(t, h, "summary="+summary+"&machine_id=demo&parent_session_id=lead")
+		if got := pageIDs(under); !slices.Equal(got, []string{"demo/asks", "demo/busy"}) || under.Total != 2 {
+			t.Fatalf("summary=%s, under lead: %v (total %d)", summary, got, under.Total)
+		}
+		for _, s := range under.Sessions {
+			if s.FoldedUnder() != "lead" || s.FoldedAs() != proto.FoldedAsWorker {
+				t.Fatalf("summary=%s, worker %s: under %q as %q", summary, s.SessionID, s.FoldedUnder(), s.FoldedAs())
+			}
+		}
+	}
+	if c := hierarchyCounts(t, h, "machine_id=demo&parent_session_id=lead"); c.Total != 2 || c.State[proto.StateNeedsYou] != 1 || c.State[proto.StateWorking] != 1 {
+		t.Fatalf("under lead counts: %+v", c)
+	}
+	if all := runtimePage(t, h, "summary=1&limit=50"); all.Total != 5 {
+		t.Fatalf("without roots: %v", pageIDs(all))
+	}
+}
+
 // Without the keys nothing changes: every row is listed and counted by its own state.
 func TestRuntimeListHierarchyOlderQueries(t *testing.T) {
 	h, _ := hierarchyHub(t)
@@ -136,7 +199,7 @@ func TestRuntimeListHierarchyOlderQueries(t *testing.T) {
 	for _, q := range []string{"summary=1&limit=50", "summary=0&limit=50"} {
 		w := httptest.NewRecorder()
 		plain.listSessions(w, httptest.NewRequest("GET", "/api/v1/sessions?"+q, nil))
-		for _, key := range []string{"folded_under", "children", "started_at", "asking_parent_session_id"} {
+		for _, key := range []string{"folded_under", "folded_as", "children", "started_at", "asking_parent_session_id"} {
 			if strings.Contains(w.Body.String(), `"`+key+`"`) {
 				t.Fatalf("%s writes %s: %s", q, key, w.Body)
 			}
@@ -174,8 +237,8 @@ func TestRuntimeListHierarchyValidationAndBinding(t *testing.T) {
 	under := runtimePage(t, h, "summary=1&machine_id=demo&parent_session_id=lead")
 	m.mu.Lock()
 	m.sessions = slices.Clone(m.sessions)
-	m.sessions[1].SetFold("", nil)
-	m.sessions[0].SetFold("", &proto.SessionChildren{Total: 2, NeedsYou: 1})
+	m.sessions[1].SetFold("", "", nil)
+	m.sessions[0].SetFold("", "", &proto.SessionChildren{Total: 2, NeedsYou: 1})
 	m.mu.Unlock()
 	h.sessionsChanged(m)
 	delta := runtimePage(t, h, "summary=1&roots=1&since="+neturl.QueryEscape(first.Revision))

@@ -1,6 +1,208 @@
 {
   "assistant_tools": [
     {
+      "name": "subscription_list",
+      "description": "List the user's source subscriptions: each pulls one connector source's read-only tool on a schedule into the Inbox and / or the knowledge base. Each line has its id, label, connector, source, tool, mode, kind, interval (or daily time for a snapshot), the two destination switches, its state (`off` both destinations off, `ok`, `failing`, `not_connected`, `rate_limited`, `needs_recipe`) with its error, the last run, the last successful run, the next run, how many new items the last run brought, and its revision (what subscription_save takes). A push source (filled by a device's shortcut) has no tool or schedule. Times are UTC; `time_zone` is the user's.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "connector": {
+            "type": "string",
+            "description": "only this connector's"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subscription_get",
+      "description": "Read one subscription in full: its whole recipe (mode, tool, args, items_path, fields, kind, group_by) and where it came from, its schedule, destinations, triage rules, fallback tier, state and error, the shape of the last result, its newest runs (newest first: when, how long, trigger, new and total items, `baseline` items recorded without delivering, error) and its newest held items as samples (title, sender, time, thread, link, the body cut to 300 characters). Use it before changing a subscription, for its revision and current values. A message whose `\u003cpersona-context\u003e` is about a subscription (the subscription page's \"configure with the assistant\") names `subscription`: read that one first; one naming only `connector` and `source` is a source not subscribed yet: start with subscription_sources for them.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "the subscription's id (subscription_list)"
+          },
+          "runs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "how many runs, default 5"
+          },
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "how many newest items, default 5"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subscription_sources",
+      "description": "What can be subscribed to, and how a recipe is written. Without `connector`: every connector's sources as last read (never a call), each with its tools (refused ones with the reason's code), how many recipes of its own it ships and its subscriptions; connectors not read yet are named. With `connector` (and `source`): that connector's catalog read now, each tool's description and `input_schema`, `subscribable` or `refused` with why, the source's own recipes and `min_interval_seconds`. Every answer has `recipe_format`, taken from the code: the recipe's keys, the `fields` keys and what each fills, path syntax, `items_path`, the template variables `{{since}}` / `{{since_date}}`, the modes, kinds, `group_by` values and interval rules. Only read-only tools whose names say no write can be subscribed to.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "connector": {
+            "type": "string",
+            "description": "read this connector's catalog now, with input schemas"
+          },
+          "source": {
+            "type": "string",
+            "description": "with connector: only this source"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subscription_dry_run",
+      "description": "Try a recipe once without saving anything: it calls the tool and answers `dry_run` (`ok`, the five `checks` read_only, args, fields, dedup, interval with their errors; `count` items, `maybe_more` when a full page was all new, `items_path` where the items were found, up to 3 sample `items` as the Inbox would show them (title, sender, time, `summary` the row's preview line, and `problems`: the mapped fields that item has no readable value for), the first item's leaf `paths` with examples for writing `fields`, and `warnings`) and `recipe`, the recipe tried with its items_path filled in, to pass to subscription_save. Warnings do not fail a dry run but mean the recipe will not do what it seems: `unknown_key` (a key the format does not know, such as `fields.author` or `fields.url`: it is dropped and its column stays empty; use the keys in recipe_format) and `empty_field` (a mapped field whose path is empty in every item pulled). Give a subscription's `id` to try its own recipe, or a change to it: `recipe` is then merged onto its recipe (keys given replace, null removes, objects such as fields and args merge). Give `connector` and `source` with a whole `recipe` for a source not subscribed yet (no recipe: the source's own). Leave `items_path` out to have it found.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "an existing subscription: try its recipe, or recipe merged onto it"
+          },
+          "connector": {
+            "type": "string",
+            "description": "without id: the connector"
+          },
+          "source": {
+            "type": "string",
+            "description": "without id: the source"
+          },
+          "recipe": {
+            "type": "object",
+            "description": "a recipe, or with id the change to its recipe: {mode, tool, args, items_path, fields, kind, group_by} (subscription_sources recipe_format)"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subscription_save",
+      "description": "Create, change or delete a subscription for the user. Each save puts a card on the user's phone saying what changes (before → after, and for a destination turned on what is pulled, how often, where it is kept and which model triages it); nothing changes until they approve it there, and an unanswered card changes nothing. Change only what the user asked for. `create` needs `connector` and `source` (subscription_sources) and takes a whole `recipe` (none: the source's own); it starts with both destinations off unless you set `to_inbox` / `to_kb`. `update` and `delete` need `id` and the `revision` subscription_get or subscription_list showed (a changed one is a conflict: read it again). On update, give only what changes: `label`, `recipe` (merged onto the current recipe as subscription_dry_run does), `interval_seconds`, `daily_at` (snapshots, HH:MM), `triage_rules`, `fallback_tier`, `to_inbox`, `to_kb`, or `pause` (both destinations off: nothing is pulled until one is turned on again). A recipe is dry-run first; one that fails, or has keys the format does not know, is not saved and the answer says why. When the recipe changes, `existing` says what happens to what the new recipe finds at once (it is all new to the subscription): `digest` (default) brings more than 3 into the Inbox as one digest row, as when the Inbox is turned on; `baseline` records them as seen and delivers none, for when they were delivered before (for example only the field mapping changed); `deliver` brings each in as new. `delete_data` with delete also removes what it added to the Inbox and the knowledge base. The answer has the saved subscription and, for an update, `previous`: the values to put it back with another save.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "update / delete: the subscription"
+          },
+          "revision": {
+            "type": "integer",
+            "description": "update / delete: the revision you read"
+          },
+          "connector": {
+            "type": "string",
+            "description": "create: the connector"
+          },
+          "source": {
+            "type": "string",
+            "description": "create: the source"
+          },
+          "label": {
+            "type": "string",
+            "description": "the name the user sees"
+          },
+          "recipe": {
+            "type": "object",
+            "description": "create: the whole recipe; update: the change to it"
+          },
+          "existing": {
+            "type": "string",
+            "enum": [
+              "digest",
+              "baseline",
+              "deliver"
+            ],
+            "description": "with a recipe that changes: what its first finds become, default digest"
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "description": "how often to pull, at least 300 and the source's minimum (a snapshot at least 3600)"
+          },
+          "daily_at": {
+            "type": "string",
+            "description": "a snapshot's daily time, HH:MM in the user's zone; \"\" to use interval_seconds"
+          },
+          "triage_rules": {
+            "type": "string",
+            "description": "rules for triaging its items in the Inbox; \"\" for the extension's or the Inbox's own"
+          },
+          "fallback_tier": {
+            "type": "string",
+            "enum": [
+              "",
+              "fyi",
+              "action",
+              "wait"
+            ],
+            "description": "without a triage model: \"\" FYI (Needs you with a due date), fyi, action, or wait for the model"
+          },
+          "to_inbox": {
+            "type": "boolean",
+            "description": "add its items to the Inbox"
+          },
+          "to_kb": {
+            "type": "boolean",
+            "description": "save its items to the knowledge base"
+          },
+          "pause": {
+            "type": "boolean",
+            "description": "turn both destinations off"
+          },
+          "delete_data": {
+            "type": "boolean",
+            "description": "delete: also remove what it added to the Inbox and the knowledge base"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subscription_run",
+      "description": "Run a subscription once now, as Pull Now on its page does (also while both destinations are off), and wait for the run: it answers the run (when, how long, new and total items, `baseline` items recorded without delivering, error), the subscription's state after it and up to 5 of the new items. It runs as soon as the connector's limits allow (one call at a time, 20 seconds apart, an hourly budget, pauses after rate limits); past `wait_seconds` it answers that it is still waiting, and subscription_get shows the run later. A push source cannot be run.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "the subscription (subscription_list)"
+          },
+          "wait_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "how long to wait for the run, default 60"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "imessage_chats",
       "description": "List the user's iMessage / SMS conversations (the Messages app on their Mac), newest first: each one's name, id, whether it is a group and who is in it, when the last message came, how many are unread and the last message. Only real conversations are listed (someone in the user's contacts, or the user has written there); one-time codes are masked. Use imessage_read with an id to read a conversation, imessage_search to find messages by what they say.",
       "input_schema": {

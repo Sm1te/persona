@@ -14,7 +14,7 @@ class AssistantConfigTest {
         MockWebServer().use { server ->
             val api = HttpAssistantManagement(server.url("/").toString(), "test-token", OkHttpClient())
             server.enqueue(MockResponse().setBody("""{"machine_id":"laptop","launcher":"claude","cwd":"/home/me/.persona/assistant",
-                "timezone":"Asia/Shanghai","notes_effective":"from hub.json","main":"main-id",
+                "timezone":"Asia/Shanghai","timezone_picked":true,"notes_effective":"from hub.json","main":"main-id",
                 "conversations":[{"machine_id":"laptop","session_id":"main-id","assistant":true}]}"""))
             val config = api.config()
             val get = server.takeRequest()
@@ -25,6 +25,7 @@ class AssistantConfigTest {
             assertEquals("claude", (config.launcher).zhAny())
             assertEquals("/home/me/.persona/assistant", (config.cwd).zhAny())
             assertEquals("Asia/Shanghai", (config.timezone).zhAny())
+            assertEquals(true, config.timezonePicked)
             assertNull("never edited in the app", config.notes)
             assertEquals("from hub.json", (config.notesEffective).zhAny())
             assertEquals("main-id", (config.main).zhAny())
@@ -35,7 +36,7 @@ class AssistantConfigTest {
         MockWebServer().use { server ->
             val api = HttpAssistantManagement(server.url("/").toString(), "test-token", OkHttpClient())
             val answer = """{"machine_id":"server","launcher":"claude","cwd":"","notes":"","notes_effective":""}"""
-            repeat(4) { server.enqueue(MockResponse().setBody(answer)) }
+            repeat(5) { server.enqueue(MockResponse().setBody(answer)) }
 
             // Moving machines also drops the main conversation: it stays on the machine it ran on.
             val moved = api.updateConfig(AssistantConfigUpdate(machineId = "server", main = AssistantConfigUpdate.CLEAR_MAIN))
@@ -50,6 +51,9 @@ class AssistantConfigTest {
             assertEquals("""{"launcher":"example_launcher"}""", (server.takeRequest().body.readUtf8()).zhAny())
             api.updateConfig(AssistantConfigUpdate(timezone = "Europe/Paris"))
             assertEquals("""{"timezone":"Europe/Paris"}""", (server.takeRequest().body.readUtf8()).zhAny())
+            // A zone picked by hand says so (#1855); a phone's own sync above does not.
+            api.updateConfig(AssistantConfigUpdate(timezone = "Europe/Berlin", timezonePicked = true))
+            assertEquals("""{"timezone":"Europe/Berlin","timezone_picked":true}""", (server.takeRequest().body.readUtf8()).zhAny())
             // An empty "About me" is a choice (tell the assistant nothing), not a missing field.
             api.updateConfig(AssistantConfigUpdate(notes = ""))
             assertEquals("""{"notes":""}""", (server.takeRequest().body.readUtf8()).zhAny())

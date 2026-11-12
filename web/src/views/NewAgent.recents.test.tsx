@@ -78,7 +78,11 @@ async function customizeCurrent() {
   await flush();
 }
 
+// The computer opens Codex with no first message too (#4961); false: an older one, whose Codex needs it.
+let codexOptional = true;
+
 beforeEach(() => {
+  codexOptional = true;
   resetModelListsForTests();
   state.machines = [
     { id: "mac", name: "MacBook", online: true },
@@ -95,7 +99,7 @@ beforeEach(() => {
     if (url.includes("/model-config/purposes/")) return json({ error: "not found" }, 404);
     const list = /\/launchers\/([^/]+)\/models/.exec(url);
     if (list) return json(LISTS[decodeURIComponent(list[1])] ?? { models: [] });
-    if (url.includes("/launchers")) return json({ launchers: [{ name: "claude", agent: "claude" }, { name: "work", agent: "claude" }, { name: "codex", agent: "codex", agent_type: "codex" }] });
+    if (url.includes("/launchers")) return json({ launchers: [{ name: "claude", agent: "claude" }, { name: "work", agent: "claude" }, { name: "codex", agent: "codex", agent_type: "codex", prompt_optional: codexOptional }] });
     return json({ path: "/code", entries: [] });
   }));
   host = document.createElement("div");
@@ -113,6 +117,25 @@ async function open(key = "a", preset?: { machineId?: string; cwd?: string }) {
   act(() => root.render(<NewAgent key={key} open preset={preset} onClose={() => {}} />));
   await flush();
 }
+
+describe("New agent's first message for Codex (#4961)", () => {
+  it("is required only where the computer needs it, and a Codex start takes it with the start", async () => {
+    codexOptional = false;
+    await open();
+    await pick("model:codex\ngpt-5.5");
+    expect(document.body.textContent).toContain("第一条消息");
+    expect(document.body.textContent).not.toContain("第一条消息（可选）");
+    expect(button("启动")!.disabled).toBe(true);
+
+    codexOptional = true;
+    await open("b");
+    await pick("model:codex\ngpt-5.5");
+    expect(document.body.textContent).toContain("第一条消息（可选）");
+    expect(button("启动")!.disabled).toBe(false);
+    act(() => button("启动")!.click());
+    expect(launched).toEqual([expect.objectContaining({ launcher: "codex", agentType: "codex", inlinePrompt: true, text: "" })]);
+  });
+});
 
 describe("New agent's recent setups (#2134)", () => {
   it("shows no section before anything started, and remembers a start with the model and effort it sent", async () => {

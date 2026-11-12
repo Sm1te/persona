@@ -33,6 +33,7 @@ vi.mock("./views/ShortcutHelp", () => ({ ShortcutHelp: () => null }));
 vi.mock("./lib/store", async (load) => ({ ...(await load<typeof import("./lib/store")>()), connect: () => {}, disconnect: () => {} }));
 import { getState, refresh, reset, upsertSession } from "./lib/store";
 import { doneSubagentLink, useSubagentLink } from "./lib/subagent-link";
+import { doneTeamAsk, useTeamAsk } from "./lib/team";
 import { setToken } from "./lib/api";
 import type { Machine, Session } from "./lib/types";
 import { App } from "./App";
@@ -55,6 +56,9 @@ const sessions: Session[] = [
   row(TWIN_B, { activity_at: "2026-11-02T10:00:00Z" }),
   // a child session folded under s1 (#5120): a card in s1's chat, never a page of its own
   row("kid1", { folded_under: "s1", is_subagent: true, parent_session_id: "s1" }),
+  // a herdr tab's lead and its worker (#5180): the worker is in the lead's Team panel, never a page of its own
+  row("lead", { space_id: "ts", slot_id: "tt", pane_index: 0, children: { total: 1, workers: 1, needs_you: 1 } }),
+  row("mate", { space_id: "ts", slot_id: "tt", pane_index: 1, folded_under: "lead", folded_as: "worker", state: "needs_you", status: "needs_you" }),
 ];
 const answers: Record<string, unknown> = { "/api/v1/sessions": { sessions }, "/api/v1/machines": { machines } };
 
@@ -164,6 +168,34 @@ describe("the shell's session links", () => {
     expect(location.pathname).toBe("/s/mac/s2");
     expect(drawn.chatSid).toBe("s2");
     act(() => doneSubagentLink("mac", "s2"));
+  });
+
+  it("opens a worker's /s and /t links as its lead's page, which is asked to show the worker in its Team panel", async () => {
+    let asked: string | undefined;
+    function Probe() {
+      asked = useTeamAsk("mac", "lead");
+      return null;
+    }
+    const probe = createRoot(document.createElement("div"));
+    act(() => probe.render(<Probe />));
+    await open("/s/mac/mate");
+    expect(location.pathname).toBe("/t/mac/ts/tt/lead");
+    expect(drawn.chatSid).toBe("lead");
+    expect(asked).toBe("mate");
+    act(() => doneTeamAsk("mac", "lead"));
+    expect(asked).toBeUndefined();
+    await open("/t/mac/ts/tt/mate");
+    expect(location.pathname).toBe("/t/mac/ts/tt/lead");
+    expect(drawn.chatSid).toBe("lead");
+    expect(asked).toBe("mate");
+    act(() => doneTeamAsk("mac", "lead"));
+    // a tab link without a pane, whose most urgent pane is the waiting worker: the lead, not a link to the worker (its
+    // panel opens or not as the lead's page decides)
+    await open("/t/mac/ts/tt");
+    expect(location.pathname).toBe("/t/mac/ts/tt/lead");
+    expect(drawn.chatSid).toBe("lead");
+    expect(asked).toBeUndefined();
+    act(() => probe.unmount());
   });
 
   it("opens the pane a /t route names, not the tab's most urgent one", async () => {

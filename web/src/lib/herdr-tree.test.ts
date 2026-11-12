@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMachineTree, homeOverview, homeTaskGroups, launcherOf, mostUrgent, paneOrder, paneRoute, resolveTab, summaryState, tabGroups, tabOfSessionLink, tabPagePane, tabRowKeys, tabSessions } from "./herdr-tree";
+import { buildMachineTree, homeOverview, homeTaskGroups, launcherOf, mostUrgent, paneOrder, paneRoute, resolveTab, summaryState, tabGroups, tabOfSessionLink, tabPagePane, tabRowKeys } from "./herdr-tree";
 import { keyedRefs } from "./keyed-refs";
 import type { AgentState, Machine, Session } from "./types";
 
@@ -142,21 +142,6 @@ describe("buildMachineTree", () => {
     expect(after.spaces[0]!.key).not.toBe(before.spaces[0]!.key);
     expect(after.spaces[0]!.foldKey).toBe(before.spaces[0]!.foldKey);
     expect(after.foldKey).toBe(before.foldKey);
-  });
-});
-
-describe("tabSessions", () => {
-  it("is the live panes of the same machine, space and slot, in pane order", () => {
-    const a = pane({ space: "w1", slot: 1, p: 2 });
-    const b = pane({ space: "w1", slot: 1, p: 1 });
-    const gone = pane({ space: "w1", slot: 1, p: 3, st: "offline" });
-    const other = [pane({ space: "w1", slot: 2, p: 1 }), pane({ machine_id: "box", space: "w1", slot: 1, p: 1 }), pane({ space: "w1", slot: 1, p: 4, space_kind: "orca" })];
-    expect(tabSessions([a, b, gone, ...other], a)).toEqual([b, a]);
-  });
-
-  it("is just the session without a slot", () => {
-    const s = pane({ space: "w1" });
-    expect(tabSessions([s, pane({ space: "w1" })], s)).toEqual([s]);
   });
 });
 

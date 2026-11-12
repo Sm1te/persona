@@ -6,11 +6,12 @@ import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, u
 import { api, ApiError, errorText, pastHub, sessionPath } from "../../lib/api";
 import { ago, attentionReason, backgroundWaiting, externalLink, failureReason, isStoppedAgent, resumeCommand, sessionCan, sessionDeletable, sessionMenuActions, sourceSubtitle, sessionTitle, shortPath, stateOf, tabLabel, uuid } from "../../lib/format";
 import { conversationPage } from "../../lib/conversation-page";
-import { navigate, withWorkView, type SessionView } from "../../lib/router";
+import { navigate, type SessionView } from "../../lib/router";
 import { canShowTerminal, composerSlot, otherView, useSessionView, viewOnlyRow } from "../../lib/session-view";
 import { openLink } from "../../lib/links";
-import { openPanel, togglePanel, usePanel } from "../../lib/panel";
+import { getPanel, openPanel, togglePanel, usePanel } from "../../lib/panel";
 import { machineWithHub } from "../../lib/mesh";
+import { useLayout } from "../../lib/layout";
 import { hasModes, isMuted, toggleMute } from "../../lib/session-actions";
 import { attachLive, flipPin } from "../../lib/agent-actions";
 import { isPinned } from "../../lib/pins";
@@ -19,7 +20,8 @@ import { useRuntimeSession } from "../../lib/runtime-session";
 import { ArchivedNotice, SessionDetailNotice } from "../../ui/SessionDetailNotice";
 import { REVIEW_FEATURE } from "../../lib/session-review";
 import { isBackgroundSupervisor } from "../../lib/background-supervisor";
-import { getSession, getState, hubHas, listenSession, refresh, refreshTodos, saveMutes, useStore, viewSession } from "../../lib/store";
+import { getSession, getState, hubHas, listenSession, refresh, refreshTodos, saveMutes, upsertSession, useStore, viewSession } from "../../lib/store";
+import { codexThreadOf, waitsForFirstMessage } from "../../lib/codex-waiting";
 import { foldRows } from "../../lib/folded-rows";
 import { PREVIEW_FEATURE } from "../../lib/preview";
 import { agentsWorking, buildTaskIndex, stableSubagents, STOP_LOOP_MESSAGE, subagentCall, subagentCardKey, terminalCalls, type TaskIndex } from "../../lib/tasks";
@@ -65,12 +67,10 @@ import { NARROW, NO_HOVER, PHONE, SHORT, useFinePointer, useMedia } from "../../
 import { UserBubble } from "./SegmentView";
 import { scrollsAFold } from "./fold-scroll";
 import { ActivityChips, GoalChip } from "./Activity";
-import { paneRoute, tabSessions } from "../../lib/herdr-tree";
 import { CommentMarks } from "./CommentMarks";
-import { PaneTabs } from "./PaneTabs";
+import { isWorker, recordTeam, shownWorker, teamPanelOf, teamWorkers, useTeamReveal, workerCount } from "../../lib/team";
 import { RunningStatusBar } from "./RunningStatusBar";
-import { latestPlan, PlanPill, usePlanOutOfView } from "./PlanCard";
-import { publishPlan } from "../../lib/plan-store";
+import { latestPlan, usePlanClosed, usePlanOutOfView } from "./latest-plan";
 import { ChatContext, LiveClockContext, type ChatContextValue } from "./chat-context";
 import { addFreshWords, resetFreshWords } from "./fresh-words";
 import { backgroundLine, backgroundWaitLine, waitingOnWorkflow, workflowAgentFor, workflowCalls, workflowCallsKey } from "../../lib/workflows";
@@ -137,13 +137,25 @@ const SharingDialog = lazyOverlay(() => import("../../sharing/SharingDialog").th
 const TerminalPanel = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPanel })));
 // only on an Agent's page opened from a conversation's hand-off card (#5096): not part of the first screen
 const HandoffBack = lazy(() => import("./HandoffBack").then((m) => ({ default: m.HandoffBack })));
+// the plan's pill and its flyout load once a plan wants it shown, off the first screen
+const PlanPill = lazy(() => import("./PlanCard").then((m) => ({ default: m.PlanPill })));
 
 const NO_FEED: FeedItem[] = [];
+// A worker's card as its own conversation shows it (#5180): without the fold that makes it "From worker" on its lead's page.
+// One copy per card object, so a push that leaves the card alone leaves its copy alone too.
+const ownCopies = new WeakMap<Interaction, Interaction>();
+function asOwnCard(ix: Interaction): Interaction {
+  let c = ownCopies.get(ix);
+  if (!c) {
+    c = { ...ix, folded_under: undefined, folded_as: undefined };
+    ownCopies.set(ix, c);
+  }
+  return c;
+}
 /** How many earlier pages a link to a child loads looking for the exchange its card is in. */
 const CHILD_LINK_PAGES = 10;
 // no child sessions: no cards, and the exchanges are not walked for where they would go
 const NO_PLACES = new Map<string, ChildPlace[]>();
-const NO_PANES: Session[] = [];
 // the assistant has no subagents: one array, so the chat context does not change with every render
 const NO_SUBAGENTS: Subagent[] = [];
 // no fine pointer: the rail draws nothing, so its ticks are not read
@@ -205,7 +217,7 @@ async function rewindTo(mid: string, sid: string, draftKey: string, items: Item[
   else toast(tr("rewind.input_kept"), "info");
 }
 
-export function ChatView({ mid, sid, assistant, starting: launching, onToggleSidebar, topCenter, inPage, terminalAvailable, banner, offline, mainCache, refreshError, onRefresh, headerActions }: {
+export function ChatView({ mid, sid, assistant, starting: launching, onToggleSidebar, topCenter, inPage, embedded, terminalAvailable, banner, offline, mainCache, refreshError, onRefresh, headerActions }: {
   mid: string;
   sid: string;
   assistant?: boolean;
@@ -216,6 +228,9 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   /** The agent's own page (`/s/…`, `/t/…`): its terminal is a view of the middle, switched in place with the header's
    *  "Terminal" | "Chat" and ⌘J (docs/web/web.md "Terminal ⇄ chat"). Elsewhere the chat is all there is. */
   inPage?: boolean;
+  /** A worker's conversation in its lead's Team panel (#5180, views/chat/TeamPanel.tsx): no header of its own (the panel's
+   *  strip says whose it is), a phone's dock, and Esc there closes the panel rather than stopping the worker. */
+  embedded?: boolean;
   /** The work browser has verified that this session has an interactive pane. Standalone chats use their existing policy. */
   terminalAvailable?: boolean;
   /** Under the header: the assistant page's manager switcher (docs/assistant/managers.md "Clients"). */
@@ -247,8 +262,27 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   const subagents = stableSubagents(lastSubagents.current, listed);
   lastSubagents.current = subagents;
   const machineName = useStore((s) => machineWithHub(mid, s.machines));
-  // only the tab's own rows (the same objects, the same array): a push for another agent on the machine leaves the chat be
-  const panes = useStore((s) => (session && !assistant ? tabSessions(s.sessions[mid] ?? [], session) : NO_PANES));
+  // A Codex opened with no first message (lib/codex-waiting.ts): once its thread comes (the message went in from here
+  // or its terminal) the row goes and the thread's comes in the same pane, and this page follows it there.
+  const waitsFirst = waitsForFirstMessage(session);
+  const [waitingRow, setWaitingRow] = useState<Session>();
+  useEffect(() => {
+    if (waitsFirst && session) setWaitingRow(session);
+  }, [waitsFirst, session]);
+  const becameThread = useStore((s) => (waitingRow && waitingRow.session_id === sid ? codexThreadOf(s.sessions[mid] ?? [], waitingRow)?.session_id : undefined));
+  useEffect(() => {
+    if (becameThread && inPage) navigate({ name: "session", mid, sid: becameThread }, true);
+  }, [becameThread, inPage, mid]);
+  // a lead's Team panel (#5180, lib/team.ts): opened and closed by itself with cindy's timing; never in a worker's own
+  // conversation (embedded) or a Persona chat
+  const leads = !embedded && !assistant;
+  useTeamReveal(mid, sid, session, leads);
+  const panel = usePanel();
+  // drawn: ⌘⇧↵ (the middle alone) keeps a wide screen's panel open but not drawn, so it shows nothing there
+  const maximized = useLayout().maximized;
+  const narrowPage = useMedia(NARROW);
+  const panelDrawn = !maximized || narrowPage;
+  const teamOpen = Boolean(leads && panelDrawn && teamPanelOf(panel, mid, sid));
   // the space's other agents, its child sessions folded into their parents (#5120: a child is never one of them)
   const siblings = useStore((s) => (session?.space_id ? foldRows(s.sessions[mid] ?? []).filter((x) => x.space_id === session.space_id && stateOf(x) !== "offline") : []));
   // its own requests and those of the child sessions folded under it (#5120): a child's are answered here, in the order
@@ -886,7 +920,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       keepOutgoing(key, { id, text: out.text, images: out.images, at: p.at, launcher, model });
       try {
         // the bubble stays as sending while a gap (a hub restart) is waited out; the id is the op id too
-        await inSendOrder(key, () => apiOp(`${sessionPath(mid, sid)}/messages`, {
+        const reply = await inSendOrder(key, () => apiOp<{ session?: Session } | undefined>(`${sessionPath(mid, sid)}/messages`, {
           method: "POST",
           opId: id,
           // a switch to another launcher the user picked for this Agent goes with their own message from here, and only
@@ -897,6 +931,12 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         const acceptedAt = Date.now();
         acceptOutgoing(key, id, acceptedAt);
         setPending((ps) => ps.map((x) => (x.id === id ? { ...x, posting: false, acceptedAt } : x)));
+        // a Codex's first message: the answer is the thread it began, where the conversation goes on (lib/codex-waiting.ts)
+        const began = reply?.session;
+        if (began?.session_id && began.session_id !== sid) {
+          upsertSession({ ...began, machine_id: mid });
+          if (inPage) navigate({ name: "session", mid, sid: began.session_id }, true);
+        }
         return true;
       } catch (e) {
         // An ultracode change waits for the turn (docs/protocol/protocol.md "Claude Code ultracode"): the node holds messages back
@@ -928,7 +968,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `failed` reads only stable setters and these
-    [mid, sid, session, assistant, follow],
+    [mid, sid, session, assistant, follow, inPage],
   );
 
   /** Keeps a message that did not go as a failed bubble where it was sent, with why, "Retry" and "Delete", the box empty
@@ -1022,6 +1062,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     const key = (e: KeyboardEvent) => {
       // in the terminal view Esc belongs to the program in the terminal; a message still waiting for its turn to start can be
       // stopped as a running turn can, as the Interrupt button shows for both
+      // a worker's conversation in a Team panel leaves Esc to the panel (it closes it) and to the lead's page
+      if (embedded) return;
       if (e.key === "Escape" && (state === "working" || awaiting) && view !== "term" && !document.querySelector("[role=dialog],[role=menu]")) {
         e.preventDefault();
         void interrupt();
@@ -1030,7 +1072,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, awaiting, session, view]);
+  }, [state, awaiting, session, view, embedded]);
 
   // The hub says its turn is over and a workflow it launched keeps it working (#3434): the exchange is drawn finished
   // (its work folded, the run's card inside it), and the running bar says the workflow, timed from its start, instead
@@ -1226,11 +1268,17 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // read while the row says it has some, or a link to one waits (its parent's rollup may not be in yet)
   const linkedChild = linkedAgent ? childOfCall(linkedAgent) : undefined;
   const kids = useChildSessions(mid, sid, Boolean(session?.children?.total) || Boolean(linkedChild));
+  // a lead's workers (#5180) are in its Team panel, not cards in its chat; the rest of what folds under it are child cards
+  const childRows = useMemo(() => (kids.rows.some(isWorker) ? kids.rows.filter((c) => !isWorker(c)) : kids.rows), [kids.rows]);
+  const workers = useMemo(() => (leads ? teamWorkers(kids.rows) : []), [leads, kids.rows]);
+  // the worker the open Team panel shows: its cards are in its own conversation there, so the dock leaves them out (one
+  // request in one place on the page, DESIGN_SYSTEM 3.4); every other worker's wait in this dock, marked as theirs
+  const teamShown = teamOpen ? shownWorker(workers, mid, sid, teamPanelOf(panel, mid, sid)?.worker)?.session_id : undefined;
   const seenAt = useRef(new Map<string, string>());
   const lastPlaces = useRef<Map<string, ChildPlace[]> | undefined>(undefined);
   const places = useMemo(
-    () => stableValue(lastPlaces.current, kids.rows.length ? placeChildren(exchangeStarts(lines), childPlaces(kids.rows, seenAt.current), !tr.hasMore) : NO_PLACES),
-    [lines, kids.rows, tr.hasMore],
+    () => stableValue(lastPlaces.current, childRows.length ? placeChildren(exchangeStarts(lines), childPlaces(childRows, seenAt.current), !tr.hasMore) : NO_PLACES),
+    [lines, childRows, tr.hasMore],
   );
   lastPlaces.current = places;
   // A link to a child's own conversation (lib/subagent-link.ts): its card opened, in view, once its row is in. A child
@@ -1241,7 +1289,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     // a link followed to its end gives the next one, the same child's again too, its whole budget of earlier pages
     if (!linkedChild) childLinkPages.current.child = "";
     if (!linkedChild || !session || tr.loading || detail.loading || tr.loadingEarlier) return;
-    if (!kids.rows.some((c) => c.session_id === linkedChild)) {
+    if (!childRows.some((c) => c.session_id === linkedChild)) {
       if (kids.loaded) doneSubagentLink(mid, sid);
       return;
     }
@@ -1256,7 +1304,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     openExpanded([childCardKey(`${mid}/${sid}:`, linkedChild)]);
     jump(childCall(linkedChild));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkedChild, session, tr.loading, tr.loadingEarlier, tr.hasMore, detail.loading, kids, places, mid, sid, jump]);
+  }, [linkedChild, session, tr.loading, tr.loadingEarlier, tr.hasMore, detail.loading, kids.loaded, childRows, places, mid, sid, jump]);
   const ctx = useMemo<ChatContextValue>(
     () => ({ tasks, subagents: assistant ? NO_SUBAGENTS : (subagents ?? NO_SUBAGENTS), scope: `${mid}/${sid}:`, jumpToCall: jump, workflowCalls: wfCalls, lineStyle, opening: openingId && openingOrigin ? { id: openingId, origin: openingOrigin } : undefined, closeoutSegment, children: places }),
     [tasks, subagents, assistant, mid, sid, jump, wfCalls, lineStyle, openingId, openingOrigin, closeoutSegment, places],
@@ -1392,11 +1440,11 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   }, []);
   const rounds = useMemo(() => segs.filter((x) => x.user).length, [segs]);
 
-  // the newest plan of the chat (lib/work-groups.ts planSteps): while its card is out of view, a pill above the composer
+  // the newest plan of the chat (PlanCard.tsx planCardStep draws its card): while that card is out of view, a pill above the composer
   const plan = useMemo(() => latestPlan(segs), [segs]);
   const planOut = usePlanOutOfView(scroller, plan?.id);
-  // the side panel's Plan follows this chat's newest plan (#5602)
-  useEffect(() => publishPlan(mid, sid, plan ? { todos: plan.todos, live: lastLive } : undefined), [mid, sid, plan, lastLive]);
+  // Close Plan in the pill's flyout hides it until the plan changes (cindy's PinnedPlanPanel)
+  const [planClosed, closePlan] = usePlanClosed(`${mid}/${sid}`, plan);
   const lastLine = lines[lines.length - 1];
   // "Retry" on an API error card: only when it is the last thing, the agent is not working (someone may have retried already)
   const retry = useCallback(() => void deliver({ text: t("chat-chatview.continue_text"), images: [] }, uuid()), [deliver]);
@@ -1424,7 +1472,8 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // up while the composer has the focus on a touch screen alone
   const narrow = useMedia(NARROW);
   // a narrow screen's cards fold and its dock keeps to DOCK_MAX (#1282)
-  const compactDock = narrow;
+  // a worker's conversation in a Team panel (embedded) is a phone's width, so its dock is one too (#1282)
+  const compactDock = narrow || Boolean(embedded);
   const short = useMedia(SHORT);
   const [typing, setTyping] = useState(false);
   const keyboard = typing && !fine;
@@ -1459,8 +1508,11 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
     const live = lines.flatMap((l) => l.kind === "supervision" ? l.lines : [l]).findLast((l) => l.kind === "segment" && l.live);
     return (live?.kind === "segment" ? turnStart(live.seg) : undefined) ?? stateSince;
   }, [lines, stateSince]);
-  const planPill = plan && planOut && (lastLive || !planProgress(plan.todos).allDone) ? (
-    <PlanPill todos={plan.todos} onClick={() => openPanel({ kind: "plan", mid, sid })} />
+  // as cindy's: gone once every step is done or a later message of the user's started another turn
+  const planPill = plan && planOut && !plan.superseded && !planClosed && !planProgress(plan.todos).allDone ? (
+    <Suspense key={plan.id} fallback={null}>
+      <PlanPill todos={plan.todos} live={lastLive} onClose={closePlan} />
+    </Suspense>
   ) : null;
   // Persona's own chats too (#3654), and from the moment the message is in, not from the hub's next push
   const background = useMemo(() => backgroundLine(session), [session]);
@@ -1471,14 +1523,15 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
       <QueueStrip session={session} draftKey={draftKey} canEdit={canCompose} compact={short} persona={assistant ? persona.name : undefined} onWithdrawn={withdrawn}
         photosOf={assistant ? queuedPhotos : undefined} />
     ) : null;
-  // with the plan's pill showing, "Jump to bottom" goes beside it (over the chat, they hid each other)
+  // with the plan's pill showing, "Jump to bottom" goes beside it (over the chat, they hid each other); the pill keeps
+  // one wrapper either way, so a flyout pinned open on it stays when the reader scrolls
   const jumpInDock = Boolean(planPill);
-  const pills = jumpInDock && away ? (
-    <div className="flex shrink-0 items-center justify-center gap-2">
+  const pills = planPill ? (
+    <div className="flex shrink-0 items-center justify-center gap-2" data-plan-pills>
       {planPill}
-      <JumpPill label={jumpLabel(newSince)} onClick={toEnd} inline />
+      {away && <JumpPill label={jumpLabel(newSince)} onClick={toEnd} inline />}
     </div>
-  ) : planPill;
+  ) : null;
   // the header and the composer are memoized (a transcript push changes neither): what they get stays the same object
   // until it changes. The assistant's face reads only the last item's role and kind (lib/persona.ts personaState).
   const stopLoop = useCallback(() => void deliver({ text: STOP_LOOP_MESSAGE, images: [] }, uuid()), [deliver]);
@@ -1494,11 +1547,28 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
   // the model pill: an Agent's (#5032), a Persona conversation's (#5033, its pick kept for the conversation)
   const trailing = useMemo(() => (session ? assistant ? <AssistantModelPill session={session} /> : <AgentModelPill session={session} /> : null), [session, assistant]);
 
+  // the header's Team button (#5180): on a lead with workers, at every width (a phone has no other way to the panel); its dot
+  // says a worker needs you while the panel is shut
+  const teamCount = leads ? workerCount(session) : 0;
+  const teamNeeds = workers.some((w) => stateOf(w) === "needs_you");
+  const toggleTeam = useCallback(() => {
+    if (teamPanelOf(getPanel(), mid, sid)) return openPanel(null);
+    recordTeam(mid, sid, "open");
+    openPanel({ kind: "team", mid, sid });
+  }, [mid, sid]);
+  const team = useMemo(() => (teamCount > 0 ? { open: teamOpen, needs: teamNeeds, onToggle: toggleTeam } : undefined), [teamCount, teamOpen, teamNeeds, toggleTeam]);
+  const elsewhere = (ix: Interaction) => Boolean(teamShown) && ix.session_id === teamShown;
+  // a worker's own cards in its conversation (the Team panel, embedded) are its own there, not "From worker"
+  const docked = useMemo(() => {
+    const mine = teamShown ? interactions.filter((ix) => !elsewhere(ix)) : interactions;
+    return embedded ? mine.map((ix) => (ix.session_id === sid && ix.folded_under ? asOwnCard(ix) : ix)) : mine;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interactions, teamShown, embedded, sid]);
   const pendingCards = (
     <PendingCards
-      interactions={focusedFirst(interactions, focusedCard())}
-      answered={answered}
-      delegated={delegated}
+      interactions={focusedFirst(docked, focusedCard())}
+      answered={teamShown ? answered.filter((a) => !elsewhere(a.ix)) : answered}
+      delegated={teamShown ? delegated.filter((d) => !elsewhere(d.ix)) : delegated}
       offerNext={inPage && !assistant ? { mid, sid } : undefined}
       narrow={compactDock}
       short={short}
@@ -1509,7 +1579,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
 
   const page = (
     <div className="flex h-full min-w-0 flex-col">
-      <Header
+      {!embedded && <Header
         session={session}
         title={title}
         machineName={machineName}
@@ -1527,13 +1597,13 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         onView={switchable ? setView : undefined}
         viewDot={view === "term" && (interactions.length > 0 || state === "needs_you")}
         actions={headerActions}
-      />
-      {isMain && <MainRuntimeSlot sid={sid} />}
-      {banner}
+        team={team}
+      />}
+      {isMain && !embedded && <MainRuntimeSlot sid={sid} />}
+      {!embedded && banner}
       {cameFrom && <Suspense fallback={null}><HandoffBack from={cameFrom} onDismiss={() => setCameFrom(undefined)} /></Suspense>}
       {/* a known session keeps its chat: a failed background read is retried quietly (runtime-session.ts) */}
       {archivedHere ? <ArchivedNotice session={archivedHere} /> : noDetails && <SessionDetailNotice error={detail.error} retry={retryDetail} />}
-      {session && panes.length > 1 && <PaneTabs sessions={panes} current={sid} onSelect={(s) => navigate(withWorkView(paneRoute(s), terminalAvailable !== undefined), true)} />}
 
       {/* the page's middle: the chat and (once shown) the terminal stacked in one box; without a terminal to show it adds no box */}
       <div className={switchable ? "relative min-h-0 flex-1" : "contents"}>
@@ -1562,6 +1632,12 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
                 not under a notice that the chat's details are missing */}
             {((!tr.hasMore && !tr.loading && (tr.items.length > 0 || (!tr.error && !starting && !session?.start_error && !noDetails))) || opening) && <div className="text-center text-[11.5px] text-ink-3">{session?.cwd && !assistant ? t("chat-chatview.started_in", { path: shortPath(session.cwd) }) : t("chat-chatview.chat_start")}</div>}
             {opening && <DayLine date={startOfDay(Date.now())} />}
+            {waitsFirst && !tr.items.length && (
+              // a Codex opened with no first message (lib/codex-waiting.ts): it waits for one, from here or its terminal
+              <p data-testid="codex-waiting" className="rounded-control bg-inset px-3 py-2 text-[13px] leading-relaxed text-ink-2">
+                {t("chat-chatview.codex_waiting", { computer: machineName })}
+              </p>
+            )}
             {tr.loading && !tr.items.length && !opening && (
               <div className="flex justify-center py-16">
                 <Loading label={starting ? t("chat-chatview.preparing") : t("chat-chatview.loading_chat")} />
@@ -1663,20 +1739,14 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
             cards, task questions and notes stood taller than the dock, drawn up over the chat or pushing it to nothing);
             the box clips what is in it, so its children keep a little room for their shadows (p-1; -m-1 gives it back) */}
         <div data-chat-dock-above data-scroll-box className="-m-1 flex min-h-0 shrink flex-col gap-2 overflow-y-auto overscroll-contain p-1 empty:hidden">
-        {short ? (
-          // a phone on its side: the plan's pill, the run's status and the queue share one line
-          (pills || running || queue) && (
-            <div className="flex shrink-0 items-center gap-2">
-              {pills && <div className="shrink-0">{pills}</div>}
-              {running && <div className="shrink-0">{running}</div>}
-              {queue && <div className="min-w-0 flex-1">{queue}</div>}
-            </div>
-          )
-        ) : (
-          <>
-            {pills}
-            {running}
-          </>
+        {/* a phone on its side: the plan's pill, the run's status and the queue share one line. One wrapper either way
+            (no box of its own otherwise), so the pill and a flyout pinned on it stay when the phone turns */}
+        {(pills || running || (short && queue)) && (
+          <div className={short ? "flex shrink-0 items-center gap-2" : "contents"}>
+            {pills && <div className={short ? "shrink-0" : "contents"}>{pills}</div>}
+            {running && <div className={short ? "shrink-0" : "contents"}>{running}</div>}
+            {short && queue && <div className="min-w-0 flex-1">{queue}</div>}
+          </div>
         )}
         {assistant && (
           <>
@@ -1722,7 +1792,7 @@ export function ChatView({ mid, sid, assistant, starting: launching, onToggleSid
         ) : (
         <Composer
           draftKey={draftKey}
-          placeholder={offlineLine ? offlineLine : refusedNoRow ? t(gone ? "chat-chatview.session_gone_placeholder" : "chat-chatview.connecting_placeholder") : viewOnlyRow(session) ? t("chat-chatview.view_only") : state === "working" || state === "needs_you" ? t("chat-chatview.queue_placeholder") : assistant ? t("chat-chatview.ask_placeholder", { name: persona.name }) : state === "offline" ? t("chat-chatview.resume_placeholder") : t("chat-chatview.agent_placeholder")}
+          placeholder={offlineLine ? offlineLine : waitsFirst ? t("chat-chatview.codex_first_placeholder") : refusedNoRow ? t(gone ? "chat-chatview.session_gone_placeholder" : "chat-chatview.connecting_placeholder") : viewOnlyRow(session) ? t("chat-chatview.view_only") : state === "working" || state === "needs_you" ? t("chat-chatview.queue_placeholder") : assistant ? t("chat-chatview.ask_placeholder", { name: persona.name }) : state === "offline" ? t("chat-chatview.resume_placeholder") : t("chat-chatview.agent_placeholder")}
           machineId={mid}
           uploadDest={session?.space === "health" ? "health" : undefined}
           working={state === "working" || awaiting}
@@ -1938,6 +2008,7 @@ export const Header = memo(function Header({
   viewDot,
   subtitle,
   actions,
+  team,
 }: {
   session?: Session;
   title: string;
@@ -1965,6 +2036,8 @@ export const Header = memo(function Header({
   subtitle?: string;
   /** The page's own buttons, before the permission mode and ⋯ (ChatView `headerActions`). */
   actions?: React.ReactNode;
+  /** A lead with workers (#5180): its Team panel's button, whether the panel is open, and whether a worker needs you. */
+  team?: { open: boolean; needs: boolean; onToggle: () => void };
 }) {
   const menu = useMenu();
   const tabs = useMenu();
@@ -2167,6 +2240,12 @@ export const Header = memo(function Header({
           header={session?.space_name ? t("chat-chatview.space_header", { name: session.space_name }) : undefined}
           items={spaceRows}
         />
+      )}
+      {team && (
+        <span className="relative flex shrink-0">
+          <IconButton icon="users" label={team.needs && !team.open ? t("chat-chatview.team_needs_you") : t("chat-chatview.team")} onClick={team.onToggle} active={team.open} />
+          {team.needs && !team.open && <span aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 size-2 rounded-full bg-attention shadow-[0_0_0_2px_var(--page)]" />}
+        </span>
       )}
       {showFiles && <IconButton icon="folder" label={t("chat-chatview.files")} onClick={openFiles} active={here(panel, "files") || here(panel, "git")} className="hidden sm:flex" />}
       {view && onView && (

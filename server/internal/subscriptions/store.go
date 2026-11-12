@@ -65,6 +65,9 @@ type RunCommit struct {
 	Seen     []Seen
 	Items    []Item
 	Now      time.Time
+	// Baseline is the baseline mark the run took (Subscription.Baseline): it is cleared only while it is still that
+	// one, so a recipe changed again during the run keeps its own.
+	Baseline *time.Time
 }
 
 // MemStore is a Store in memory, for tests and a manager without a database.
@@ -181,7 +184,7 @@ func (m *MemStore) CommitRun(_ context.Context, c RunCommit) error {
 		m.items = append(m.items, Held{Seq: m.seq, Stored: c.Now, Item: it})
 	}
 	m.pruneSeen(c.Sub.ID, c.Now)
-	applyRun(&cur, c.Sub, cur.Revision == c.Revision)
+	applyRun(&cur, c, cur.Revision == c.Revision)
 	cur.LeaseUntil = nil
 	m.subs[c.Sub.ID] = cur
 	return nil
@@ -255,7 +258,11 @@ func (m *MemStore) SeenCount(id string) int {
 }
 
 // applyRun copies a run's outcome onto cur: the cursor, history and timings always, the state only when withState.
-func applyRun(cur *Subscription, out Subscription, withState bool) {
+func applyRun(cur *Subscription, c RunCommit, withState bool) {
+	out := c.Sub
+	if c.Baseline != nil && sameTime(cur.Baseline, c.Baseline) {
+		cur.Baseline = nil
+	}
 	cur.SinceAt, cur.SnapshotHash, cur.Runs = out.SinceAt, out.SnapshotHash, out.Runs
 	cur.LastRunAt, cur.LastOKAt, cur.LastNewCount = out.LastRunAt, out.LastOKAt, out.LastNewCount
 	cur.WeakDedup, cur.Shape, cur.NextRunAt = out.WeakDedup, out.Shape, out.NextRunAt

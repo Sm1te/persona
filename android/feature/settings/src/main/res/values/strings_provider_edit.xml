@@ -115,4 +115,7 @@
         <item quantity="one">%1$d set</item>
         <item quantity="other">%1$d set</item>
     </plurals>
+    <string name="settings_pedit_via">Send through</string>
+    <string name="settings_pedit_via_hub">The hub itself</string>
+    <string name="settings_pedit_via_note">Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out.</string>
 </resources>

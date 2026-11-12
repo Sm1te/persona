@@ -63,8 +63,12 @@ func TestShareCreationLogManagerPersistence(t *testing.T) {
 }
 
 func TestShareCreationLogPreparationAndReply(t *testing.T) {
+	dsn := os.Getenv(dbtest.Env)
+	if dsn == "" {
+		t.Skip("test database is required")
+	}
 	ctx := context.Background()
-	store, err := db.Open(ctx, os.Getenv(dbtest.Env), db.AllSets)
+	store, err := db.Open(ctx, dsn, db.AllSets)
 	if err != nil {
 		t.Fatal(err)
 	}

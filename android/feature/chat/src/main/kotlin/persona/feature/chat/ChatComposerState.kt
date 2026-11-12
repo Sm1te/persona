@@ -123,7 +123,7 @@ class ChatComposerState(initial: ChatComposerDraft = ChatComposerDraft()) {
     }
 
     /**
-     * A queued message pulled back (the queue strip's "Pull back to edit"): the draft if empty, else after it on a new line (iOS); photos it
+     * A queued message pulled back (the queue strip's "Take back to edit"): the draft if empty, else after it on a new line (iOS); photos it
      * carried come back as attachments rather than as their tag.
      */
     internal fun restoreQueued(text: String) {

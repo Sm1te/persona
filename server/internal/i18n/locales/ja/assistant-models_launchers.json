@@ -60,5 +60,7 @@
   "err_delivery": "delivery は on_demand か push です",
   "err_own_service_value": "own_service は skip か use です",
   "err_scope_empty": "このプロバイダーに少なくとも 1 台のコンピューターを選んでください",
-  "err_scope_unknown_machine": "{machine} はあなたのコンピューターではありません"
+  "err_scope_unknown_machine": "{machine} はあなたのコンピューターではありません",
+  "err_via_kind": "コンピューター経由で送信できるのは直接 API 接続だけです",
+  "err_via_machine": "{machine} はこのアシスタントのコンピューターではありません"
 }

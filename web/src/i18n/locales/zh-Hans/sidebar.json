@@ -149,5 +149,6 @@
   "switcher_label_waiting": "{name}，切换助手。别的助手有事等你处理",
   "switcher_count": "{count} 件等你处理",
   "leader_working": "在做 {count}",
-  "leader_needs_you": "等你 {count}"
+  "leader_needs_you": "等你 {count}",
+  "codex_waiting": "等第一条消息"
 }

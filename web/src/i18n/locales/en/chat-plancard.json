@@ -1,9 +1,4 @@
 {
-  "updated": "Updated to-dos",
-  "open": "Open the plan in the side panel",
-  "plan": "Plan",
-  "none": "No plan in this chat yet.",
   "step_of": "Step {step} of {total}",
-  "all_done_one": "{count} step done",
-  "all_done_other": "All {count} steps done"
+  "close": "Close Plan"
 }

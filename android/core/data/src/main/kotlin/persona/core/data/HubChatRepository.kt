@@ -227,6 +227,7 @@ class HubChatRepository(
             return result
         }
         override suspend fun editQueue(session: Session, keep: List<Int>) = delegate.editQueue(session, keep)
+        override suspend fun sendQueuedNow(session: Session) = delegate.sendQueuedNow(session)
         override suspend fun info(session: Session) = delegate.info(session)
         override suspend fun restoreModel(session: Session) = delegate.restoreModel(session)
         override suspend fun fork(session: Session, atItemId: String): String {

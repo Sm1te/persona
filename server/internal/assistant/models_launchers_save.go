@@ -62,6 +62,8 @@ type launcherInput struct {
 	CompactWindow *int                   `json:"compact_window"`
 	MaxContext    *int                   `json:"max_context"`
 	Effort        *string                `json:"effort"`
+	// ViaMachine (kind api): the computer that sends its requests (models_via.go); nil keeps it, "" this manager.
+	ViaMachine *string `json:"via_machine"`
 
 	// The device scope (models_launchers_scope.go); left out keeps what is stored.
 	scopeInput
@@ -350,6 +352,29 @@ func checkAPITransport(kind, api, proxy, noProxy string, hasHeaders bool) error 
 	return nil
 }
 
+// checkVia: only a direct API connection sends through a computer, and only through one of this manager's: another
+// manager's machines are not its to call (hub ownership.go).
+func (s *Service) checkVia(in launcherInput) error {
+	id := ""
+	if in.ViaMachine != nil {
+		id = strings.TrimSpace(*in.ViaMachine)
+	}
+	if id == "" {
+		return nil
+	}
+	if in.Kind != "api" {
+		return i18n.Err("assistant-models_launchers.err_via_kind")
+	}
+	if s.devs == nil || !s.devs.Has(id) {
+		return errViaMachine(id)
+	}
+	return nil
+}
+
+func errViaMachine(id string) error {
+	return i18n.Err("assistant-models_launchers.err_via_machine", i18n.Args{"machine": strconv.Quote(id)})
+}
+
 // saveLauncher stores in (over old on an update) and tells the nodes.
 func (s *Service) saveLauncher(ctx context.Context, in launcherInput, old *storedLauncher) (storedLauncher, error) {
 	s.models.mu.Lock()
@@ -436,6 +461,12 @@ func (s *Service) saveLauncher(ctx context.Context, in launcherInput, old *store
 		l.KeySealed = in.keyRefSealed
 	}
 	in.applyProvider(&l)
+	if in.ViaMachine != nil {
+		l.ViaMachine = strings.TrimSpace(*in.ViaMachine)
+	}
+	if l.Kind != "api" {
+		l.ViaMachine = "" // only a direct API connection's requests are the manager's to send
+	}
 	// A bypass list that is the gateway's host alone (iOS's Proxy › No Proxy) follows the gateway to a new address: the
 	// web form and an import send it back as it was, and the old host would leave the new gateway on the proxy (#6238).
 	if old != nil && l.BaseURL != old.BaseURL && onlyHost(l.NoProxy, gatewayHost(old.BaseURL)) {

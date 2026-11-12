@@ -110,6 +110,10 @@
   "stopped_line": "这个 Agent 已停止。它的对话和终端都留在这里，但它不再接收消息。",
   "resume": "恢复",
   "resume_failed": "没能恢复这个 Agent。{error}",
+  "codex_waiting": "Codex 已在「{computer}」上打开。在下面发第一条消息，或直接在它的终端里输入。",
+  "codex_first_placeholder": "给 Codex 的第一条消息",
   "handoff_from": "从「{title}」跳来 · 点这里返回",
-  "handoff_dismiss": "关闭返回提示"
+  "handoff_dismiss": "关闭返回提示",
+  "team": "协同",
+  "team_needs_you": "协同：有子 Agent 在等你"
 }

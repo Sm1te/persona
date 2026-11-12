@@ -211,6 +211,8 @@ func (m *Machine) establishVia(ctx context.Context, p *nodePath, via string) (*n
 		return nil, err
 	}
 	peer := rpc.New("h", l.w)
+	// A model request sent through this computer stops there when the manager stops waiting (an older node ignores it).
+	peer.Cancels = map[string]bool{proto.MethodModelHTTP: true}
 	// Every event goes on to the hub, the forwarded ports' bytes among them (the hub is their end, ports.go there).
 	peer.OnEvent = m.onEvent
 	peer.OnRequest = m.onRequest

@@ -96,5 +96,6 @@
   "source_auto_named": "Automatic: {provider} (a connection the hub can call directly)",
   "err_model_invalid": "Model ID {model} can’t be used: it must start with a letter or digit (or ~ and then one) and have only letters, digits and . _ - / : @ [ ], up to 256 characters",
   "custom_model_description": "A model ID you used before",
-  "err_role_forget": "Full access is required to forget a model ID."
+  "err_role_forget": "Full access is required to forget a model ID.",
+  "err_via_offline": "{name} is offline. This connection sends its requests through it: bring it online, or choose another computer under Send through in Settings › Model Providers"
 }

@@ -44,8 +44,9 @@ Chat page:
 - A long finished answer in an Agent chat (from 6,000 bytes or 80 lines) is several lazy rows, about 24 lines each (`AnswerParts`, `AssistantTextPart`, #4970):
   one row of a 30,000-character report was laid out whole, twice, on opening and redrew every table's decoration on each scrolled frame. Cuts fall only
   between plain blocks whose reply-theme margins are fixed (paragraph, ATX heading, fenced code, table), each part drawn the gap MarkdownUI would put
-  there; lists, quotes, display math and HTML comments are never cut. A long press on any part acts on the whole answer; its file chips sit under the last
-  part. Persona's own conversation (boxed answers) and the Mac keep one row. `AnswerPartsLookTests` checks the parts draw the same pixels as the whole.
+  there; lists, quotes, display math and HTML comments are never cut. A long press on any part lifts the whole answer and acts on all of it: Copy, Select
+  Text, Quote and Forward (#5221, `AnswerPartsLift`: the parts stacked again, one text to select, placed from where the pressed part is); its file chips sit
+  under the last part. Persona's own conversation (boxed answers) and the Mac keep one row. `AnswerPartsLookTests` checks the parts draw the same pixels as the whole.
 - Expanded work is one card: each step remains a separate lazy-loaded chat row (a turn may have hundreds; one giant view would hang), with each row drawing a card slice
   (`WorkCardSlice`: top corners on first step, bottom corners on Collapse N steps, backgrounds extending halfway into spacing to join neighbors), thin separators starting at the text column; tool rows 44pt high.
   **Liquid Glass (default) has no card** (requested 2026-10-31: cards did not match chat home, `StyleSpec.workList = .timeline`): steps sit directly on the page, with a thin left vertical line from first step
@@ -338,7 +339,9 @@ Chat page:
 - Monospace (files, diffs, terminal, `MonoTextView`): non-scrolling UITextView measured to longest line inside UIScrollView, no wrapping, both-axis scroll and selection.
 - Long-press messages (`MessageMenu.swift`, `MessageLift.swift`, #603): as in Telegram, the chat dims and blurs a little and the pressed message
   is drawn again above it (an answer on a card of its own), with the action bar right next to it (Copy / Select text / Quote / Share, own also Edit);
-  a message taller than the screen shows the part around the press and scrolls inside, the bar always on screen. A tap or a pull down puts it back.
+  a message taller than the screen shows the part around the press and scrolls inside, the bar always on screen; a long answer drawn in parts shows
+  from the pressed part's start (or from what was at the screen's top, when that part starts above it) to the screen's edge (#5221). A tap or a pull
+  down puts it back.
   In Persona's conversation the page draws it (`MessageLiftHost`, #3188), over the floating top bar, which dims and blurs with
   the chat: drawn inside the chat it ran under it. While its words are selected, a handle held at a long message's top or bottom edge
   scrolls it on, the selection following.

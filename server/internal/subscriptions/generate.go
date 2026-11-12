@@ -200,7 +200,7 @@ func (s *Service) saveDraft(ctx context.Context, read Subscription, t target, dr
 		return Subscription{}, conflictWith(cur)
 	}
 	now := s.now()
-	next := withRecipe(*cur, t, dr, OriginModel, now)
+	next := rebased(withRecipe(*cur, t, dr, OriginModel, now), *cur, ExistingDigest, now) // as a changed recipe's default
 	next.Revision, next.UpdatedAt = cur.Revision+1, now
 	if on(next) {
 		next.NextRunAt = &now

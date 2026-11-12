@@ -1,5 +1,6 @@
 package persona.feature.agents
 
+import persona.core.contracts.clipped
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -141,7 +142,7 @@ internal fun decisionSource(d: TodoDecision, todo: Todo, lookup: (SessionKey) ->
         val title = listOf(lookup(key)?.title, todo.agents.firstOrNull { it.key == key }?.title).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
         // A session's title is often its first message: keep the label to a glance.
         if (title == null) stringResource(R.string.agents_todo_decision_source_card)
-        else stringResource(R.string.agents_todo_decision_source_card_named, if (title.length > 24) title.take(24) + "…" else title)
+        else stringResource(R.string.agents_todo_decision_source_card_named, if (title.length > 24) title.clipped(24) + "…" else title)
     }
     else -> stringResource(R.string.agents_todo_decision_source_manual)
 }

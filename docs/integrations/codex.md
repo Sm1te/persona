@@ -175,14 +175,16 @@ Same features as macOS, with Windows' own ways in (`codex_desktop_windows.go`, `
 ## Starting from the phone
 
 Since 2026-11-02, choosing a Codex launcher in the phone's "New Chat" starts a new herdr tab on that computer running Codex, with the entered message as its first message.
+Since 2026-11-12 the message is optional: with none, Codex opens in its tab and waits for one ("Starting without a first message" below).
 The entry point is the same as Claude's (machine, directory, launcher); subsequent behavior uses "Sessions on the daemon" above (bare `codex` 0.163 joins automatically) or the terminal route below.
 
 - **Which launchers are Codex launchers**: `codex` on PATH adds a launcher named `codex`. Aliases in `~/.zshrc` that run a single `codex` command are listed after Claude launchers (can have preceding
   `export A=1;`, `VAR=… codex`, or wrappers such as `env` / `command`; arguments are retained, model taken from `-m` / `--model` / `-c model=…`).
   They carry `agent: "codex"` in the launcher list and are marked "Codex" on the App's launchers page (`parseCodexAliases` in `launchers.go`). Unsupported: shell functions running Codex
   (rejected with an explanation, `codex_launcher`: functions run only in a shell, so the first message would have to pass through it), aliases doing additional work (`cd x && codex`, not listed), and the internal Codex fork.
-- **First message arrives unchanged**: Codex creates a thread only after receiving its first message, so a Codex start must include it (required in the App; otherwise `codex_needs_prompt`;
-  older Apps using background startup get the same error and a prompt to update). Launcher words and message are written together to a private temporary file under the node directory (0600). The pane receives only
+- **First message arrives unchanged**: Codex creates a thread only after receiving its first message. A start that includes it answers with that thread (below); one without it answers with a waiting row
+  ("Starting without a first message"). Background startup (`async`) is still refused with `codex_needs_prompt`: older Apps get that and retry with the message. Older nodes refuse a start without a message the same way,
+  so Apps make the message optional only for launchers marked `prompt_optional`. Launcher words and message are written together to a private temporary file under the node directory (0600). The pane receives only
   `personad codex-start <file>`: it reads and deletes the file, then `exec`s an argument array containing launcher words (preceding `VAR=…` enters the environment), `--`, and the message.
   The message never passes through a shell—quotes, newlines, `$`, backticks, Chinese, and thousands of characters all reach Codex unchanged (`codex_start.go`). Launcher words also stay off-screen and out of shell history
   (aliases may contain keys). With `--remote`, add `-C <directory>` (the TUI does not supply the directory itself when connecting to another app-server).
@@ -218,6 +220,68 @@ The entry point is the same as Claude's (machine, directory, launcher); subseque
   (0.163 connected with `--remote` to the test's own app-server, 0.153, 0.163 with `-c`; each round in a fresh git repository, so Codex asks to trust it and the start must answer;
   multiple turns each, messages with quotes / newlines / `$` / backticks / Chinese / long text,
   unchanged in rollout, one session per pane, correct route, a subsequent phone message received). App: `MachinePagesTests.testNewCodexSessionStartsWithItsFirstMessage`.
+
+### Starting without a first message
+
+Since 2026-11-12 (#4961) a Codex start may leave out the first message: Agents run in a terminal (#4754), and `codex` in a terminal needs none. The node opens Codex in its new tab as above, without the message,
+and answers with a **waiting row** for the pane (`node/codex_waiting.go`).
+
+- **Before its thread exists, Codex has no session id**: herdr lists the pane as `agent: codex` with no `session_id` (Codex 0.153.4, herdr 0.9.3), and no rollout or `threads` row exists yet. About two seconds after the first message
+  the rollout appears, and the pane's `codex` process holds it open. herdr still reports no session id.
+- **The start**: `codex-start` runs the launcher words alone. The node waits for Codex's input box, at most 60 seconds. On the way it trusts the folder, waits out a model still loading (`model: loading` in the header),
+  and skips the update offer. The offer is skipped with "Skip"'s own key (`2`), never Enter: Enter takes the highlighted "Update now", which runs the installer. On 0.153.4, `2` alone closes the offer.
+  If the launcher fails (a `personad codex-start:` line), the start fails and the tab closes, as above. If Codex runs but its box has not come up in time, the row is still returned and the tab stays.
+  Nothing is queued in that tab that could run later.
+- **The waiting row**: its id is the node's own: a UUID whose first group is `c0de0000`, which no Codex thread id (a UUIDv7) or Claude session id takes. It carries `awaiting_first_message: true`,
+  `agent: codex`, the pane and tab, `status: idle` whatever herdr says (Codex starting its MCP servers reads as working, then done), or `blocked` while a dialog holds the pane.
+  Its capabilities are read, send and terminal. Its conversation is empty. Modes, the queue and forking are refused until the thread exists, and it has no history, archive or resume.
+  The node binds the pane to the row's id. The hub stores and returns that binding, so a restarted node knows the row again from the id's shape and its record.
+- **Attaching the thread, never by directory**: the node looks every second while a row waits. It scans the Codex processes only when a new thread appeared in the row's directory or herdr or the title named one, and every 15 seconds otherwise.
+  A new thread that no rule attached in three looks (one from a Codex outside herdr in the same repository) no longer triggers scans; only the 15-second scan looks at it again.
+  1. The rollout the pane's own `codex` process holds open: `HERDR_PANE_ID` in its environment, `lsof` or `/proc` for its files. App-server processes are left out: a daemon a pane started inherits that pane's `HERDR_PANE_ID` and holds every thread it serves.
+     This covers 0.153 and launchers whose thread runs in its own process.
+  2. The thread herdr's Codex integration names for the pane, unless another pane's process writes it. Then the thread the pane's title names ("<name> | <directory>"), when exactly one thread has that whole name
+     (not one cut short with "…") and no other pane's process writes it. This is what a `/resume` in that Codex shows, which rules 1, 3 and 4 can't see on the shared app-server.
+  3. A first message sent from the Apps: the one thread begun in the directory since it was typed whose first user message is that text, which no other pane runs.
+  4. The shared app-server daemon (0.163 and later), whose TUI holds no rollout. A row takes a thread only when all of these hold:
+     - it is the only new thread in the row's directory since the row began;
+     - it is at least two seconds old;
+     - no TUI process holds it;
+     - its first message shows, as a Codex user message (a `› ` line and the lines indented under it), on that pane's screen and on no other waiting pane's.
+
+  Anything else attaches nothing, and the node logs why, once per reason. The row then stays, its terminal works, and the thread is listed as ordinary Codex history.
+  On attach, the start's record moves to the thread: launcher, directory, start time, read-only mode and creation receipt. The pane is bound to the thread, and requests that still name the row reach it.
+  The row leaves the list and the thread's row comes, in the same pane.
+- **The first message from the Apps** (`session.send` to the row): text only (photos refuse with `codex_first_text`, nothing typed). The node brings Codex to its empty input box first, at most 20 seconds.
+  On the way it answers the trust dialog and the update offer, and waits out the model loading and "Starting MCP servers".
+  It types nothing, and refuses with the usual codes, when the box holds a draft (`input_draft`), when an approval, question or dialog that isn't ours is open (`dialog_open`), or when the box doesn't come (`codex_not_ready`).
+  The message goes in as one bracketed paste, unchanged, and Enter is pressed only once the box shows it (or Codex's `[Pasted Content N chars]`).
+  The send then waits up to 45 seconds for the thread (rules 1–3) and answers `{ok, session}` with the thread's session. Rule 3 finding two threads answers `{ok}` alone, and the row stays until rule 1 or 2 knows it.
+  No thread in time is `codex_first_unconfirmed` with `delivered: unknown`: the message went in, so it is not sent again.
+  First messages to one row go one at a time: a second one (another phone, a quick second tap) waits for the first, then goes to the thread it began as any message does.
+  `/exit` or `/quit` quits Codex as for any agent, with nothing typed.
+  Modes, the queue and forking on a waiting row refuse with `codex_waiting`. A start whose Codex never shows its box and isn't running fails with `codex_no_box`.
+  The message's echo (`client_msg_id`) is the thread's. The hub links a to-do to the thread the answer names (`hub/send.go`).
+- **The user may type the first message in the terminal instead**: rule 1, 2 or 4 attaches the thread.
+- **Codex quits before a first message** (or the tab closes): after 10 looks with no `codex` in the pane, the row and the pane's binding go. The terminal stays.
+- **Clients**: launchers of nodes that start Codex this way carry `prompt_optional: true`. The manager marks its own managed Codex launchers so when the node's Codex launchers are marked.
+  - New Agent offers the first message as optional for those launchers only. The web's work picker reads `prompt_required: false` from the start options.
+  - The row says "Waiting for its first message" (it is not Needs you, not unread, and sends no push). Its chat says Codex is open on the computer and takes the first message.
+  - Web and iOS follow the answer's `session` to the thread, and follow the pane when the message was typed in the terminal (`web/src/lib/codex-waiting.ts`, iOS `ChatView.codexThread`). Android: not yet.
+- **Verified**: Codex 0.153.4 and herdr 0.9.3 on a Mac (2026-11-12), two Codex in one directory:
+  - the App's first message (quotes, `$HOME`, backticks, newline, Chinese, 2,098 characters) reached the rollout unchanged, attached in 1.9 seconds;
+  - the other row's message, typed in its terminal, attached to its own thread;
+  - both attachments used rule 1.
+
+  Rule 4 (the daemon route) is covered by unit tests only.
+- **Tests**: `node/codex_waiting_test.go`. It covers: the start skipping the update offer with `2` and never Enter; the row listed idle while herdr says working; the App's first message as one paste and the row becoming the thread;
+  drafts, photos and dialogs refused with nothing typed; a model loading and MCP servers starting waited out; two rows in one directory;
+  an app-server holding a pane's thread ignored; rule 4's ambiguities; the row known again after a restart and gone with Codex.
+  The clients: the web's unit tests (`web/src/lib/codex-waiting.test.ts`, `web/src/lib/new-agent.test.ts`,
+  `web/src/views/NewAgent.recents.test.tsx`) and `web/e2e/codex-first-message.mjs` against the fake hub with `MOCK_CODEX_WAITING=1`
+  (a start with no message, the waiting chat, its first message moving the page to the thread). iOS screenshots use the same
+  fake hub: `-tab dev -showNewChat YES -showNewAgentPrompt YES` for New Agent's hint (New Agent's default set to Codex),
+  `-tab dev -dev.harnessFilter codex -dev.grouping recent` for the row, `-openSession macbook/c0de0000-0000-4000-8000-000000000001` for its chat.
 
 ## Resuming from the phone
 

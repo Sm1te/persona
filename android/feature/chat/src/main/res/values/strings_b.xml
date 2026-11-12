@@ -329,17 +329,23 @@
     <string name="chat_dialog_hand_title">Hand to Persona</string>
     <string name="chat_dialog_hand_hint">What should Persona do?</string>
     <plurals name="chat_queue_title">
-        <item quantity="one">%1$d queued; %2$s will handle it when free</item>
-        <item quantity="other">%1$d queued; %2$s will handle them in order when free</item>
+        <item quantity="one">%1$d queued · %2$s will handle it when free</item>
+        <item quantity="other">%1$d queued · %2$s will handle them in order</item>
     </plurals>
     <string name="chat_queue_deleted">Removed from the queue</string>
-    <string name="chat_queue_restored">Back in the composer; edit it and send again</string>
+    <string name="chat_queue_restored">Moved back to the input box. Edit it and send again.</string>
     <string name="chat_queue_not_found">Couldn\'t find this one. The queue may have changed; check and try again</string>
     <string name="chat_queue_failed">Didn\'t change: %1$s</string>
-    <string name="chat_queue_edit">Pull back to edit</string>
+    <string name="chat_queue_edit">Take back to edit</string>
     <string name="chat_queue_copy">Copy</string>
     <string name="chat_queue_copied">Copied</string>
     <string name="chat_queue_delete">Delete</string>
+    <string name="chat_queue_move_up">Move up</string>
+    <string name="chat_queue_move_down">Move down</string>
+    <string name="chat_queue_send_now">Send now</string>
+    <string name="chat_queue_send_now_title">Send the queued messages now?</string>
+    <string name="chat_queue_send_now_message">Sends the queued messages to the agent now. A command it is running keeps running in the background; a reply it is writing starts again with your message.</string>
+    <string name="chat_queue_sent_now">Sent to the agent now</string>
     <string name="chat_composer_photos_only">Please look at the photos</string>
     <string name="chat_composer_photo_placeholder">[Photo]</string>
     <string name="chat_reader_full_text">Full text</string>

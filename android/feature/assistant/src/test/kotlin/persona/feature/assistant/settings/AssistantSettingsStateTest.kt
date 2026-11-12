@@ -47,7 +47,9 @@ class AssistantSettingsStateTest {
             config = config.copy(
                 machineId = update.machineId ?: config.machineId,
                 launcher = update.launcher ?: config.launcher,
-                timezone = update.timezone ?: config.timezone,
+                // as the hub (#1855): a zone without timezone_picked is a device's sync, kept out while one was picked
+                timezone = update.timezone?.takeUnless { update.timezonePicked == null && config.timezonePicked == true } ?: config.timezone,
+                timezonePicked = update.timezonePicked ?: config.timezonePicked,
                 notes = update.notes ?: config.notes,
                 notesEffective = update.notes ?: config.notesEffective,
                 main = if (update.main == AssistantConfigUpdate.CLEAR_MAIN) null else update.main ?: config.main,
@@ -259,19 +261,59 @@ class AssistantSettingsStateTest {
         assertEquals("picking a zone needs following the phone turned off first", 1, api.updates.size)
         state.setFollowPhone(false)
         assertFalse(zone.followPhone)
-        assertEquals("turning following off keeps the hub's zone", 1, api.updates.size)
+        assertEquals("turning following off keeps the hub's zone, now picked",
+            AssistantConfigUpdate(timezone = "Europe/Paris", timezonePicked = true), api.updates.last())
         state.chooseZone("Asia/Tokyo")
-        assertEquals(AssistantConfigUpdate(timezone = "Asia/Tokyo"), api.updates.last())
+        assertEquals(AssistantConfigUpdate(timezone = "Asia/Tokyo", timezonePicked = true), api.updates.last())
+        assertEquals(true, api.config.timezonePicked)
 
         // A phone that no longer follows leaves the hub alone when the page opens again.
         val reopened = AssistantSettingsState(api, zone)
         reopened.load()
-        assertEquals(2, api.updates.size)
+        assertEquals(3, api.updates.size)
         assertEquals("Asia/Tokyo", reopened.state.value.config?.timezone)
+        assertFalse(reopened.state.value.followPhone)
 
         reopened.setFollowPhone(true)
         assertTrue(zone.followPhone)
-        assertEquals(AssistantConfigUpdate(timezone = "Europe/Paris"), api.updates.last())
+        assertEquals(AssistantConfigUpdate(timezone = "Europe/Paris", timezonePicked = false), api.updates.last())
+        assertEquals(false, api.config.timezonePicked)
+    }
+
+    /** #1855: a zone picked on another device stays, here and on the Persona tab, and this phone's switch shows it. */
+    @Test fun aZonePickedOnAnotherDeviceStays() = runTest {
+        val api = FakeApi().apply { config = config.copy(timezone = "Europe/Berlin", timezonePicked = true) }
+        val zone = Zone(phoneZone = "America/New_York") // this phone still followed its own zone
+        val state = AssistantSettingsState(api, zone)
+        state.load()
+        assertTrue("the picked zone is left alone", api.updates.isEmpty())
+        assertFalse("the switch goes by the hub", state.state.value.followPhone)
+        assertFalse("and the phone keeps that", zone.followPhone)
+        assertEquals("Europe/Berlin", followPhoneZone(api, Zone(phoneZone = "America/New_York")).timezone)
+        assertTrue(api.updates.isEmpty())
+        // An app from before (a zone without timezone_picked) does not move it either.
+        api.updateConfig(AssistantConfigUpdate(timezone = "America/New_York"))
+        assertEquals("Europe/Berlin", api.config.timezone)
+    }
+
+    /** #1855: a zone picked on this phone before the hub kept the choice is told to the hub once the page opens. */
+    @Test fun aZonePickedBeforeTheHubKeptItGoesToTheHub() = runTest {
+        val api = FakeApi().apply { config = config.copy(timezone = "Europe/Berlin") }
+        AssistantSettingsState(api, Zone(phoneZone = "America/New_York", followPhone = false)).load()
+        assertEquals(listOf(AssistantConfigUpdate(timezone = "Europe/Berlin", timezonePicked = true)), api.updates)
+        assertEquals(true, api.config.timezonePicked)
+    }
+
+    /** Match phone the hub could not be told about goes back, with the reason. */
+    @Test fun matchPhoneGoesBackWhenTheHubCannotBeTold() = runTest {
+        val api = FakeApi()
+        val zone = Zone()
+        val state = AssistantSettingsState(api, zone).also { it.load() }
+        api.fail = true
+        state.setFollowPhone(false)
+        assertTrue(state.state.value.followPhone)
+        assertTrue(zone.followPhone)
+        assertEquals(true, state.state.value.notice?.error)
     }
 
     @Test fun phoneZoneSyncOnlySendsWhatDiffers() = runTest {

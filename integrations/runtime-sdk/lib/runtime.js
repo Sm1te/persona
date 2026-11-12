@@ -633,7 +633,7 @@ export function createRuntime(driver, options) {
     const s = streams.get(sessionId)
     if (s) clearTimeout(s.timer)
     streams.delete(sessionId)
-    if (watched.has(sessionId)) peer?.notify('session.delta', { session_id: sessionId, text: '' })
+    if (s || watched.has(sessionId)) peer?.notify('session.delta', { session_id: sessionId, text: '' })
   }
 
   // ---- asking the phone ----

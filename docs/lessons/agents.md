@@ -890,3 +890,11 @@ sees a wait it can't name, and a following `dequeue` pops whatever it guessed. G
 `command_lifecycle` lines for it instead (queued, started, cancelled, completed). Take one back with `cancel_async_message`, and treat
 `cancelled: false` as "it went in": writing it again would send it twice. Check such behavior against the real CLI with a short
 `claude -p` script before building on it; the requests are not in the public docs.
+
+## A published runtime stream must end after its viewer leaves (#5247)
+
+The Hub caches the latest live text for new subscribers. The runtime SDK's watch state can disappear before the
+prompt finishes, while that published text still exists. `streamEnd` uses the stream entry as well as the current
+watch to send its empty boundary, and cancels pending throttled text first. A native transcript may have a
+middle-truncated copy of the reply, so text reconciliation alone cannot retire the Hub's full cached copy.
+Cover unwatch before completion, a pending batch, and a later watcher in the SDK and AGY lifecycle tests.

@@ -172,8 +172,12 @@ describe.each(["assistant", "agents"] as const)("%s compact execution", (style) 
     await act(async () => { header().click(); await vi.dynamicImportSettled(); });
     expect(detailText()).toContain("Example subagent");
     expect(detailText()).toContain("Example workflow");
-    expect(detailText()).toContain("First plan");
-    expect(detailText()).toContain("Revised plan");
+    // one plan card, the latest list (#5156, cindy); the earlier update stays inspectable as a row
+    const cards = detail()!.querySelectorAll("[data-plan-card]");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].textContent).toContain("Revised plan");
+    expect(cards[0].textContent).not.toContain("First plan");
+    expect(detail()!.querySelector('[data-action-row="TodoWrite"]')).not.toBeNull();
   });
   it("reloaded completed history starts folded and remains manually inspectable", () => {
     draw(style, seg(finished), false);

@@ -5,7 +5,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Session } from "../lib/types";
 import { agentRowMenuItems } from "./AgentMenus";
 import { AgentsPage } from "./AgentsPage";
-import { paneTabsFit, PaneTabs } from "./chat/PaneTabs";
 import { Palette } from "./Palette";
 import { ShellSwitchView } from "./ShellSwitch";
 import { NavGrid, navGridColumns, type NavPage } from "./Sidebar";
@@ -93,22 +92,6 @@ describe("the drawer's page grid", () => {
     expect(html).toContain('aria-label="总览 2"');
     expect(html).toMatch(/href="\/settings"[^>]*aria-current="page"/);
     expect(html).toMatch(/min-h-12/);
-  });
-});
-
-describe("pane tabs on a phone", () => {
-  const two = [session({ session_id: "a" }), session({ session_id: "b", title: "改测试" })];
-  const five = ["a", "b", "c", "d", "e"].map((id) => session({ session_id: id }));
-  it("up to three share the width; more scroll with faded ends", () => {
-    expect(paneTabsFit(2)).toBe("fill");
-    expect(paneTabsFit(3)).toBe("fill");
-    expect(paneTabsFit(4)).toBe("scroll");
-    const fill = renderToStaticMarkup(<PaneTabs sessions={two} current="a" onSelect={() => {}} />);
-    expect(fill.match(/max-lg:flex-1 max-lg:basis-0/g)).toHaveLength(2);
-    expect(fill).not.toContain("mask-image");
-    const scroll = renderToStaticMarkup(<PaneTabs sessions={five} current="c" onSelect={() => {}} />);
-    expect(scroll).not.toContain("max-lg:flex-1");
-    expect(scroll).toContain("max-lg:[mask-image:linear-gradient(");
   });
 });
 

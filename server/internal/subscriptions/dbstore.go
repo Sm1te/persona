@@ -47,12 +47,15 @@ type keptRun struct {
 	InboxFrom       *time.Time `json:"inbox_from,omitempty"`
 	InboxCatchup    *time.Time `json:"inbox_catchup,omitempty"`
 	KBFrom          *time.Time `json:"kb_from,omitempty"`
+	CatchupFrom     *time.Time `json:"catchup_from,omitempty"`
+	Baseline        *time.Time `json:"baseline,omitempty"`
 }
 
 func encode(s Subscription) ([]byte, error) {
 	return json.Marshal(kept{Subscription: s, Keep: keptRun{Tool: s.Tool, ToolFingerprint: s.ToolFingerprint, SourceMin: s.SourceMin,
 		MaxCallsPerHour: s.MaxCallsPerHour, SinceAt: s.SinceAt, ShapeMisses: s.ShapeMisses, SnapshotHash: s.SnapshotHash,
-		RunState: s.RunState, Runs: s.Runs, InboxFrom: s.InboxFrom, InboxCatchup: s.InboxCatchup, KBFrom: s.KBFrom}})
+		RunState: s.RunState, Runs: s.Runs, InboxFrom: s.InboxFrom, InboxCatchup: s.InboxCatchup, KBFrom: s.KBFrom,
+		CatchupFrom: s.CatchupFrom, Baseline: s.Baseline}})
 }
 
 func decode(data []byte) (Subscription, error) {
@@ -64,6 +67,7 @@ func decode(data []byte) (Subscription, error) {
 	s.Tool, s.ToolFingerprint, s.SourceMin, s.MaxCallsPerHour = k.Keep.Tool, k.Keep.ToolFingerprint, k.Keep.SourceMin, k.Keep.MaxCallsPerHour
 	s.SinceAt, s.ShapeMisses, s.SnapshotHash, s.RunState, s.Runs = k.Keep.SinceAt, k.Keep.ShapeMisses, k.Keep.SnapshotHash, k.Keep.RunState, k.Keep.Runs
 	s.InboxFrom, s.InboxCatchup, s.KBFrom = k.Keep.InboxFrom, k.Keep.InboxCatchup, k.Keep.KBFrom
+	s.CatchupFrom, s.Baseline = k.Keep.CatchupFrom, k.Keep.Baseline
 	return s, nil
 }
 
@@ -157,7 +161,7 @@ func (d *DBStore) CommitRun(ctx context.Context, c RunCommit) error {
 		if err != nil {
 			return nil, err
 		}
-		applyRun(&cur, c.Sub, revision == c.Revision)
+		applyRun(&cur, c, revision == c.Revision)
 		return encode(cur)
 	}, seen, items, c.Now)
 }

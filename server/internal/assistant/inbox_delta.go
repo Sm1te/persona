@@ -24,8 +24,8 @@ import (
 // longer has is in `removed`, whatever took it out (filed long enough ago, forgotten, dropped, a rollback). A list
 // answered again with the same items gets the cursor it had (inboxSnapshots.note), so repeated reads by several apps
 // keep the few kept lists apart. A cursor this run did not hand out, one dropped (more than inboxSnapshotsMax newer
-// lists) or left unused for inboxSnapshotTTL, and one for the other `sources`, get the whole list again with a new
-// cursor: costly once, never wrong. So does a `since` that names no list on purpose: the apps send "0" before they hold
+// lists) or left unused for inboxSnapshotTTL, and one for a list of another shape (`sources`, `chain`), get the whole
+// list again with a new cursor: costly once, never wrong. So does a `since` that names no list on purpose: the apps send "0" before they hold
 // a cursor (an empty query value is not sent).
 
 const (
@@ -33,10 +33,14 @@ const (
 	inboxSnapshotTTL  = time.Hour
 )
 
+// inboxShape is what a list holds besides its items' state: the connectors' items too (sources=all), and done items'
+// chains cut to their newest entry (chain=last, #4742). A cursor follows only a list of its own shape.
+type inboxShape struct{ all, lean bool }
+
 // inboxSnapshot is a list a cursor names: each item's sum by id, and a sum of the whole (ids and sums in order).
 type inboxSnapshot struct {
 	n     uint64
-	all   bool
+	shape inboxShape
 	whole uint64
 	items map[string]uint64
 	used  time.Time
@@ -65,8 +69,8 @@ func (k *inboxSnapshots) cursor(sn *inboxSnapshot) string {
 	return k.epoch + "." + strconv.FormatUint(sn.n, 10)
 }
 
-// find is the kept list cursor names for these sources, nil when none is (another run, dropped, unused too long).
-func (k *inboxSnapshots) find(cursor string, all bool, now time.Time) *inboxSnapshot {
+// find is the kept list cursor names for this shape, nil when none is (another run, dropped, unused too long).
+func (k *inboxSnapshots) find(cursor string, shape inboxShape, now time.Time) *inboxSnapshot {
 	k.start()
 	epoch, num, ok := strings.Cut(cursor, ".")
 	if !ok || epoch != k.epoch {
@@ -80,7 +84,7 @@ func (k *inboxSnapshots) find(cursor string, all bool, now time.Time) *inboxSnap
 	defer k.mu.Unlock()
 	k.expire(now)
 	for _, sn := range k.kept {
-		if sn.n == n && sn.all == all {
+		if sn.n == n && sn.shape == shape {
 			return sn
 		}
 	}
@@ -89,7 +93,7 @@ func (k *inboxSnapshots) find(cursor string, all bool, now time.Time) *inboxSnap
 
 // note keeps the list answered now (ids and their bytes, in order) and returns its snapshot: one kept already with the
 // same items, used again, else a new one, the oldest going past inboxSnapshotsMax.
-func (k *inboxSnapshots) note(all bool, ids []string, raw [][]byte, now time.Time) *inboxSnapshot {
+func (k *inboxSnapshots) note(shape inboxShape, ids []string, raw [][]byte, now time.Time) *inboxSnapshot {
 	k.start()
 	items := make(map[string]uint64, len(ids))
 	var whole maphash.Hash
@@ -108,13 +112,13 @@ func (k *inboxSnapshots) note(all bool, ids []string, raw [][]byte, now time.Tim
 	defer k.mu.Unlock()
 	k.expire(now)
 	for _, sn := range k.kept {
-		if sn.all == all && sn.whole == sum && len(sn.items) == len(items) {
+		if sn.shape == shape && sn.whole == sum && len(sn.items) == len(items) {
 			sn.used = now
 			return sn
 		}
 	}
 	k.next++
-	sn := &inboxSnapshot{n: k.next, all: all, whole: sum, items: items, used: now}
+	sn := &inboxSnapshot{n: k.next, shape: shape, whole: sum, items: items, used: now}
 	k.kept = append(k.kept, sn)
 	if len(k.kept) > inboxSnapshotsMax {
 		k.kept = k.kept[len(k.kept)-inboxSnapshotsMax:]
@@ -135,16 +139,17 @@ func (k *inboxSnapshots) expire(now time.Time) {
 }
 
 // writeInboxSince answers GET /api/v1/inbox?since=: the delta from the list since names, or the whole list, either with
-// the cursor of the list now. Without the memo's bytes it answers the whole list as before, with no cursor.
-func (s *Service) writeInboxSince(w http.ResponseWriter, all bool, since string) {
-	raws, ids, asOf, ok := s.inboxListRawIDs(all)
+// the cursor of the list now. Without the memo's bytes it answers the whole list as before, with no cursor (and every
+// chain whole).
+func (s *Service) writeInboxSince(w http.ResponseWriter, shape inboxShape, since string) {
+	raws, ids, asOf, ok := s.inboxListRawIDs(shape)
 	if !inboxListMemoOn || !ok {
-		s.writeInboxList(w, all)
+		s.writeInboxList(w, shape.all)
 		return
 	}
 	k := &s.inbox.snapshots
-	old := k.find(since, all, asOf)
-	now := k.note(all, ids, raws, asOf)
+	old := k.find(since, shape, asOf)
+	now := k.note(shape, ids, raws, asOf)
 	cursor := k.cursor(now)
 	if old == nil {
 		writeInboxAnswer(w, raws, nil, cursor, false, asOf, s.inboxTriage())

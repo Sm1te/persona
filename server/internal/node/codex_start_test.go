@@ -298,10 +298,6 @@ func TestCodexStartRefusals(t *testing.T) {
 	if code, _ := refusalOf(t, err); code != "codex_needs_prompt" {
 		t.Errorf("async: %v", err)
 	}
-	_, err = request(t, n, "session.start", map[string]any{"cwd": "~/proj", "launcher": "codex", "prompt": "  "})
-	if code, _ := refusalOf(t, err); code != "codex_needs_prompt" {
-		t.Errorf("no message: %v", err)
-	}
 	if len(*cmds) != 0 {
 		t.Errorf("ran %q", *cmds)
 	}

@@ -14,8 +14,8 @@ import {
   groupTitle,
   isRowStep,
   isWorkflowStep,
+  planCardStep,
   planProgress,
-  planSteps,
   planTodos,
   workBlocks,
   workDuration,
@@ -383,12 +383,57 @@ describe("history gaps", () => {
   });
 });
 
+describe("a work line's time carries on from its running clock (#5119)", () => {
+  const S = 1000;
+  // the mock's tool_turn flow (#3005): a call, its result at 8m 12s, a pause, the answer at 8m 17s
+  const running = () => [user("u1", 0), ...tool("a", "Bash", 2 * S, 492 * S)];
+  const answer = () => say("done", "It was closed by the merge.", 497 * S);
+
+  it("the finished time is never shorter than the running clock showed", () => {
+    const shown: number[] = [];
+    // each tick until the answer is in, then the tick it lands on while the agent is still at work (WorkGroup's Elapsed)
+    for (let tick = 490; tick <= 497; tick++) {
+      const [g] = groups(blocks(running(), true));
+      expect(g.live).toBe(true);
+      shown.push(T0 + tick * S - g.startedAt!);
+    }
+    const [still] = groups(blocks([...running(), answer()], true));
+    expect(still.live).toBe(true);
+    shown.push(T0 + 497 * S - still.startedAt!);
+    const [done] = groups(blocks([...running(), answer()]));
+    expect(done.live).toBe(false);
+    expect(done.durationMs).toBe(497 * S);
+    expect(shown.every((ms) => ms <= done.durationMs!)).toBe(true);
+    expect(workDuration(done.durationMs!)).toBe(workDuration(shown.at(-1)!));
+  });
+
+  it("an exchange stopped before its answer ends at the interrupt", () => {
+    const [g] = groups(blocks([...running(), mk("system", "notice", 495 * S, { id: "stop", text: "已中断" })]));
+    expect(g.durationMs).toBe(495 * S);
+  });
+
+  it("compacted while idle an hour later: the compaction is not part of the time", () => {
+    const b = blocks([...running(), answer(), mk("system", "notice", 3600 * S, { id: "idle", text: "上下文已压缩", compact: { trigger: "idle" } })]);
+    expect(groups(b)[0].durationMs).toBe(497 * S);
+  });
+});
+
 describe("titles and plans", () => {
   it("a group that only read and searched says so", () => {
     const b = blocks([user("u1", 0), ...tool("r1", "Read", 1000, undefined, { file_path: "/a.ts" }), ...tool("r2", "Read", 2000, undefined, { file_path: "/b.ts" }), ...tool("r3", "Read", 2500, undefined, { file_path: "/a.ts" }), ...tool("g", "Grep", 3000, undefined, { pattern: "x" }), say("a", "看完了。", 65_000)]);
     const [g] = groups(b);
     expect(explorationSummary(g)).toBe("读取 2 个文件 · 搜索 1 次");
     expect(groupTitle(g)).toBe("已工作 1m 5s · 读取 2 个文件 · 搜索 1 次");
+  });
+
+  it("one that updated its plan does not, the update drawn as a row or as the card (#5156)", () => {
+    const todos = { todos: [{ content: "Read", status: "completed" }, { content: "Edit", status: "in_progress" }] };
+    const read = (id: string, at: number) => tool(id, "Read", at, undefined, { file_path: `/${id}.ts` });
+    const g = groups(blocks([user("u1", 0), ...read("r1", 1000), ...tool("p", "TodoWrite", 1500, undefined, todos), ...read("r2", 2000), say("a", "好。", 6000)]))[0];
+    expect(explorationSummary(g)).toBe("");
+    expect(groupTitle(g)).toBe("已工作 6s");
+    const one = groups(blocks([user("u1", 0), ...read("r1", 1000), ...tool("p", "TodoWrite", 1500, undefined, { todos: todos.todos.slice(0, 1) }), say("a", "好。", 6000)]))[0];
+    expect(groupTitle(one)).toBe("已工作 6s");
   });
 
   it("one that ran a command does not", () => {
@@ -414,15 +459,17 @@ describe("titles and plans", () => {
     expect(groupTitle({ kind: "group", id: "g", children: [], live: false })).toBe("工作过程");
   });
 
-  it("keeps every plan update in the manual trace, while planSteps still selects the latest for the composer", () => {
+  it("keeps every plan update in the manual trace, while planCardStep picks the latest list of two or more for the card", () => {
     const todos = (s: string[]) => ({ todos: s.map((content, i) => ({ content, status: i === 0 ? "completed" : i === 1 ? "in_progress" : "pending" })) });
     const items = [user("u1", 0), ...tool("p1", "TodoWrite", 1000, undefined, todos(["Read", "Edit"])), ...tool("t", "Bash", 2000), ...tool("p2", "TodoWrite", 3000, undefined, todos(["Read", "Edit", "Test"])), ...tool("one", "TodoWrite", 3500, undefined, todos(["One"])), say("a", "Done.", 4000)];
     const b = blocks(items);
     expect(topSteps(b)).toEqual(["a"]);
     for (const id of ["p1", "p2", "one"]) expect(folded(b, id)).toBe(true);
-    const selected = planSteps(exchangeSteps(segments(items)[0])).filter((s) => s.kind === "tool" && s.use.tool_name === "TodoWrite");
-    expect(selected).toHaveLength(1);
-    expect(planProgress(planTodos(selected[0] as ToolStep))).toEqual({ done: 1, total: 3, current: "Edit", step: 2, allDone: false });
+    const steps = exchangeSteps(segments(items)[0]);
+    const card = planCardStep(steps);
+    expect(card).toBe("p2#0");
+    const selected = steps.find((s) => s.id === card) as ToolStep;
+    expect(planProgress(planTodos(selected))).toEqual({ done: 1, total: 3, current: "Edit", step: 2, allDone: false });
   });
 
 });

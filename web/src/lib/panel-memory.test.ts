@@ -55,7 +55,6 @@ describe("the memory", () => {
     expect(belongsTo(gitA, B)).toBe(false);
     expect(belongsTo({ kind: "file", mid: "m1", path: "/work/web/a.ts" }, A)).toBe(true);
     expect(belongsTo({ kind: "link", url: "https://example.com" }, A)).toBe(false);
-    expect(belongsTo({ kind: "plan", mid: "m1", sid: "a" }, A)).toBe(false);
     expect(belongsTo(gitA, null)).toBe(false);
   });
 });
@@ -139,7 +138,7 @@ describe("moving between Persona chats", () => {
     return null;
   };
   const show = (chat?: string) => act(() => root.render(createElement(Page, { chat })));
-  const agent: Panel = { kind: "plan", mid: "m1", sid: "s1" };
+  const agent: Panel = { kind: "preview", mid: "m1", sid: "s1", cwd: "/work/web" };
   const task: Panel = { kind: "file", mid: "m1", path: "/notes/today.md" };
 
   beforeEach(() => {
@@ -185,12 +184,14 @@ describe("moving between Persona chats", () => {
     expect(getPanel()).toEqual(link);
   });
 
-  it("brings back no panel of a kind the page no longer has (the task and Agent panels, #5096)", () => {
-    sessionStorage.setItem("persona.panel.back", JSON.stringify({ [chatKey("A")]: { kind: "task", todo: "t1" }, [chatKey("B")]: task }));
+  it("brings back no panel of a kind the page no longer has (the task and Agent panels, #5096; the plan's, #5156)", () => {
+    sessionStorage.setItem("persona.panel.back", JSON.stringify({ [chatKey("A")]: { kind: "task", todo: "t1" }, [chatKey("B")]: task, [chatKey("C")]: { kind: "plan", mid: "m1", sid: "s1" } }));
     show("A");
     expect(getPanel()).toBeNull();
     show("B");
     expect(getPanel()).toEqual(task);
+    show("C");
+    expect(getPanel()).toBeNull();
   });
 
   it("brings it back through a page that is not a chat", () => {

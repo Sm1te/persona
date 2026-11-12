@@ -52,6 +52,30 @@ struct MessageLift {
     var card: Bool
     var offer: ProposedViewSize? = nil
     var environment: EnvironmentValues? = nil
+    /// One part of a message drawn in parts (a long answer, #4970) was pressed: `frame` and `press` are that part's,
+    /// `preview` draws the whole message with that part marked (`liftPressedPart`), and the lift puts it where that
+    /// part is.
+    var part = false
+}
+
+/// Where the pressed part starts in the lifted copy of a message drawn in parts (`MessageLift.part`).
+struct LiftPressedPart: PreferenceKey {
+    static let space = "lift-copy"
+    static var defaultValue: CGFloat? { nil }
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = value ?? nextValue() }
+}
+
+extension View {
+    /// The part of a message drawn in parts that was pressed, in its lifted copy (`MessageLift.part`).
+    func liftPressedPart(_ on: Bool) -> some View {
+        background {
+            if on {
+                GeometryReader { g in
+                    Color.clear.preference(key: LiftPressedPart.self, value: g.frame(in: .named(LiftPressedPart.space)).minY)
+                }
+            }
+        }
+    }
 }
 
 /// Where a pressable part is, written on every scrolled frame without drawing anything again (not observed). Written
@@ -146,11 +170,16 @@ nonisolated enum LiftLayout {
     /// press, at the same place on screen. The bar goes under it, above it when there is no room under it, and when
     /// there is room for neither the message moves up for the bar to fit under it. trailing: the bar lines up with the
     /// message's right edge (your own messages).
+    /// part: a message drawn in parts, one a row (a long answer, #4970), was pressed in the part that starts this far
+    /// down in it. All of it is lifted; taller than the room, it shows from that part's start down to the screen's edge,
+    /// or from what was at the screen's top when that part starts above it (nothing moves), and never past the press
+    /// (`pressInSight` from the bottom).
     static func place(message: CGRect, press: CGFloat, bar: CGSize, bounds: CGRect, margin: CGFloat, gap: CGFloat,
-                      trailing: Bool) -> Placement {
+                      trailing: Bool, part: CGFloat? = nil, pressInSight: CGFloat = 0) -> Placement {
         let room = max(bounds.height - 2 * margin - gap - bar.height, 0)
         let height = min(message.height, room)
-        let offset = height < message.height ? min(max(press - height / 2, 0), message.height - height) : 0
+        let start = part.map { max($0, bounds.minY + margin - message.minY, press - height + pressInSight) } ?? press - height / 2
+        let offset = height < message.height ? min(max(start, 0), message.height - height) : 0
         let top = bounds.minY + margin, bottom = bounds.maxY - margin
         var y = min(max(message.minY + offset, top), bottom - height)
         let below: Bool
@@ -492,6 +521,11 @@ private struct LiftedMessage: View {
     @State private var fade = Fade()
     /// The drawn copy's height (the same as the message's where it was, unless something it reads differs).
     @State private var height: CGFloat = 0
+    /// Where the pressed part starts in the copy of a message drawn in parts (`MessageLift.part`), once it is laid out.
+    @State private var partTop: CGFloat?
+    /// The copy of a message drawn in parts opens where `LiftLayout.place` says once that part is measured (the others
+    /// open at their `defaultScrollAnchor`).
+    @State private var scroll = ScrollPosition()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Fade: Equatable {
@@ -522,13 +556,17 @@ private struct LiftedMessage: View {
     var body: some View {
         let bounds = bounds
         let f = lift.frame.offsetBy(dx: -space.minX, dy: -space.minY)
-        let message = CGRect(x: f.minX - pad.leading, y: f.minY - pad.top, width: f.width + pad.leading + pad.trailing,
+        // A message drawn in parts: all of it, the pressed part where it was (`frame` is that part's).
+        let above = lift.part ? partTop ?? 0 : 0
+        let message = CGRect(x: f.minX - pad.leading, y: f.minY - pad.top - above, width: f.width + pad.leading + pad.trailing,
                              height: height > 0 ? height : f.height + pad.top + pad.bottom)
         let count = MessageActionBar.count(id: lift.bar.id, isUser: lift.bar.isUser, menu: menu, pending: lift.bar.pending,
                                            deletes: lift.bar.delete != nil)
         let barWidth = min(MessageActionBar.width(count: count), bounds.width - 2 * Theme.Space.s)
-        let p = LiftLayout.place(message: message, press: lift.press.y + pad.top, bar: CGSize(width: barWidth, height: MessageActionBar.height),
-                                 bounds: bounds, margin: Theme.Space.s, gap: Theme.Space.s, trailing: lift.bar.isUser)
+        let p = LiftLayout.place(message: message, press: lift.press.y + pad.top + above,
+                                 bar: CGSize(width: barWidth, height: MessageActionBar.height), bounds: bounds, margin: Theme.Space.s,
+                                 gap: Theme.Space.s, trailing: lift.bar.isUser, part: lift.part ? above : nil,
+                                 pressInSight: Theme.Size.tapTarget)
         ZStack(alignment: .topLeading) {
             #if DEBUG
             if LiftLines.on {
@@ -578,6 +616,8 @@ private struct LiftedMessage: View {
                 .environment(menu)
                 .environment(from: lift.environment) // outside those: they are this copy's own
                 .frame(width: lift.frame.width, alignment: .leading)
+                .coordinateSpace(.named(LiftPressedPart.space))
+                .onPreferenceChange(LiftPressedPart.self) { top in if let top { partTop = top } } // only a part's copy has one
                 .padding(pad)
                 .allowsHitTesting(selecting)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
@@ -587,8 +627,13 @@ private struct LiftedMessage: View {
         #endif
         .scrollDisabled(!cut)
         .scrollIndicators(.hidden)
-        // Opens at the part that was pressed (the same place on screen).
-        .defaultScrollAnchor(UnitPoint(x: 0, y: cut ? p.offset / max(whole - p.preview.height, 1) : 0))
+        // Opens at the part that was pressed (the same place on screen). A message drawn in parts is placed once its
+        // pressed part has been laid out in the copy: it opens there then.
+        .defaultScrollAnchor(lift.part ? nil : UnitPoint(x: 0, y: cut ? p.offset / max(whole - p.preview.height, 1) : 0))
+        .scrollPosition($scroll)
+        .onChange(of: lift.part && partTop != nil ? p.offset : nil) { _, offset in
+            if let offset { scroll.scrollTo(y: offset) }
+        }
         .onScrollGeometryChange(for: Fade.self) { g in
             Fade(top: g.contentOffset.y > 1, bottom: g.contentOffset.y + g.containerSize.height < g.contentSize.height - 1)
         } action: { _, f in fade = f }

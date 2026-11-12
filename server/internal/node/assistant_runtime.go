@@ -145,7 +145,13 @@ func (n *Node) assistantSendRuntime(ctx context.Context, h *runtimeConn, id, cwd
 	if instructions != "" {
 		live = strings.TrimSpace(instructions + "\n" + live)
 	}
-	params := map[string]any{"session_id": id, "text": text, "images": images, "client_msg_id": newUUID()}
+	params := map[string]any{"session_id": id, "text": text, "images": images}
+	// The message's own client_msg_id, none when it came without one (#5225): a runtime may put the id it is sent with
+	// on the message's line, and the apps match their pending bubble by the id a line carries, or by its words when it
+	// carries none. One of the node's own there showed the message twice (#5200).
+	if cm := clientMsgIDFrom(ctx); cm != "" {
+		params["client_msg_id"] = cm
+	}
 	for k, v := range turn {
 		params[k] = v
 	}
@@ -160,6 +166,22 @@ func (n *Node) assistantSendRuntime(ctx context.Context, h *runtimeConn, id, cwd
 	commit()
 	n.notifySessions()
 	return id, nil
+}
+
+type clientMsgIDKey struct{}
+
+// withClientMsgID: the message ctx's assistant send delivers came with client_msg_id id (the app's, a channel's…; ""
+// none). A runtime gets it with the message (assistantSendRuntime); Claude's and Codex's lines get it from echo.go.
+func withClientMsgID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientMsgIDKey{}, id)
+}
+
+func clientMsgIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(clientMsgIDKey{}).(string)
+	return id
 }
 
 // assistantModeOf is the permission mode the conversation was last set to (session.modes, or a message's), "" none.

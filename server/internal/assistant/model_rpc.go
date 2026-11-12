@@ -196,7 +196,7 @@ func (s *Service) runModelCall(ctx context.Context, purpose, who, what string, c
 
 	cctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	client := ai.New(config)
+	client := s.aiClient(config)
 	turns := c.turns
 	var usage assistantwire.ModelUsage
 	add := func(u ai.Usage) {

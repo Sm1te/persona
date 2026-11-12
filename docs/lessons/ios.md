@@ -424,6 +424,10 @@ Use an invalidation revision as the task key and handle the flag after completio
   window (`AnswerPartsLookTests`), not `ImageRenderer`: one pass of it draws the blocks before their margins arrive.
   - Parts trade the opening freeze for drawing as they come into view: the lazy stack drops a part's layers once it scrolls far away, and drawing
     many distinct CJK glyphs the first time is most of the main thread's work in fast programmatic jumps (#5076). Finger scrolling stays in budget.
+  - Whatever acted on the row acts on the message, not the part (#5221): with each part's long press lifting its own words, the lifted card showed a
+    fragment of the answer and Select Text selected only it, while Copy (the bar's text) still took all of it. The part's press lifts a copy of every
+    part (`AnswerPartsLift`) with one text view for selecting over all of them. When splitting any message into rows, list what reads the row's view
+    (long press, selection, accessibility, share as image) and check each against the whole message.
 - Check that a scroll measurement moved the list before trusting it (#4970). `-showPagePerf`'s glide and `-showListOffset` move the `UIScrollView`
   themselves; a chat not told a finger is on it keeps following its newest end and puts its stored `ScrollPosition` back as rows size themselves, so
   the list barely moves and the numbers look excellent. Chats register a per-list hook (`PagePerf.touchers`): a single static one was taken by Persona's

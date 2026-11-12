@@ -61,10 +61,14 @@ struct ExtensionComponentRowLabel<Trailing: View>: View {
             .clipShape(.circle)
             .accessibilityHidden(true)
         } else if let i = row.icon, !i.isEmpty {
+            // The icon and its column stop growing at the largest standard size, where the glyph still fits: past it the
+            // glyph followed the text to 3 × while the column stopped at `sizeScale`'s 1.6 ×, and spilled into the
+            // title and past the inset (#4841). The title keeps growing; the default sizes are unchanged.
             ThemedIcon(ExtensionUIStyle.icon(i))
                 .font(Theme.Font.heading)
                 .foregroundStyle(Theme.accent)
                 .scaledFrame(width: Theme.Size.icon, height: Theme.Size.icon)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .accessibilityHidden(true)
         }
     }

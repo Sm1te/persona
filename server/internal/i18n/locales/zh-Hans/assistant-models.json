@@ -96,5 +96,6 @@
   "source_auto_named": "自动选择：{provider}（hub 上能直接调用的接入）",
   "err_model_invalid": "模型 ID {model} 不能用：要以字母或数字开头（或 ~ 后接字母或数字），只能有字母、数字和 . _ - / : @ [ ]，最多 256 个字符",
   "custom_model_description": "之前用过的模型 ID",
-  "err_role_forget": "删除用过的模型 ID 需要完整权限。"
+  "err_role_forget": "删除用过的模型 ID 需要完整权限。",
+  "err_via_offline": "{name} 不在线。这个接入要通过它发请求：让它上线，或在 设置 › 模型供应商 的「通过…发送」里换一台电脑"
 }

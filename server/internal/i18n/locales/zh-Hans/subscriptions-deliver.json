@@ -1,6 +1,7 @@
 {
   "digest_more": "还有 {count} 条",
   "digest_title": "{label}：开启前一天有 {count} 条",
+  "digest_title_recipe": "{label}：改了订阅方式后找到 {count} 条",
   "due": "截止：{when}",
   "failing_title": "{label} 从 {since} 起拉不到新内容",
   "failing_why": "规则：订阅连续一天拉取失败",

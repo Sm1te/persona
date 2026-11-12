@@ -115,6 +115,10 @@ The clients draw the same states differently. A consumer maps what it draws onto
 | Web, end to end | `web/e2e/sync-cases.mjs` (#2777): the real web app in a browser against the mock hub playing the case (below), one browser context per device | `KNOWN` in the runner, each with its issue |
 | iOS, end to end | `scripts/app/cli-tests/sync_cases.py` (#2952): the DEBUG app in the simulator against the mock hub playing the case, driven and read through the Runtime CLI (`docs/operations/runtime-cli.md`, "UI tests written with the CLI"); the app is one device and a two-device case's other device is scripted, once for each | `KNOWN` in the runner, each with its issue |
 
+The Mac app builds the same `AppModel`, so the iOS replay stands for it and `PersonaMacTests` leaves the replay out; run once in `PersonaMacTests`, it passed with the same two known cases (#1112). The end-to-end run is iPhone only: the Runtime CLI exists only on iOS and visionOS, and the frozen Mac app takes no new Mac-only code (`docs/apple/mac.md`).
+
+Nothing here runs on a real device. What only a phone shows (iOS suspending the app in the background, the network really going away, a card answered from a notification) is checked by hand on a TestFlight build (#5189).
+
 ## The mock hub plays a case
 
 For runs against the real apps (#1073 step 4), `MOCK_SYNC_CASE=<file>#<name>` makes `scripts/mock/mock_hub.py` play one case (`scripts/mock/sync_case.py`, #2766). An app paired with `token=mock-<device>` is that device. With `MOCK_WEB=<web/dist>` the mock also serves the built web app, so a browser talks to it with no proxy in between (`web/e2e/README.md`, "Shared chat sync cases end to end").

@@ -25,7 +25,9 @@ The manager owns the title override in Postgres setting `agent.naming.v1`, keyed
 as an encoded pair. It decorates `session.title` on session lists and lookups, so the existing web, iOS,
 Android, watch, Mac and Vision selectors all see the same name. Automatic naming never writes into the
 Agent's input or transcript, and never renames herdr/Orca tabs. `todo.title` and plan titles name separate work
-objects and are unchanged.
+objects and are unchanged. Native-title comparisons ignore leading terminal spinner frames and whitespace
+only; animation does not hide a saved name or discard an in-flight result. A different title or protected
+provenance still takes precedence, without resetting the successful-change count (#5254).
 
 Candidates are empty names, tool-only names (including terminal spinners), plain directory names,
 new-chat placeholders, and instruction/template openings in Chinese, English or Japanese. A meaningful but

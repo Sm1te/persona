@@ -1,0 +1,7 @@
+{
+  "strip_label": "Workers",
+  "summary": "Workers: {count} · Running: {running}",
+  "waiting": "Waiting for worker",
+  "scroll_left": "Scroll to earlier workers",
+  "scroll_right": "Scroll to more workers"
+}

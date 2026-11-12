@@ -149,5 +149,6 @@
   "switcher_label_waiting": "{name}、アシスタントを切り替え。ほかのアシスタントに対応待ちがあります",
   "switcher_count": "対応待ち {count} 件",
   "leader_working": "作業中 {count}",
-  "leader_needs_you": "対応待ち {count}"
+  "leader_needs_you": "対応待ち {count}",
+  "codex_waiting": "最初のメッセージ待ち"
 }

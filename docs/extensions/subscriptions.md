@@ -1,6 +1,6 @@
 # Source subscriptions
 
-Source subscriptions let the manager pull new information from a connector's read-only tools into the Inbox or knowledge base. The design is tracked in #2036. The optional catalog protocol (#2037), the manager's storage, validation, scheduler, runner and API (#2038), delivery to the Inbox and the knowledge base (#2039) and drafting a recipe with a model (#2040), the pages (#2041, "Pages") and push sources a device fills itself (#3848, "Push sources") are implemented. A catalog alone does not turn on polling or store source content.
+Source subscriptions let the manager pull new information from a connector's read-only tools into the Inbox or knowledge base. The design is tracked in #2036. The optional catalog protocol (#2037), the manager's storage, validation, scheduler, runner and API (#2038), delivery to the Inbox and the knowledge base (#2039) and drafting a recipe with a model (#2040), the pages (#2041, "Pages"), push sources a device fills itself (#3848, "Push sources") and the assistant's tools (#5240, "Assistant tools") are implemented. A catalog alone does not turn on polling or store source content.
 
 ## Source catalog
 
@@ -90,7 +90,7 @@ A refusal at save answers the error below. Before a run, a tool that left the ca
 
 A dry run calls the tool once and runs five checks in this order: `read_only`, `args` (the arguments with `{{since}}` / `{{since_date}}` filled in, held to the tool's `input_schema` with the JSON Schema subset of `model.complete`, `server/internal/jsonsubset`), `fields` (`items_path` is a list, some item has a title, times parse), `dedup` (the same result again brings nothing new) and `interval`. A text result can only be a snapshot. A recipe that leaves `items_path` empty has its items found: the result itself when it is a list (the protocol's `$`), else its one top-level list. None or several is `no_list`, with the shape's `arrays` naming the top-level lists. The dry run says where it read them (`items_path`), and a saved recipe keeps that path. An item without an `id` field is keyed by a hash of its title, time and sender, marked `weak_dedup`.
 
-A dry run returns up to three items and the first item's leaf paths with examples, for the pages' pickers. These values exist only in that answer. The subscription keeps the result's shape (`json` or `text`, top-level keys, which of them are lists, list length), never a value. Saving a recipe runs the same checks, and a recipe that fails is not saved.
+A dry run returns up to three items and the first item's leaf paths with examples, for the pages' pickers. Each item is what the Inbox would show: its title, sender, time, due date, link and thread, the body cut to 200 characters, `summary` (its row's preview line: the body's first 200 characters on one line, as delivery makes it) and `problems`, the mapped fields this item has no readable value for (`{key: "fields.sender", code: "empty" | "bad_time"}`). These values exist only in that answer. Its `warnings` do not fail it but say what will not do what it seems: `unknown_key` for a key the recipe format does not know (`fields.author`, `fields.url`, `item_path`: decoding drops it, so it used to pass with that column silently empty; the request's raw recipe is read for them) and `empty_field` for a mapped field whose path is empty in every item pulled (the title is the `fields` check's). The subscription keeps the result's shape (`json` or `text`, top-level keys, which of them are lists, list length), never a value. Saving a recipe runs the same checks, and a recipe that fails is not saved.
 
 ### Drafting with a model
 
@@ -138,11 +138,11 @@ Reading is open to every device; changing anything, dry runs included, needs ful
 | `GET /api/v1/subscriptions?connector=&extension=` | `{subscriptions, features: {deliver, generate}}`; both are true: `deliver` (#2039) and `generate` (#2040) |
 | `GET /api/v1/subscriptions/summary` | `{connectors: [{connector, extension, subscribable?, on, failing}]}` from cached catalogs only (never a live call); `subscribable` is absent until the catalog was read |
 | `GET /api/v1/subscriptions/catalog?connector=` | the connector's sources and tools read now, each tool with its `input_schema` and `subscribable` or `refused` with a code, the source's own recipes and its subscriptions; `direct` says whether the connector's own Inbox / archive feeds are on. Without `connector`: `{catalogs: [...]}`, every connector's catalog from earlier reads only (never a call; a connector not read yet is left out and read in the background) |
-| `GET /api/v1/subscriptions/{id}` | `{subscription, runs}`: the newest 20 runs first, `{at, ms, trigger, new, count, error}` |
-| `POST /api/v1/subscriptions/-/dry-run` | `{id}` or `{connector, source}`, with `recipe?` → the dry run; nothing is written |
+| `GET /api/v1/subscriptions/{id}` | `{subscription, runs}`: the newest 20 runs first, `{at, ms, trigger, new, count, error, baseline?}` (`baseline`: items a run recorded without keeping them after a recipe changed, "Destinations") |
+| `POST /api/v1/subscriptions/-/dry-run` | `{id}` or `{connector, source}`, with `recipe?` → the dry run with its `warnings`; nothing is written |
 | `POST /api/v1/subscriptions` | `{connector, source, recipe?, recipe_origin?, label?}` → 201 and the subscription, both destinations off; without a recipe, the source's first own one (422 `needs_recipe` when it has none: draft one). `recipe_origin: "model"` with a recipe records a draft taken as it was; otherwise a given recipe is the user's |
 | `POST /api/v1/subscriptions/{id}/generate` | Drafts a recipe with the model. A subscription's `id`, with `{revision?}`: the draft that passes is saved (`recipe_origin: "model"`, `recipe_at` now), its run state starts over (`needs_recipe` clears), and its switches, label, rules and interval stay (a new mode takes that mode's default interval) → `{recipe, note, dry_run, subscription}`; 409 `conflict` when it is at another revision, before or after drafting. `-` with `{connector, source}`: a source not subscribed yet → `{recipe, note, dry_run}`, nothing written. A draft that still fails is 422 with the check's code, `dry_run` and `recipe` (the draft as far as it got, for the manual editor). 503 `no_model` when no model is set up for it, 502 `model_failed` when a call failed (503 with `retry_after` while the model's connection is held) |
-| `PUT /api/v1/subscriptions/{id}` | `{revision, label?, recipe?, to_inbox?, to_kb?, interval_seconds?, daily_at?, triage_rules?, fallback_tier?}`; 409 `conflict` at another revision, 422 `interval_too_short` |
+| `PUT /api/v1/subscriptions/{id}` | `{revision, label?, recipe?, existing?, to_inbox?, to_kb?, interval_seconds?, daily_at?, triage_rules?, fallback_tier?}`; `existing` goes with a recipe that changes ("Destinations", A changed recipe); 409 `conflict` at another revision, 422 `interval_too_short` |
 | `POST /api/v1/subscriptions/{id}/run` | 202: runs as soon as the connector's limits allow, also while it is off |
 | `DELETE /api/v1/subscriptions/{id}?data=1` | 204; removes its seen keys and pending items. With `data=1` it first switches both destinations off and has the Inbox and the knowledge base remove what they took ("Destinations"); 503 `assistant_offline` while the assistant is away, the subscription left off for another delete |
 | `POST /api/v1/subscriptions/-/push` | `{items: [{key?, title?, body?, app?, link?, time?}]}` from a full-access device → `{subscription, new, count}`: the device's push source, made on its first push (no items: only made). 400 `bad_request` for more than 20 items or one with neither a title nor a body, 429 `rate_limited` with `retry_after` past 300 items an hour ("Push sources") |
@@ -164,6 +164,10 @@ Every subscription is an internal source of the manager, beside the connectors a
 - **Failure notice.** A subscription that is on and has not pulled for 24 hours (`failing_since`) adds one FYI row by rule, `sub:<subscription>:failing` of kind `sub_failing` ("<label> hasn't pulled anything since <time>" with the reason for the error's code). It is one row a failure (`last` is the failure's start) and is filed as done (read) once the subscription pulls again.
 - The texts the manager writes (the digest's title and its "and N more", the due line, the notice) are in the user's language (`subscriptions-deliver` catalogs). The kinds are described for the models in `server/internal/prompts/inbox/kinds/subscription.md`, handed in with the round as the source's kinds.
 - A round reads at most the newest 300 items stored after the catch-up and 500 of the catch-up.
+- **A changed recipe.** Everything a new recipe pulls is new to the dedup keys, though much of it happened before the change. `existing` on the change says what its first run's items become (#5240); the same recipe saved again changes nothing here:
+  - `digest`, the default (also for a recipe regenerated with the model): while the Inbox was on and stays on, its catch-up starts again at the change instead of a day before, so what the new recipe finds at once comes in as rows when 3 or fewer, else as one `sub_digest` row of its own (`sub:<subscription>:catchup-<unix time of the change>`, "<label>: N items found when its recipe changed"); later items come in as rows. Turning the Inbox off and on again catches up on the day before as always. The knowledge base keeps each item.
+  - `baseline`: the next run that succeeds records what it finds as seen and keeps none of it (its run counts them as `baseline`); only what arrives later comes in, to the Inbox and the knowledge base alike. For a change that finds what was delivered already, such as a new field mapping.
+  - `deliver`: each comes in as a new item.
 
 **Knowledge base.** `connectors.archives` lists the subscriptions with "Add to knowledge base" on, and `connectors.changes {id: <subscription>, cursor}` pages through their held items (100 a call): the cursor is the last stored position read, and the knowledge base moves it once it has written the batch (`cursors/<subscription>.json`). It starts a day before the knowledge base was turned on: the first run's page for a new subscription, and the same for a cursor kept from before the knowledge base was last off (what was stored while it was off is skipped). The knowledge base reads it on its own schedule (10 minutes) and soon after a run that kept items.
 
@@ -201,6 +205,37 @@ is 403 `read_only_device`.
 - All text is the manager's, in the request's language (en, zh-Hans, ja); the service gives only codes, localized here.
 - An app below UI version 6 gets the hub's usual downgrade (a switch becomes a row that turns it on or off); a source icon only
   version 6 has is drawn as an older one, never as none.
+
+### Assistant tools
+
+The assistant has six tools for subscriptions (#5240), served by the manager beside its other assistant-only tools while
+the service runs (`server/internal/extmgr/subscription_tools.go`; descriptions in `server/internal/prompts/mcp/subscriptions/`).
+They call the same `Service` methods as the API and the pages, so a change made by the assistant is the change the
+pages would make.
+
+| Tool | What it does |
+| --- | --- |
+| `subscription_list` | Every subscription: label, source, tool, schedule, destinations, state and error, last and next run, new items, revision |
+| `subscription_get` | One in full: its recipe, its newest runs and its newest held items (bodies cut to 300 characters) |
+| `subscription_sources` | What can be subscribed to (cached catalogs, or one connector's read now with input schemas) and `recipe_format`, built from the code: the recipe and `fields` keys, paths, template variables, modes, kinds, `group_by`, intervals |
+| `subscription_dry_run` | A dry run of a recipe, or of a change to a subscription's (an RFC 7386 merge onto its recipe), with the recipe tried |
+| `subscription_save` | Create, update (label, recipe with `existing`, interval, daily time, triage rules, fallback tier, destinations, pause = both off) or delete (with its data or not), at the revision read |
+| `subscription_run` | Run now, as Pull Now does, and wait up to two minutes for the run's result |
+
+- **Every save is the user's.** The assistant's Persona tools are allowed in advance, so Claude Code asks nothing:
+  `subscription_save` puts a permission card on the phone in the asking conversation (`subscriptionsui.Card`) and changes
+  something only on the user's own approval (`Resolution.UserAllowed`). A card that expired, was closed or was answered
+  for the user changes nothing and is not reported as a decline. Reading, dry runs and running now ask nothing, as on the
+  pages.
+- **The card** is in the user's language, in the pages' words: before → after for each setting that changes, the new
+  recipe in plain words with the dry run's count and what `existing` does, and for a destination turned on the consent
+  its switch asks (what is pulled, how often, that it is kept on the hub, which model triages or summarizes it). A
+  delete says whether what it added goes too.
+- **Checks first.** A recipe is dry-run before the card; one that fails, or has a key the format does not know, is not
+  saved and nobody is asked. A stale revision is a conflict with the subscription as it is now, also before any card.
+- **Undo.** Changes are recorded in `plugin_audit` with the actor `assistant`; an update's answer carries `previous`,
+  the values that put it back with another confirmed save.
+- A meeting's turn refuses `subscription_save` and `subscription_run` like any tool that is not a meeting's.
 
 ### Push sources
 

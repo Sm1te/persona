@@ -34,6 +34,16 @@ class ShortcutTextTest {
     private val permission = Interaction("b", "macbook", "tests", sessionTitle = "补测试", kind = "permission",
         createdAt = t.toString(), toolName = "Bash", summary = "Bash: swift test")
 
+    /** #5284: a cut never leaves half of an emoji (a lone surrogate shows as a box). */
+    @Test fun clipsKeepWholeCharacters() {
+        assertEquals("a".repeat(59) + "…", ShortcutText.excerpt("a".repeat(59) + "😀 b", 60))
+        assertEquals("a".repeat(58) + "😀…", ShortcutText.excerpt("a".repeat(58) + "😀 b", 60))
+        val titled = Session("mac", "s", title = "x".repeat(23) + "😀 deploy")
+        assertEquals("x".repeat(23), ShortcutPublisher.shortLabel(titled))
+        val long = ShortcutPublisher.longLabel(context, titled.copy(title = "y".repeat(40) + "🚀🚀🚀🚀"))
+        assertFalse(long, long.last().isHighSurrogate())
+    }
+
     @Test fun picksTheOldestAndSettlesOnlyPermissionsAndPlans() {
         assertEquals("b", ShortcutText.pending(listOf(plan, permission))!!.id)
         assertNull(ShortcutText.pending(emptyList()))

@@ -25,11 +25,14 @@ struct SyncScenarioTests {
     nonisolated static let names = cases.keys.sorted()
 
     /// Cases this harness cannot play yet, and cases that fail on a bug filed for them: the name and why. A case leaves
-    /// the list when it passes (a known issue that no longer happens fails the test).
+    /// the list when it passes (a known issue that no longer happens fails the test). The new-chat cases are here because a
+    /// new chat starts from the new-conversation page (`AssistantView` through `AssistantStart`), which only the on-screen
+    /// run drives (`scripts/app/cli-tests/sync_cases.py`, #2952); both pass there.
     nonisolated static let known: [String: String] = [
-        "start_answer_cut_then_receipt": "#1112: a new chat starts from the new-conversation page, which the harness does not drive",
-        "start_refused_then_resent_new_op": "#1112: a new chat starts from the new-conversation page, which the harness does not drive",
+        "start_answer_cut_then_receipt": newChat,
+        "start_refused_then_resent_new_op": newChat,
     ]
+    nonisolated static let newChat = "#2952: a new chat starts from the new-conversation page, which only the on-screen run drives"
 
     @Test func everyFileHasCases() {
         #expect(Self.cases.count >= 24, "spec/fixtures/sync: \(Self.dir.path)")

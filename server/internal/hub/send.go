@@ -247,14 +247,7 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 			h.fresh.done(m.cfg.ID, sid)
 		}
 		if status == http.StatusOK && todoID != "" {
-			var title, cwd, agent string
-			if s, ok := m.session(sid); ok {
-				title, cwd, agent = s.Title, s.Cwd, s.Agent
-			}
-			if _, err := h.asst().TodoLink(ctx, assistantwire.TodoLinkParams{TodoID: todoID, MachineID: m.cfg.ID, SessionID: sid,
-				Title: title, Cwd: cwd, Agent: agent}); err != nil {
-				h.logf("sendMessage: link todo %s for %s/%s failed: %v", todoID, m.cfg.ID, sid, err)
-			}
+			h.linkSentTodo(ctx, m, todoID, sid, body)
 		}
 		writeRaw(w, status, body)
 		return
@@ -316,16 +309,29 @@ func (h *Hub) sendMessage(w http.ResponseWriter, r *http.Request, m *Machine) {
 		h.fresh.done(m.cfg.ID, sid)
 	}
 	if f.status == http.StatusOK && todoID != "" {
-		var title, cwd, agent string
-		if s, ok := m.session(sid); ok {
-			title, cwd, agent = s.Title, s.Cwd, s.Agent
-		}
-		if _, err := h.asst().TodoLink(ctx, assistantwire.TodoLinkParams{TodoID: todoID, MachineID: m.cfg.ID, SessionID: sid,
-			Title: title, Cwd: cwd, Agent: agent}); err != nil {
-			h.logf("sendMessage: link todo %s for %s/%s failed: %v", todoID, m.cfg.ID, sid, err)
-		}
+		h.linkSentTodo(ctx, m, todoID, sid, f.body)
 	}
 	writeRaw(w, f.status, f.body)
+}
+
+// linkSentTodo links a todo to the session its message went to: a Codex that waited for its first message answers
+// with the thread that message began (node/codex_waiting.go), and that thread is the todo's from now on.
+func (h *Hub) linkSentTodo(ctx context.Context, m *Machine, todoID, sid string, body []byte) {
+	var reply struct {
+		Session *proto.Session `json:"session"`
+	}
+	var title, cwd, agent string
+	if json.Unmarshal(body, &reply) == nil && reply.Session != nil && reply.Session.SessionID != "" {
+		sid = reply.Session.SessionID
+		title, cwd, agent = reply.Session.Title, reply.Session.Cwd, reply.Session.Agent
+	}
+	if s, ok := m.session(sid); ok {
+		title, cwd, agent = s.Title, s.Cwd, s.Agent
+	}
+	if _, err := h.asst().TodoLink(ctx, assistantwire.TodoLinkParams{TodoID: todoID, MachineID: m.cfg.ID, SessionID: sid,
+		Title: title, Cwd: cwd, Agent: agent}); err != nil {
+		h.logf("sendMessage: link todo %s for %s/%s failed: %v", todoID, m.cfg.ID, sid, err)
+	}
 }
 
 // deliverOnce asks the node to send and says what became of it: delivered, unknown (it may have been typed), or ""

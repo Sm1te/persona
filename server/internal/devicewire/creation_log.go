@@ -3,6 +3,7 @@ package devicewire
 import (
 	"encoding/json"
 	"regexp"
+	"sync"
 )
 
 // ShareCreationLog emits local diagnostic outcomes, not a wire DTO or a durable
@@ -13,7 +14,7 @@ func ShareCreationLog(logf func(string, ...any), session, step, result string) {
 	}
 	if session == "" {
 		session = "pending"
-	} else if !creationLogSession.MatchString(session) {
+	} else if !creationLogSession().MatchString(session) {
 		session = "invalid"
 	}
 	raw, _ := json.Marshal(struct {
@@ -26,7 +27,11 @@ func ShareCreationLog(logf func(string, ...any), session, step, result string) {
 
 // Production Claude/Codex IDs are UUIDs. Synthetic IDs are useful to isolated
 // tests. Other identifiers are deliberately not copied into diagnostic logs.
-var creationLogSession = regexp.MustCompile(`^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|synthetic-[a-z0-9_-]{1,64})$`)
+// Compiled on first use, not whenever a program that links the contract starts (a hook, #5239). A contract depends
+// on the standard library only, so not internal/lazyre.
+var creationLogSession = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|synthetic-[a-z0-9_-]{1,64})$`)
+})
 
 var creationLogCodes = map[string]map[string]bool{
 	"manager_prepare": {

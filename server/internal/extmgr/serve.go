@@ -655,6 +655,7 @@ func (h *Manager) AgentTools(ctx context.Context, assistant bool) (agents, assis
 		assistantOnly = append(assistantOnly, h.computerTools()...)
 		assistantOnly = append(assistantOnly, h.browserTools()...)
 		assistantOnly = append(assistantOnly, h.iphoneTools()...)
+		assistantOnly = append(assistantOnly, h.subscriptionTools()...)
 		assistantOnly = append(assistantOnly, h.connectors.ToolsFor(ctx, false)...)
 	}
 	return agents, assistantOnly
@@ -675,6 +676,8 @@ func (h *Manager) CallTool(ctx context.Context, machine, session, name string, a
 		return h.callBrowserTool(ctx, session, name, args), true
 	case assistant && isIPhoneTool(name):
 		return h.callIPhoneTool(ctx, session, name, args), true
+	case assistant && isSubscriptionTool(name):
+		return h.callSubscriptionTool(ctx, asker{machine, session}, name, args), true
 	}
 	return proto.ToolResult{}, false
 }

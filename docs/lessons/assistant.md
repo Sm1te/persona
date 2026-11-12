@@ -1,5 +1,12 @@
 # Lessons: assistant (headless Claude / Codex)
 
+- Terminal spinner frames are presentation, not native-title changes (#5254). Comparing a saved `raw_title`
+  byte for byte with a later inventory hid a successful automatic name while leaving its one-shot count spent.
+  Use the same leading-spinner/whitespace comparison for display decoration and the model-result recheck.
+  Preserve exact substantive-title differences, manual/custom protection and unknown-provenance skips; never
+  clear counters or call the model again just to repair display. Test every frame, a stopped label and a frame
+  change during the request, alongside genuine title changes and manual/unknown sources.
+
 - Automatic Agent names need title provenance, not a string heuristic alone (#4812). A user can deliberately choose
   a tool-looking name, and an old custom-title record can fall outside a quick tail window. Treat native custom titles
   as protected and unknown provenance as ineligible. Keep automatic names in the manager's own ledger, persist manual

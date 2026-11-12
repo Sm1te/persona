@@ -29,6 +29,20 @@ struct ProviderWizardTests {
         return try JSON.decoder.decode(LauncherView.self, from: Data(json.utf8))
     }
 
+    /// A direct API connection's Send Through: tested from the computer chosen, saved only when it changed (#4775).
+    @Test func anAPIConnectionSendsThroughAComputer() async throws {
+        let hub = FakeHub()
+        hub.on("POST", "/api/v1/launchers/test", json: #"{"ok":true,"ms":10,"model":"m"}"#)
+        let json = #"{"name":"direct","source":"persona","kind":"api","base_url":"https://api.example.com","model":"m","has_key":true,"via_machine":"laptop"}"#
+        let w = wizard(hub, existing: try JSON.decoder.decode(LauncherView.self, from: Data(json.utf8)))
+        #expect(w.isAPI && w.viaMachine == "laptop" && w.input.viaMachine == nil)
+        await w.runTest()
+        #expect(try body(hub.sent("POST", "/api/v1/launchers/test").first)["via_machine"]?.string == "laptop")
+        w.viaMachine = ""
+        #expect(w.input.viaMachine == "")
+        #expect(try ProviderWizardModel(existing: Self.existing(), deps: .init(api: { hub.client })).input.viaMachine == nil)
+    }
+
     @Test func aNewGatewayGoesThroughTheThreeSteps() async throws {
         let hub = FakeHub()
         hub.on("POST", "/api/v1/launchers/discover", json: Self.discovered)

@@ -3,5 +3,6 @@
   "invalid": "请检查填写内容和格式",
   "from_subagent": "来自子 Agent · {agent}",
   "from_server": "来自 MCP 服务器 {server}",
-  "from_server_source": "来自 MCP 服务器 {server}（配置来源：{source}）"
+  "from_server_source": "来自 MCP 服务器 {server}（配置来源：{source}）",
+  "from_worker": "来自子 Agent · {agent}"
 }

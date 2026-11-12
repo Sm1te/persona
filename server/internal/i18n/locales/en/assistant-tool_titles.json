@@ -5,6 +5,7 @@
   "iphone_do": "iPhone control",
   "extension_ui": "Extension action",
   "persona_settings": "Persona settings change",
+  "subscription_save": "Subscription change",
   "agent_send": "Message to an agent",
   "agent_start": "New agent",
   "task_plan": "Task plan",

@@ -94,7 +94,8 @@ func (n *Node) workSessionOptions(ctx context.Context, name, configuredAgent, ho
 	if err := loginShell(ctx, "command -v "+shellQuote(command)+" >/dev/null").Run(); err != nil {
 		return opts, workStartRefused("work_launcher_unavailable", "The launcher command is missing on this computer.")
 	}
-	opts.PromptRequired = codex
+	// A Codex in a terminal starts with no first message too: it waits in its box for one (codex_waiting.go).
+	opts.PromptRequired = false
 	opts.InlinePrompt = opts.AgentType != "claude"
 	opts.Attachments = opts.AgentType == "claude"
 	if !codex && opts.AgentType != "claude" {

@@ -260,6 +260,29 @@ test('live text is throttled to the latest whole text, and ends empty', async (t
   await until('end', () => n.last('session.delta')?.text === '')
 })
 
+test('a stream ending after unwatch clears the published text and cancels its pending batch', async (t) => {
+  const n = await startFakeNode(t)
+  const rt = createRuntime(minimal(), { runtime: 'toy', socketPath: n.path, retryMs: 20 })
+  t.after(() => rt.stop())
+  rt.start()
+  await n.ready
+  await n.peer.call('session.watch', { session_id: 's1', since_seq: 0 })
+  rt.stream('s1', 'Previous reply.')
+  await until('the published reply', () => n.last('session.delta')?.text === 'Previous reply.')
+  rt.stream('s1', 'Previous reply. More text.')
+  await n.peer.call('session.unwatch', { session_id: 's1' })
+  rt.streamEnd('s1')
+  await until('the unwatched reply ends', () => n.last('session.delta')?.text === '', 2000)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  assert.equal(n.last('session.delta').text, '', 'the pending batch cannot restore the old text')
+  await n.peer.call('session.watch', { session_id: 's1', since_seq: 0 })
+  rt.stream('s1', 'Previous reply.')
+  await until('a new reply may repeat the earlier words', () => n.last('session.delta')?.text === 'Previous reply.')
+  rt.streamEnd('never-watched')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.ok(n.all('session.delta').every((delta) => delta.session_id === 's1'))
+})
+
 test('live text flows again after stop() then start(): a text pending at stop does not hold the session silent', async (t) => {
   const n = await startFakeNode(t)
   const rt = createRuntime(minimal(), { runtime: 'toy', socketPath: n.path, retryMs: 20, refreshMs: 0 })

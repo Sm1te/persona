@@ -81,6 +81,17 @@ func (n *Node) sessionListIn(ctx context.Context, refreshAgents bool, pass *code
 			WorkspaceID: a.WorkspaceID, AgentName: a.Name, Title: a.Title, Agent: a.Agent,
 			ExternalURL: a.ExternalURL, Chat: a.Chat, Topic: a.Topic, Dispatched: a.Dispatched,
 		}
+		if a.Agent == "codex" && isCodexWaitID(id) { // opened with no first message: no thread, no transcript yet (codex_waiting.go)
+			n.placeIn(&s, a)
+			codexWaitRow(&s, a)
+			if w := n.codexWaitByID(id); w != nil {
+				s.UpdatedAt = w.began.UTC()
+			}
+			n.decorateIn(&s, pass)
+			out = append(out, s)
+			seen[id] = true
+			continue
+		}
 		viaBotmux := host.ParsePane(a.PaneID).Kind == host.Botmux
 		switch {
 		case viaBotmux && (a.Agent == "codex" || a.Agent == traexAgent):

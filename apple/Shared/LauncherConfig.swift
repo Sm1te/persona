@@ -65,6 +65,8 @@ nonisolated struct LauncherView: Codable, Identifiable, Hashable, Sendable {
     var keyMachines: [String]?
     /// Saved before scopes existed: all (work computers too) + push + use, until a scope field is saved.
     var legacyScope: Bool?
+    /// A direct API connection's Send Through: the computer whose node sends its requests; nil the hub itself.
+    var viaMachine: String?
     var id: String { name }
     /// What a person reads: the display name, else the name.
     var title: String { displayName.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? name }
@@ -81,6 +83,7 @@ nonisolated struct LauncherView: Codable, Identifiable, Hashable, Sendable {
         case stale, versions, agent, share, delivery
         case rcFiles = "rc_files"
         case scopeMachines = "scope_machines", ownService = "own_service", keyMachines = "key_machines", legacyScope = "legacy_scope"
+        case viaMachine = "via_machine"
         case baseURL = "base_url", smallModel = "small_model", hasKey = "has_key"
         case subagentModel = "subagent_model", customModel = "custom_model"
         case customModelName = "custom_model_name", customModelDescription = "custom_model_description"
@@ -265,9 +268,11 @@ nonisolated struct LauncherInput: Encodable, Sendable {
     var delivery: String? = nil
     var ownService: String? = nil
     var machineKeys: [String: String]? = nil
+    /// Send Through (kind api): a computer's id, "" the hub itself; nil keeps what the hub has.
+    var viaMachine: String? = nil
     enum CodingKeys: String, CodingKey {
         case name, model, args, kind, api, preset, auth, models, headers, env, proxy, effort, assign, share, delivery
-        case scopeMachines = "scope_machines", ownService = "own_service", machineKeys = "machine_keys"
+        case scopeMachines = "scope_machines", ownService = "own_service", machineKeys = "machine_keys", viaMachine = "via_machine"
         case displayName = "display_name"
         case baseURL = "base_url", smallModel = "small_model", apiKey = "api_key"
         case subagentModel = "subagent_model", customModel = "custom_model"
@@ -289,9 +294,11 @@ nonisolated struct LauncherProbe: Encodable, Hashable, Sendable {
     var model: String?
     /// A preset's id: the hub fills in the address and, with no `model`, the preset's default model.
     var preset: String? = nil
+    /// Send Through as chosen (kind api): tested from where it will be sent; nil the stored one.
+    var viaMachine: String? = nil
     enum CodingKeys: String, CodingKey {
         case name, auth, headers, model, preset
-        case baseURL = "base_url", apiKey = "api_key"
+        case baseURL = "base_url", apiKey = "api_key", viaMachine = "via_machine"
     }
 }
 

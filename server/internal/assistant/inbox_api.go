@@ -44,7 +44,7 @@ func (s *Service) inboxRoutes() {
 			return
 		}
 		if q := r.URL.Query(); q.Has("since") { // only what changed since a list it had (inbox_delta.go)
-			s.writeInboxSince(w, q.Get("sources") == "all", q.Get("since"))
+			s.writeInboxSince(w, inboxShape{all: q.Get("sources") == "all", lean: q.Get("chain") == "last"}, q.Get("since"))
 			return
 		}
 		s.writeInboxList(w, r.URL.Query().Get("sources") == "all") // from each item's kept bytes (inbox_list_memo.go)

@@ -405,6 +405,10 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
   const hostDefault = picked ? currentHosts(picked).default : "";
   useEffect(() => { setHost(""); }, [open, mid]);
   const agent = launcherAgent(listLauncher, launchers, models.list);
+  // Codex takes its first message with the start (lib/new-agent.ts); a computer that can opens it without one too
+  // (prompt_optional, docs/integrations/codex.md "Starting without a first message"), an older one needs it
+  const codex = agent === "codex";
+  const needsFirst = codex && launchers.find((l) => l.name === listLauncher)?.prompt_optional !== true;
   // the launcher this start runs (the chosen one, or the one Model settings' default runs) when this computer can't start
   // it now (#1643): said under the box with a way to see how to fix it; Start stays enabled
   const runs = launchersOf === mid ? listLauncher : "";
@@ -497,7 +501,8 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
       // The launch owns its previews; removing or unmounting the editable draft cannot revoke them.
       const sent = snapshot.attachments.map((a) => ({ ...a, url: a.url ? URL.createObjectURL(a.file) : undefined }));
       rememberSetup({ ...setup, at: setupTime() });
-      launchAgent({ machineId: mid, cwd: dir, workspaceId: workspace?.workspaceId, launcher, ...picks, permissionMode: permissionMode || undefined, host: opensIn, ultracode: ultra, text: snapshot.text, attachments: sent });
+      launchAgent({ machineId: mid, cwd: dir, workspaceId: workspace?.workspaceId, launcher, ...picks, permissionMode: permissionMode || undefined, host: opensIn, ultracode: ultra, text: snapshot.text, attachments: sent,
+        ...(codex ? { agentType: "codex", inlinePrompt: true } : {}) });
       const ids = new Set(snapshot.attachments.map((a) => a.id));
       releaseAttachments(attachmentsRef.current.filter((a) => ids.has(a.id)));
       attachmentsRef.current = attachmentsRef.current.filter((a) => !ids.has(a.id));
@@ -582,7 +587,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
             <Button tone="quiet" onClick={dismiss}>
               {t("common.cancel")}
             </Button>
-            <Button tone="primary" busy={wtBusy} disabled={loadingModels || !workspaceCurrent || !online.some((m) => m.id === mid) || !cwd.trim()} onClick={start}>
+            <Button tone="primary" busy={wtBusy} disabled={loadingModels || !workspaceCurrent || !online.some((m) => m.id === mid) || !cwd.trim() || (needsFirst && !prompt.trim())} onClick={start}>
               {t("newagent.start")}
             </Button>
           </>
@@ -734,7 +739,7 @@ function AgentForm({ open, onClose, preset }: NewAgentProps) {
             </Field>
           )}
 
-          <Field label={t("newagent.first_message_optional")}>
+          <Field label={t(needsFirst ? "newagent.first_message" : "newagent.first_message_optional")}>
             <div className={cx("flex flex-col gap-2 rounded-control bg-inset shadow-hairline focus-within:shadow-[0_0_0_1px_var(--line-strong)]", dragging && "outline-2 outline-accent")}
               onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}

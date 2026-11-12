@@ -1,0 +1,7 @@
+{
+  "strip_label": "子 Agent",
+  "summary": "子 Agent {count} 个 · {running} 个在跑",
+  "waiting": "等待子 Agent",
+  "scroll_left": "滚动到前面的子 Agent",
+  "scroll_right": "滚动到更多子 Agent"
+}

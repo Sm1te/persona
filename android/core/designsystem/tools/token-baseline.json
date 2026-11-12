@@ -169,7 +169,7 @@
       "dp": 1
     },
     "android/core/designsystem/src/main/kotlin/persona/core/designsystem/QueueStrip.kt": {
-      "dp": 32
+      "dp": 31
     },
     "android/core/designsystem/src/main/kotlin/persona/core/designsystem/RichTextTokens.kt": {
       "dp": 4
@@ -375,9 +375,6 @@
     },
     "android/feature/chat/src/main/kotlin/persona/feature/chat/ChatPortChips.kt": {
       "icon": 2
-    },
-    "android/feature/chat/src/main/kotlin/persona/feature/chat/ChatQueueStrip.kt": {
-      "icon": 3
     },
     "android/feature/chat/src/main/kotlin/persona/feature/chat/ChatScreen.kt": {
       "dp": 4,

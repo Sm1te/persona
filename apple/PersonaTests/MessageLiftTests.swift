@@ -11,8 +11,9 @@ struct MessageLiftTests {
     private let bounds = CGRect(x: 0, y: 60, width: 390, height: 700)
     private let bar = CGSize(width: 302, height: 62)
 
-    private func place(_ message: CGRect, press: CGFloat = 10, trailing: Bool = false) -> LiftLayout.Placement {
-        LiftLayout.place(message: message, press: press, bar: bar, bounds: bounds, margin: 8, gap: 8, trailing: trailing)
+    private func place(_ message: CGRect, press: CGFloat = 10, trailing: Bool = false, part: CGFloat? = nil) -> LiftLayout.Placement {
+        LiftLayout.place(message: message, press: press, bar: bar, bounds: bounds, margin: 8, gap: 8, trailing: trailing, part: part,
+                         pressInSight: 44)
     }
 
     @Test func aShortMessageStaysWhereItIsWithTheBarUnderIt() {
@@ -52,6 +53,45 @@ struct MessageLiftTests {
         #expect(place(message, press: 5).offset == 0)
         let end = place(message, press: 2395)
         #expect(end.offset + end.preview.height == 2400)
+    }
+
+    /// A long answer drawn in parts (#4970), pressed in one of them (#5221): all of it is lifted. Taller than the room
+    /// beside the bar, it shows from the pressed part's start to the screen's edge (here the room is 614 tall, from 68
+    /// with the bar under it, or from 138 with the bar above).
+    @Test func aMessageInPartsShowsFromThePressedPart() {
+        // 3000 tall, its top far above the screen; the pressed part starts 1000 into it, on screen at 360.
+        let message = CGRect(x: 16, y: -640, width: 358, height: 3000)
+        let p = place(message, press: 1200, part: 1000)
+        #expect(p.preview.height == 614)
+        #expect(p.offset == 1000, "it opens at the pressed part")
+        #expect(p.preview.minY == 138 && !p.below && p.bar.maxY == 130, "moved up just enough for the bar above it")
+    }
+
+    @Test func aMessageInPartsPressedInAPartThatStartsAboveTheScreenStaysWhereItIs() {
+        let message = CGRect(x: 16, y: -640, width: 358, height: 3000)
+        // The part starts at 200, above the screen; the press is at 360 on screen.
+        let p = place(message, press: 1000, part: 200)
+        #expect(p.offset == 708 && p.preview.minY == 68, "what was at the screen's top stays there")
+        #expect(p.below)
+        #expect(p.preview.minY + 1000 - p.offset == 360, "the pressed line has not moved")
+        // Pressed low, where the bar goes: the copy moves up for the press to stay in sight, 44 above the edge.
+        let low = place(message, press: 1380, part: 200)
+        #expect(low.preview.minY + 1380 - low.offset == low.preview.maxY - 44)
+    }
+
+    @Test func aMessageInPartsThatFitsIsLiftedWhole() {
+        // 500 tall, starting above the screen: all of it, from its first line, moved down onto the screen.
+        let p = place(CGRect(x: 16, y: -200, width: 358, height: 500), press: 350, part: 300)
+        #expect(p.offset == 0 && p.preview.height == 500)
+        #expect(p.preview.minY == 68 && p.below)
+    }
+
+    @Test func aMessageInPartsPressedInItsLastPartShowsItsEnd() {
+        // Its last part starts 2800 into it, on screen at 500: the last 614 points show, that part's start nearly in place.
+        let message = CGRect(x: 16, y: -2300, width: 358, height: 3000)
+        let p = place(message, press: 2900, part: 2800)
+        #expect(p.offset + p.preview.height == 3000)
+        #expect(p.preview.minY == 68 && p.below)
     }
 
     @Test func theBarStaysInsideTheScreenSideways() {

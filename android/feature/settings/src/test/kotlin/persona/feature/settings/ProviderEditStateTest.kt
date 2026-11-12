@@ -109,6 +109,16 @@ class ProviderEditStateTest {
         assertFalse("saved is what is open now", model.state.value.dirty)
     }
 
+    /** A direct API connection's "Send through" goes only when it changed; a launcher never sends it (#4775). */
+    @Test fun sendThroughGoesOnlyWhenChanged() {
+        val api = HubLauncher("direct", source = "persona", kind = "api", baseUrl = "https://api.example.com", model = "m", viaMachine = "laptop")
+        val d = providerDraftOf(api)
+        assertEquals("laptop", d.viaMachine)
+        assertNull(providerUpdate(d, api).viaMachine)
+        assertEquals("", providerUpdate(d.copy(viaMachine = ""), api).viaMachine)
+        assertNull(providerUpdate(providerDraftOf(stored).copy(viaMachine = "laptop"), stored).viaMachine)
+    }
+
     @Test fun secretsAreKeptReplacedOrClearedOnPurpose() {
         val model = editing()
         val d = model.state.value.draft

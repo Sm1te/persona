@@ -71,6 +71,7 @@ internal fun NewProviderPage(
     val res = LocalResources.current
     var choosingModel by remember { mutableStateOf(false) }
     var choosingEffort by remember { mutableStateOf(false) }
+    var choosingVia by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var newModel by rememberSaveable { mutableStateOf("") }
@@ -182,6 +183,7 @@ internal fun NewProviderPage(
                         modelsSection(state, editable, model::edit, newModel) { newModel = it }
                         // Editing: "Computers" is its own row; adding: it waits under "Advanced" with the rest.
                         if (state.editing) computersRow(state, openComputers)
+                        if (state.editing && draft.kind == "api") viaRow(state, editable) { choosingVia = true }
                         item("advanced") {
                             JGroupItem(GroupPosition.Single, Modifier.padding(top = Tokens.Space.m)) {
                                 JRow(stringResource(R.string.settings_pedit_advanced), value = if (advanced) null else stringResource(R.string.settings_pedit_advanced_badge),
@@ -214,6 +216,26 @@ internal fun NewProviderPage(
     if (choosingEffort) JActionSheet((listOf("") + EffortLevels).map { level ->
         JAction(effortText(level), checked = level == draft.effort, onClick = { model.edit(draft.copy(effort = level)) })
     }, { choosingEffort = false }, title = stringResource(R.string.settings_pedit_effort))
+    if (choosingVia) JActionSheet(viaChoices(state).map { id ->
+        JAction(viaLabel(state, id), checked = id == draft.viaMachine, onClick = { model.edit(draft.copy(viaMachine = id)) })
+    }, { choosingVia = false }, title = stringResource(R.string.settings_pedit_via), note = stringResource(R.string.settings_pedit_via_note))
+}
+
+/** "Send through"'s choices: the hub itself, the hub's computers, and the stored one even when the hub no longer lists it. */
+internal fun viaChoices(state: NewProviderState): List<String> =
+    (listOf("") + state.machines.map { it.id } + state.draft.viaMachine).distinct()
+
+@Composable
+private fun viaLabel(state: NewProviderState, id: String): String =
+    if (id.isEmpty()) stringResource(R.string.settings_pedit_via_hub) else machineLabel(state.machines, id)
+
+/** "Send through": which machine sends a direct API connection's requests (docs/assistant/model-config.md "Sending through a computer"). */
+private fun androidx.compose.foundation.lazy.LazyListScope.viaRow(state: NewProviderState, editable: Boolean, onOpen: () -> Unit) {
+    item("via") {
+        JGroupItem(GroupPosition.Single, Modifier.padding(top = Tokens.Space.m)) {
+            JRow(stringResource(R.string.settings_pedit_via), value = viaLabel(state, state.draft.viaMachine), enabled = editable, onClick = onOpen)
+        }
+    }
 }
 
 /** The pages the form opens in its place. */

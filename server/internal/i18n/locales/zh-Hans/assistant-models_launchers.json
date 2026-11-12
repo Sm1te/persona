@@ -60,5 +60,7 @@
   "err_delivery": "delivery 只能是 on_demand 或 push",
   "err_own_service_value": "own_service 只能是 skip 或 use",
   "err_scope_empty": "请至少给这个供应商选一台电脑",
-  "err_scope_unknown_machine": "{machine} 不是你的电脑"
+  "err_scope_unknown_machine": "{machine} 不是你的电脑",
+  "err_via_kind": "只有直接 API 接入才能通过电脑发送",
+  "err_via_machine": "{machine} 不是这位助手的电脑"
 }

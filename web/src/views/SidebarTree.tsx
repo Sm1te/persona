@@ -587,8 +587,8 @@ function tabNode(t: HerdrTab, machines: Machine[]): MenuNode {
   };
 }
 
-// One herdr tab: `#N` (or its name) and what its most urgent pane is doing; it opens on that pane, the others are the
-// chat's pane tabs (PaneTabs). A tab with one pane has that agent's ⋯, one with several the tab's own. A tab with several
+// One herdr tab: `#N` (or its name) and what its most urgent pane is doing; it opens on that pane. A lead's workers are not
+// among its panes (the hub folds them under the lead, lib/team.ts): they are in the lead's Team panel. A tab with one pane has that agent's ⋯, one with several the tab's own. A tab with several
 // agents (#2320) opens up to them, in pane order: the "Lead" (the first pane, the others split from it) on top, its
 // branches under it; the choice is kept per tab like the sidebar's other folds, and folded it is the one row it always was.
 function TabRow({ t: tab, ...p }: { t: HerdrTab } & TreeProps) {

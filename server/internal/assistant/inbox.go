@@ -100,7 +100,10 @@ type InboxItem struct {
 	Handling   *InboxHandling    `json:"handling,omitempty"`
 	Suggestion *InboxSuggestion  `json:"suggestion,omitempty"`
 	Chain      []InboxChainEntry `json:"chain,omitempty"`
-	Related    []InboxRelated    `json:"related,omitempty"`
+	// ChainCount is set only in a list asked with chain=last (inbox_list_memo.go, #4742): a done item's chain is then
+	// its newest entry alone, and this is how many it has. GET /api/v1/inbox/{id} has them all.
+	ChainCount int            `json:"chain_count,omitempty"`
+	Related    []InboxRelated `json:"related,omitempty"`
 	// Handoffs are the latest conversations the event was handed to (inbox_handoff.go), oldest first.
 	Handoffs []InboxHandoff `json:"handoffs,omitempty"`
 

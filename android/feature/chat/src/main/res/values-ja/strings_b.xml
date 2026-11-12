@@ -322,16 +322,22 @@
     <string name="chat_dialog_hand_title">Personaに任せる</string>
     <string name="chat_dialog_hand_hint">Personaに何をしてもらいますか？</string>
     <plurals name="chat_queue_title">
-        <item quantity="other">%1$d件待機中。%2$sの手が空くと順番に処理されます</item>
+        <item quantity="other">キュー%1$d件・%2$sが手すき次第順に処理します</item>
     </plurals>
     <string name="chat_queue_deleted">キューから削除しました</string>
-    <string name="chat_queue_restored">入力欄に戻しました。修正してから送信してください</string>
+    <string name="chat_queue_restored">入力欄に戻しました。編集してから送信してください。</string>
     <string name="chat_queue_not_found">このメッセージが見つかりません。キューが変わった可能性があります。確認してもう一度お試しください</string>
     <string name="chat_queue_failed">変更できませんでした：%1$s</string>
-    <string name="chat_queue_edit">戻して編集</string>
+    <string name="chat_queue_edit">取り消して編集</string>
     <string name="chat_queue_copy">コピー</string>
     <string name="chat_queue_copied">コピーしました</string>
     <string name="chat_queue_delete">削除</string>
+    <string name="chat_queue_move_up">上へ移動</string>
+    <string name="chat_queue_move_down">下へ移動</string>
+    <string name="chat_queue_send_now">今すぐ送信</string>
+    <string name="chat_queue_send_now_title">送信待ちのメッセージを今すぐ送りますか？</string>
+    <string name="chat_queue_send_now_message">送信待ちのメッセージを今すぐエージェントに送ります。実行中のコマンドはバックグラウンドで続き、書いている途中の返信はあなたのメッセージを含めてやり直します。</string>
+    <string name="chat_queue_sent_now">今すぐエージェントに送りました</string>
     <string name="chat_composer_photos_only">画像を見てください</string>
     <string name="chat_composer_photo_placeholder">[画像]</string>
     <string name="chat_reader_full_text">全文</string>

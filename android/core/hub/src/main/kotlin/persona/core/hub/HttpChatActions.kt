@@ -94,6 +94,13 @@ class HttpChatActions internal constructor(
         }
     }
 
+    override suspend fun sendQueuedNow(session: Session) {
+        // The node presses the keys and waits for the queue to leave the screen (iOS gives it 30 s): the slow client's timeout covers it.
+        slow(api("sessions", session.machineId, session.sessionId, "queue", "send-now"), "POST", ByteArray(0).toRequestBody()).use {
+            if (!it.isSuccessful) throw HubFailure.from(it)
+        }
+    }
+
     override suspend fun fork(session: Session, atItemId: String): String {
         val body = buildJsonObject { put("at_item_id", atItemId) }
         return request(api("sessions", session.machineId, session.sessionId, "fork"), "POST",

@@ -322,7 +322,7 @@
     <string name="chat_dialog_hand_title">交给 Persona</string>
     <string name="chat_dialog_hand_hint">要 Persona 做什么？</string>
     <plurals name="chat_queue_title">
-        <item quantity="other">排队中 %1$d 条，%2$s 忙完会依次处理</item>
+        <item quantity="other">排队中 %1$d 条 · %2$s 忙完会依次处理</item>
     </plurals>
     <string name="chat_queue_deleted">已从队列删除</string>
     <string name="chat_queue_restored">已撤回到输入框，改好再发送</string>
@@ -332,6 +332,12 @@
     <string name="chat_queue_copy">拷贝</string>
     <string name="chat_queue_copied">已拷贝</string>
     <string name="chat_queue_delete">删除</string>
+    <string name="chat_queue_move_up">上移</string>
+    <string name="chat_queue_move_down">下移</string>
+    <string name="chat_queue_send_now">立即发送</string>
+    <string name="chat_queue_send_now_title">现在就发送排队的消息？</string>
+    <string name="chat_queue_send_now_message">现在就把排队的消息发给 Agent。它正在跑的命令会转到后台继续跑；正在写的回复会带上你的消息重新开始。</string>
+    <string name="chat_queue_sent_now">已立即发给 Agent</string>
     <string name="chat_composer_photos_only">请看图片</string>
     <string name="chat_composer_photo_placeholder">[图片]</string>
     <string name="chat_reader_full_text">全文</string>

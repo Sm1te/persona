@@ -182,6 +182,13 @@ describe("PendingCards", () => {
     expect(cards({ narrow: false, interactions: [ix("q", "question", { questions })] })).not.toContain("data-permission-from");
   });
 
+  it("names a lead's worker's card as the worker's, on the lead's page (#5180)", () => {
+    expect(permissionFrom({ folded_under: "lead", folded_as: "worker", session_title: "Review the change" })).toBe("来自子 Agent · Review the change");
+    const questions = [{ question: "用哪个框架？", options: [{ label: "A" }] }] as Interaction["questions"];
+    const html = cards({ narrow: false, interactions: [ix("q", "question", { questions, folded_under: "lead", folded_as: "worker", session_title: "Review" })] });
+    expect(html).toMatch(/data-permission-from="true" title="来自子 Agent · Review"/);
+  });
+
   it("shows every card on a wide screen, in no box of their own", () => {
     const html = cards({ narrow: false });
     expect(html).not.toContain("data-chat-cards");

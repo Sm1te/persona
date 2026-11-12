@@ -18,6 +18,10 @@ PORT = int(os.environ.get("PORT", "18760"))
 # MOCK_CHILD_SESSIONS=1 (#5120) builds on the Paseo computer: its agent's created agents are its children.
 if os.environ.get("MOCK_CHILD_SESSIONS"):
     os.environ.setdefault("MOCK_PASEO", "1")
+# MOCK_TEAM=1 (#5180) builds on MOCK_TAB_PANES's tab of three: it adds a worker's request, a third worker and a stopped pane.
+MOCK_TEAM = bool(os.environ.get("MOCK_TEAM"))
+if MOCK_TEAM:
+    os.environ.setdefault("MOCK_TAB_PANES", "1")
 NOW = datetime.now(timezone.utc)
 LOG = sys.stderr
 # MOCK_HUB_ID keeps the identity across restarts, so a paired App stays paired when the switches change.
@@ -1266,6 +1270,24 @@ AGY_SESSION = "a6700000-1111-4000-8000-000000000006"
 NO_SPACE = dict(space_kind=None, space_id=None, space_name=None, space_index=None, slot_id=None, slot_name=None,
                 slot_index=None, pane_id=None, tab_id=None, workspace_id=None, launcher=None)
 _desktop_caps = {"read": True, "send": True}
+# MOCK_CODEX_WAITING=1 (#4961, docs/integrations/codex.md "Starting without a first message"): the Codex launchers say the
+# computer opens Codex with no first message (prompt_optional), a Codex start without one answers with a waiting row,
+# and one such row is listed already; its first message makes it the thread, in the same pane.
+MOCK_CODEX_WAITING = os.environ.get("MOCK_CODEX_WAITING") == "1"
+CODEX_WAITING = "c0de0000-0000-4000-8000-000000000001"
+CODEX_WAITING_CAPS = {"read": True, "send": True, "terminal": True}
+if MOCK_CODEX_WAITING:
+    SESSIONS.append(sess("macbook", CODEX_WAITING, "weather-app", "/Users/me/code/weather-app", "idle", "idle", "weather-app", 7, "codex", 3, 1,
+                         "", agent="codex", launcher="codex", awaiting_first_message=True, capabilities=CODEX_WAITING_CAPS))
+
+
+def codex_launcher(name="codex", model="gpt-5.5"):
+    l = {"name": name, "model": model, "agent": "codex", "agent_type": "codex"}
+    if MOCK_CODEX_WAITING:
+        l["prompt_optional"] = True
+    return l
+
+
 if os.environ.get("MOCK_MODE_CAPS"):
     _desktop_caps["modes"] = False
 if os.environ.get("MOCK_SOURCES"):
@@ -1489,7 +1511,10 @@ if os.environ.get("MOCK_SPLIT_TABS"):
 # MOCK_TAB_PANES=1: one herdr tab holding three agents (#2320): the "Initiator" in the tab's first pane (pane_index 0) and two
 # panes it split off (a Codex that stopped on a dialog on the computer, a Claude that is done), with herdr's real-looking
 # pane ids; beside it ordinary one-agent tabs and a tab whose top left pane is a shell (two peers, no "Initiator"). No cards,
-# so the overview files the three-agent tab under "On the computer".
+# so the overview files the three-agent tab under "On the computer". The three are a tab team (#5180, fold_hierarchy): the
+# two panes fold under the lead as its workers; the shell-first tab's two stay peers.
+# MOCK_TEAM=1 adds to that team a permission card of the Codex worker's, a third worker (working, pane 3) and a stopped pane
+# (offline, pane 4) that is no worker, and gives the lead and each worker a short transcript with a tool call.
 PANES_LEAD = "7ab5e000-0000-4000-8000-000000000001"
 PANES_REVIEW = "7ab5e000-0000-4000-8000-000000000002"
 PANES_TESTS = "7ab5e000-0000-4000-8000-000000000003"
@@ -1497,6 +1522,8 @@ PANES_DEPS = "7ab5e000-0000-4000-8000-000000000004"
 PANES_PEER_A = "7ab5e000-0000-4000-8000-000000000005"
 PANES_PEER_B = "7ab5e000-0000-4000-8000-000000000006"
 PANES_DOCS = "7ab5e000-0000-4000-8000-000000000007"
+PANES_API_DOCS = "7ab5e000-0000-4000-8000-000000000008"
+PANES_STOPPED = "7ab5e000-0000-4000-8000-000000000009"
 
 
 def tab_panes_sessions():
@@ -1517,14 +1544,47 @@ def tab_panes_sessions():
              "文档目录理好了。", seen_at=ago(minutes=20), pane_id="w2:pW", pane_index=0),
         sess("nas", SPLIT_NAS, "备份脚本", "/home/me/code/backup", "idle", "idle", "backup", 1, "1", 1, 200,
              "备份改成增量了。", seen_at=ago(minutes=190)),
+    ] + (team_sessions() if MOCK_TEAM else [])
+
+
+def team_sessions():
+    """MOCK_TEAM's rows of the lead's tab: a third worker, working, and a stopped pane, which is no worker (#5180)."""
+    return [
+        sess("server", PANES_API_DOCS, "更新新中间件的接口文档", "/home/me/code/app", "working", "working", "app", 1, "1", 1, 1,
+             "在补刷新接口的说明。", pane_id="w1:p52", pane_index=3, state_since=ago(minutes=6)),
+        sess("server", PANES_STOPPED, "查刷新接口的慢日志", "/home/me/code/app", "offline", "offline", "app", 1, "1", 1, 40,
+             "慢日志里没找到刷新接口。", pane_id="w1:p53", pane_index=4),
     ]
 
 
 def tab_panes_items():
+    if MOCK_TEAM:
+        return team_items()
     return {PANES_LEAD: [it("user", "text", 15, text="把 token 刷新挪到中间件里，开两个窗格分别审改动和补测试"),
                          it("assistant", "text", 0, text="开了两个窗格分头审改动、补测试，我在合中间件。")],
             PANES_REVIEW: [it("user", "text", 10, text="审一下登录重构的改动"), it("assistant", "text", 1, text="有两处会吞掉错误，要我直接改吗？")],
             PANES_TESTS: [it("user", "text", 10, text="补刷新失败的测试"), it("assistant", "text", 3, text="补了 6 个用例，都过了。")],
+            PANES_PEER_B: bench_items()}
+
+
+def team_items():
+    """MOCK_TEAM's transcripts: the lead's and each worker's (#5180). The Codex worker's ends on the command its permission
+    card asks for (toolu_panes_review_test)."""
+    return {PANES_LEAD: [it("user", "text", 15, text="把 token 刷新挪到中间件里，开几个窗格分别审改动、补测试、更新文档")]
+                        + tool("Edit", {"file_path": "src/auth/middleware.ts", "old_string": "next()", "new_string": "await refresh(req); next()"}, "ok", 14)
+                        + [it("assistant", "text", 0, text="开了三个窗格分头审改动、补测试、更新文档，我在合中间件。")],
+            PANES_REVIEW: [it("user", "text", 10, text="审一下登录重构的改动")]
+                          + tool("Bash", {"command": "git diff main -- src/auth"}, "src/auth/middleware.ts | 24 ++++++++----", 9)
+                          + [it("assistant", "text", 2, text="有两处会吞掉错误，先跑一遍现有的测试确认。"),
+                             it("assistant", "tool_use", 1, tool_use_id="toolu_panes_review_test", tool_name="Bash",
+                                tool_input={"command": "go test ./auth/..."})],
+            PANES_TESTS: [it("user", "text", 10, text="补刷新失败的测试")]
+                         + tool("Bash", {"command": "npm test -- src/auth"}, "6 passed", 4)
+                         + [it("assistant", "text", 3, text="补了 6 个用例，都过了。")],
+            PANES_API_DOCS: [it("user", "text", 8, text="给新中间件更新接口文档")]
+                            + tool("Read", {"file_path": "docs/api/auth.md"}, "## Refresh\n…", 6)
+                            + [it("assistant", "text", 1, text="在补刷新接口的说明。")],
+            PANES_STOPPED: [it("user", "text", 45, text="查一下刷新接口的慢日志"), it("assistant", "text", 40, text="慢日志里没找到刷新接口。")],
             PANES_PEER_B: bench_items()}
 
 
@@ -1564,6 +1624,12 @@ def bench_items():
 if os.environ.get("MOCK_TAB_PANES"):
     MACHINES[:] = [m for m in MACHINES if m["id"] in ("server", "nas")]
     SESSIONS[:] = tab_panes_sessions()
+    if MOCK_TEAM:  # the lead says it split off three panes; the Codex worker waits on a permission card, not a dialog
+        for _s in SESSIONS:
+            if _s["session_id"] == PANES_LEAD:
+                _s["last_text"] = "开了三个窗格分头审改动、补测试、更新文档，我在合中间件。"
+            elif _s["session_id"] == PANES_REVIEW:
+                _s.update(last_text="有两处会吞掉错误，先跑一遍现有的测试确认。", pending_interactions=1)
 ORIG_STATE = {s["session_id"]: (s["state"], s["status"]) for s in SESSIONS}
 SEEN = []  # session ids marked seen (GET /mock/seen)
 SESSION_CLOSE = {"fail": False, "attempts": [], "closed": [], "interactions": []}
@@ -7330,9 +7396,11 @@ def mock_interactions():
         if MOCK_TASKS:  # a task's agent asking: the hub names the task (task_title)
             titles = {a["session_id"]: t["title"] for t in TODOS if t.get("origin") and not t.get("done_at") for a in t.get("agents", [])}
             out = [dict(x, task_title=titles[x["session_id"]]) if x.get("session_id") in titles else x for x in out]
-    # the session a card's session folds under (Interaction.folded_under, #5120): its home is that session's page
-    folds = {(r["machine_id"], r["session_id"]): r["folded_under"] for r in all_sessions() if r.get("folded_under")}
-    return [dict(x, folded_under=folds[(x.get("machine_id"), x.get("session_id"))]) if (x.get("machine_id"), x.get("session_id")) in folds else x for x in out]
+    # the session a card's session folds under (Interaction.folded_under, #5120): its home is that session's page; a tab
+    # worker's card says so too (folded_as, #5180)
+    folds = {(r["machine_id"], r["session_id"]): {k: r[k] for k in ("folded_under", "folded_as") if r.get(k)}
+             for r in all_sessions() if r.get("folded_under")}
+    return [dict(x, **folds[(x.get("machine_id"), x.get("session_id"))]) if (x.get("machine_id"), x.get("session_id")) in folds else x for x in out]
 
 
 # MOCK_FLEET: the hub's fleet summary (server/internal/hub/liveactivity.go buildFleet) for Android's ongoing notification,
@@ -10903,8 +10971,7 @@ def machine_launchers(mid=""):
     """GET /api/v1/machines/{mid}/launchers's launchers: claude, sonnetcc and codex ("Create from the phone"; not on the
     Mac Studio under MOCK_NEW_AGENT_PANEL), and under MOCK_PROVIDERS the managed providers Agents can start, each with its
     display name."""
-    out = [{"name": "claude", "model": "opus"}, {"name": "sonnetcc", "model": "sonnet"},
-           {"name": "codex", "model": "gpt-5.5", "agent": "codex", "agent_type": "codex"}]
+    out = [{"name": "claude", "model": "opus"}, {"name": "sonnetcc", "model": "sonnet"}, codex_launcher()]
     if os.environ.get("MOCK_MODEL_PANEL_USAGE"):
         out += [{"name": "cc_main", "model": "opus"}, {"name": "cc_team", "model": "example-pro"}]
     if NEW_AGENT_PANEL and mid == "studio":
@@ -11593,6 +11660,57 @@ if os.environ.get("MOCK_SUBAGENT_CARDS") == "1":
     mock_subagent_cards()
 
 
+# MOCK_PLAN_CARDS=1: the plan as cindy draws it (#5156, web): an agent at work on a five-step plan (two done, one in
+# progress, two to go) after a long earlier answer, so scrolled up its card is out of view and the pill above the
+# composer shows; a second agent whose plan is all done (the pill is gone, the card says 5/5); and the Persona chat
+# "整理这个季度的读书笔记" with a plan of its own in its last turn.
+PLANRUN = "a1f3c2d4-0000-4000-8000-0000000c1e21"
+PLANDONE = "a1f3c2d4-0000-4000-8000-0000000c1e22"
+
+
+def mock_plan_cards():
+    steps = ["新建横屏的布局文件", "把温度和降雨概率并排放", "适配小号和中号两种尺寸，长标题在中号里换成两行，不再截断",
+             "跑快照测试", "在模拟器上截深浅色的图"]
+    plan = lambda states: {"todos": [{"content": c, "status": st, "activeForm": c} for c, st in zip(steps, states)]}
+    _p = [it("user", "text", 40, text="小组件横屏的时候为什么会挤在一起？")]
+    _p.append(it("assistant", "text", 39, text="\n\n".join([
+        "横屏时小组件的宽度变大、高度变小，现在的布局是竖着排的：温度在上，降雨概率在下，高度不够就被压在一起。",
+        "改成横屏时并排放：左边温度，右边接下来几小时的降雨概率，两块各占一半宽度，高度就够了。"] * 4)))
+    _p.append(it("user", "text", 20, text="那就按这个改，改完跑一下快照测试"))
+    _p.append(it("assistant", "text", 19.9, text="好，我分五步来。"))
+    _p += tool("TodoWrite", plan(["in_progress", "pending", "pending", "pending", "pending"]), "Todos have been modified successfully.", 19.8)
+    _p += tool("Write", {"file_path": "/Users/me/code/weather/WeatherWidget/LandscapeView.swift", "content": "import SwiftUI\n\nstruct LandscapeView: View { … }"}, "ok", 18)
+    _p += tool("TodoWrite", plan(["completed", "in_progress", "pending", "pending", "pending"]), "Todos have been modified successfully.", 17.5)
+    _p += tool("Edit", {"file_path": "/Users/me/code/weather/WeatherWidget/LandscapeView.swift", "old_string": "VStack {", "new_string": "HStack {"}, "ok", 12)
+    _p += tool("TodoWrite", plan(["completed", "completed", "in_progress", "pending", "pending"]), "Todos have been modified successfully.", 11.5)
+    _p.append(it("assistant", "text", 6, text="横屏的布局写好了，在适配中号的长标题。"))
+    _p.append(it("assistant", "tool_use", 1, tool_use_id="toolu_planrun", tool_name="Bash",
+                 tool_input={"command": "xcodebuild build -scheme WeatherWidget -quiet", "description": "编译小组件"}))
+    ITEMS[PLANRUN] = _p
+    SESSIONS.append(sess("macbook", PLANRUN, "小组件的横屏布局", "/Users/me/code/weather", "working", "working", "weather", 1, "plan", 9, 0,
+                         "横屏的布局写好了，在适配中号的长标题。"))
+    _d = [it("user", "text", 30, text="把小组件的横屏布局做完，跑快照测试")]
+    _d += tool("TodoWrite", plan(["in_progress", "pending", "pending", "pending", "pending"]), "Todos have been modified successfully.", 29.8)
+    _d += tool("Bash", {"command": "xcodebuild test -scheme WeatherWidget -quiet", "description": "跑快照测试"}, "Executed 52 tests, with 0 failures", 22)
+    _d += tool("TodoWrite", plan(["completed"] * 5), "Todos have been modified successfully.", 21)
+    _d.append(it("assistant", "text", 20, text="横屏布局做完了：温度和降雨概率并排，小号和中号都适配了，52 个快照测试全部通过，深浅色的截图在 `Screenshots/` 里。"))
+    ITEMS[PLANDONE] = _d
+    SESSIONS.append(sess("macbook", PLANDONE, "横屏布局做完了", "/Users/me/code/weather", "done", "done", "weather", 1, "plan", 9, 20,
+                         "横屏布局做完了。"))
+    # a Persona chat's own plan: everyday steps, no engineering words
+    reading = lambda states: {"todos": [{"content": c, "status": st, "activeForm": c} for c, st in zip(
+        ["找出这个季度读完的 30 本书", "每本写三句话的要点", "按主题分成几组", "做成一页目录发给你"], states)]}
+    ITEMS[ASK4] = ITEMS[ASK4] + (
+        [it("user", "text", 3, text="把这个季度的读书笔记整理成一页目录")]
+        + [it("assistant", "text", 2.9, text="好的，我分四步来。")]
+        + tool("TodoWrite", reading(["completed", "in_progress", "pending", "pending"]), "Todos have been modified successfully.", 2.8)
+        + [it("assistant", "text", 2, text="30 本书都找齐了，正在给每本写要点，写完按主题分组。")])
+
+
+if os.environ.get("MOCK_PLAN_CARDS") == "1":
+    mock_plan_cards()
+
+
 # MOCK_SUBAGENT_REPORTS=1: long subagent reports start folded (#6381): a background subagent's report in its card and in
 # its notice, and a hand-back that an older node handed on as a message from "general-purpose" (Claude Code's frame
 # first, the report indented under it). The launch receipt is Claude Code 2.1.319's ("the agentId below" before the id)
@@ -11681,6 +11799,28 @@ LIFT_KEY = "a1f3c2d4-0000-4000-8000-0000000c1e0c"
 # lifted and selected, the quote stays folded (or open, as it was in the chat) and its hidden lines are not selected.
 LIFT_FOLD = "a1f3c2d4-0000-4000-8000-0000000c1e0d"
 LIFT_ASK_KEY = "b2e4d6f8-0000-4000-8000-0000000c1e0c"
+# An answer long enough to be drawn in parts (#4970, `AnswerParts`: 95 lines, three parts): a long press on its middle
+# part lifts, copies and selects all of it (#5221). Its first and last sentences are in its first and last parts.
+LIFT_SPLIT = "a1f3c2d4-0000-4000-8000-0000000c1e0e"
+
+
+def lift_split_answer():
+    topics = [("范围", "这次只迁移订单、库存和结算三张表，用户表和日志表留在旧库，下个季度再动。"),
+              ("步骤", "先双写一周，再把读切到新库，最后停掉旧库的写入；每一步都有开关，可以单独回退。"),
+              ("风险", "最大的风险是结算表的历史数据里有重复的流水号，迁移脚本遇到会停下来，等人工确认。"),
+              ("验证", "每天对一次账：两边的行数、金额合计和最近一小时的流水逐条比对，差异写进日报。"),
+              ("回滚", "回滚只需要把读开关切回旧库，双写期间两边的数据一致，不需要再搬数据。"),
+              ("后续", "旧库保留三十天只读，确认没有人再查之后再下线，下线前会再提醒一次。")]
+    sections = []
+    for n, (name, lead) in enumerate(topics, 1):
+        sections.append(f"### {n}. {name}\n\n第 {n} 节的说明：{lead}"
+                        "这一节的细节都写在迁移手册里，下面只列要点，方便你快速核对。The steps keep the old reader working until every client moved.")
+        sections.append("\n".join(f"- 要点 {n}.{k}：检查第 {k} 项，结果记在 `notes/migration-{n}-{k}.md` 里，有异常就停下来。" for k in range(1, 4)))
+        sections.append(f"```sh\nscripts/migrate.sh --step {n} --dry-run\nscripts/migrate.sh --step {n} --verify\n```")
+        sections.append(f"第 {n} 节小结：这一步预计半天，做完在群里说一声，我再接着做下一节。"
+                        "如果中间有任何一项对不上，就先停在这一步，不要往下走，等我们一起看过日志再决定。")
+    return ("## 迁移总结\n\n开头第一句：这份总结按六个部分说明这次迁移，先说范围，再说步骤、风险、验证、回滚和后续。\n\n"
+            + "\n\n".join(sections) + "\n\n以上是这次迁移的全部总结，有问题随时找我。")
 LIFT_KEY_MINE = "你先把管理密钥存到本机文件，我跑命令读一下。放在 ~/.config/example-gateway/management.key，权限设成 600，别打印到日志里。"
 LIFT_KEY_ANSWER = ("管理 Key 已经存到本机（hub）了：\n`/home/me/.config/example-gateway/management.key`\n\n"
                    "- 文件权限 600，内容 64 位，没有换行，以 `cb3b` 开头、`047f` 结尾。\n"
@@ -11759,6 +11899,8 @@ def mock_message_lift():
     ITEMS[LIFT_ASK_KEY] = [it("user", "text", 6, text=LIFT_KEY_MINE), it("assistant", "text", 5, text=LIFT_KEY_ANSWER)]
     ASSISTANT.append(assistant_sess(LIFT_ASK_KEY, "保存管理密钥", 5, "存好之后要删掉这个文件就跟我说一声。"))
     SESSIONS.append(sess("macbook", LIFT_MIX, "定时核对", repo, "done", "done", "shop-app", 17, "lift", 3, 7, "下一次核对在整点之后五分钟。"))
+    ITEMS[LIFT_SPLIT] = [it("user", "text", 6, text="把这次数据迁移的安排整理成一份总结"), it("assistant", "text", 4, text=lift_split_answer())]
+    SESSIONS.append(sess("macbook", LIFT_SPLIT, "迁移总结", repo, "done", "done", "shop-app", 17, "lift", 6, 4, "以上是这次迁移的全部总结，有问题随时找我。"))
 
 
 if os.environ.get("MOCK_MESSAGE_LIFT") == "1":
@@ -12385,6 +12527,12 @@ if os.environ.get("MOCK_TAB_PANES"):
     ITEMS.update(tab_panes_items())
     INTERACTIONS[:] = []
     MOCK_INTERACTIONS[:] = []
+    if MOCK_TEAM:  # a worker's request (#5180): the hub sends it with folded_under (the lead) and folded_as "worker"
+        INTERACTIONS.append(
+            {"id": "team_review_test", "machine_id": "server", "session_id": PANES_REVIEW, "session_title": "审一下登录重构的改动",
+             "cwd": "/home/me/code/app", "kind": "permission", "agent": "codex", "tool_use_id": "toolu_panes_review_test",
+             "created_at": ago(minutes=1), "expires_at": later(minutes=29), "tool_name": "Bash",
+             "summary": "go test ./auth/...", "tool_input": {"command": "go test ./auth/..."}})
 if os.environ.get("MOCK_BOTMUX"):
     ITEMS[BOTMUX_BLOCKED] = [it("user", "text", 5, text="把周报导出改成按部门分 sheet")] + [
         it("assistant", "text", 3, text="导出脚本改好了，正在跑全量。")]
@@ -12996,14 +13144,42 @@ def is_child_row(r):
     return bool(r.get("is_subagent") or r.get("parent_session_id") or r.get("asking_parent_session_id") or (root and root != r["session_id"]))
 
 
+def tab_leads(rows):
+    """The manager's tab teams (#5180, fold_hierarchy): for each worker's (machine, session id), its lead's row. A tab is the
+    rows of one machine, space kind, space and slot, both named; an assistant row or an archived one is in none. Its lead is
+    the one row in its first pane (pane_index 0) that is no child and not offline: none or two such rows, and its Agents
+    are peers. Every other row of a tab with a lead that is no child and not offline is its worker."""
+    def tab(r):
+        if (r.get("assistant") or r.get("archived") or not r.get("space_id") or not r.get("slot_id") or is_child_row(r)
+                or r.get("state") == "offline"):
+            return None
+        return (r["machine_id"], r.get("space_kind") or "", r["space_id"], r["slot_id"])
+    first = {}
+    for r in rows:
+        k = tab(r)
+        if k is not None and type(r.get("pane_index")) is int and r["pane_index"] == 0:
+            first[k] = None if k in first else r
+    lead = {}
+    for r in rows:
+        k = tab(r)
+        l = first.get(k) if k is not None else None
+        if l is not None and l["session_id"] != r["session_id"]:
+            lead[(r["machine_id"], r["session_id"])] = l
+    return lead
+
+
 def fold_hierarchy(rows):
-    """The manager's folding (#5120, docs/protocol/protocol.md "Session hierarchy"), on copies: a child (is_subagent, a
-    parent, or the parent a waiting runtime child names in asking_parent_session_id) whose topmost listed ancestor on its
-    machine is another listed row gets folded_under that ancestor, which gets children (its descendants by their own
-    state). Orphans and cycles fold nowhere."""
+    """The manager's folding (#5120, #5180, docs/protocol/protocol.md "Session hierarchy"), on copies: a child
+    (is_subagent, a parent, or the parent a waiting runtime child names in asking_parent_session_id) whose topmost listed
+    ancestor on its machine is another listed row gets folded_under that ancestor, which gets children (its descendants by
+    their own state). A tab's worker (tab_leads) has its lead as its parent and gets folded_as "worker" too; the lead's
+    children count its workers. Orphans and cycles fold nowhere."""
     by = {(r["machine_id"], r["session_id"]): r for r in rows}
+    lead = tab_leads(rows)
 
     def parent(r):
+        if not is_child_row(r):
+            return lead.get((r["machine_id"], r["session_id"]))
         for k in ("parent_session_id", "asking_parent_session_id", "root_session_id"):
             v = r.get(k)
             if v and v != r["session_id"] and (r["machine_id"], v) in by:
@@ -13012,7 +13188,7 @@ def fold_hierarchy(rows):
     top = {}
     for r in rows:
         cur, seen, found = r, {r["session_id"]}, None
-        while is_child_row(cur):
+        while True:
             p = parent(cur)
             if p is None:
                 break
@@ -13023,21 +13199,25 @@ def fold_hierarchy(rows):
             found = cur = p
         if found is not None:
             top[(r["machine_id"], r["session_id"])] = found["session_id"]
-    if not top and not any("folded_under" in r or "children" in r for r in rows):
+    if not top and not any("folded_under" in r or "folded_as" in r or "children" in r for r in rows):
         return rows
     rollup = {}
     for (mid, sid), root in top.items():
-        c = rollup.setdefault((mid, root), {"total": 0, "working": 0, "needs_you": 0})
+        c = rollup.setdefault((mid, root), {"total": 0, "working": 0, "needs_you": 0, "workers": 0})
         c["total"] += 1
         state = by[(mid, sid)].get("state")
         if state in ("working", "needs_you"):
             c[state] += 1
+        if (mid, sid) in lead:
+            c["workers"] += 1
     out = []
     for r in rows:
         k = (r["machine_id"], r["session_id"])
-        r = {x: v for x, v in r.items() if x not in ("folded_under", "children")}
+        r = {x: v for x, v in r.items() if x not in ("folded_under", "folded_as", "children")}
         if k in top:
             r["folded_under"] = top[k]
+            if k in lead:
+                r["folded_as"] = "worker"
         if k in rollup:
             r["children"] = {x: v for x, v in rollup[k].items() if v or x == "total"}
         out.append(r)
@@ -20773,6 +20953,17 @@ class H(BaseHTTPRequestHandler):
                         push_machine(q["machine_id"])
                 # MOCK_QUEUE_SENDS=1: one to a working agent joins its own queue (#3022), as Claude Code holds it.
                 s = next((x for x in SESSIONS if len(parts) >= 7 and x["machine_id"] == parts[4] and x["session_id"] == parts[5]), None)
+                if s is not None and s.get("awaiting_first_message"):  # MOCK_CODEX_WAITING: the row becomes the thread it began
+                    SESSIONS.remove(s)
+                    START_IDS[0] += 1
+                    thread = dict(s, session_id="019a2b3c-0000-7000-8000-%012d" % START_IDS[0], status="working", state="working",
+                                  title=(body.get("text") or "").split("\n")[0][:60] or s["title"], updated_at=ago(minutes=0))
+                    thread.pop("awaiting_first_message", None)
+                    thread.pop("capabilities", None)
+                    ITEMS[thread["session_id"]] = [it("user", "text", 0, text=body.get("text") or "")]
+                    SESSIONS.append(thread)
+                    push_machine(thread["machine_id"])
+                    return self.send_json({"ok": True, "session": decorated_session(thread)})
                 if os.environ.get("MOCK_QUEUE_SENDS") and s and s["state"] == "working" and not s.get("assistant"):
                     s["queued"] = (s.get("queued") or []) + [claude_queued(s["machine_id"], body.get("text"), body.get("images") or [])]
                     push_machine(s["machine_id"])
@@ -21224,8 +21415,17 @@ class H(BaseHTTPRequestHandler):
                 push_machine(resume["machine_id"])
                 return self.send_json({"session": with_fold(decorated_session(resume))})
             codex = body.get("launcher") == "codex"  # the node starts Codex with its first message and answers with its thread
-            if codex and (body.get("async") or not (body.get("prompt") or "").strip()):
+            if codex and (body.get("async") or not (body.get("prompt") or "").strip() and not MOCK_CODEX_WAITING):
                 return self.send_json({"error": "新建 Codex 会话要连第一条消息一起发：Codex 收到第一条消息才建会话。", "code": "codex_needs_prompt"}, 400)
+            if codex and not (body.get("prompt") or "").strip():  # MOCK_CODEX_WAITING: Codex open, waiting for its first message
+                START_IDS[0] += 1
+                cwd = body.get("cwd", "")
+                w = sess(body["machine_id"], "c0de0000-0000-4000-8000-%012d" % (100 + START_IDS[0]), cwd.rsplit("/", 1)[-1] or "codex", cwd,
+                         "idle", "idle", cwd.rsplit("/", 1)[-1] or "new", 9, body.get("tab_name") or "codex", 20 + len(STARTED), 0, "",
+                         agent="codex", launcher="codex", awaiting_first_message=True, capabilities=CODEX_WAITING_CAPS)
+                SESSIONS.append(w)
+                push_machine(w["machine_id"])
+                return self.send_json({"session": decorated_session(w)})
             n = len(STARTED)
             START_IDS[0] += 1
             s = sess(body["machine_id"], "d4e6f8a0-0000-4000-8000-%012d" % START_IDS[0], (body.get("prompt") or "新会话").split("\n")[0], body.get("cwd", ""),
@@ -22514,7 +22714,8 @@ def chat_cards_mock():
 
 if os.environ.get("MOCK_CHAT_CARDS") == "1":
     chat_cards_mock()
-MOCK_HELP.append("MOCK_TAB_PANES=1  一个 herdr 标签页里三个 Agent（#2320）：发起者（pane_index 0，工作中）和它分出的两个窗格（Codex 停在电脑上的对话框、Claude 做完未看），旁边是一个 Agent 的普通标签页和左上是 shell 的两个平级 Agent；没有卡片")
+MOCK_HELP.append("MOCK_TAB_PANES=1  一个 herdr 标签页里三个 Agent（#2320）：发起者（pane_index 0，工作中）和它分出的两个窗格（Codex 停在电脑上的对话框、Claude 做完未看），旁边是一个 Agent 的普通标签页和左上是 shell 的两个平级 Agent；没有卡片。两个窗格作为 worker 折叠在发起者下面（folded_under / folded_as，#5180）")
+MOCK_HELP.append("MOCK_TEAM=1  A tab team (#5180, implies MOCK_TAB_PANES): the lead's tab adds a permission card of the Codex worker's (folded_under the lead, folded_as worker), a third worker that is working and a stopped pane that stays a row of its own; the lead and every worker have a short transcript")
 MOCK_HELP.append("MOCK_CHAT_CARDS=1  （配合 MOCK_SPLIT_TABS=1）server 上 w1:t1 那个工作中的 Claude 同时有计划、提问、授权三张卡，两条排队消息，/loop 和一个后台任务：手机上输入区最挤的样子（#1996）")
 
 # ---------- MOCK_GOAL: an agent working toward a goal (docs/integrations/agent-goal.md, #2420) ----------

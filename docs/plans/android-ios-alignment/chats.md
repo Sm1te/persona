@@ -17,6 +17,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 **C2. Subagents.** iOS draws a subagent as a card with its status, run time, prompt, reports, latest steps and View Subagent; parallel subagents share a grid ("Running 3 agents"), and a running card stays visible under a folded work line. The header's third line says what running subagents do, and a tap swaps the transcript in place with a way back. Android draws an ordinary tool row with a "View sub-agent" button that opens a separate read-only page. Requirement: as on iOS.
 
 **C3. Model and effort in the composer.** iOS shows a text button such as "Opus High ✦" in the composer's row; its menu holds the model (with Other Model…), the effort, ultracode and the permission mode. Android has an icon-only Mode button opening a sheet with a fixed model list and no typed model, a chip above the field when the setting isn't the default, and a permission-mode icon in the header. Requirement: the iOS button and menu; the header's mode icon goes (Q11).
+  Moved (11-12): the web's model pill and unified model panel (#5032, #5033) became the spec for every client's composer (`DESIGN_SYSTEM.md` section 3.8, "Model pill and unified model panel"), so Android takes that structure in #5055 rather than copying iOS's current button, which #5055 replaces too. What stays here is Q11: the header's mode icon goes once the composer shows the mode.
 
 **C4. The header.** iOS folds the header into a slim capsule while scrolling and after 3 s without a touch, and the title opens Session Info; its second line reads "Working 22 min · machine · space › tab". Android's header never folds, the title opens a status sheet, and the second line shows the source, the machine and the raw working directory, which section 5.6 keeps off primary screens. Requirement: as on iOS.
 
@@ -58,7 +59,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 
 **C15. Where a message goes.** On iOS a "Message 'x' ×" chip stays above the composer while a message is routed to one task, and @ lists the conversation's tasks. On Android the route is set from a task's Say and shows only inside the open In Progress tray. Requirement: as on iOS.
 
-**C16. The new conversation's composer.** iOS's model menu holds the launcher, the mode and the effort, and @ mentions sessions and paths. Android has the launcher chip only. Requirement: as on iOS.
+**C16. The new conversation's composer.** iOS's model menu holds the launcher, the mode and the effort, and @ mentions sessions and paths. Android has the launcher chip only. Requirement: as on iOS. Moved (11-12): the model menu half goes with C3 to #5055 (a Persona chat's stored pick, `model_pick`); @ mentions stay here.
 
 **C17. Needs You on the assistant page.** iOS puts 1 to 3 rows above the composer, as many as fit, and "N more" opens Agents or the Inbox; Android lists them inside the scroll and "more" always opens the Inbox. Requirement: as on iOS, counting sessions ([Agents page](agents-page.md) A1).
 
@@ -68,7 +69,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 - The "next one needs you" strip after answering, which Android turns off in assistant conversations.
 - New Chat disabled while on the new conversation's page.
 - The In Progress tray's "Shelved N" line and the pill while the model operates a Mac.
-- The assistant menu's items: Details, Back to Main Chat, the copy items, the per-conversation launcher and model ("From the next message, use"), Interrupt, Connection Details and Screen.
+- The assistant menu's items: Details, Back to Main Chat, the copy items, the per-conversation launcher and model ("From the next message, use"), Interrupt, Connection Details and Screen. The per-conversation model is #5055's stored pick now, and Clear Context (#5095) comes to Android in #5100.
 - The user's bubble and "Persona is getting ready…" while the conversation starts, and a failed start kept as a failed bubble with Resend / Delete.
 - The sidebar's Meeting Recording and Health rows, with phase 3 F9.
 
@@ -88,7 +89,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 - Each change shown next to iOS on the same mock data, light and dark (principle 4).
 - Tool names follow section 4.7 on both, checked by shared cases (principle 6).
 - No raw path, session ID or engine name in a chat's header (section 5.6).
-- The owner looked at the screenshots of C3, C4, C10 and C11 before merge (section 1.4).
+- The owner looked at the screenshots of C4, C10 and C11 before merge (section 1.4); C3's go with #5055.
 
 ### Out of scope
 
@@ -118,11 +119,12 @@ An Agent's session and a conversation with the assistant read the same on Androi
 - **C1.** Port `ToolNaming.swift`'s table and humanizer to core/domain, and add a shared fixture of tool names and their words (en, zh-Hans, ja) that both platforms read (phase 4 R2). The `MOCK_TOOL_NAMES=1` scene in `docs/operations/testing.md` covers each case.
   Done (11-11): the naming half of `ToolNaming.swift` is in `android/core/domain/src/main/kotlin/persona/core/domain/ToolNaming.kt` (spelled words, `humanize`, `serverName`, `mcpLabel`), with iOS's cases in `ToolNamingTest`; a tool no table knows reads in words in the chat's rows and in permission summaries, and another server's tool is never matched to a built-in one by its bare name. Still to do: picking a subject from an unknown tool's input (`ToolNaming.subject`), the arguments as `key: value` lines, and the shared fixture.
 - **C2.** A subagent card composable in feature/chat fed by the tool's subagent deliveries (`docs/protocol/protocol.md`, "Subagent deliveries as tool results"); viewing in place swaps the chat list's source and keeps a footer back to the main agent.
-- **C3.** A text button in the composer row that names the model and effort, opening a `JMenu` with the model list, Other Model…, effort, ultracode and the mode. The model list and the typed model follow `SessionModes.swift`.
+- **C3.** In #5055 (see C3 above). Here: drop the header's permission-mode icon (Q11) once the composer's control shows the mode, and correct `docs/android/android.md`'s note on #3719.
 - **C4.** The header folds on scroll and on a 3 s idle timer (off when animations are off); the title opens `ChatSessionInfoSheet`. The second line takes the state word and "machine · space › tab" from the session, never `cwd`.
   Second line done (11-11): the state ("Working 22 min" from the session's `state_since`), then the source, the computer and "space › tab"; quiet states show their dot only; the computer goes first when the line is too narrow (`chatPlace`, `ChatHeaderLineTest`, `ChatHeaderLineShotsTest`). The folding header and the title opening Session Info are still to do.
 - **C5.** Redraw the work summary in `Chat.kt` for Glass only: caption text, spinner, chevron and a rail; the words come from one function with tests.
-  Words done (11-12): `workSummary` reads as iOS's `WorkLine` ("Reading a.kt +2 · 39 s", "Working 39 s · Tools 2 · Thinking 1", "Tools 3 · Thinking 1 · 1m 20s"), with `workNow` for the step it is on and iOS's durations; Android keeps its failed and unanswered counts after them (`ToolPresentationTest`). Drawing done (11-12): on Glass the summary is a plain caption with the spinner and a chevron after the words, and the opened steps hang on a rail (`workRail`) with no hairlines (`WorkTraceShotsTest`); Brief and Board unchanged.
+  Words done (11-12): `workSummary` reads as iOS's `WorkLine` ("Reading a.kt +2 · 39 s", "Working 39 s · Tools 2 · Thinking 1", "Tools 3 · Thinking 1 · 1m 20s"), with `workNow` for the step it is on and iOS's durations; Android keeps its failed and unanswered counts after them (`ToolPresentationTest`). Drawing done (11-12): on Glass the summary is a plain caption with the spinner and a chevron after the words, and the opened steps hang on a rail (`workRail`) with no hairlines (`WorkTraceShotsTest`); Brief and Board unchanged. Checked (11-12) against iOS #5198 (a finished line's time runs to the answer): Android shows the turn's recorded `turn_duration`, which already ends with the answer.
+- **C6.** Done (11-12): the queue strip folds to its line by default in every style and opens or folds from it (`QueueStrip` in the design system); the line carries Send now for Claude Code in a terminal pane (`Session.steersQueue`), which asks first in iOS's words and calls `POST …/queue/send-now` (`ChatActions.sendQueuedNow`), showing the hub's words when it refuses; each message's sheet has Take back to edit, Move up and Move down (greyed at the ends, `queueMoved` as the `keep` of `POST …/queue`), Copy and Delete. Glass draws the rows as iOS's wells and shows about three before it scrolls; Brief and Board keep their card and ticket, folding under a chevron. Tests: `ChatQueueStripTest`, `ComposerPartsTest`, `SessionSourceTest`, `HttpChatActionsTest`, shots `ChatQueueStripShotsTest`. Still to do: the queue in the assistant's conversations, which iOS shows (with Persona's words in the confirmation and the "Arrives when this chat is free" rows from `queued_relayed`) and Android doesn't; Send now's icon, which needs a Phosphor glyph for `forward.end.fill`; iOS's 18 pt number disc (Android keeps 24dp, no token for 18).
 - **C10 and phase 2 Q4.** Show the assistant conversation's cards in the same stack above the composer that phase 2 T6 builds for the Agent chat; the tray keeps its Review for older items.
 - **C11.** Back from a conversation opens the main conversation; the home page and its `newChat` twin in `AssistantScreen.kt` become one New Chat page.
 - **C12.** Rename through `POST /api/v1/sessions/{mid}/{sid}/rename` with `title`, which records a user-given title for assistant conversations (`docs/protocol/protocol.md`); a swipe on the history row; an Archived page reusing `android/feature/agents/src/main/kotlin/persona/feature/agents/AgentArchivesScreen.kt`'s list.
@@ -135,7 +137,7 @@ An Agent's session and a conversation with the assistant read the same on Androi
 
 1. C1, C4's second line, C14 and C18's error card: small, and each fixes a written rule.
 2. C10 with phase 2 T6, and C17 with the Agents page's A1.
-3. C3 and C5.
+3. C5 (C3 moved to #5055).
 4. C2, C12 and C13.
 5. C11 and C7.
 6. The rest of C9 and C18.

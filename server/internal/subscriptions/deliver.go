@@ -113,6 +113,9 @@ func (s *Service) inboxHeld(ctx context.Context, sub Subscription, now time.Time
 		return nil, nil, nil
 	}
 	start := from.Add(-catchupBack)
+	if c := sub.CatchupFrom; c != nil && c.After(start) {
+		start = *c // a recipe changed with existing digest: the catch-up is what the new recipe found
+	}
 	// The catch-up is read while it is in the Inbox's window, which ends before its first items can be pruned (a
 	// digest of fewer items would read as a new move).
 	if now.Sub(start) < inboxWindow {
@@ -333,7 +336,13 @@ func (d deliverer) digestThing(items []Held) connector.InboxThing {
 	}
 	slices.Sort(uids)
 	title := i18n.T(d.lang, "subscriptions-deliver.digest_title", i18n.Args{"label": d.sub.Label, "count": len(items)})
-	return connector.InboxThing{Thread: d.thread("catchup"), Kind: wire.ConnectorSubscriptionKindSubDigest, Label: d.sub.Label,
+	thread := d.thread("catchup")
+	if c := d.sub.CatchupFrom; c != nil {
+		// What a changed recipe found at once: a row of its own, not the first catch-up's again.
+		title = i18n.T(d.lang, "subscriptions-deliver.digest_title_recipe", i18n.Args{"label": d.sub.Label, "count": len(items)})
+		thread = d.thread("catchup-" + strconv.FormatInt(c.Unix(), 10))
+	}
+	return connector.InboxThing{Thread: thread, Kind: wire.ConnectorSubscriptionKindSubDigest, Label: d.sub.Label,
 		Title: title, Preview: clip(oneLine(cmpOr(items[0].Title, items[0].Body)), previewMost), Context: strings.Join(lines, "\n"),
 		At: heldAt(items[0]), Last: "digest:" + hashOf(uids...)[:24], Rules: d.rules, Extra: d.fallback(false), Tags: d.tags()}
 }

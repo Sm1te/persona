@@ -36,7 +36,9 @@ data class MailAccountForm(
                 var r = base.copy(provider = "imap")
                 if (imapHost.isNotEmpty()) r = r.copy(imapHost = imapHost, imapPort = imapPort.toIntOrNull())
                 if (smtpHost.isNotEmpty()) {
-                    r = r.copy(smtpHost = smtpHost, smtpPort = smtpPort.toIntOrNull(), smtpSecurity = if (smtpPort == "587") "starttls" else "tls")
+                    // The security follows the port as sent: a zero-padded 587 is still STARTTLS (#5276, the web's #4879).
+                    val port = smtpPort.toIntOrNull()
+                    r = r.copy(smtpHost = smtpHost, smtpPort = port, smtpSecurity = if (port == 587) "starttls" else "tls")
                 }
                 r
             }

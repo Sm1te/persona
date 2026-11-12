@@ -102,7 +102,8 @@ func (h *Hub) onClientHello(c *client, data []byte) {
 	go h.fleetClientsChanged() // its features (elicitation) count now (fleet_link.go)
 	h.noteClientApp(c)         // its version, for the assistant (client_apps.go)
 	if c.role == roleFull && c.hub != nil {
-		c.hub.setUserLang(i18n.Lang(msg.Locale)) // only a valid one, and only a change, is saved
+		// Only this device changing its language changes the user's (locale.go); an invalid one changes nothing.
+		c.hub.noteUserLang(deviceLangKey(c, msg.clientMeta), i18n.Lang(msg.Locale))
 	}
 	if c.role == roleFull && wasLang != c.lang() {
 		c.sendJSON(map[string]any{"type": "machines", "machines": localizedMachines(c.lang(), h.machineList())})

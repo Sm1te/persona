@@ -1,8 +1,4 @@
 {
-  "updated": "更新了待办",
-  "open": "在侧栏打开计划",
-  "plan": "计划",
-  "none": "这个对话还没有计划。",
-  "step_of": "第 {step} 步，共 {total} 步",
-  "all_done_other": "{count} 步全部完成"
+  "step_of": "第 {step} / {total} 步",
+  "close": "关闭计划"
 }

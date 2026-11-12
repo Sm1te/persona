@@ -15,6 +15,11 @@ data class AssistantConfig(
     val cwd: String = "",
     /** The IANA zone routines and the assistant's sense of "today" use; null until a phone has set one. */
     val timezone: String? = null,
+    /**
+     * The user picked [timezone] by hand (#1855): devices leave it until Match phone is turned on again (false). null from
+     * a hub never told, or one from before the hub kept it.
+     */
+    @SerialName("timezone_picked") val timezonePicked: Boolean? = null,
     /** What the user wrote in the app; null while nothing was saved there and hub.json's notes apply. */
     val notes: String? = null,
     /** What the assistant is actually told: [notes], else hub.json's. */
@@ -71,6 +76,8 @@ data class AssistantConfigUpdate(
     @SerialName("machine_id") val machineId: String? = null,
     val launcher: String? = null,
     val timezone: String? = null,
+    /** true: [timezone] (or the hub's, without one) was picked by hand; false: it follows the devices again (#1855). */
+    @SerialName("timezone_picked") val timezonePicked: Boolean? = null,
     val notes: String? = null,
     /** "-" clears the main conversation: it stays on the machine it ran on and cannot continue elsewhere. */
     val main: String? = null,

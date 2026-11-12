@@ -25,7 +25,9 @@ export function focusedFirst<T extends Pick<Interaction, "id">>(cards: T[], id: 
 }
 
 /** A script with no session opens its card, never an empty conversation URL; a child session's card opens its
- *  parent's page, where it is answered (#5120). */
-export function requestRoute(ix: Pick<Interaction, "id" | "machine_id" | "session_id" | "folded_under">): Route {
-  return ix.session_id === "" ? { name: "request", id: ix.id } : { name: "session", mid: ix.machine_id, sid: requestHome(ix) };
+ *  parent's page, where it is answered (#5120); a lead's worker's opens the worker's link, which is the lead's page with
+ *  the worker in its Team panel (#5180, App). */
+export function requestRoute(ix: Pick<Interaction, "id" | "machine_id" | "session_id" | "folded_under" | "folded_as">): Route {
+  if (ix.session_id === "") return { name: "request", id: ix.id };
+  return { name: "session", mid: ix.machine_id, sid: ix.folded_as === "worker" ? ix.session_id : requestHome(ix) };
 }

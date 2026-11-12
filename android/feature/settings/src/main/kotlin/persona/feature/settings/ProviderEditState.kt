@@ -108,6 +108,7 @@ internal fun providerDraftOf(l: HubLauncher): NewProviderDraft {
         subagentForce = l.subagentForce, effort = l.effort.orEmpty(),
         timeoutMs = numberText(l.timeoutMs), compactWindow = numberText(l.compactWindow), maxContext = numberText(l.maxContext),
         proxyMode = mode, proxy = l.proxy.orEmpty(), noProxy = if (mode == ProxyMode.Direct) "" else noProxy,
+        viaMachine = l.viaMachine.orEmpty(),
         customModel = l.customModel.orEmpty(), customModelName = l.customModelName.orEmpty(), customModelDescription = l.customModelDescription.orEmpty(),
     )
 }
@@ -166,6 +167,7 @@ internal fun providerUpdate(d: NewProviderDraft, old: HubLauncher, scope: ScopeF
         timeoutMs = changed { it.timeout }, compactWindow = changed { it.compact }, maxContext = changed { it.maxContext },
         effort = changed { it.effort },
         share = scope.share, scopeMachines = scope.scopeMachines, delivery = scope.delivery, ownService = scope.ownService, machineKeys = scope.machineKeys,
+        viaMachine = d.viaMachine.takeIf { api && it != old.viaMachine.orEmpty() },
     )
 }
 

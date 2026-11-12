@@ -573,6 +573,16 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
               </Labelled>
             )}
             <SecretField label={isNew || !old?.has_key ? "API Key" : t("settings-providerwizard.key_keep")} value={f.api_key} onChange={set("api_key")} placeholder={old?.has_key ? t("settings-providerwizard.key_set") : "sk-…"} hint={t("settings-providerwizard.key_hint")} />
+            {f.kind === "api" && (
+              <Labelled label={t("settings-providerwizard.via")} hint={t("settings-providerwizard.via_hint")}>
+                <select value={f.via_machine} onChange={(e) => set("via_machine")(e.target.value)} aria-label={t("settings-providerwizard.via")} className={INPUT}>
+                  <option value="">{t("settings-providerwizard.via_hub")}</option>
+                  {[...machines.map((m) => [m.id, m.name || m.id]), ...(f.via_machine && !machines.some((m) => m.id === f.via_machine) ? [[f.via_machine, f.via_machine]] : [])].map(([id, name]) => (
+                    <option key={id} value={id}>{name}</option>
+                  ))}
+                </select>
+              </Labelled>
+            )}
             <div className="flex flex-col gap-2 rounded-card bg-inset p-3 shadow-hairline">
                 <div className="flex flex-wrap items-center gap-2">
                   <input value={probeModel} onChange={(e) => setProbeModel(e.target.value)} placeholder={testModel(f) || t("settings-providerwizard.test_model")} aria-label={t("settings-providerwizard.test_model")} autoComplete="off" spellCheck={false}

@@ -131,10 +131,11 @@ func codexBypassArgs(argv []string) []string {
 }
 
 // startCodex starts a Codex launcher in a new tab with the first message and returns its session once the thread is
-// known.
+// known. With no message it returns the waiting row once Codex's input box is up (codex_waiting.go).
 func (n *Node) startCodex(ctx context.Context, launch host.Launcher, cwd, launcher string, argv []string, prompt, ws, tabName, mode string) (*proto.Session, error) {
-	if strings.TrimSpace(prompt) == "" {
-		return nil, refusal("codex_needs_prompt", "新建 Codex 会话要连第一条消息一起发：Codex 收到第一条消息才建会话。", nil)
+	waiting := strings.TrimSpace(prompt) == ""
+	if waiting {
+		prompt = ""
 	}
 	if mode == "bypassPermissions" {
 		if managed, ok := n.managedLauncher(launcher); ok && len(argv) >= 3 && slices.Equal(argv[:3], []string{n.bin, "launch", launcher}) {
@@ -198,7 +199,18 @@ func (n *Node) startCodex(ctx context.Context, launch host.Launcher, cwd, launch
 		return nil, err
 	}
 	defer done()
-	id, err := n.waitCodexThread(ctx, pane, cwd, prompt, began)
+	var id string
+	if waiting {
+		err = n.waitCodexBox(ctx, pane)
+		if errors.Is(err, errCodexBoxLate) {
+			// Codex runs but its box has not come up yet: the row all the same, and its tab stays. Nothing is queued in it
+			// that could run later; the first message waits for the box itself (codexBoxFor).
+			n.logf("codex %s: its input box did not come within %s; offering the row anyway", pane, codexStartWait)
+			err = nil
+		}
+	} else {
+		id, err = n.waitCodexThread(ctx, pane, cwd, prompt, began)
+	}
 	if err != nil {
 		shown, _ := n.readPane(ctx, pane, "recent-unwrapped", 30)
 		if strings.TrimSpace(shown) == "" { // a screen Codex draws from the top of a tall pane: the bottom rows are blank
@@ -223,6 +235,9 @@ func (n *Node) startCodex(ctx context.Context, launch host.Launcher, cwd, launch
 			return nil, &rpc.Error{Code: coded.Code, Message: message, Data: coded.Data}
 		}
 		return nil, fmt.Errorf("%w\n%s", err, lastLines(shown, 12))
+	}
+	if waiting {
+		return n.openCodexWait(ctx, pane, cwd, launcher, mode, began), nil
 	}
 	n.bindPane(pane, id)
 	st := sessionState{Pane: pane, Launcher: launcher, Cwd: cwd, StartedAt: began.UTC()}

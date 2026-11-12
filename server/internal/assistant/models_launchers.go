@@ -70,10 +70,12 @@ type storedLauncher struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// Share and ScopeMachines are its device scope (models_launchers_scope.go): "all", "selected", "none"; "" is a
 	// record from before scopes, every confirmed computer as then.
-	Share         string    `json:"share,omitempty"`
-	ScopeMachines []string  `json:"scope_machines,omitempty"`
-	Created       time.Time `json:"created"`
-	Updated       time.Time `json:"updated"`
+	Share         string   `json:"share,omitempty"`
+	ScopeMachines []string `json:"scope_machines,omitempty"`
+	// ViaMachine (kind api): the computer whose node sends this connection's requests (models_via.go); "" the manager.
+	ViaMachine string    `json:"via_machine,omitempty"`
+	Created    time.Time `json:"created"`
+	Updated    time.Time `json:"updated"`
 }
 
 // LauncherView is one launcher for the app: where it comes from, which machines have it; never the key.
@@ -128,6 +130,8 @@ type LauncherView struct {
 	OwnService    string   `json:"own_service,omitempty"`
 	KeyMachines   []string `json:"key_machines,omitempty"`
 	LegacyScope   bool     `json:"legacy_scope,omitempty"`
+	// ViaMachine (managed, kind api): the computer that sends its requests; "" this manager (models_via.go).
+	ViaMachine string `json:"via_machine,omitempty"`
 	// KeyReference (managed): the key is a reference to a provider extension's secret: the reference and what it
 	// names, never the value (launcher_secrets.go). MachineKeyReferences: the same for the computers' own keys.
 	KeyReference         *extmgr.SecretReferenceView            `json:"key_reference,omitempty"`
@@ -148,7 +152,7 @@ func launcherView(l storedLauncher) LauncherView {
 		SubagentForce: l.SubagentForce, HasHeaders: l.HeadersSealed != "", HasEnv: l.EnvSealed != "", Proxy: l.Proxy, NoProxy: l.NoProxy, TimeoutMS: l.TimeoutMS,
 		CompactWindow: l.CompactWindow, MaxContext: l.MaxContext, Effort: l.Effort, Origin: l.Source,
 		Share: l.share(), ScopeMachines: l.ScopeMachines, Delivery: l.delivery(), OwnService: l.ownService(), LegacyScope: l.Share == "",
-		keySealed: l.KeySealed}
+		ViaMachine: l.ViaMachine, keySealed: l.KeySealed}
 }
 
 var managedLauncherName = lazyre.New(`^[A-Za-z_][A-Za-z0-9_-]*$`)

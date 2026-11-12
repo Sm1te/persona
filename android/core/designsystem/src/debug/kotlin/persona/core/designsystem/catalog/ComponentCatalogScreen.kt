@@ -280,11 +280,12 @@ fun ComponentCatalogScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? 
         // What waits in the agent's queue, above the composer; busy while an edit runs.
         section("排队条") {
             QueueStrip(
-                "排队中 2 条，Claude 忙完会依次处理",
+                "排队中 2 条 · Claude 忙完会依次处理",
                 listOf("顺便把 README 里的截图也换成新的小组件", "改完以后跑一遍 UI 测试，把失败的截图发给我，顺手看看深色模式下小组件的对比度够不够"),
-                onItem = { feedback = "第 ${it + 1} 条：撤回编辑、拷贝、删除" },
+                onItem = { feedback = "第 ${it + 1} 条：撤回编辑、上移、下移、拷贝、删除" },
+                sendNow = "立即发送", onSendNow = { feedback = "立即发送" }, initiallyExpanded = true,
             )
-            QueueStrip("排队中 1 条，Codex 忙完会依次处理", listOf("先别提交，等我看完 diff"), onItem = {}, busy = true)
+            QueueStrip("排队中 1 条 · Codex 忙完会依次处理", listOf("先别提交，等我看完 diff"), onItem = {}, busy = true)
         }
         // Voice chat: the orb in each state, the status under it, captions and the controls (feature:voice).
         section("语音对话") {

@@ -1,5 +1,6 @@
 package persona.platform.shortcuts
 
+import persona.core.contracts.clipped
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -47,8 +48,8 @@ internal object ShortcutPublisher {
         }.onFailure { Log.w(TAG, "Recent shortcuts not published: ${it.javaClass.simpleName}") }
     }
 
-    internal fun shortLabel(session: Session) = session.displayTitle.take(24)
-    internal fun longLabel(context: Context, session: Session) = context.getString(R.string.shortcuts_open_session, session.displayTitle).take(48)
+    internal fun shortLabel(session: Session) = session.displayTitle.clipped(24)
+    internal fun longLabel(context: Context, session: Session) = context.getString(R.string.shortcuts_open_session, session.displayTitle).clipped(48)
 
     private fun shortcut(context: Context, id: String, short: String, long: String, intent: Intent, icon: Int, rank: Int) =
         ShortcutInfoCompat.Builder(context, id)

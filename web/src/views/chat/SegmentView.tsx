@@ -8,7 +8,7 @@ import { turnImages } from "../../lib/turn-images";
 import { TurnImages } from "./TurnImages";
 import { exchangeSteps, segmentIdentity, isLoopTick, isOwnMessage, type Context, type Segment, type UserMessage } from "../../lib/turns";
 import type { Item } from "../../lib/types";
-import { workBlocks, type ToolStep, type WorkNode } from "../../lib/work-groups";
+import { planCardStep, workBlocks, type ToolStep, type WorkNode } from "../../lib/work-groups";
 import { NO_WORKFLOW_CALLS } from "../../lib/workflows";
 import { channelOf, useChannels } from "../../lib/channels";
 import { splitQuotes } from "../../lib/drafts";
@@ -292,11 +292,13 @@ export const SegmentView = memo(function SegmentView({
     [own, nesting, placed],
   );
   const turnStart = seg.user?.ts ?? seg.start;
+  // one plan card per exchange, where its latest list was written (cindy); the other updates are rows
+  const plan = useMemo(() => planCardStep(steps), [steps]);
   const p = useMemo<WorkProps>(() => {
     const agent = (s: ToolStep) =>
       isNestedSubagentStep(s) ? nestedSubagentStatus(subagentFor(subagents, s.use)) : agentStatus(s.result, subagentFor(subagents, s.use), live, s.use.tool_use_id ? tasks.notes.get(s.use.tool_use_id) : undefined);
-    return { mid, sid, scope, expandFold, agentStatus: agent, segment: seg.id, workflowCalls, trace, lineStyle, turnLive: live };
-  }, [mid, sid, scope, expandFold, subagents, tasks, live, seg.id, workflowCalls, trace, lineStyle]);
+    return { mid, sid, scope, expandFold, agentStatus: agent, segment: seg.id, workflowCalls, trace, lineStyle, turnLive: live, plan };
+  }, [mid, sid, scope, expandFold, subagents, tasks, live, seg.id, workflowCalls, trace, lineStyle, plan]);
   const identity = segmentIdentity(seg);
   const nodes = useMemo(
     () => workBlocks(steps, { live, turnStart, streaming: streaming !== undefined, identity }),

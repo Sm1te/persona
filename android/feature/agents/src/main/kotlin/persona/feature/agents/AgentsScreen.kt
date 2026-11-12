@@ -1,5 +1,6 @@
 package persona.feature.agents
 
+import persona.core.contracts.clipped
 import persona.core.designsystem.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -817,7 +818,7 @@ internal fun SlotRow(
             if (metadata.pendingCount > 0) add(RowFact(stringResource(R.string.agents_row_queued, metadata.pendingCount), caution = true))
             if (metadata.sending) add(RowFact(PendingStatus.Sending.localizedLabel))
             if (metadata.hasDraft) {
-                val draft = metadata.draft.replace('\n', ' ').take(20)
+                val draft = metadata.draft.replace('\n', ' ').clipped(20)
                 add(RowFact(when {
                     draft.isBlank() -> stringResource(if (metadata.hasAttachments) R.string.agents_row_draft_attachments else R.string.agents_row_draft)
                     metadata.hasAttachments -> stringResource(R.string.agents_row_draft_attachments_text, draft)

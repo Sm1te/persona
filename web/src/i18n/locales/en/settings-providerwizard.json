@@ -167,5 +167,8 @@
   "discovering": "Fetching models…",
   "testing": "Testing the connection…",
   "retry": "Retry",
-  "check_leave_url": "Checking once you leave the URL field."
+  "check_leave_url": "Checking once you leave the URL field.",
+  "via": "Send through",
+  "via_hub": "The hub itself",
+  "via_hint": "Which machine sends this connection’s requests. Choose one of your computers when the hub can’t reach the provider and that computer can; it must be online when a request goes out."
 }

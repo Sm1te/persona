@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nwverse/persona/server/internal/ai"
 	"github.com/nwverse/persona/server/internal/apierr"
 	"github.com/nwverse/persona/server/internal/assistantwire"
 	"github.com/nwverse/persona/server/internal/compat"
@@ -166,6 +165,10 @@ func (s *Service) launcherRoutes() {
 			apierr.Write(w, http.StatusBadRequest, err)
 			return
 		}
+		if err := s.checkVia(in); err != nil {
+			apierr.Write(w, http.StatusBadRequest, err)
+			return
+		}
 		if taken(in.Name) {
 			apierr.Write(w, http.StatusConflict, i18n.Err("assistant-models_launchers.err_name_taken", i18n.Args{"name": in.Name}))
 			return
@@ -222,6 +225,10 @@ func (s *Service) launcherRoutes() {
 			return
 		}
 		if err := s.checkScope(r.Context(), in.scopeInput); err != nil {
+			apierr.Write(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.checkVia(in); err != nil {
 			apierr.Write(w, http.StatusBadRequest, err)
 			return
 		}
@@ -294,7 +301,7 @@ func (s *Service) launcherRoutes() {
 				config, err := s.apiConfig(ctx, ModelBinding{Provider: launcherProvider(l.Name), Model: l.Model})
 				answer := ""
 				if err == nil {
-					answer, err = ai.New(config).Complete(ctx, "", prompts.RenderLauncherCheck(), 128)
+					answer, err = s.aiClient(config).Complete(ctx, "", prompts.RenderLauncherCheck(), 128)
 				}
 				result := proto.LauncherCheck{Agent: "api", Model: config.Model, Answer: textfmt.Clip(textfmt.OneLine(answer), 200), OK: err == nil,
 					Millis: int(time.Since(started).Milliseconds())}

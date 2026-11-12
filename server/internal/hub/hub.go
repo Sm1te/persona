@@ -125,8 +125,9 @@ type Hub struct {
 	owners    ownerCache    // the default manager, kept a moment (ownership.go)
 	others    managerStates // the other managers' (manager_state.go)
 	moving    moves         // who carries what changing (ownership_moves.go)
-	// userLocale: the user's language, an i18n.Lang (locale.go)
+	// userLocale: the user's language, an i18n.Lang; langs: each device's language that decides it (locale.go)
 	userLocale   atomic.Value
+	langs        userLangs
 	apps         clientApps   // the apps' versions as they last said (client_apps.go)
 	deleted      deletedBook  // conversations taken out of the apps' lists (deleted_sessions.go)
 	secret       secretState  // secretkey.go

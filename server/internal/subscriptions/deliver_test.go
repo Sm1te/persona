@@ -500,12 +500,12 @@ func TestTheDestinationsMarksAreKept(t *testing.T) {
 	// The Inbox was turned off and on again while a run went: its mark belongs to the earlier switch-on.
 	again := from.Add(time.Hour)
 	cur := Subscription{ID: "sub_a", ToInbox: true, InboxFrom: &again}
-	applyRun(&cur, sub, true)
+	applyRun(&cur, RunCommit{Sub: sub}, true)
 	if cur.InboxCatchup != nil {
 		t.Fatalf("a run kept the mark of another switch-on: %v", cur.InboxCatchup)
 	}
 	cur.InboxFrom = &from
-	applyRun(&cur, sub, false)
+	applyRun(&cur, RunCommit{Sub: sub}, false)
 	if !sameTime(cur.InboxCatchup, &mark) {
 		t.Fatal("a run's mark for the switch-on it saw was not kept")
 	}

@@ -132,6 +132,8 @@ const P: Record<string, React.ReactNode> = {
   money: <g><rect x="2" y="6" width="20" height="12" rx="2.5" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></g>,
   // a row's icons in an extension's view (docs/extensions/extensions.md "Declarative UI" row icon; the rest reuse the above)
   person: <g><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></g>,
+  // a lead's Team (#5180; Lucide's users-round, as cindy's Team tab)
+  users: <g><path d="M18 21a8 8 0 0 0-16 0" /><circle cx="10" cy="8" r="5" /><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3" /></g>,
   star: <path d="M12 2.8l2.84 5.76 6.36.92-4.6 4.49 1.09 6.33L12 17.31l-5.69 2.99 1.09-6.33-4.6-4.49 6.36-.92z" />,
   // the model panel (#5032, after Cindy's): its rail's Recent and All (Lucide's history and layout-grid), a row's
   // Customize (Lucide's sliders-horizontal)

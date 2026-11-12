@@ -98,6 +98,19 @@ class SessionSourceTest {
         assertFalse(claude.copy(paneId = null).canTypeClaudeCommands)
     }
 
+    @Test fun onlyClaudeInAPaneSteersItsQueue() {
+        val claude = session("""{"session_id":"s","status":"working","pane_id":"w1:p1"}""")
+        assertTrue(claude.steersQueue)
+        assertTrue(claude.copy(agent = "claude").steersQueue)
+        // Send now is Claude Code's own key in its terminal: no pane, another agent, Persona or a source can't take it.
+        assertFalse(claude.copy(paneId = null).steersQueue)
+        assertFalse(claude.copy(paneId = " ").steersQueue)
+        assertFalse(claude.copy(agent = "codex").steersQueue)
+        assertFalse(claude.copy(agent = "traex").steersQueue)
+        assertFalse(claude.copy(assistant = true).steersQueue)
+        assertFalse(claude.copy(sourceKind = "claude_cli", capabilities = SessionCapabilities(read = true, send = true)).steersQueue)
+    }
+
     @Test fun modeCapabilityHidesUnsupportedClaude() {
         val desktop = session(
             """{"session_id":"desktop","status":"working","agent":"claude","source_kind":"claude_desktop",""" +

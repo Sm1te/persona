@@ -11,7 +11,8 @@ import { lazyPage, preloadPages } from "./lib/lazy-page";
 import { drawerA11y, focusBack, useDrawerDrag } from "./lib/drawer";
 import { acceptHubs, here, rememberHub, takeHubs } from "./lib/hubs";
 import { useSessionPanels } from "./lib/panel-memory";
-import { resolveTab, tabOfSessionLink, tabPagePane } from "./lib/herdr-tree";
+import { paneRoute, resolveTab, tabOfSessionLink, tabPagePane } from "./lib/herdr-tree";
+import { askTeamWorker, isWorker } from "./lib/team";
 import { resolveSessionLink, sessionLinkRoute, type SessionLink } from "./lib/session-link";
 import { followSubagentLink, splitSubagentLink } from "./lib/subagent-link";
 import { href, inWorkView, navigate, onLinkClick, type Route, routePath, useRoute, withWorkView } from "./lib/router";
@@ -191,12 +192,31 @@ interface PageTarget {
   sid?: string;
   /** The link is a child session's (#5120): the session it folds under, whose chat `to` opens at its card. */
   parent?: string;
+  /** The link is a lead's worker's (#5180): the worker, which the lead's page (`to`, `parent` the lead) shows in its Team panel. */
+  worker?: string;
+}
+
+/** A worker's link (#5180): the lead's page, its Team panel on the worker; undefined when `row` is not a worker. */
+function workerTarget(rows: Session[], mid: string, row: Session | undefined, view: boolean): PageTarget | undefined {
+  const lead = row && isWorker(row) && row.folded_under && row.folded_under !== row.session_id ? row.folded_under : undefined;
+  if (!lead || !row) return undefined;
+  const leadRow = rows.find((r) => r.session_id === lead);
+  const to = routePath(withWorkView(leadRow ? paneRoute(leadRow) : { name: "session", mid, sid: lead }, view));
+  return { link: undefined, to, mid, sid: undefined, parent: lead, worker: row.session_id };
 }
 
 function pageTarget(s: State, route: Route): PageTarget | undefined {
   if (route.name === "tab") {
-    // the pane a tab opens on: the asked-for one, its session, or the tab's most urgent (lib/herdr-tree.ts)
-    const pane = tabPagePane(resolveTab(pageRows(s, route.mid), route), route, s.loaded);
+    // the pane a tab opens on: the asked-for one, its session, or the tab's most urgent (lib/herdr-tree.ts); a worker's
+    // is its lead's page, the worker in its Team panel (#5180)
+    const rows = pageRows(s, route.mid);
+    const at = resolveTab(rows, route);
+    // a link naming a worker: the lead's chat at once (the tab is the lead's too), its panel on the worker
+    const named = at && route.sid === at.session_id ? workerTarget(rows, route.mid, at, inWorkView(route)) : undefined;
+    if (named) return { ...named, sid: named.parent };
+    // a tab opened without a pane whose most urgent one is a worker: its lead, the panel left as the lead's page has it
+    const lead = at && isWorker(at) && !named ? rows.find((r) => r.session_id === at.folded_under) : undefined;
+    const pane = tabPagePane(lead ?? at, route, s.loaded);
     return { link: undefined, to: "", mid: route.mid, sid: pane?.sid };
   }
   if (route.name !== "session") return undefined;
@@ -204,9 +224,13 @@ function pageTarget(s: State, route: Route): PageTarget | undefined {
   const sub = splitSubagentLink(route.sid);
   if (sub) return { link: undefined, to: routePath({ ...route, sid: sub.parent }), mid: route.mid, sid: undefined };
   const rows = pageRows(s, route.mid);
+  const row = rows.find((r) => r.session_id === route.sid);
+  // a lead's worker's (#5180): the lead's page, the worker in its Team panel
+  const worker = workerTarget(rows, route.mid, row, inWorkView(route));
+  if (worker) return worker;
   // a child session's (#5120): its parent's chat, which shows the child's card; known once its row is (a listed one, or
   // the lookup of an unlisted chat), the session itself until then
-  const parent = rows.find((r) => r.session_id === route.sid)?.folded_under;
+  const parent = row?.folded_under;
   if (parent && parent !== route.sid) return { link: undefined, to: routePath(withWorkView({ name: "session", mid: route.mid, sid: parent }, inWorkView(route))), mid: route.mid, sid: undefined, parent };
   // an old `/s/…` link of a pane in a tab becomes that tab's `/t/…`
   const tab = tabOfSessionLink(rows, route);
@@ -234,11 +258,14 @@ function Shell() {
   const linkMid = route.name === "session" ? route.mid : "";
   const linkSid = route.name === "session" ? route.sid : "";
   const linkParent = target?.parent;
+  const linkWorker = target?.worker;
+  const targetMid = target?.mid ?? "";
   useEffect(() => {
     if (!tabLinkPath) return;
-    if (linkSid) followSubagentLink(linkMid, linkSid, linkParent);
+    if (linkWorker && linkParent) askTeamWorker(targetMid, linkParent, linkWorker);
+    else if (linkSid) followSubagentLink(linkMid, linkSid, linkParent);
     navigate(tabLinkPath, true);
-  }, [tabLinkPath, linkMid, linkSid, linkParent]);
+  }, [tabLinkPath, linkMid, linkSid, linkParent, linkWorker, targetMid]);
   // a tab not among the page's rows (a paged hub lists only active and pinned ones): asked of the hub before it is gone
   const tabRoute = route.name === "tab" ? route : undefined;
   const lookup = useTabLookup(tabRoute, !!tabRoute && loaded && !target?.sid);

@@ -199,10 +199,11 @@ func (s *Service) recordTestPassed(ctx context.Context, machine, launcher string
 }
 
 // launcherSetupChanged: a save of a managed launcher changed what decides whether its requests get through (its key,
-// gateway, auth, model, headers or environment), so how it failed before says nothing of it now.
+// gateway, auth, model, headers, environment or the computer it sends through), so how it failed before says nothing
+// of it now.
 func launcherSetupChanged(old, saved storedLauncher) bool {
 	return old.KeySealed != saved.KeySealed || old.BaseURL != saved.BaseURL || old.Auth != saved.Auth || old.Model != saved.Model ||
-		old.HeadersSealed != saved.HeadersSealed || old.EnvSealed != saved.EnvSealed
+		old.HeadersSealed != saved.HeadersSealed || old.EnvSealed != saved.EnvSealed || old.ViaMachine != saved.ViaMachine
 }
 
 // forgetLauncherFailures drops launcher's failure records on every machine after its setup changed (#1838): it counts

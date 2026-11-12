@@ -39,6 +39,16 @@ class MailAccountFormTest {
         assertTrue(json, json.contains("\"smtp_security\":\"starttls\""))
     }
 
+    /** #5276 (the web's #4879): the security follows the port as sent, so a zero-padded 587 is still STARTTLS. */
+    @Test fun smtpSecurityFollowsTheParsedPort() {
+        fun sent(port: String) = MailAccountForm(MailAccountForm.Kind.IMAP, "me@example.com", "pw", "", "993", "smtp.example.com", port)
+            .request().let { it.smtpPort to it.smtpSecurity }
+        assertEquals(587 to "starttls", sent("0587"))
+        assertEquals(587 to "starttls", sent("00587"))
+        assertEquals(465 to "tls", sent("0465"))
+        assertEquals(2525 to "tls", sent("2525"))
+    }
+
     @Test fun feishuAndGmailFallback() {
         assertEquals("feishu", MailAccountForm(MailAccountForm.Kind.FEISHU, "me@example.com", "pw").request().provider)
         val g = MailAccountForm(MailAccountForm.Kind.GMAIL, "me@example.com", "abcd efgh")

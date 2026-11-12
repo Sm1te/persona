@@ -60,5 +60,7 @@
   "err_delivery": "Delivery must be on_demand or push",
   "err_own_service_value": "own_service must be skip or use",
   "err_scope_empty": "Choose at least one computer for this provider",
-  "err_scope_unknown_machine": "{machine} is not one of your computers"
+  "err_scope_unknown_machine": "{machine} is not one of your computers",
+  "err_via_kind": "Only a direct API connection can send through a computer",
+  "err_via_machine": "{machine} is not one of this assistant’s computers"
 }

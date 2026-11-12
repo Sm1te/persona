@@ -10,5 +10,6 @@
   "node_no_secret_run": "This computer’s node can’t run commands from a password card yet. Update the node",
   "node_no_assistant_config_dir": "This computer’s node can’t select an assistant profile yet. Update the node",
   "node_no_secret_env": "This computer’s node can’t take secrets for an Agent start: update it, and run it as a resident node (Persona Link, or personad node --attach)",
-  "node_no_launcher_switch": "This computer’s node can’t switch a running agent to another model provider yet. Update the node"
+  "node_no_launcher_switch": "This computer’s node can’t switch a running agent to another model provider yet. Update the node",
+  "node_no_model_http": "This computer’s node can’t send model requests yet. Update the node"
 }

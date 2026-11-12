@@ -70,6 +70,30 @@ direct API purposes use provider connections/credentials and no terminal or Clau
 plugins use their own environment, configuration and credentials.
 **Unverified** means launcher execution on the target computer has not been confirmed, not that a paid model request succeeded or failed.
 
+## Sending through a computer (#4775)
+
+API purposes are HTTP requests the manager sends from its own machine. When that machine has no route to the provider
+(a locked-down server, a home server behind a restrictive network) while one of the user's computers does, an API
+connection can name that computer under **Send through** (`via_machine`). Empty is **The hub itself**, the behavior
+before this setting.
+
+- **What moves**: only the network hop. The manager still builds every request (prompt, model, parameters, headers)
+  and reads every answer (stream parsing, errors, the upstream gate); the request goes to that computer's node as one
+  `model.http` call (`docs/protocol/protocol.md`, "hub ↔ node RPC"), and the node sends it with its own network and
+  proxy settings. "Test connection" and "Fetch models" go the same way, so a test says what real calls will do.
+- **Credentials**: the manager decrypts the key as before and puts it in that one call's headers. The node never stores,
+  logs or shows it, never puts it in an error, and zeroes the params once read. No key is configured on the computer.
+- **Streaming**: the node reads the streamed answer to its end (at most 16 MB) and returns it whole; the manager parses
+  it as it would a direct stream. Calls that only use the final text behave the same.
+- **Cancelling**: when the manager stops waiting (a timeout, a stopped conversation) it sends `rpc.cancel` and the node
+  ends the request; the call's deadline goes along as `timeout_ms` (capped at 10 minutes on the node).
+- **Redirects**: the node never follows one; it returns it, and the manager's client decides as it would without the node.
+- **Offline or gone**: an offline computer fails the purpose at once with "<computer> is offline", without falling back
+  to the manager's network and without retries; a computer this manager no longer has says so; an older node without
+  the `model_http` capability says to update it.
+- **Which computers**: only a direct API connection (`kind: "api"`), and only a computer this manager carries (another
+  manager's machines are not its to call). Others are 400. Changing it clears the connection's recorded failures.
+
 ## Editing and inheritance
 
 Each category shows both “In Effect” and “Model Settings”:

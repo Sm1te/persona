@@ -145,11 +145,12 @@ func TestInboxSinceUnknownCursorGetsTheWholeList(t *testing.T) {
 func TestInboxSnapshotsExpire(t *testing.T) {
 	var k inboxSnapshots
 	now := time.Now()
-	sn := k.note(true, []string{"a"}, [][]byte{[]byte(`{"id":"a"}`)}, now)
-	if k.find(k.cursor(sn), true, now.Add(inboxSnapshotTTL-time.Second)) == nil {
+	all := inboxShape{all: true}
+	sn := k.note(all, []string{"a"}, [][]byte{[]byte(`{"id":"a"}`)}, now)
+	if k.find(k.cursor(sn), all, now.Add(inboxSnapshotTTL-time.Second)) == nil {
 		t.Fatal("a list used within the TTL was dropped")
 	}
-	if k.find(k.cursor(sn), true, now.Add(inboxSnapshotTTL+time.Second)) != nil {
+	if k.find(k.cursor(sn), all, now.Add(inboxSnapshotTTL+time.Second)) != nil {
 		t.Fatal("a list unused for the TTL was kept")
 	}
 }

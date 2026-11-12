@@ -1,5 +1,6 @@
 package persona.platform.shortcuts
 
+import persona.core.contracts.clipped
 import persona.core.designsystem.resolve
 import android.content.res.Resources
 import persona.core.contracts.FleetState
@@ -110,10 +111,10 @@ object ShortcutText {
     fun plain(markdown: String): String =
         markdown.lineSequence().joinToString("\n") { it.trimStart().trimStart('#', '>').trimStart() }
 
-    /** Collapses whitespace and clips. */
+    /** Collapses whitespace and clips, never through half a character (#5284). */
     fun excerpt(text: String, limit: Int = 60): String {
         val flat = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
-        return if (flat.length <= limit) flat else flat.take(limit) + "…"
+        return if (flat.length <= limit) flat else flat.clipped(limit) + "…"
     }
 
     /** The tile's second line: "2 need you", "All done", or "Not paired". */

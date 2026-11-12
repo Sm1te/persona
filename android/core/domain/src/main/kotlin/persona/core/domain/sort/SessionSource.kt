@@ -30,6 +30,11 @@ val Session.canChangeModes: Boolean get() = isLive && canSend && (capabilities?.
 val Session.canChangeEffortOnly: Boolean get() = isLive && !isClaude && !assistant && canSend && efforts.isNotEmpty()
 /** /model and /clear are typed into Claude's pane: Claude in a terminal engine, not Persona's conversations. */
 val Session.canTypeClaudeCommands: Boolean get() = canChangeModes && !assistant && !paneId.isNullOrBlank() && canTerminal
+/**
+ * Its queue can be sent now and reordered (iOS `Session.steersQueue`, #6088): Claude Code in a terminal pane, whose own
+ * send-now the node presses. Other agents refuse it (`send_now_unsupported`).
+ */
+val Session.steersQueue: Boolean get() = isClaude && !assistant && !hasSource && !paneId.isNullOrBlank() && canSend
 
 /** A session's source as the app names it: its label, the agent's name there, and why it is read-only. */
 data class SessionSourceInfo(

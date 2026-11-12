@@ -215,7 +215,7 @@ func (s *Service) apiConfig(ctx context.Context, b ModelBinding) (ai.Config, err
 				if err := checkAPITransport(l.Kind, l.API, l.Proxy, l.NoProxy, l.HeadersSealed != ""); err != nil {
 					return c, err
 				}
-				c = ai.Config{API: l.API, BaseURL: l.BaseURL, Model: l.Model, Bearer: l.BearerAuth()}
+				c = ai.Config{API: l.API, BaseURL: l.BaseURL, Model: l.Model, Bearer: l.BearerAuth(), ViaMachine: l.ViaMachine}
 				key, err := s.openLauncherKey(ctx, l.KeySealed, l.Name, "")
 				if err != nil {
 					return c, err
@@ -255,7 +255,7 @@ func (s *Service) purposeModel(id string) *ai.Client {
 		if err != nil {
 			return nil, err
 		}
-		return ai.New(c), nil
+		return s.aiClient(c), nil
 	})
 }
 

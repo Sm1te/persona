@@ -1,6 +1,7 @@
 // The sidebar's "By machine" tree, laid out the way herdr arranges agents: machine → workspace (a herdr space) → tab (a
-// slot) → panes. A Session is one agent pane; the sessions of one slot are that tab's panes, which the chat shows as
-// tabs of their own (PaneTabs). Hosts without tabs (Paseo, botmux, runtimes) list their sessions right under the
+// slot) → panes. A Session is one agent pane; the sessions of one slot are that tab's panes. When the tab's first pane is an
+// Agent, the hub folds the others under it as its workers (lib/team.ts, #5180): the lists hold the lead alone and its page
+// has them in its Team panel, so a tab here lists several panes only when they are peers. Hosts without tabs (Paseo, botmux, runtimes) list their sessions right under the
 // space; sessions outside any space go to the machine's "Other". Shell panes never reach the hub, so they are not here.
 // A space the host nests under another (Orca's child worktrees, `parent_space_id`) is listed inside its parent, as
 // Orca's sidebar does with "N children"; when the parent has no live agent the child stays at the top (#2073).
@@ -72,16 +73,6 @@ export function tabGroups(sessions: readonly Session[]): TabGroup[] {
     const lead = mostUrgent(panes)!;
     return { key, sessions: panes, launcher: launcherOf(panes), lead, state: stateOf(lead) };
   });
-}
-
-const sameSpace = (a: Session, b: Session) => a.machine_id === b.machine_id && (a.space_kind ?? "") === (b.space_kind ?? "") && a.space_id === b.space_id;
-
-/** The agents in the same tab as `s` (same machine, space and slot), in pane order; just `[s]` without a slot. */
-export function tabSessions(all: Session[], s: Session): Session[] {
-  if (!s.slot_id || !s.space_id) return [s];
-  const tab = all.filter((x) => !x.assistant && sameSpace(x, s) && x.slot_id === s.slot_id && (x.session_id === s.session_id || stateOf(x) !== "offline"));
-  if (!tab.some((x) => x.session_id === s.session_id)) tab.push(s);
-  return tab.sort(paneOrder);
 }
 
 type HomeBucket = "needs" | "working" | "unread";
