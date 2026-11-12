@@ -8,7 +8,7 @@ It serves machines, agents, conversations, interactions and the inbox, enough fo
 does not know are logged to stderr as MISSING. Timestamps are relative to when it starts. See docs/operations/testing.md.
 """
 import base64, unicodedata
-import argparse, copy, hashlib, json, math, os, re, shutil, signal, socket, ssl, struct, subprocess, sys, tempfile, threading, time, uuid, zlib
+import argparse, copy, hashlib, itertools, json, math, os, re, shlex, shutil, signal, socket, ssl, struct, subprocess, sys, tempfile, threading, time, uuid, zlib
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -10783,8 +10783,12 @@ LAUNCHER_PRESETS = [
 # node is too old (409 node_outdated), nas is offline (503). Keys and headers are kept only as has_key / has_headers.
 # With the feature launcher_auto_name (#5029): a provider added with no name gets one (launcher_name_for), and "New Agent"'s
 # launchers list the managed providers with their display names (gw_full has one, anthropic_main shows its ID).
+# With the feature launcher_import_parse (#5193): the import takes `alias` (one alias of the machine: its group, or its own
+# provider out of a group of several), and POST /api/v1/launchers/import/parse (also in every mode) reads pasted text into
+# provider drafts with the hub's rules (parse_paste): shell aliases / exports / K=V lines, settings.json, a curl command,
+# cindy's custom providers. A draft on gw_full's address matches it, with the same key when it carries sk-example-gw.
 MOCK_PROVIDERS = os.environ.get("MOCK_PROVIDERS") == "1"
-PROVIDER_LOG = {"post": None, "put": None, "test": [], "discover": [], "catalog": [], "import": None}
+PROVIDER_LOG = {"post": None, "put": None, "test": [], "discover": [], "catalog": [], "import": None, "parse": []}
 PROVIDER_FIELDS = ("kind", "api", "base_url", "model", "small_model", "subagent_model", "custom_model", "custom_model_name",
                    "custom_model_description", "args", "auth", "models", "opus_model", "sonnet_model", "haiku_model", "fable_model",
                    "subagent_force", "proxy", "no_proxy", "timeout_ms", "compact_window", "max_context", "effort")
@@ -10797,7 +10801,15 @@ PROVIDER_IMPORT = [
      "models": [{"id": "example-opus", "context_window": 1000000}, {"id": "example-haiku", "context_window": 200000}],
      "aliases": ["cc_full", "cc_full_haiku"],
      "sources": [{"alias": "cc_full", "file": "~/.zshrc", "hide": "ok"},
-                 {"alias": "cc_full_haiku", "file": "~/.zshrc", "hide": "in_use", "uses": ["模型档位「性能」的 Agent 预设「strong」"]}]},
+                 {"alias": "cc_full_haiku", "file": "~/.zshrc", "hide": "in_use", "uses": ["模型档位「性能」的 Agent 预设「strong」"]}],
+     "variants": [
+         {"name": "cc_full", "base_url": "https://gw.example.com", "auth": "bearer", "has_key": True, "own_service": "use", "model": "example-opus",
+          "models": [{"id": "example-opus", "context_window": 1000000}], "aliases": ["cc_full"],
+          "sources": [{"alias": "cc_full", "file": "~/.zshrc", "hide": "ok"}]},
+         {"name": "cc_full_haiku", "base_url": "https://gw.example.com", "auth": "bearer", "has_key": True, "own_service": "use",
+          "model": "example-haiku", "models": [{"id": "example-haiku", "context_window": 200000}], "aliases": ["cc_full_haiku"],
+          "sources": [{"alias": "cc_full_haiku", "file": "~/.zshrc", "hide": "in_use", "uses": ["模型档位「性能」的 Agent 预设「strong」"]}]},
+     ]},
     {"name": "cc_glm", "base_url": "https://open.bigmodel.example.com/api/anthropic", "auth": "bearer", "has_key": True, "own_service": "use",
      "model": "glm-5.3", "models": [{"id": "glm-5.3", "context_window": 200000}], "aliases": ["cc_glm"],
      "sources": [{"alias": "cc_glm", "file": "~/.zshrc", "hide": "ok"}]},
@@ -10848,10 +10860,10 @@ if MOCK_PROVIDERS:
         {"name": "cc_kimi_fast", "source": "zshrc", "base_url": "https://api.moonshot.example.com/anthropic", "model": "kimi-k3-turbo", "machines": ["macbook"], "rc_files": ["~/.zshrc"]},
         {"name": "cc_relay", "source": "zshrc", "base_url": "https://relay.example.org", "model": "relay-pro", "machines": ["macbook", "server"], "rc_files": ["~/.bashrc"]},
     ]
-    _features_without_auto_name = features
+    _features_without_providers = features
 
     def features():
-        return _features_without_auto_name() + ["launcher_auto_name"]
+        return _features_without_providers() + ["launcher_auto_name", "launcher_import_parse"]
 
 
 # The hub's names for providers it names itself (server/internal/assistant/models_presets.go): the slug rule, the
@@ -10924,12 +10936,17 @@ def _import_name(name, taken):
     return out
 
 
-def import_preview():
+def import_preview(alias=""):
     """The preview: each group and variant with its `existing`, its sources' hide checks and, for one that will be
     created under another name, `create_as`. A group and its variants are alternatives, so they are named against the
-    same launchers; the names a group may take are taken for the groups after it."""
+    same launchers; the names a group may take are taken for the groups after it. With alias (#5193) the hub reads only
+    that alias: its group, or its variant as a group of its own; none when the machine has no such alias."""
+    groups = copy.deepcopy(PROVIDER_IMPORT)
+    if alias:
+        groups = [g if len(g["aliases"]) == 1 else next(v for v in g["variants"] if v["aliases"] == [alias])
+                  for g in groups if alias in g["aliases"]]
     out, taken = [], {l["name"] for l in LAUNCHERS}
-    for g in copy.deepcopy(PROVIDER_IMPORT):
+    for g in groups:
         names = set()
         for x in [g] + g.get("variants", []):
             x["sources"] = [_import_hide(src) for src in x.get("sources", [])]
@@ -10958,7 +10975,7 @@ def _provider_apply(l, b):
         if k in b:
             if b[k] in ("", 0, False, [], None): l.pop(k, None)
             else: l[k] = b[k]
-    if b.get("api_key"): l["has_key"] = True
+    if b.get("api_key"): l["has_key"], PROVIDER_KEYS[l["name"]] = True, b["api_key"]
     if "headers" in b:
         if b["headers"]: l["has_headers"] = True
         else: l.pop("has_headers", None)
@@ -10977,20 +10994,21 @@ def _display_name_refused(h, b):
 
 
 def import_route(h, method, q, body):
-    """GET / POST /api/v1/launchers/import (#2455, #5024), in every mode. POST takes {machine, providers, split?, hide_aliases?}:
-    a split group comes in as its variants, a provider that is there takes the new models, a new one is saved under its
-    previewed `create_as` (a name taken gets -2); with hide_aliases the aliases whose check is still ok once saved are
-    hidden, the others kept with why."""
+    """GET / POST /api/v1/launchers/import (#2455, #5024), in every mode. POST takes {machine, providers, split?, hide_aliases?,
+    alias?}: a split group comes in as its variants, a provider that is there takes the new models, a new one is saved
+    under its previewed `create_as` (a name taken gets -2); with hide_aliases the aliases whose check is still ok once
+    saved are hidden, the others kept with why. `alias` (?alias= on GET) previews and imports only that alias."""
     b = json.loads(body or b"{}") if method == "POST" else {}
     machine = (q.get("machine") or [""])[0] if method == "GET" else b.get("machine", "")
+    alias = (q.get("alias") or [""])[0] if method == "GET" else b.get("alias", "")
     if machine == "studio":
         h.send_json({"code": "node_outdated", "error": "这台机器上的 personad 太旧，不能读取 alias，需要更新 node"}, 409); return
     if not machine_online(machine):
         h.send_json({"code": "offline", "error": "这台机器离线，连上后再导入"}, 503); return
     if method == "GET":
-        h.send_json({"machine": machine, "providers": import_preview()}); return
+        h.send_json({"machine": machine, "providers": import_preview(alias)}); return
     PROVIDER_LOG["import"] = b
-    groups = {g["name"]: g for g in import_preview()}
+    groups = {g["name"]: g for g in import_preview(alias)}
     names, split = b.get("providers") or [], b.get("split") or []
     unknown = [n for n in names if n not in groups] + [n for n in split if n not in names]
     if unknown:
@@ -11023,6 +11041,386 @@ def import_route(h, method, q, body):
             elif src["hide"] != "none":
                 kept.append({k: v for k, v in src.items() if k != "file"})
     h.send_json({"created": created, "updated": updated, "hidden": hidden, "kept": kept})
+
+
+# POST /api/v1/launchers/import/parse (#5193): the wizard's "Paste a configuration", in every mode like the import. A small
+# reader with the hub's rules (newImportGroup's env mapping, mergeZshrcAliases' grouping): drafts carry the pasted key as the
+# hub's do; notes name aliases, variables, headers and options, never a value. Only the text's length is logged.
+PROVIDER_KEYS = {"gw_full": "sk-example-gw"}  # the managed providers' keys, for matches' same_key only
+PASTE_FIELDS = {"opus_model": "ANTHROPIC_DEFAULT_OPUS_MODEL", "sonnet_model": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                "haiku_model": "ANTHROPIC_DEFAULT_HAIKU_MODEL", "fable_model": "ANTHROPIC_DEFAULT_FABLE_MODEL",
+                "small_model": "ANTHROPIC_SMALL_FAST_MODEL", "subagent_model": "CLAUDE_CODE_SUBAGENT_MODEL",
+                "custom_model": "ANTHROPIC_CUSTOM_MODEL_OPTION", "custom_model_name": "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
+                "custom_model_description": "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION", "effort": "CLAUDE_CODE_EFFORT_LEVEL",
+                "compact_window": "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "max_context": "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+                "timeout_ms": "API_TIMEOUT_MS"}
+PASTE_MAPPED = {*PASTE_FIELDS.values(), "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
+                "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE"}
+PASTE_PROXY, PASTE_NO_PROXY = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"), ("NO_PROXY", "no_proxy")
+PASTE_COMPUTER = ("PATH", "HOME", "PWD", "OLDPWD", "SHELL", "USER", "LOGNAME", "TMPDIR", "CLAUDE_CONFIG_DIR")
+PASTE_SECRETS = {"KEY", "KEYS", "APIKEY", "TOKEN", "SECRET", "SECRETS", "PASSWORD", "PASSWD", "CREDENTIAL", "CREDENTIALS",
+                 "COOKIE", "COOKIES"}
+PASTE_PROTOCOL = ("anthropic-version", "anthropic-beta", "content-type", "accept", "accept-encoding", "user-agent")
+CURL_ARGS = {"-H": "header", "--header": "header", "-d": "data", "--data": "data", "--data-raw": "data", "--data-binary": "data",
+             "--json": "data", "-x": "proxy", "--proxy": "proxy", "--noproxy": "no_proxy", "--url": "url", "-X": "", "--request": ""}
+CURL_UNUSED_ARGS = ("-u", "--user", "-o", "--output", "-A", "--user-agent", "-b", "--cookie", "-e", "--referer", "-m", "--max-time",
+                    "--connect-timeout", "-F", "--form", "-w", "--write-out", "-E", "--cert", "--key", "--cacert")
+CURL_QUIET = re.compile(r"-[sSivNL]+|--(silent|show-error|no-buffer|compressed|location)")
+# (the path's end, the API): the base is what comes before it, a direct API's with its /v1
+CURL_ENDPOINTS = (("/messages", "messages"), ("/v1/chat/completions", "chat"), ("/v1/responses", "responses"), ("/v1/models", "messages"))
+CINDY_APIS = {"anthropic-messages": "messages", "openai-responses": "responses", "openai-chat": "chat"}
+
+
+def _note(code, **where):
+    return {"code": code, **{k: v for k, v in where.items() if v}}
+
+
+def _shell_value(v): return "$" in v or "`" in v or v.startswith("~")
+
+
+def _secret_name(name, extra=()):
+    return any(w.upper() in PASTE_SECRETS or w.upper() in extra for w in re.split(r"[-_]", name))
+
+
+def _url_user(v):
+    """urlWithUser: the address's authority has an @ (an e-mail address counts too)."""
+    v = v.strip()
+    rest = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://", "", v)
+    return "@" in re.split(r"[/?#]", rest if rest != v else v.removeprefix("//"))[0]
+
+
+def _messages_base(url):
+    """proto.MessagesBaseURL: the address without the /v1 ending its path, which Claude Code adds itself."""
+    url = url.strip().rstrip("/")
+    u = urlparse(url)
+    if not u.netloc or u.query or u.fragment: return url
+    while url.endswith("/v1") and urlparse(url).path: url = url[:-3].rstrip("/")
+    return url
+
+
+def _strip1m(model):
+    model = model.strip()
+    return (model[:-4], 1000000) if model.endswith("[1m]") else (model, 0)
+
+
+def _shell_words(s):
+    """s split as the shell does (quotes; ; & | as words of their own), up to a comment."""
+    lex = shlex.shlex(s, posix=True, punctuation_chars=";&|")
+    lex.whitespace_split, lex.commenters = True, ""
+    return list(itertools.takewhile(lambda w: not w.startswith("#"), lex))
+
+
+def _commands(words):
+    """A line's commands: its words split at ; && || |."""
+    cmd = []
+    for w in words:
+        if w and set(w) <= set(";&|"): yield cmd; cmd = []
+        else: cmd.append(w)
+    yield cmd
+
+
+def _command(words):
+    """commandIndex: the variables a command sets in front of itself (env, exec… passed over) and its words from the
+    command on."""
+    env = {}
+    for i, w in enumerate(words):
+        if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", w): env.update([w.split("=", 1)])
+        elif w not in ("env", "command", "exec", "noglob", "nocorrect"): return env, words[i:]
+    return env, []
+
+
+def _is_claude(cmd): return bool(cmd) and os.path.basename(cmd[0]) == "claude"
+
+
+def _alias_claude(value):
+    """claudeAlias: (env, args) of the first claude command in an alias's value, the exports before it included; None
+    when it runs no claude."""
+    exported = {}
+    for cmd in _commands(_shell_words(value)):
+        if cmd[:1] == ["export"]:
+            exported.update(_command(cmd[1:])[0])
+            continue
+        env, cmd = _command(cmd)
+        if _is_claude(cmd): return {**exported, **env}, cmd[1:]
+    return None
+
+
+def _paste_headers(pairs, protocol=False, direct=False):
+    """A draft's headers ("Name: value" lines) and the ones left out: the protocol's own (curl, cindy), credential-looking
+    names, and all of a direct API's, which takes none."""
+    kept, skipped = [], []
+    for name, value in pairs:
+        name = name.strip()
+        why = ("protocol" if protocol and name.lower() in PASTE_PROTOCOL else
+               "credential" if _secret_name(name, ("AUTHORIZATION", "AUTH")) else "unsupported" if direct else "")
+        if why: skipped.append({"name": name, "reason": why})
+        else: kept.append("%s: %s" % (name, str(value).strip()))
+    return "\n".join(kept), skipped
+
+
+def _paste_env(env):
+    """importEnv: the variables without a field as env lines (by name), their names, and the ones left out with why."""
+    lines, names, skipped = [], [], []
+    for k in sorted(env):
+        v = env[k]
+        if k in PASTE_PROXY + PASTE_NO_PROXY:
+            if _url_user(v): skipped.append({"name": k, "reason": "credential"})
+            continue
+        if k in PASTE_MAPPED: continue
+        why = ("computer" if k in PASTE_COMPUTER else "credential" if _secret_name(k) or _url_user(v) else
+               "shell" if _shell_value(v) or re.search(r"[\n\r\x00]", v) or ('"' in v and "'" in v) or
+               not re.match(r"[A-Za-z_][A-Za-z0-9_]*$", k) else "limit" if len(names) == 50 else "")
+        if why:
+            skipped.append({"name": k, "reason": why})
+            continue
+        quote = "" if not re.search(r"[\s#\"']", v) else "'" if '"' in v else '"'
+        lines.append("%s=%s%s%s" % (k, quote, v, quote))
+        names.append(k)
+    return "\n".join(lines), names, skipped
+
+
+def _draft(p, key, notes=(), **extra):
+    """A draft of provider p (empty fields left out) with its key, or a note why it has none; extra's empty ones left out."""
+    notes = list(notes)
+    if _shell_value(key): notes.append(_note("key_shell"))
+    elif key: p["api_key"] = key
+    elif not any(n["code"] in ("key_helper", "cindy_auth") for n in notes): notes.append(_note("no_key"))
+    return {**{k: v for k, v in extra.items() if v}, "provider": {k: v for k, v in p.items() if v}, "notes": notes}
+
+
+def _env_draft(env, base, args, notes):
+    """newImportGroup with importKey / importProxy / importEnv: a claude command's variables as a draft."""
+    token = env.get("ANTHROPIC_AUTH_TOKEN", "").strip()
+    key = token.removeprefix("Bearer ").strip() if token else env.get("ANTHROPIC_API_KEY", "").strip()
+    model, window = _strip1m(env.get("ANTHROPIC_MODEL", ""))
+    p = {"kind": "launcher", "agent": "claude", "api": "messages", "base_url": base, "auth": "bearer" if token else "api_key",
+         "model": model, "models": [{"id": model, **({"context_window": window} if window else {})}] if model else [], "args": args}
+    for f, k in PASTE_FIELDS.items():
+        v = env.get(k, "").strip()
+        p[f] = (int(v) if v.isdigit() else 0) if f in ("compact_window", "max_context", "timeout_ms") else \
+            _strip1m(v)[0] if f.endswith("_model") and f != "custom_model" else v
+    p["subagent_force"] = env.get("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "").strip().lower() in ("1", "true")
+    proxy = next((env[k].strip() for k in PASTE_PROXY if env.get(k, "").strip()), "")
+    p["proxy"] = "" if _url_user(proxy) else proxy
+    p["no_proxy"] = next((env[k].strip() for k in PASTE_NO_PROXY if env.get(k, "").strip()), "")
+    p["headers"], skipped_headers = _paste_headers(h.split(":", 1) for h in env.get("ANTHROPIC_CUSTOM_HEADERS", "").splitlines() if ":" in h)
+    p["env"], env_names, skipped_env = _paste_env(env)
+    return _draft(p, key, notes, env_names=env_names, skipped_env=skipped_env, skipped_headers=skipped_headers)
+
+
+def _past_model(d):
+    """A draft but for its model: what aliases merged into one draft share."""
+    return {**d, "provider": {**d["provider"], "model": None, "models": None}}
+
+
+def _env_drafts(exported, cmds, notes=()):
+    """The drafts of claude commands [(alias or None, line, own env, args)], each from the exported variables with its own
+    over them: aliases on one address and key merged unless they differ in more than the model (mergeZshrcAliases), with
+    a suggested name. ([draft], [(line, note)] for the commands that make none)."""
+    groups, marks = [], []
+    for alias, line, env, args in cmds:
+        env, where = {**exported, **env}, {"name": alias, "line": None if alias else line}
+        base = _messages_base(env.get("ANTHROPIC_BASE_URL", ""))
+        bad = "no_gateway" if not base else "url_shell" if _shell_value(base) else "url_user" if _url_user(base) else ""
+        if bad:
+            marks.append((line or math.inf, _note(bad, **where)))
+            continue
+        d = _env_draft(env, base, args, notes)
+        gateway = (base, d["provider"].get("api_key"))
+        g = next((g for g in groups if g[0] == gateway), None)
+        if g: g[1].append((alias, d))
+        else: groups.append((gateway, [(alias, d)]))
+    drafts, taken = [], {l["name"] for l in LAUNCHERS}
+    for _, g in groups:
+        for part in [g] if all(_past_model(d) == _past_model(g[0][1]) for _, d in g) else [[x] for x in g]:
+            d = part[0][1]
+            for _, x in part[1:]:
+                for m in x["provider"].get("models", []):
+                    old = next((o for o in d["provider"].setdefault("models", []) if o["id"] == m["id"]), None)
+                    if old is None: d["provider"]["models"].append(m)
+                    elif m.get("context_window", 0) > old.get("context_window", 0): old["context_window"] = m["context_window"]
+            aliases = [a for a, _ in part if a]
+            if aliases:
+                d["provider"]["name"] = _import_name("zshrc_" + aliases[0] if aliases[0] in RESERVED_LAUNCHER_NAMES else aliases[0], taken)
+                taken.add(d["provider"]["name"])
+                d = {"label": ", ".join(aliases), "aliases": aliases, **d}
+            drafts.append(d)
+    return drafts, marks
+
+
+def _paste_shell(lines):
+    """Shell lines: exports and K=V lines collect the variables, aliases and K=V … claude lines are the claude commands
+    (with none, the variables alone make the draft); any other line is unused. None when nothing is any of these."""
+    exported, cmds, marks = {}, [], []
+    for n, line in lines:
+        try: words = next(_commands(_shell_words(line)))
+        except ValueError: words = []
+        if words[:1] == ["alias"]:
+            for name, eq, value in (w.partition("=") for w in words[1:]):
+                if not eq or not re.match(r"[A-Za-z_][A-Za-z0-9_-]*$", name): continue
+                try: found = _alias_claude(value)
+                except ValueError: found = None
+                if found: cmds.append((name, n) + found)
+                else: marks.append((n, _note("not_claude", name=name)))
+            continue
+        export = words[:1] == ["export"]
+        env, cmd = _command(words[1:] if export else words)
+        if export or (env and not cmd): exported.update(env)
+        elif _is_claude(cmd): cmds.append((None, n, env, cmd[1:]))
+        else: marks.append((n, _note("not_claude" if env else "line_unused", line=n)))
+    if not exported and not cmds and all(x["code"] == "line_unused" for _, x in marks): return None
+    drafts, more = _env_drafts(exported, cmds or ([(None, None, {}, [])] if exported else []))
+    return drafts, [x for _, x in sorted(marks + more, key=lambda m: m[0])]
+
+
+def _paste_settings(data):
+    """settings.json: its env (string values) with `model` as ANTHROPIC_MODEL when env has none, read as shell's variables
+    alone; apiKeyHelper runs a command for the key, which a paste can't."""
+    env = {k: v for k, v in data["env"].items() if isinstance(v, str)} if isinstance(data.get("env"), dict) else {}
+    if isinstance(data.get("model"), str) and not env.get("ANTHROPIC_MODEL"): env["ANTHROPIC_MODEL"] = data["model"]
+    drafts, marks = _env_drafts(env, [(None, None, {}, [])], [_note("key_helper")] if data.get("apiKeyHelper") else [])
+    return drafts, [x for _, x in marks]
+
+
+def _paste_curl(words, line):
+    """A curl command: the endpoint its URL names (Messages as a Claude Code gateway, Chat / Responses as a direct API),
+    its key header and other headers, the body's model, its proxy."""
+    url, headers, model, proxy, notes, rest = "", [], "", {}, [], iter(words[1:])
+    for w in rest:
+        if w in CURL_ARGS:
+            what, v = CURL_ARGS[w], next(rest, "")
+            if what == "header" and ":" in v: headers.append(v.split(":", 1))
+            elif what in ("proxy", "no_proxy"): proxy[what] = (w, v)
+            elif what == "url": url = url or v
+            elif what == "data":
+                try: body = json.loads(v)
+                except ValueError: body = None
+                if isinstance(body, dict) and isinstance(body.get("model"), str): model = body["model"]
+        elif w.startswith("-"):
+            if not CURL_QUIET.fullmatch(w): notes.append(_note("curl_option", name=w))
+            if w in CURL_UNUSED_ARGS: next(rest, "")
+        else: url = url or w
+    if not url: return [], [_note("unrecognized")]
+    if _shell_value(url) or _url_user(url): return [], [_note("url_shell" if _shell_value(url) else "url_user", line=line)]
+    bare = re.split(r"[?#]", url)[0].rstrip("/")
+    path = urlparse(bare).path
+    end, api = next(((e, a) for e, a in CURL_ENDPOINTS if path.endswith(e)), ("", "messages"))
+    if end: bare = bare[:len(bare) - len(end.removeprefix("/v1"))]
+    else: notes.append(_note("curl_path", name=path))
+    key, auth, kept = "", "", []
+    for name, value in headers:
+        name, value = name.strip(), value.strip()
+        if name.lower() == "x-api-key": key, auth = value, "api_key"
+        elif name.lower() == "authorization" and value[:7].lower() == "bearer ": key, auth = value[7:].strip(), "bearer"
+        else: kept.append((name, value))
+    launcher = api == "messages"
+    p = {"kind": "launcher" if launcher else "api", "agent": "claude" if launcher else "", "api": api,
+         "base_url": _messages_base(bare) if launcher else bare, "auth": auth, "model": model, "models": [{"id": model}] if model else []}
+    p["headers"], skipped = _paste_headers(kept, protocol=True, direct=not launcher)
+    for what, (option, v) in proxy.items():
+        if not launcher: notes.append(_note("curl_option", name=option))
+        elif what == "no_proxy" or not _url_user(v): p[what] = v
+    return [_draft(p, key, notes, skipped_headers=skipped)], []
+
+
+def _cindy_model(m):
+    """A cindy model ("id" or {id, name, contextWindow, reasoningEfforts, reasoningDefaultEffort}) as a provider's."""
+    if isinstance(m, str): return {"id": m}
+    if not isinstance(m, dict) or not isinstance(m.get("id"), str): return None
+    efforts = [e for e in m.get("reasoningEfforts") or [] if e in _CLAUDE_EFFORTS]
+    out = {"id": m["id"], "name": m.get("name"), "context_window": m.get("contextWindow"), "efforts": efforts,
+           "default_effort": m.get("reasoningDefaultEffort") if m.get("reasoningDefaultEffort") in efforts else None}
+    return {k: v for k, v in out.items() if v}
+
+
+def _paste_cindy(data):
+    """cindy v1 (one provider or {providers: […]}): a custom provider's first Messages endpoint as a Claude Code gateway,
+    else its first Responses / Chat endpoint as a direct API; its other endpoints, presets, built-ins and OAuth as notes."""
+    drafts, notes = [], []
+    for c in data["providers"] if isinstance(data.get("providers"), list) else [data]:
+        if not isinstance(c, dict): continue
+        auth = c["auth"] if isinstance(c.get("auth"), dict) else {}
+        if c.get("kind", "custom") != "custom":
+            notes.append(_note("cindy_kind", name=str(c["kind"])))
+            continue
+        if auth.get("method") == "oauth":
+            notes.append(_note("cindy_auth", name="oauth"))
+            continue
+        eps = [e for e in c.get("endpoints") or [] if isinstance(e, dict)]
+        ep = next((e for e in eps if e.get("protocol") == "anthropic-messages"), None) or \
+            next((e for e in eps if e.get("protocol") in ("openai-responses", "openai-chat")), None)
+        others = [_note("cindy_endpoint", name=str(e.get("protocol") or "")) for e in eps if e is not ep]
+        if ep is None:
+            notes += others
+            continue
+        base = str(ep.get("baseUrl") or "").strip().rstrip("/")
+        if _url_user(base): notes.append(_note("url_user"))
+        if not base or _url_user(base): continue
+        api, none = CINDY_APIS[ep["protocol"]], auth.get("method") == "none"
+        models = [m for m in map(_cindy_model, ep.get("models") or c.get("models") or []) if m]
+        p = {"kind": "launcher" if api == "messages" else "api", "agent": "claude" if api == "messages" else "", "api": api,
+             "display_name": c.get("name"), "base_url": _messages_base(base) if api == "messages" else base,
+             "auth": "api_key" if api == "messages" else "bearer", "model": models[0]["id"] if models else "", "models": models}
+        p["headers"], skipped = _paste_headers(ep["headers"].items() if isinstance(ep.get("headers"), dict) else [], True, api != "messages")
+        key = "" if none else str(ep.get("apiKey") or auth.get("apiKey") or "")
+        drafts.append(_draft(p, key, ([_note("cindy_auth", name="none")] if none else []) + others, label=c.get("name"), skipped_headers=skipped))
+    return drafts, notes
+
+
+def _paste_lines(text):
+    """(line number, line) of each line that is not blank or a comment, a line ending in \\ joined with the next."""
+    out, start, buf = [], 0, ""
+    for n, line in enumerate(text.split("\n") + [""], 1):
+        start, buf = (start, buf + line) if buf else (n, line)
+        if buf.endswith("\\"):
+            buf = buf[:-1]
+            continue
+        if buf.strip() and not buf.strip().startswith("#"): out.append((start, buf.strip()))
+        buf = ""
+    return out
+
+
+def _paste_read(text):
+    """(format, drafts, notes): JSON as cindy's or settings.json, a curl command, else shell lines."""
+    if text.strip().startswith(("{", "[")):
+        try: data = json.loads(text)
+        except ValueError: return "", [], [_note("invalid_json")]
+        keys = set(data) if isinstance(data, dict) else set()
+        if keys & {"providers", "kind", "endpoints"}: return ("cindy", *_paste_cindy(data))
+        if keys & {"env", "apiKeyHelper", "model"}: return ("settings", *_paste_settings(data))
+        return "", [], [_note("unrecognized")]
+    lines = _paste_lines(text)
+    try: cmd = _command(next(_commands(_shell_words(lines[0][1]))))[1] if lines else []
+    except ValueError: cmd = []
+    if cmd and os.path.basename(cmd[0]) == "curl": return ("curl", *_paste_curl(cmd, lines[0][0]))
+    shell = _paste_shell(lines)
+    return ("shell", *shell) if shell else ("", [], [_note("unrecognized")])
+
+
+def parse_paste(text):
+    """The parse route's answer: what text was read as, its drafts (at most 50) with the managed providers on their
+    address (the ones with the draft's key first), and its notes."""
+    fmt, drafts, notes = _paste_read(text.replace("\r\n", "\n"))
+    for d in drafts:
+        key = d["provider"].get("api_key")
+        d["matches"] = sorted(({"name": l["name"], **({"display_name": l["display_name"]} if l.get("display_name") else {}),
+                                "same_key": bool(key) and PROVIDER_KEYS.get(l["name"]) == key}
+                               for l in LAUNCHERS if l["source"] == "persona" and l.get("base_url") == d["provider"]["base_url"]),
+                              key=lambda m: not m["same_key"])
+    if len(drafts) > 50: drafts, notes = drafts[:50], notes + [_note("too_many")]
+    return {"format": fmt, "drafts": drafts, "notes": notes or ([] if drafts else [_note("unrecognized")])}
+
+
+def parse_route(h, body):
+    """POST /api/v1/launchers/import/parse: 413 over 256 KiB, 400 without text."""
+    if len(body or b"") > 256 << 10:
+        h.send_json({"code": "too_large", "error": "粘贴的内容太长"}, 413); return
+    try: text = json.loads(body or b"{}").get("text")
+    except (ValueError, AttributeError): text = None
+    if not isinstance(text, str) or not text.strip():
+        h.send_json({"error": "先粘贴一段配置"}, 400); return
+    PROVIDER_LOG["parse"].append({"length": len(text)})
+    h.send_json(parse_paste(text))
 
 
 # POST /api/v1/launchers/catalog (#4975): the hub's built-in model catalog for ids typed by hand, read from the file the
@@ -11068,12 +11466,14 @@ def _catalog_route(h, body):
 
 
 def providers_route(h, method, p, q, body):
-    """The provider endpoints under MOCK_PROVIDERS; True when it answered. The import (import_route) and the catalog lookup
-    (_catalog_route) answer with or without MOCK_PROVIDERS, and so do a typed-in gateway's "Test connection" and "Fetch
-    models" (#4881): the catch-all {"ok": true} has no `ms`, which the wizard shows. A built-in preset's test keeps its own
-    answers then (_builtin_preset_route)."""
+    """The provider endpoints under MOCK_PROVIDERS; True when it answered. The import (import_route, parse_route) and the
+    catalog lookup (_catalog_route) answer with or without MOCK_PROVIDERS, and so do a typed-in gateway's "Test connection"
+    and "Fetch models" (#4881): the catch-all {"ok": true} has no `ms`, which the wizard shows. A built-in preset's test
+    keeps its own answers then (_builtin_preset_route)."""
     if p == "/api/v1/launchers/import":
         import_route(h, method, q, body); return True
+    if p == "/api/v1/launchers/import/parse" and method == "POST":
+        parse_route(h, body); return True
     if p == "/api/v1/launchers/catalog" and method == "POST":
         _catalog_route(h, body); return True
     probe = method == "POST" and p in ("/api/v1/launchers/test", "/api/v1/launchers/discover")
