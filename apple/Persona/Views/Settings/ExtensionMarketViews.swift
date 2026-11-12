@@ -385,12 +385,12 @@ struct MarketExtensionDetailView: View {
                 .confirmationDialog("Uninstall “\(p.name)”?", isPresented: $confirmRemove, titleVisibility: .visible) {
                     Button(role: .destructive) {
                         Task { if await page.uninstall() { done(.uninstall) } }
-                    } label: { Text(page.isPack ? String(localized: "Uninstall Pack Only") : String(localized: "Uninstall")).lineLimit(1) }
+                    } label: { Text(page.isPack ? String(localized: "Pack Only") : String(localized: "Uninstall")).lineLimit(1) }
                     .accessibilityIdentifier("market-uninstall-confirm")
                     if page.isPack {
                         Button(role: .destructive) {
                             Task { if await page.uninstall(members: true) { done(.uninstall) } }
-                        } label: { Text("Uninstall with Members").lineLimit(1) }
+                        } label: { Text("Everything [Extension Market Views 8fc6ce]").lineLimit(1) }
                         .accessibilityIdentifier("market-uninstall-members")
                     }
                     Button("Cancel", role: .cancel) {}

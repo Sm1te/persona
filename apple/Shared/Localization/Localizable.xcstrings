@@ -74185,25 +74185,25 @@
       },
       "extractionState" : "manual"
     },
-    "Members: %@. Uninstalling only the pack keeps them. Uninstalling with members deletes their settings and data." : {
+    "Members: %@. Pack Only keeps them. Everything also uninstalls them and deletes their settings and data." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Members: %1$@. Uninstalling only the pack keeps them. Uninstalling with members deletes their settings and data."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "成员：%1$@。只卸载合集会保留这些成员；连成员一起卸载会删除它们的设置和数据。"
+            "value" : "Members: %1$@. Pack Only keeps them. Everything also uninstalls them and deletes their settings and data."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "メンバー：%1$@。パックのみアンインストールするとメンバーは残ります。メンバーごとアンインストールすると、メンバーの設定とデータが削除されます。"
+            "value" : "メンバー：%1$@。「パックのみ」ではメンバーは残ります。「メンバーも」ではメンバーもアンインストールされ、その設定とデータが削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成员：%1$@。「只卸载合集」会保留这些成员；「也卸载成员」会把它们一起卸载，并删除它们的设置和数据。"
           }
         }
       }
@@ -147447,18 +147447,19 @@
       },
       "extractionState" : "manual"
     },
-    "Uninstall Pack Only" : {
+    "Pack Only" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall Pack Only"
+            "value" : "Pack Only"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パックのみアンインストール"
+            "value" : "パックのみ"
           }
         },
         "zh-Hans" : {
@@ -147467,8 +147468,7 @@
             "value" : "只卸载合集"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Uninstall didn’t finish" : {
       "localizations" : {
@@ -147516,28 +147516,28 @@
       },
       "extractionState" : "manual"
     },
-    "Uninstall with Members" : {
+    "Everything [Extension Market Views 8fc6ce]" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall with Members"
+            "value" : "Everything"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "メンバーごとアンインストール"
+            "value" : "メンバーも"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "连同成员一起卸载"
+            "value" : "也卸载成员"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Uninstall “%@”?" : {
       "localizations" : {
@@ -147677,28 +147677,28 @@
       },
       "extractionState" : "manual"
     },
-    "Uninstalling only the pack keeps its members. Uninstalling with members deletes their settings and data." : {
+    "Pack Only keeps its members. Everything also uninstalls them and deletes their settings and data." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstalling only the pack keeps its members. Uninstalling with members deletes their settings and data."
+            "value" : "Pack Only keeps its members. Everything also uninstalls them and deletes their settings and data."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パックのみアンインストールするとメンバーは残ります。メンバーごとアンインストールすると、メンバーの設定とデータが削除されます。"
+            "value" : "「パックのみ」ではメンバーは残ります。「メンバーも」ではメンバーもアンインストールされ、その設定とデータが削除されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只卸载合集会保留成员。连成员一起卸载会删除成员的设置和数据。"
+            "value" : "「只卸载合集」会保留成员；「也卸载成员」会把它们一起卸载，并删除它们的设置和数据。"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Unknown (200K assumed)" : {
       "localizations" : {

@@ -161,7 +161,7 @@ struct ExtensionManagementTests {
         let m = MarketExtensionModel(market: "market", id: "pack", deps: .init(api: { hub.client }))
         await m.load()
         #expect(m.memberNames["notes"] == "示例笔记" && m.memberNames["mail"] == nil)
-        #expect(m.uninstallMessage == "成员：示例笔记、示例界面、mail。只卸载合集会保留这些成员；连成员一起卸载会删除它们的设置和数据。")
+        #expect(m.uninstallMessage == "成员：示例笔记、示例界面、mail。「只卸载合集」会保留这些成员；「也卸载成员」会把它们一起卸载，并删除它们的设置和数据。")
         #expect(await !m.uninstall(members: true))
         let partial = try #require(m.partialRemoval)
         #expect(partial.removed == ["notes"] && partial.failed == [.init(id: "ui", error: "仍在运行")] && partial.remaining == ["mail"])
