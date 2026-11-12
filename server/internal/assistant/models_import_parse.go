@@ -155,16 +155,16 @@ func (res *pasteResult) note(code string, line int, name string) {
 // else a curl command when the first command line runs curl; else shell lines.
 func parsePaste(text string) pasteResult {
 	text = strings.ReplaceAll(strings.TrimPrefix(text, "\uFEFF"), "\r\n", "\n")
-	t, lines := strings.TrimSpace(text), shellcmd.Lines(text)
-	start, args, curl := curlLine(lines)
 	var res pasteResult
-	switch {
-	case strings.HasPrefix(t, "{") || strings.HasPrefix(t, "["):
+	if t := strings.TrimSpace(text); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
 		res = parsePasteJSON([]byte(t))
-	case curl:
-		res = parseCurl(lines, start, args)
-	default:
-		res = parseShell(lines)
+	} else {
+		lines := shellcmd.Lines(text)
+		if start, args, curl := curlLine(lines); curl {
+			res = parseCurl(lines, start, args)
+		} else {
+			res = parseShell(lines)
+		}
 	}
 	if len(res.Drafts) == 0 && len(res.Notes) == 0 {
 		res = pasteResult{Notes: []pasteNote{{Code: noteUnrecognized}}}
@@ -243,14 +243,7 @@ func (s *Service) parsePasteRoute(w http.ResponseWriter, r *http.Request) {
 	if len(res.Drafts) > 0 {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		s.models.mu.Lock()
-		stored, err := s.readStoredLaunchers(ctx)
-		s.models.mu.Unlock()
-		if err != nil {
-			apierr.Write(w, http.StatusInternalServerError, err)
-			return
-		}
-		known, err := s.knownProviders(stored)
+		stored, known, err := s.storedKnown(ctx)
 		if err != nil {
 			apierr.Write(w, http.StatusInternalServerError, err)
 			return

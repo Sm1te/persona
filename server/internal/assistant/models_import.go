@@ -303,6 +303,15 @@ func (s *Service) importGroups(ctx context.Context, machine, alias string) ([]im
 	if alias != "" {
 		aliases = slices.DeleteFunc(slices.Clone(aliases), func(a zshrcAlias) bool { return a.Alias != alias })
 	}
+	stored, known, err := s.storedKnown(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return mergeZshrcAliases(machine, aliases, known), stored, nil
+}
+
+// storedKnown is the stored providers (read under the models lock) and each as an import matches against it.
+func (s *Service) storedKnown(ctx context.Context) ([]storedLauncher, []knownProvider, error) {
 	s.models.mu.Lock()
 	stored, err := s.readStoredLaunchers(ctx)
 	s.models.mu.Unlock()
@@ -313,7 +322,7 @@ func (s *Service) importGroups(ctx context.Context, machine, alias string) ([]im
 	if err != nil {
 		return nil, nil, err
 	}
-	return mergeZshrcAliases(machine, aliases, known), stored, nil
+	return stored, known, nil
 }
 
 // knownProviders opens only the keys needed to match aliases against every stored provider.

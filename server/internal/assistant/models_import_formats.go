@@ -47,25 +47,19 @@ func groupDraft(g importGroup) pasteDraft {
 		Effort: l.Effort, CompactWindow: l.CompactWindow, MaxContext: l.MaxContext, TimeoutMS: l.TimeoutMS,
 		Proxy: l.Proxy, NoProxy: l.NoProxy, Args: l.Args, Env: g.env,
 	}}
-	var hs []pasteHeader
-	for line := range strings.Lines(g.headers) {
-		if h, ok := headerLine(line); ok {
-			hs = append(hs, h)
-		}
-	}
-	d.Provider.Headers, d.SkippedHeaders = pasteHeaders(hs, false, false)
+	d.Provider.Headers, d.SkippedHeaders = pasteHeaders(parseHeaders(g.headers), false, false)
 	d.setKey(g.key)
 	return d
 }
 
-// envDraft is the draft of env alone (no claude command: export lines, a .env, settings.json's env), or the note code
-// why there is none (launchGateway's).
-func envDraft(env map[string]string) (pasteDraft, string) {
+// envDraft is the draft of a claude command line's env and args, or of env alone (export lines, a .env, settings.json's
+// env), or the note code why there is none (launchGateway's).
+func envDraft(env map[string]string, args []string) (pasteDraft, string) {
 	base, code := launchGateway(env)
 	if code != "" {
 		return pasteDraft{}, code
 	}
-	return groupDraft(newImportGroup("", zshrcAlias{Env: env}, base)), ""
+	return groupDraft(newImportGroup("", zshrcAlias{Env: env, Args: args}, base)), ""
 }
 
 // setsClaude: env has a variable of Claude Code's (ANTHROPIC_…, CLAUDE_…).
@@ -110,7 +104,7 @@ func parseShell(lines []shellcmd.Line) pasteResult {
 	tell := func(at int, code string, line int, name string) {
 		told = append(told, placed{at, pasteNote{Code: code, Line: line, Name: name}})
 	}
-	env, setAt := map[string]string{}, map[string]int{}
+	env, baseAt := map[string]string{}, 0 // baseAt: the line setting ANTHROPIC_BASE_URL
 	var aliases, commands []shellLaunch
 	recognized := false
 	for _, l := range lines {
@@ -145,7 +139,10 @@ func parseShell(lines []shellcmd.Line) pasteResult {
 			case words[0] == "export" || !slices.ContainsFunc(words, func(w string) bool { return !shellcmd.AssignRe.MatchString(w) }):
 				for _, w := range words {
 					if k, v, ok := strings.Cut(w, "="); ok && shellcmd.AssignRe.MatchString(w) {
-						env[k], setAt[k], recognized = v, l.Start, true
+						env[k], recognized = v, true
+						if k == "ANTHROPIC_BASE_URL" {
+							baseAt = l.Start
+						}
 					}
 				}
 			default:
@@ -184,26 +181,29 @@ func parseShell(lines []shellcmd.Line) pasteResult {
 		}
 	}
 	for _, c := range commands {
-		base, code := launchGateway(c.env)
-		if code != "" {
+		if d, code := envDraft(c.env, c.args); code != "" {
 			tell(c.line, code, c.line, "")
-			continue
+		} else {
+			res.Drafts = append(res.Drafts, d)
 		}
-		res.Drafts = append(res.Drafts, groupDraft(newImportGroup("", zshrcAlias{Env: c.env, Args: c.args}, base)))
 	}
 	if len(aliases) == 0 && len(commands) == 0 {
-		switch d, code := envDraft(env); {
+		switch d, code := envDraft(env, nil); {
 		case code == "":
 			res.Drafts = append(res.Drafts, d)
 		case code != noteNoGateway:
-			tell(setAt["ANTHROPIC_BASE_URL"], code, setAt["ANTHROPIC_BASE_URL"], "")
+			tell(baseAt, code, baseAt, "")
 		case setsClaude(env): // a .env of something else is no Claude Code at all
 			tell(len(lines)+1, noteNoGateway, 0, "")
 		}
 	}
 	slices.SortStableFunc(told, func(a, b placed) int { return a.at - b.at })
+	seen := map[pasteNote]bool{} // a line can say the same twice (two commands on it)
 	for _, t := range told {
-		addNote(&res.Notes, t.note)
+		if !seen[t.note] {
+			seen[t.note] = true
+			res.Notes = append(res.Notes, t.note)
+		}
 	}
 	return res
 }
@@ -224,7 +224,7 @@ func parseSettings(obj map[string]any) pasteResult {
 		env["ANTHROPIC_MODEL"] = m
 	}
 	res := pasteResult{Format: "settings"}
-	d, code := envDraft(env)
+	d, code := envDraft(env, nil)
 	if code != "" {
 		res.note(code, 0, "")
 		return res
@@ -239,16 +239,6 @@ func parseSettings(obj map[string]any) pasteResult {
 
 // ---- headers ----
 
-// pasteHeader is one request header of a paste.
-type pasteHeader struct{ name, value string }
-
-// headerLine is a "Name: value" line as a header; false for a line that is none.
-func headerLine(line string) (pasteHeader, bool) {
-	name, value, ok := strings.Cut(line, ":")
-	h := pasteHeader{strings.TrimSpace(name), strings.TrimSpace(value)}
-	return h, ok && h.name != ""
-}
-
 // protocolHeaders are the request basics a curl command or a cindy endpoint sends that Claude Code and the manager
 // set themselves.
 var protocolHeaders = []string{"anthropic-version", "anthropic-beta", "content-type", "accept", "accept-encoding", "user-agent"}
@@ -256,34 +246,29 @@ var protocolHeaders = []string{"anthropic-version", "anthropic-beta", "content-t
 // credentialHeader: a header name with a word (between - and _, any case) that names a secret (importCredentialWords,
 // AUTHORIZATION, AUTH).
 func credentialHeader(name string) bool {
-	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' }) {
-		if w = strings.ToUpper(w); slices.Contains(importCredentialWords, w) || w == "AUTHORIZATION" || w == "AUTH" {
-			return true
-		}
-	}
-	return false
+	return credentialWord(strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' }), "AUTHORIZATION", "AUTH")
 }
 
-// pasteHeaders sorts a paste's headers into the provider's ("Name: value" lines) and the ones left out with why:
-// request basics (when protocol: a curl command's, a cindy endpoint's), credentials, and every other header of a
-// direct API provider (api), which takes none.
-func pasteHeaders(hs []pasteHeader, protocol, api bool) (kept string, skipped []skippedHeader) {
+// pasteHeaders sorts a paste's headers (name, value: parseHeaders') into the provider's ("Name: value" lines) and the
+// ones left out with why: request basics (when protocol: a curl command's, a cindy endpoint's), credentials, and every
+// other header of a direct API provider (api), which takes none.
+func pasteHeaders(hs [][2]string, protocol, api bool) (kept string, skipped []skippedHeader) {
 	var lines []string
 	for _, h := range hs {
 		why := ""
 		switch {
-		case protocol && slices.Contains(protocolHeaders, strings.ToLower(h.name)):
+		case protocol && slices.Contains(protocolHeaders, strings.ToLower(h[0])):
 			why = headerSkipProtocol
-		case credentialHeader(h.name):
+		case credentialHeader(h[0]):
 			why = headerSkipCredential
 		case api:
 			why = headerSkipUnsupported
 		}
 		if why != "" {
-			skipped = append(skipped, skippedHeader{Name: h.name, Reason: why})
+			skipped = append(skipped, skippedHeader{Name: h[0], Reason: why})
 			continue
 		}
-		lines = append(lines, h.name+": "+h.value)
+		lines = append(lines, h[0]+": "+h[1])
 	}
 	return strings.Join(lines, "\n"), skipped
 }
@@ -378,15 +363,24 @@ func readCurl(args []string) curlRequest {
 	return c
 }
 
-// curlEndpoint is an endpoint path a curl URL may end in, and the provider that says: the base URL is what is before
-// the path, and keep.
-type curlEndpoint struct{ path, keep, kind, api string }
+// curlEndpoint is an endpoint path a curl URL may end in, and the API that says: the base URL is what is before the
+// path, and keep.
+type curlEndpoint struct{ path, keep, api string }
 
 var curlEndpoints = []curlEndpoint{
-	{"/messages", "", "launcher", "messages"},
-	{"/v1/chat/completions", "/v1", "api", "chat"},
-	{"/v1/responses", "/v1", "api", "responses"},
-	{"/v1/models", "", "launcher", "messages"},
+	{"/messages", "", "messages"},
+	{"/v1/chat/completions", "/v1", "chat"},
+	{"/v1/responses", "/v1", "responses"},
+	{"/v1/models", "", "messages"},
+}
+
+// endpointProvider is the provider calling api at base: Messages a Claude Code gateway (base as MessagesBaseURL makes
+// it), Responses or Chat Completions a direct API (base without a trailing /).
+func endpointProvider(api, base string) pastedProvider {
+	if api == "messages" {
+		return pastedProvider{Kind: "launcher", Agent: "claude", API: api, BaseURL: proto.MessagesBaseURL(base)}
+	}
+	return pastedProvider{Kind: "api", API: api, BaseURL: strings.TrimRight(base, "/")}
 }
 
 // parseCurl reads a pasted curl command (args, the words after curl on the command line at line start; the other
@@ -404,7 +398,7 @@ func parseCurl(lines []shellcmd.Line, start int, args []string) pasteResult {
 	}
 	for _, l := range lines {
 		if t := strings.TrimSpace(l.Text); l.Start > start && t != "" && !strings.HasPrefix(t, "#") {
-			res.note(noteLineUnused, l.Start, "")
+			res.Notes = append(res.Notes, pasteNote{Code: noteLineUnused, Line: l.Start}) // one per line: none twice
 		}
 	}
 	return res
@@ -428,19 +422,16 @@ func curlDraft(c curlRequest) (pasteDraft, string) {
 	case err != nil || u.Host == "":
 		return pasteDraft{}, noteUnrecognized
 	}
-	d := pasteDraft{Provider: pastedProvider{Kind: "launcher", Agent: "claude", API: "messages"}}
-	p := &d.Provider
+	var d pasteDraft
 	root, path := u.Scheme+"://"+u.Host, strings.TrimRight(u.EscapedPath(), "/")
-	i := slices.IndexFunc(curlEndpoints, func(e curlEndpoint) bool { return strings.HasSuffix(path, e.path) })
-	if i < 0 {
-		addNote(&d.Notes, pasteNote{Code: noteCurlPath, Name: u.Path})
-		p.BaseURL = proto.MessagesBaseURL(root + path)
-	} else if e := curlEndpoints[i]; e.kind == "api" {
-		p.Kind, p.Agent, p.API = e.kind, "", e.api
-		p.BaseURL = root + strings.TrimSuffix(path, e.path) + e.keep
+	if i := slices.IndexFunc(curlEndpoints, func(e curlEndpoint) bool { return strings.HasSuffix(path, e.path) }); i >= 0 {
+		e := curlEndpoints[i]
+		d.Provider = endpointProvider(e.api, root+strings.TrimSuffix(path, e.path)+e.keep)
 	} else {
-		p.BaseURL = proto.MessagesBaseURL(root + strings.TrimSuffix(path, e.path))
+		d.Provider = endpointProvider("messages", root+path)
+		addNote(&d.Notes, pasteNote{Code: noteCurlPath, Name: u.Path})
 	}
+	p := &d.Provider
 	api := p.Kind == "api"
 	for _, opt := range c.unused {
 		addNote(&d.Notes, pasteNote{Code: noteCurlOption, Name: opt})
@@ -464,20 +455,16 @@ func curlDraft(c curlRequest) (pasteDraft, string) {
 		p.Model = strings.TrimSpace(body.Model)
 		p.Models = []proto.ProviderModel{{ID: p.Model}}
 	}
-	var hs []pasteHeader
+	var hs [][2]string
 	key, found := "", false
-	for _, line := range c.headers {
-		h, ok := headerLine(line)
-		if !ok {
-			continue
-		}
-		f := strings.Fields(h.value)
+	for _, h := range parseHeaders(strings.Join(c.headers, "\n")) {
+		f := strings.Fields(h[1])
 		switch {
 		case found: // a second key is a credential header like any
-		case strings.EqualFold(h.name, "x-api-key"):
-			key, p.Auth, found = h.value, "api_key", true
+		case strings.EqualFold(h[0], "x-api-key"):
+			key, p.Auth, found = h[1], "api_key", true
 			continue
-		case strings.EqualFold(h.name, "authorization") && len(f) == 2 && strings.EqualFold(f[0], "bearer"):
+		case strings.EqualFold(h[0], "authorization") && len(f) == 2 && strings.EqualFold(f[0], "bearer"):
 			key, p.Auth, found = f[1], "bearer", true
 			continue
 		}
@@ -597,12 +584,15 @@ func (res *pasteResult) cindyProvider(p cindyProvider) {
 		res.note(noteURLUser, 0, p.Name)
 		return
 	}
-	d := pasteDraft{Label: p.Name, Provider: pastedProvider{DisplayName: p.Name}}
+	api := "messages"
+	if e.Protocol != cindyMessages {
+		api = strings.TrimPrefix(e.Protocol, "openai-")
+	}
+	d := pasteDraft{Label: p.Name, Provider: endpointProvider(api, raw)}
 	pr := &d.Provider
-	if e.Protocol == cindyMessages {
-		pr.Kind, pr.Agent, pr.API, pr.BaseURL, pr.Auth = "launcher", "claude", "messages", proto.MessagesBaseURL(raw), "api_key"
-	} else {
-		pr.Kind, pr.API, pr.BaseURL, pr.Auth = "api", strings.TrimPrefix(e.Protocol, "openai-"), strings.TrimRight(raw, "/"), "bearer"
+	pr.DisplayName, pr.Auth = p.Name, "api_key"
+	if pr.Kind == "api" {
+		pr.Auth = "bearer"
 	}
 	models := e.Models
 	if len(models) == 0 {
@@ -616,10 +606,10 @@ func (res *pasteResult) cindyProvider(p cindyProvider) {
 	if len(pr.Models) > 0 {
 		pr.Model = pr.Models[0].ID
 	}
-	var hs []pasteHeader
+	var hs [][2]string
 	for _, name := range slices.Sorted(maps.Keys(e.Headers)) {
 		if v, ok := e.Headers[name].(string); ok {
-			hs = append(hs, pasteHeader{name, v})
+			hs = append(hs, [2]string{name, v})
 		}
 	}
 	pr.Headers, d.SkippedHeaders = pasteHeaders(hs, true, pr.Kind == "api")
