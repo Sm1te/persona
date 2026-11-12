@@ -8,5 +8,6 @@
   "use_task": "Scheduled task “{name}”",
   "use_profile": "Model profile “{name}”",
   "use_tier": "Agent preset “{tier}” in “{profile}”",
-  "err_not_hidden": "The providers were imported, but the aliases could not be hidden. Hide them from the list, or try the import again."
+  "err_not_hidden": "The providers were imported, but the aliases could not be hidden. Hide them from the list, or try the import again.",
+  "err_text_required": "Paste a configuration to read"
 }

@@ -90,6 +90,7 @@ var Features = []string{
 	"conversation_origin",      // Session.origin on assistant conversations (docs/protocol/protocol.md "Origin of assistant conversations")
 	"builtin_presets",          // the hub's own provider presets in GET /api/v1/launchers/presets; POST /api/v1/launchers with a preset takes an empty name, display_name and assign (docs/integrations/launchers.md "Built-in presets")
 	"launcher_auto_name",       // POST /api/v1/launchers without a preset takes an empty name; GET /api/v1/machines/{mid}/launchers carries display_name (docs/integrations/launchers.md "Display names")
+	"launcher_import_parse",    // POST /api/v1/launchers/import/parse reads a pasted configuration into provider drafts; GET / POST /api/v1/launchers/import take alias (#5193)
 	"upload_dir",               // POST /api/v1/machines/{mid}/files?dest=dir&dir=&conflict=: into a folder of the home (docs/protocol/protocol.md "Changing files")
 	"file_edit",                // POST /api/v1/machines/{mid}/files/{rename,move,trash,restore} (docs/protocol/protocol.md "Changing files")
 	"launcher_scope",           // a Persona-managed provider's share, scope_machines, delivery, own_service and machine_keys (docs/integrations/launchers.md "Device scope and on-demand delivery")

@@ -108,7 +108,7 @@ func importEnvSkip(k, v string) string {
 	if urlWithUser(v) {
 		return envSkipCredential
 	}
-	if strings.ContainsAny(v, "$`") || strings.HasPrefix(v, "~") {
+	if shellExpands(v) {
 		return envSkipShell // Persona stores text: what the shell would make of it is not known here
 	}
 	if _, ok := importEnvLine(k, v); !ok {
@@ -116,6 +116,9 @@ func importEnvSkip(k, v string) string {
 	}
 	return ""
 }
+
+// shellExpands: the shell would make something else of v ($…, `…`, a leading ~).
+func shellExpands(v string) bool { return strings.ContainsAny(v, "$`") || strings.HasPrefix(v, "~") }
 
 // importEnvLine is k=v as one line of a provider's env that the node's envLine (node/launcherenv.go) reads back as
 // exactly v: quoted with "…" when v has a blank, # or a quote, with '…' when it has a " (there is no escape). False
