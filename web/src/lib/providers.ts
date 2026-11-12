@@ -544,7 +544,8 @@ export interface ImportRow {
 }
 
 export const hostOf = (u?: string) => (u ? urlHost(u) : "");
-const names = (xs: string[]) => xs.join(t("lib-providers.alias_separator"));
+/** Names in a line: aliases, variables, headers. */
+export const names = (xs: string[]) => xs.join(t("lib-providers.alias_separator"));
 
 /** The group asks "A provider for each alias" / "One provider": its aliases set more than the model differently. */
 export const importCanSplit = (p: ImportedProvider) => !!p.differs?.length && (p.variants?.length ?? 0) > 1;
@@ -577,12 +578,12 @@ export function importFrom(p: ImportedProvider): string[] {
 }
 
 /** The variables the provider brings along, or "" when none. */
-export const importBrings = (p: ImportedProvider) => (p.env_names?.length ? t("lib-providers.brings", { names: names(p.env_names) }) : "");
+export const importBrings = (p: Pick<ImportedProvider, "env_names">) => (p.env_names?.length ? t("lib-providers.brings", { names: names(p.env_names) }) : "");
 
 const SKIP_ORDER = ["credential", "shell", "computer", "limit"];
 
 /** The variables left out, a line per reason in plain words; an unknown reason reads as the generic one. */
-export function importLeftOut(p: ImportedProvider): string[] {
+export function importLeftOut(p: Pick<ImportedProvider, "skipped_env">): string[] {
   const by = new Map<string, string[]>();
   for (const s of p.skipped_env ?? []) {
     const reason = SKIP_ORDER.includes(s.reason) ? s.reason : "other";
