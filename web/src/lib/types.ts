@@ -127,6 +127,8 @@ export interface SessionCapabilities {
   send?: boolean;
   interrupt?: boolean;
   approve?: boolean;
+  /** Answer Codex App asynchronous questions without granting permission approvals. */
+  answer_questions?: boolean;
   terminal?: boolean;
   attach?: boolean;
   /** Whether the runtime explicitly supports session model changes. */

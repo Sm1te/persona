@@ -22,6 +22,20 @@ beforeEach(() => {
 });
 
 describe("answerCard", () => {
+  it("answers a desktop async question without granting permission approvals", async () => {
+    session = { machine_id: "m", session_id: "a", source_kind: "codex_history", capabilities: { read: true, send: true, approve: false, answer_questions: true } } as Session;
+    const question: Interaction = { ...ix, kind: "question", tool_name: "request_user_input_async", questions: [{ question: "Which color?", options: [{ label: "Blue" }] }] };
+    const body = { answers: { "Which color?": "Blue" } };
+    apiOp.mockResolvedValue({});
+    expect(await answerCard(question, body)).toEqual({ ok: true, already: false });
+    expect(apiOp).toHaveBeenCalledWith("/interactions/p1/resolve", { method: "POST", json: body });
+    apiOp.mockClear();
+    for (const card of [ix, { ...question, tool_name: "request_user_input" }, { ...question, kind: "permission" as const }, { ...question, kind: "plan" as const }]) {
+      expect(await answerCard(card, body)).toEqual({ ok: false, error: "此会话不允许审批" });
+    }
+    expect(apiOp).not.toHaveBeenCalled();
+  });
+
   it("会话不让批：不发，说为什么", async () => {
     session = { machine_id: "m", session_id: "a", source_kind: "codex_history", capabilities: { approve: false } } as Session;
     expect(await answerCard(ix, allowBody())).toEqual({ ok: false, error: "此会话不允许审批" });

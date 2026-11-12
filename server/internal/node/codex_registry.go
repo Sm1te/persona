@@ -611,6 +611,7 @@ func (n *Node) codexSessionsIn(seen map[string]bool, pass *codexListPass) []prot
 			elsewhere = true
 			s.AgentName, s.AgentSurface = "Codex App", transcript.SurfaceDesktop
 			s.Capabilities.Send = true
+			s.Capabilities.AnswerQuestions = true
 			s.ReadOnlyReason = ""
 			n.placeCodexDesktop(&s, src, src.thread, false)
 		} else if o := readCodexOrigin(src.path); o.desktop {
@@ -624,6 +625,7 @@ func (n *Node) codexSessionsIn(seen map[string]bool, pass *codexListPass) []prot
 				elsewhere = true
 				s.AgentName, s.AgentSurface = "Codex App", transcript.SurfaceDesktop
 				s.Capabilities.Send = true
+				s.Capabilities.AnswerQuestions = true
 				s.ReadOnlyReason = ""
 				n.placeCodexDesktop(&s, src, src.thread, false)
 			}

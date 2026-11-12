@@ -135,6 +135,16 @@ func (n *Node) codexCardsNow(ctx context.Context, only string) []codexCard {
 		}
 	}
 	n.mu.Unlock()
+	// Desktop App sessions have no terminal pane. Use the same visibility and routing checks as the session list,
+	// including archived threads, scoped nodes and parent-managed subagents.
+	for _, s := range n.codexSessions(map[string]bool{}) {
+		if s.Capabilities == nil || !s.Capabilities.AnswerQuestions || s.SourceKind != "codex_history" || s.IsSubagent || (only != "" && s.SessionID != only) {
+			continue
+		}
+		if _, exists := agents[s.SessionID]; !exists {
+			agents[s.SessionID] = codexAgent{kind: "codex", cwd: s.Cwd, status: s.Status, desktop: true}
+		}
+	}
 	for id, a := range agents {
 		// A joined thread's app-server hands Persona its approvals and overlay questions itself (codex_remote_asks.go):
 		// only its async questions, which are messages rather than requests, are read here.
@@ -153,8 +163,18 @@ func (n *Node) codexCardsNow(ctx context.Context, only string) []codexCard {
 		if title == "" {
 			title = filepath.Base(a.cwd)
 		}
+		asks := n.cx.asks(id, path)
+		if a.desktop {
+			blocked := false
+			for _, ask := range asks {
+				blocked = blocked || !ask.Async
+			}
+			if blocked { // The App's IPC cannot answer a blocking request or steer around it.
+				continue
+			}
+		}
 		waiting := false
-		for _, ask := range n.cx.asks(id, path) {
+		for _, ask := range asks {
 			if ask.Async && !ask.At.IsZero() && time.Since(ask.At) > codexAskMaxAge {
 				continue
 			}
@@ -164,7 +184,7 @@ func (n *Node) codexCardsNow(ctx context.Context, only string) []codexCard {
 			waiting = waiting || !ask.Async
 			out = append(out, codexCard{ix: askCard(id, a, title, ask), pane: a.pane, ask: &ask})
 		}
-		if waiting || a.joined || a.status != proto.StatusBlocked {
+		if a.desktop || waiting || a.joined || a.status != proto.StatusBlocked {
 			continue
 		}
 		d, read := n.codexApprovalOn(ctx, a.pane)
@@ -181,6 +201,7 @@ func (n *Node) codexCardsNow(ctx context.Context, only string) []codexCard {
 type codexAgent struct {
 	kind, pane, cwd, status string
 	joined                  bool // on its app-server (codex_daemon.go)
+	desktop                 bool // App-local IPC: asynchronous question replies only
 }
 
 // codexJoined: Persona has joined the session's thread on the app-server that runs it (codex_remote.go,
@@ -474,7 +495,7 @@ func (n *Node) codexAnswer(ctx context.Context, session, id string, r proto.Reso
 	switch {
 	case card.approval != nil:
 		err = n.codexApprove(ctx, card, r)
-	case card.ask.Async && n.codexJoined(session):
+	case card.ask.Async && (card.pane == "" || n.codexJoined(session)):
 		err = n.codexReplyRemote(ctx, session, card, r)
 	case card.ask.Async:
 		err = n.codexReply(ctx, session, card, r)

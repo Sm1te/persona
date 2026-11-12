@@ -28,8 +28,9 @@ export function isStoppedAgent(s: Session | undefined): boolean {
 
 /** A script request explicitly outside a session has no session-source approval
  *  policy. A nonempty session id still requires its real session metadata. */
-export function interactionCanAnswer(ix: Pick<Interaction, "session_id">, session: Session | undefined): boolean {
-  return ix.session_id === "" || sessionCan(session, "approve");
+export function interactionCanAnswer(ix: Pick<Interaction, "session_id" | "kind" | "tool_name">, session: Session | undefined): boolean {
+  return ix.session_id === "" || sessionCan(session, "approve") ||
+    (ix.kind === "question" && ix.tool_name === "request_user_input_async" && sessionCan(session, "answer_questions"));
 }
 
 export function sourceSubtitle(s?: Session): string {

@@ -123,8 +123,8 @@ func (n *Node) codexRoute(id string) (route, note string) {
 	return codexRouteTerminal, err.Error()
 }
 
-// codexReplyRemote answers async questions of a joined thread: the same reply envelope as typed into its box
-// (codexReply), sent as a message through the app-server — the TUI's box and anything drafted in it stay as they are.
+// codexReplyRemote answers async questions through a joined app-server or the desktop App's IPC: the same reply
+// envelope as typed into a terminal (codexReply), sent as a message without changing a terminal's draft.
 func (n *Node) codexReplyRemote(ctx context.Context, session string, card *codexCard, r proto.Resolution) error {
 	var replies []transcript.CodexReply
 	for _, q := range card.ask.Questions {

@@ -22,8 +22,10 @@ type SessionCapabilities struct {
 	Send      bool `json:"send"`
 	Interrupt bool `json:"interrupt"`
 	Approve   bool `json:"approve"`
-	Terminal  bool `json:"terminal"`
-	Attach    bool `json:"attach"`
+	// AnswerQuestions permits asynchronous question replies without granting permission approvals.
+	AnswerQuestions bool `json:"answer_questions,omitempty"`
+	Terminal        bool `json:"terminal"`
+	Attach          bool `json:"attach"`
 	// Close is independent of terminal access. Absent on older nodes, where clients retain terminal-only closing.
 	Close *bool `json:"close,omitempty"`
 	// Modes: the apps' permission mode and effort chips can change this session (session.modes). Absent (nil) from a node

@@ -74,6 +74,34 @@ afterEach(() => {
 });
 
 describe("a card answering from the keyboard", () => {
+  it("selects and submits a Codex App async answer with only the question capability", async () => {
+    Object.assign(getState(), { sessions: { m: [{ machine_id: "m", session_id: "s", source_kind: "codex_history", capabilities: { read: true, send: true, answer_questions: true, approve: false } } as Session] } });
+    act(() => root.render(<InteractionCard ix={{ ...question, tool_name: "request_user_input_async" }} />));
+    expect(host.querySelector("fieldset[disabled]")).toBeNull();
+    const picked = [...host.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].find((b) => b.textContent?.includes("Swift Testing"))!;
+    act(() => picked.click());
+    expect(picked.getAttribute("aria-pressed")).toBe("true");
+    act(() => cardRoot().focus());
+    await press("Enter");
+    await flush();
+    expect(calls).toEqual([{ path: "/interactions/q_1/resolve", body: { answers: { "哪个框架？": "Swift Testing" } } }]);
+  });
+
+  it.each([
+    ["sync question", { ...question, tool_name: "request_user_input" }],
+    ["permission", permission],
+    ["plan", plan],
+  ])("the desktop async-question capability does not enable a %s", async (_name, ix) => {
+    Object.assign(getState(), { sessions: { m: [{ machine_id: "m", session_id: "s", source_kind: "codex_history", capabilities: { read: true, send: true, answer_questions: true, approve: false } } as Session] } });
+    act(() => root.render(<InteractionCard ix={ix} />));
+    expect(host.querySelector("fieldset[disabled]")).toBeTruthy();
+    act(() => cardRoot().focus());
+    await press("1");
+    await press("Enter");
+    await flush();
+    expect(calls).toEqual([]);
+  });
+
   it("Enter allows a permission: the main action, never a deny", async () => {
     act(() => root.render(<InteractionCard ix={permission} />));
     act(() => cardRoot().focus());
