@@ -150,5 +150,6 @@
   "search_settings": "設定を検索",
   "search_in_page": "このページ内",
   "search_no_results": "一致する設定がありません",
-  "search_placeholder_settings": "設定を検索"
+  "search_placeholder_settings": "設定を検索",
+  "provider_missing": "{name}を開けませんでした。プロバイダーの一覧にありません。"
 }

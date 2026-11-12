@@ -64,9 +64,9 @@ const importButton = () => [...document.body.querySelectorAll("button")].find((b
 const posted = () => calls.find((c) => c.method === "POST")!.body!;
 const radio = (group: string, split: boolean) => q(`[role="radiogroup"][aria-label="${t("settings-providerimport.choice_label", { name: group })}"] [data-split="${split}"]`);
 
-async function draw(machines: Machine[] = MACHINES) {
+async function draw(machines: Machine[] = MACHINES, one: { machine?: string; alias?: string } = {}) {
   Object.assign(getState(), { machines });
-  act(() => root.render(<ProviderImport open onClose={closed} onImported={imported} />));
+  act(() => root.render(<ProviderImport open onClose={closed} onImported={imported} {...one} />));
   await flush();
 }
 
@@ -213,6 +213,26 @@ describe("provider import", () => {
     expect(document.body.querySelector("[data-import-hide]")).toBeNull();
     await click(importButton());
     expect(posted()).toEqual({ machine: "laptop", providers: ["cc_relay"], split: [], hide_aliases: false });
+  });
+
+  it("opened for one alias, starts on its computer and reads and imports only that alias (#5193)", async () => {
+    preview = (machine) => json({ machine, providers: [PREVIEW[1]] });
+    await draw(MACHINES, { machine: "desk", alias: "cc_relay" });
+    expect(calls.filter((c) => c.method === "GET")).toEqual([expect.objectContaining({ query: "machine=desk&alias=cc_relay" })]);
+    expect(q<HTMLSelectElement>("select").value).toBe("desk");
+    await click(importButton());
+    expect(posted()).toEqual({ machine: "desk", providers: ["cc_relay"], split: [], hide_aliases: true, alias: "cc_relay" });
+  });
+
+  it("keeps reading one alias on another computer picked", async () => {
+    await draw(MACHINES, { machine: "desk", alias: "cc_relay" });
+    const select = q<HTMLSelectElement>("select");
+    act(() => {
+      select.value = "laptop";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    expect(calls.at(-1)).toMatchObject({ method: "GET", query: "machine=laptop&alias=cc_relay" });
   });
 
   it("explains instead of showing a picker when there is no computer", async () => {

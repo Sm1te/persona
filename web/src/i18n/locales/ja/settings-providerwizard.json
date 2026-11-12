@@ -166,5 +166,12 @@
   "discovering": "モデル一覧を取得中…",
   "testing": "接続をテスト中…",
   "retry": "再試行",
-  "check_leave_url": "URL欄から移動するとチェックします。"
+  "check_leave_url": "URL欄から移動するとチェックします。",
+  "paste_title": "設定を貼り付け",
+  "paste_detail": "いま使っている設定（alias、設定ファイル、curlコマンドなど）を貼り付けると、プロバイダーが入力されます。",
+  "paste_continue": "続ける",
+  "found_title": "お使いのコンピューターで見つかったもの",
+  "found_hint": "ゲートウェイ経由でClaude Codeを起動し、まだPersonaにないaliasです。選ぶとインポートします。",
+  "found_on": "{computer}上",
+  "found_on_offline": "{computer}上（オフライン）"
 }

@@ -1,7 +1,7 @@
 // The provider wizard's form pieces (#2455): a labelled input, a secret one (keys, headers: never offered to the
-// browser's password manager, shown only on request), and the "Advanced" disclosure.
+// browser's password manager, shown only on request), the "Advanced" disclosure, and a check's status line.
 import { useId, useState } from "react";
-import { Collapse, cx, SECRET_INPUT } from "../../ui/atoms";
+import { Collapse, cx, SECRET_INPUT, Spinner } from "../../ui/atoms";
 import { Icon } from "../../ui/icons";
 import { inputClass, textareaClass } from "../assistant/parts";
 import { t } from "../../i18n";
@@ -105,5 +105,24 @@ export function CheckMark({ on, round, className }: { on: boolean; round?: boole
     <span aria-hidden className={cx("flex size-4 shrink-0 items-center justify-center transition-colors duration-150", round ? "rounded-full" : "rounded-chip", on ? "bg-accent text-white" : "shadow-[inset_0_0_0_1.5px_var(--line-strong)]", className)}>
       {on && <Icon name="check" size={10} stroke={3} />}
     </span>
+  );
+}
+
+/** A check running: a spinner and what it is doing. */
+export function BusyLine({ children }: { children: React.ReactNode }) {
+  return (
+    <p role="status" className="flex items-center gap-1.5 text-[12px] text-ink-2">
+      <Spinner />
+      {children}
+    </p>
+  );
+}
+
+/** The one action at the end of a check's failed line (Retry, Test again, Use another), in the line's color. */
+export function LineAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="touch-hit shrink-0 whitespace-nowrap font-medium hover:underline">
+      {children}
+    </button>
   );
 }

@@ -8,7 +8,10 @@
 // (#4975: filled in from the checked models, a summary with Adjust), the rest under "Advanced". Editing opens at "Connect" with the
 // same form. The logic is lib/providers.ts, lib/provider-tiers.ts and lib/launcher-presets.ts. It reads the main conversation's readiness (4.3 B.3 / B.4): with a
 // Claude Code that already answers, "Use it for the main conversation and new Agents" starts off; a key saved for a computer with no Claude Code
-// says so (the main conversation still starts claude there) with how to install it.
+// says so (the main conversation still starts claude there) with how to install it. On a hub that reads pasted settings
+// (#5193), ① also offers "Paste a configuration" (ProviderPaste: a draft fills in this form, or opens a stored provider
+// on the same address with its models or key) and lists the rc-file aliases found on the computers, each opening the
+// import for itself.
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, enc, errorText } from "../../lib/api";
 import {
@@ -43,6 +46,7 @@ import {
   formFromView,
   formModel,
   formProblems,
+  hostOf,
   mergeDiscovered,
   legacyChatClears,
   newForm,
@@ -57,6 +61,7 @@ import {
   type TestResult,
 } from "../../lib/providers";
 import { forgetProviderNames, providerTitle } from "../../lib/provider-names";
+import { draftForm, editDraft, newPaste, PASTE_FEATURE, pasteChoice, withEditDraft, type EditDraft, type FoundAlias, type PasteState } from "../../lib/provider-paste";
 import { applyTiers, checkedIds, hasTiers, setTier, tierAdvice, tierLines, tiersSplit, withAutoTiers, type TierAdvice, type TierRow, type Tiers, type TierSlot } from "../../lib/provider-tiers";
 import { formScope, newScope, scopeBody, scopeFromView, scopeProblem, scopeShown, scopeSummary, type ScopeForm } from "../../lib/provider-scope";
 import { claudeMissing, claudeWorks, currentReadiness, readinessChanged, readinessSettled, useReadiness, type Readiness } from "../../lib/readiness";
@@ -68,7 +73,8 @@ import { Icon, type IconName } from "../../ui/icons";
 import { Segmented } from "../assistant/parts";
 import { InstallClaudeHelp } from "../assistant/Readiness";
 import { Pill, Switch } from "./SettingsParts";
-import { CheckMark, Disclosure, FIELD, INPUT, Labelled, SecretField, SMALL, TextField } from "./ProviderFields";
+import { BusyLine, CheckMark, Disclosure, FIELD, INPUT, Labelled, LineAction, SecretField, SMALL, TextField } from "./ProviderFields";
+import { ProviderPaste } from "./ProviderPaste";
 import { ProviderScope } from "./ProviderScope";
 import { t } from "../../i18n";
 
@@ -115,7 +121,19 @@ type Found = { n: number; error?: string; check: boolean; seq: number };
 /** How long a pasted or typed key (a gateway's address and key) has to stay the same before it is tested on its own. */
 const AUTO_TEST_MS = 700;
 
-export function ProviderWizard({ existing, onClose, onSaved }: { existing: ProviderView | "new" | null; onClose: () => void; onSaved: () => void }) {
+export function ProviderWizard({ existing, onClose, onSaved, draft = null, found: aliases = [], onImportAlias, onEditWith }: {
+  existing: ProviderView | "new" | null;
+  onClose: () => void;
+  onSaved: () => void;
+  /** What a stored provider opens with, from a paste (#5193): applied once, as it opens. */
+  draft?: EditDraft | null;
+  /** The rc-file aliases ① lists under "Found on your computers". */
+  found?: FoundAlias[];
+  /** One of `found` picked: the wizard closes and the import opens for it. */
+  onImportAlias?: (alias: FoundAlias) => void;
+  /** A paste goes on with a stored provider: the wizard opens it with `draft`. */
+  onEditWith?: (provider: string, draft: EditDraft) => void;
+}) {
   const isNew = existing === "new";
   const old = existing && existing !== "new" ? existing : null;
   const [step, setStep] = useState<Step>("pick");
@@ -156,6 +174,9 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   // a preset's id, or CUSTOM for a gateway typed by hand; "" before anything is picked
   const [choice, setChoice] = useState("");
   const [pf, setPf] = useState(NO_PRESET_FORM);
+  // ① shows the paste view instead of the list; what was pasted and read stays for this opening (#5193)
+  const [pasting, setPasting] = useState(false);
+  const [paste, setPaste] = useState<PasteState>(newPaste);
   // "More options": a preset's names and model, a gateway's startup ID
   const [more, setMore] = useState(false);
   // null: not touched, so it follows the readiness (off while Claude Code already answers)
@@ -172,6 +193,8 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const hubNames = useStore((s) => hubHas(s.features, BUILTIN_PRESETS_FEATURE, true));
   // a hub that makes up a gateway's startup ID too: the ID waits under "More options"; an older one needs it typed
   const autoName = useStore((s) => hubHas(s.features, AUTO_NAME_FEATURE));
+  // a hub that reads pasted settings and imports one alias: ① offers both
+  const canPaste = useStore((s) => hubHas(s.features, PASTE_FEATURE));
   // the device scope (docs/integrations/launchers.md "Device scope and on-demand delivery"): an existing provider's
   // when its hub returns one, a new one's when the hub says it takes it
   const scopeOn = useStore((s) => scopeShown(old, s.features));
@@ -213,11 +236,14 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     setFound(null);
     setProbeModel("");
     setUrlTyping(false);
-    setF(old ? formFromView(old) : newForm());
+    // a stored provider opened from a paste: with the models it lacks, at "Choose models", or the pasted key at "Connect"
+    setF(old ? (draft ? withEditDraft(formFromView(old), draft) : formFromView(old)) : newForm());
     setScope(scopeFromView(old) ?? newScope());
     setDevicesOpen(false);
     setMore(false);
-    setStep(old ? "connect" : "pick");
+    setPasting(false);
+    setPaste(newPaste());
+    setStep(old ? draft?.step ?? "connect" : "pick");
     if (!isNew) return;
     setChoice("");
     setPf(NO_PRESET_FORM);
@@ -262,7 +288,8 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
   const foundModels = !!found && !found.error && found.n > 0;
   const openAI = f.kind === "api" && (f.api === "responses" || f.api === "chat");
   const hasLegacyChat = Object.keys(legacyChatClears(old)).length > 0;
-  const presetFlow = isNew && choice !== CUSTOM;
+  // a paste goes on like the gateway typed by hand
+  const presetFlow = isNew && choice !== CUSTOM && !pasting;
   const presetReady = !!preset && (hubNames || !!pf.name.trim()) && !launcherNameProblem(pf.name) && !displayNameProblem(pf.display_name) && !!pf.api_key.trim() && !keyTest?.running;
   const devicesProblem = scopeOn ? scopeProblem(scope) : "";
   const canSave = !devicesProblem && (step === "key" ? presetReady : !problems.connect && !problems.models && !problems.advanced && (!hasLegacyChat || clearLegacyChat));
@@ -278,6 +305,19 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
     }
     setChoice(id);
     setStep(id === CUSTOM ? "connect" : "key");
+  };
+
+  // Continue on a paste: a new provider fills in the gateway's form (its check then runs by itself); a stored one on the
+  // same address opens in its own edit wizard, with the models to add or the key to put in.
+  const pasted = pasteChoice(paste);
+  const continuePaste = () => {
+    if (!pasted) return;
+    const { draft: d, action } = pasted;
+    if (action.type !== "new") return onEditWith?.(action.provider, editDraft(d, action.type));
+    setError("");
+    setF(draftForm(d));
+    setChoice(CUSTOM);
+    setStep("connect");
   };
 
   const runTest = async () => {
@@ -455,6 +495,16 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
                 {t("settings-providerwizard.back")}
               </Button>
             )}
+            {step === "pick" && pasting && (
+              <>
+                <Button tone="secondary" onClick={() => (setError(""), setPasting(false))}>
+                  {t("settings-providerwizard.back")}
+                </Button>
+                <Button tone="primary" disabled={!pasted} onClick={continuePaste}>
+                  {t("settings-providerwizard.paste_continue")}
+                </Button>
+              </>
+            )}
             {step === "connect" && (
               <Button tone={isNew || foundModels ? "primary" : "secondary"} onClick={next}>
                 {t("settings-providerwizard.next")}
@@ -508,7 +558,10 @@ export function ProviderWizard({ existing, onClose, onSaved }: { existing: Provi
           <span>{t("settings-providerwizard.chat_clear_legacy")}</span>
         </label>}
 
-        {step === "pick" && <PickStep presets={presets} error={presetsError} choice={choice} onPick={pick} />}
+        {step === "pick" && (pasting ? <ProviderPaste paste={paste} setPaste={setPaste} /> : (
+          <PickStep presets={presets} error={presetsError} choice={choice} onPick={pick}
+            onPaste={canPaste ? () => (setError(""), setPasting(true)) : undefined} found={canPaste ? aliases : []} onFound={(a) => onImportAlias?.(a)} />
+        ))}
 
         {step === "key" && preset && (
           <KeyStep preset={preset} pf={pf} setPf={setPf} keyTest={keyTest} onRetest={() => void runKeyTest()} onOther={() => (setError(""), setChoice(""), setStep("pick"))} assign={hubNames ? assign : null} setAssign={setAssign} checking={pending && assignSet === null} works={works ? readiness?.machine?.name ?? "" : null} more={more} setMore={setMore}
@@ -637,18 +690,25 @@ function Tile({ icon }: { icon: IconName }) {
 
 const presetIcon = (p: LauncherPreset): IconName => (p.plugin === BUILTIN_PLUGIN ? "spark" : "extension");
 
-/** ①: the hub's providers in its order, the gateway typed by hand last. Picking one goes on. A built-in one says who
- *  it is for, not its address (that is on ②); an extension's says its kind and host. */
-function PickStep({ presets, error, choice, onPick }: { presets: LauncherPreset[] | null; error: string; choice: string; onPick: (id: string) => void }) {
-  if (!presets) return <Loading />;
-  const row = (id: string, icon: IconName, title: string, detail: string | undefined, meta: string, badge?: string) => (
-    <li key={id} className="border-b border-line last:border-b-0">
-      <button type="button" onClick={() => onPick(id)} aria-current={choice === id ? "true" : undefined}
-        className={cx("flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors pointer-coarse:min-h-14", choice === id ? "bg-accent-tint" : "hover:bg-hover")}>
+/** A row of ①: its tile, title (an alias's in monospace), a line on what it is and a quieter one under it. */
+function PickRow({ icon, title, mono, detail, meta, badge, current, onClick }: {
+  icon: IconName;
+  title: string;
+  mono?: boolean;
+  detail?: string;
+  meta?: string;
+  badge?: string;
+  current?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li className="border-b border-line last:border-b-0">
+      <button type="button" onClick={onClick} aria-current={current ? "true" : undefined}
+        className={cx("flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors pointer-coarse:min-h-14", current ? "bg-accent-tint" : "hover:bg-hover")}>
         <Tile icon={icon} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[13px] font-medium text-ink">{title}</span>
+            <span className={cx("truncate text-[13px] font-medium text-ink", mono && "font-mono")}>{title}</span>
             {badge && <Pill>{badge}</Pill>}
           </span>
           {detail && <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-relaxed text-ink-2">{detail}</span>}
@@ -658,16 +718,52 @@ function PickStep({ presets, error, choice, onPick }: { presets: LauncherPreset[
       </button>
     </li>
   );
+}
+
+/** ①: the hub's providers in its order, the gateway typed by hand last. Picking one goes on. A built-in one says who
+ *  it is for, not its address (that is on ②); an extension's says its kind and host. On a hub that reads pasted
+ *  settings (`onPaste`), "Paste a configuration" after them, then the aliases found on the computers, when there are any. */
+function PickStep({ presets, error, choice, onPick, onPaste, found, onFound }: {
+  presets: LauncherPreset[] | null;
+  error: string;
+  choice: string;
+  onPick: (id: string) => void;
+  onPaste?: () => void;
+  found: FoundAlias[];
+  onFound: (alias: FoundAlias) => void;
+}) {
+  const foundId = useId();
+  if (!presets) return <Loading />;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] leading-relaxed text-ink-2">{t("settings-providerwizard.pick_intro")}</p>
       <ul aria-label={t("settings-providerwizard.provider_type")} className="overflow-hidden rounded-card bg-surface shadow-btn">
-        {presets.map((p) =>
-          row(p.id, presetIcon(p), presetTitle(p), p.description, p.plugin === BUILTIN_PLUGIN ? "" : presetSubtitle(p), p.plugin === BUILTIN_PLUGIN ? undefined : t("settings-providerwizard.extension_badge")),
-        )}
-        {row(CUSTOM, "link", t("settings-providerwizard.custom"), t("settings-providerwizard.custom_detail"), "")}
+        {presets.map((p) => (
+          <PickRow key={p.id} icon={presetIcon(p)} title={presetTitle(p)} detail={p.description} meta={p.plugin === BUILTIN_PLUGIN ? "" : presetSubtitle(p)}
+            badge={p.plugin === BUILTIN_PLUGIN ? undefined : t("settings-providerwizard.extension_badge")} current={choice === p.id} onClick={() => onPick(p.id)} />
+        ))}
+        <PickRow icon="link" title={t("settings-providerwizard.custom")} detail={t("settings-providerwizard.custom_detail")} current={choice === CUSTOM} onClick={() => onPick(CUSTOM)} />
       </ul>
       {error && <p className="text-[12px] text-orange">{t("settings-providerwizard.presets_failed", { error })}</p>}
+      {onPaste && (
+        <ul aria-label={t("settings-providerwizard.paste_title")} className="overflow-hidden rounded-card bg-surface shadow-btn">
+          <PickRow icon="paste" title={t("settings-providerwizard.paste_title")} detail={t("settings-providerwizard.paste_detail")} onClick={onPaste} />
+        </ul>
+      )}
+      {found.length > 0 && (
+        <section aria-labelledby={foundId} className="flex flex-col gap-1.5">
+          <div className="px-1">
+            <h3 id={foundId} className="text-[12px] font-medium text-ink-2">{t("settings-providerwizard.found_title")}</h3>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-3">{t("settings-providerwizard.found_hint")}</p>
+          </div>
+          <ul aria-labelledby={foundId} className="overflow-hidden rounded-card bg-surface shadow-btn">
+            {found.map((a) => (
+              <PickRow key={a.name} icon="terminal" title={a.name} mono detail={hostOf(a.base_url)}
+                meta={a.online ? t("settings-providerwizard.found_on", { computer: a.computer }) : t("settings-providerwizard.found_on_offline", { computer: a.computer })} onClick={() => onFound(a)} />
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
@@ -767,25 +863,6 @@ function KeyStep({ preset, pf, setPf, keyTest, onRetest, onOther, assign, setAss
       {!more && hiddenProblem && <p role="alert" className="text-[12px] text-red">{hiddenProblem}</p>}
       {devices}
     </div>
-  );
-}
-
-/** A check running: a spinner and what it is doing. */
-function BusyLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p role="status" className="flex items-center gap-1.5 text-[12px] text-ink-2">
-      <Spinner />
-      {children}
-    </p>
-  );
-}
-
-/** The one action at the end of a check's failed line (Retry, Test again, Use another), in the line's color. */
-function LineAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} className="touch-hit shrink-0 whitespace-nowrap font-medium hover:underline">
-      {children}
-    </button>
   );
 }
 

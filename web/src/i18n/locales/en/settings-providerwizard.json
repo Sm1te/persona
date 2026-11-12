@@ -167,5 +167,12 @@
   "discovering": "Fetching models…",
   "testing": "Testing the connection…",
   "retry": "Retry",
-  "check_leave_url": "Checking once you leave the URL field."
+  "check_leave_url": "Checking once you leave the URL field.",
+  "paste_title": "Paste a configuration",
+  "paste_detail": "Paste what you use today, such as an alias, a settings file or a curl command. The provider is filled in for you.",
+  "paste_continue": "Continue",
+  "found_title": "Found on your computers",
+  "found_hint": "Aliases that run Claude Code through a gateway and aren't in Persona yet. Pick one to import it.",
+  "found_on": "On {computer}",
+  "found_on_offline": "On {computer} (offline)"
 }
