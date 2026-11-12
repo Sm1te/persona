@@ -76,7 +76,12 @@ async function run(browser, size, theme) {
   const dialog = page.locator('[role="dialog"]');
   await dialog.getByRole("button", { name: "服务器", exact: true }).click({ timeout: 8000 }).catch(() => fail(`${tag}: no 服务器 in New agent`));
   await dialog.getByText("weather", { exact: true }).first().click({ timeout: 8000 }).catch(() => fail(`${tag}: no weather folder in New agent`));
-  await dialog.getByRole("button", { name: /(^|\s)codex$/ }).first().click({ timeout: 8000 }).catch(() => fail(`${tag}: no codex launcher in New agent`));
+  // Codex through the model panel (#5133): its pill, then the name of a row the codex launcher runs (a row's middle can
+  // be its favorite star)
+  const pill = dialog.locator("[data-testid=new-agent-model] [data-model-pill]");
+  await pill.click({ timeout: 8000 }).catch(() => fail(`${tag}: no model pill in New agent`));
+  await page.locator('[data-panel-row^="model:codex"] .truncate').first().click({ timeout: 8000 }).catch(() => fail(`${tag}: no codex launcher in New agent`));
+  if (!/^Codex\b/.test((await pill.getAttribute("title")) ?? "")) fail(`${tag}: picked ${await pill.getAttribute("title")}, not Codex`);
   if (!(await dialog.getByText(WORDS.optional).count())) fail(`${tag}: the first message is not offered as optional`);
   ok(`${tag}: New agent offers Codex's first message as optional`);
   await shot(page, "web-newagent-codex", tag);
