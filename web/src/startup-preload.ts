@@ -148,9 +148,13 @@ export async function brotliCopies(dir: string, files: string[]): Promise<{ file
  * 0554037152 (ja 592,604 B sent, 591,150 B counted; en 589,016 / 587,562 B; zh-Hans 589,854 / 588,400 B): the budget
  * moved down by the same 1,454 B and kept its 0 B of room. That is no new room; it only stops a change to a lazy chunk or
  * to strings off the first screen from moving the count (#5145 moved ja 34 B as sent with no first-screen code changed).
+ * And 136 B for a Codex opened with no first message (#4961: ja 591,150 B counted at 403185224f to 591,286 B; en and
+ * zh-Hans moved 142 B and 194 B, still under it): the waiting chat's note, its box's placeholder and the page following
+ * the pane to the thread the first message began (104 B on their own), their words and the list row's line. New Agent's
+ * optional first message is in its lazy dialog (0 B), and the start path it shares came out 9 B lighter.
  * Raise it on purpose, in the change that needs it.
  */
-export const FIRST_SCREEN_BUDGET = 591_150;
+export const FIRST_SCREEN_BUDGET = 591_286;
 
 // The hash in a built file's name: the 8 characters of Rollup's [hash] (url-safe base64) between "-" and the
 // extension, as vite.config.ts names every chunk and asset ("assets/[name]-[hash].js", "[name]-[hash][extname]").
