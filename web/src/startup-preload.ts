@@ -165,7 +165,10 @@ export async function brotliCopies(dir: string, files: string[]): Promise<{ file
  * exchange runs; the thought row and its parser stay lazy). And 371 B for model quotas, prices and composer usage
  * (#5176, #5208: ja 594,414 B before #5155's review fixes: the composer's quota and the context meter's model price,
  * the pill's model-panel handoff and the quota helpers; the panel's prices and quota rows and their words load with
- * the panel). Raise it on purpose, in the change that needs it.
+ * the panel). A Codex opened with no first message (#4961) added 223 B to ja as counted, 594,241 B at b0a4a08b5 to
+ * 594,464 B, inside the room: the waiting chat's note, its box's placeholder, the page following the pane to the
+ * thread the first message began, their words and the list row's line (New Agent's optional first message is in its
+ * lazy dialog). Raise it on purpose, in the change that needs it.
  */
 export const FIRST_SCREEN_BUDGET = 594_652;
 
