@@ -153,5 +153,6 @@
   "search_settings": "Search settings",
   "search_in_page": "In this page",
   "search_no_results": "No matching settings",
-  "search_placeholder_settings": "Search settings"
+  "search_placeholder_settings": "Search settings",
+  "provider_missing": "Couldn't open {name}: it's no longer among your providers."
 }

@@ -150,5 +150,6 @@
   "search_settings": "搜索设置",
   "search_in_page": "页面内",
   "search_no_results": "没有匹配的设置",
-  "search_placeholder_settings": "搜索设置"
+  "search_placeholder_settings": "搜索设置",
+  "provider_missing": "没能打开 {name}：它已不在你的供应商里。"
 }

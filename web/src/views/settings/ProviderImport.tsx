@@ -1,7 +1,8 @@
 // Settings › Model providers › Import (#2455, #5024): pick a computer, preview the providers its claude aliases add up to
 // (~/.zshrc, ~/.bashrc, ~/.bash_aliases; GET /api/v1/launchers/import), tick some, choose for a group whose aliases differ in more than the
 // model whether each alias becomes a provider of its own, and import them (POST), optionally hiding the imported aliases in
-// Persona. The keys never come to the browser: the hub reads them again from that computer and keeps them sealed.
+// Persona. The keys never come to the browser: the hub reads them again from that computer and keeps them sealed. Opened
+// for one alias the wizard found (#5193), it starts on that alias's computer and reads only that alias (`alias` on both).
 import { useEffect, useId, useState } from "react";
 import { api } from "../../lib/api";
 import {
@@ -28,7 +29,15 @@ import { Pill } from "./SettingsParts";
 import { CheckMark, INPUT, Labelled } from "./ProviderFields";
 import { formatList, t } from "../../i18n";
 
-export function ProviderImport({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: () => void }) {
+export function ProviderImport({ open, onClose, onImported, machine: start, alias }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+  /** The computer to start on (else the first online one). */
+  machine?: string;
+  /** Only this alias is read and imported. */
+  alias?: string;
+}) {
   const machines = useStore((s) => s.machines);
   const [machine, setMachine] = useState("");
   const [list, setList] = useState<ImportedProvider[] | null>(null);
@@ -44,13 +53,17 @@ export function ProviderImport({ open, onClose, onImported }: { open: boolean; o
     if (!open) return;
     setMachine((m) => m || machines.find((x) => x.online)?.id || machines[0]?.id || "");
   }, [open, machines]);
+  // apart from the default: the list of computers changing must not take the user's pick back
+  useEffect(() => {
+    if (open && start) setMachine(start);
+  }, [open, start]);
 
   useEffect(() => {
     if (!open || !machine) return;
     let live = true;
     setList(null);
     setError("");
-    api<{ providers?: ImportedProvider[] }>(`/launchers/import?machine=${encodeURIComponent(machine)}`)
+    api<{ providers?: ImportedProvider[] }>(`/launchers/import?machine=${encodeURIComponent(machine)}${alias ? `&alias=${encodeURIComponent(alias)}` : ""}`)
       .then((r) => {
         if (!live) return;
         const ps = r.providers ?? [];
@@ -61,7 +74,7 @@ export function ProviderImport({ open, onClose, onImported }: { open: boolean; o
       })
       .catch((e) => live && (setError(importErrorText(e)), setList([])));
     return () => void (live = false);
-  }, [open, machine]);
+  }, [open, machine, alias]);
 
   const flip = (set: (f: (s: Set<string>) => Set<string>) => void, name: string, on?: boolean) =>
     set((s) => {
@@ -92,6 +105,7 @@ export function ProviderImport({ open, onClose, onImported }: { open: boolean; o
           providers: chosen.map((p) => p.name),
           split: chosen.filter((p) => split.has(p.name) && importCanSplit(p)).map((p) => p.name),
           hide_aliases: sources.length > 0 && hide,
+          ...(alias ? { alias } : {}),
         },
       });
       toast(importSummary(r), "ok");
