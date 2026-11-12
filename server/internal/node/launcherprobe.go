@@ -16,6 +16,7 @@ import (
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/osproc"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // What a ~/.zshrc launcher really sets, for its page in Settings › Models: reading the function's text misses everything a
@@ -183,7 +184,7 @@ func (n *Node) launcherProbeCached(ctx context.Context, name string) proto.Launc
 
 // launcherProbe runs the probe on this machine (a login shell, so ~/.zshrc defines the launcher).
 func (n *Node) launcherProbe(ctx context.Context, name string, args ...string) (Probe, error) {
-	if !nameRe.MatchString(name) {
+	if !shellcmd.NameRe.MatchString(name) {
 		return Probe{}, fmt.Errorf("invalid launcher %q", name)
 	}
 	if path := n.scriptLauncher(ctx, name); path != "" {

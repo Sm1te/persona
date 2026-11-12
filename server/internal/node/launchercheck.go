@@ -13,6 +13,7 @@ import (
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/prompts"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // launcherCheckDir starts the name of the temp directory a check runs in; Claude Code names the projects directory it
@@ -26,7 +27,7 @@ var launcherCheckTimeout = 90 * time.Second
 // directory, and says whether an answer came back, how long it took and which model answered. It is a real request
 // (a few tokens).
 func (n *Node) launcherCheck(ctx context.Context, name string) proto.LauncherCheck {
-	if name != "claude" && !nameRe.MatchString(name) {
+	if name != "claude" && !shellcmd.NameRe.MatchString(name) {
 		return proto.LauncherCheck{Error: fmt.Sprintf("invalid launcher %q", name)}
 	}
 	agent := "claude"

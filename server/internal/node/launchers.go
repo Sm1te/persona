@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 var launcherCache struct {
@@ -226,10 +226,6 @@ func matchLauncher(list []proto.Launcher, baseURL, model string) string {
 	return ""
 }
 
-var nameRe = lazyre.New(`^[A-Za-z_][A-Za-z0-9_-]*$`)
-
-var assignRe = lazyre.New(`^[A-Za-z_][A-Za-z0-9_]*=`)
-
 // parseAliasLaunchers reads launcherScript's alias records and keeps the aliases that start claude: after the
 // variables set in front of it (`A=1 B=2 claude …`), through env / command / exec / noglob, by path or not, with
 // `export A=1;` before it in the same alias. Their gateway and model come from ANTHROPIC_BASE_URL and ANTHROPIC_MODEL
@@ -243,7 +239,7 @@ func parseAliasLaunchers(out string) (list []proto.Launcher, settings map[string
 			continue
 		}
 		name := words[0]
-		if !nameRe.MatchString(name) || name == "claude" {
+		if !shellcmd.NameRe.MatchString(name) || name == "claude" {
 			continue
 		}
 		if l, s, ok := aliasLauncher(words[1 : len(words)-1]); ok {
@@ -267,7 +263,7 @@ func parseCodexAliases(out string) ([]proto.Launcher, map[string][]string) {
 	words := map[string][]string{}
 	for _, rec := range strings.Split(out, "\x1e") {
 		w := strings.Split(rec, "\x1f")
-		if len(w) < 2 || !nameRe.MatchString(w[0]) {
+		if len(w) < 2 || !shellcmd.NameRe.MatchString(w[0]) {
 			continue
 		}
 		argv, model, ok := codexAliasArgv(w[1 : len(w)-1])
@@ -307,7 +303,7 @@ func codexAliasArgv(words []string) (argv []string, model string, ok bool) {
 		}
 		if cmd[0] == "export" {
 			for _, w := range cmd[1:] {
-				if assignRe.MatchString(w) {
+				if shellcmd.AssignRe.MatchString(w) {
 					exported = append(exported, w)
 				}
 			}
@@ -317,14 +313,14 @@ func codexAliasArgv(words []string) (argv []string, model string, ok bool) {
 			return nil, "", false // more than one command
 		}
 		env := map[string]string{}
-		i := commandIndex(cmd, env)
+		i := shellcmd.CommandIndex(cmd, env)
 		if i < 0 || filepath.Base(cmd[i]) != "codex" {
 			return nil, "", false
 		}
 		found = true
 		argv = append([]string(nil), exported...)
 		for _, w := range cmd[:i] {
-			if assignRe.MatchString(w) {
+			if shellcmd.AssignRe.MatchString(w) {
 				argv = append(argv, w)
 			}
 		}
@@ -341,27 +337,6 @@ func codexAliasArgv(words []string) (argv []string, model string, ok bool) {
 		}
 	}
 	return argv, model, found
-}
-
-// commandIndex is where the command of one simple command starts, past the variables set for it (put in env) and
-// the wrappers that run what follows (env, with its -u / -i, command, exec, noglob, nocorrect); -1: there is none.
-func commandIndex(cmd []string, env map[string]string) int {
-	for i := 0; i < len(cmd); i++ {
-		w := cmd[i]
-		switch {
-		case assignRe.MatchString(w):
-			k, v, _ := strings.Cut(w, "=")
-			env[k] = v
-		case w == "env" || w == "command" || w == "exec" || w == "noglob" || w == "nocorrect":
-		case w == "-u" && i > 0 && i+1 < len(cmd): // env -u NAME
-			delete(env, cmd[i+1])
-			i++
-		case strings.HasPrefix(w, "-") && i > 0 && (cmd[i-1] == "env" || cmd[i-1] == "-i"): // env -i
-		default:
-			return i
-		}
-	}
-	return -1
 }
 
 // aliasLauncher finds the claude command in an alias's words and what it is started with; settings is its own
@@ -384,7 +359,7 @@ func aliasLauncher(words []string) (l proto.Launcher, settings string, ok bool) 
 		}
 		if len(cmd) > 0 && cmd[0] == "export" {
 			for _, w := range cmd[1:] {
-				if k, v, ok := strings.Cut(w, "="); ok && assignRe.MatchString(w) {
+				if k, v, ok := strings.Cut(w, "="); ok && shellcmd.AssignRe.MatchString(w) {
 					exported[k] = v
 				}
 			}
@@ -394,7 +369,7 @@ func aliasLauncher(words []string) (l proto.Launcher, settings string, ok bool) 
 		for k, v := range exported {
 			env[k] = v
 		}
-		i := commandIndex(cmd, env)
+		i := shellcmd.CommandIndex(cmd, env)
 		if i < 0 {
 			continue
 		}
@@ -429,7 +404,7 @@ func parseLaunchers(out string) []proto.Launcher {
 			continue
 		}
 		f := strings.Fields(line)
-		if len(f) == 0 || !nameRe.MatchString(f[0]) {
+		if len(f) == 0 || !shellcmd.NameRe.MatchString(f[0]) {
 			continue
 		}
 		l := proto.Launcher{Name: f[0]}

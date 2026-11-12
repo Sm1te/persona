@@ -430,6 +430,7 @@ agents.control       POST /api/v1/interactions/{id}/resolve
 -                    POST /api/v1/launchers/discover
 -                    POST /api/v1/launchers/health/check
 -                    POST /api/v1/launchers/import
+-                    POST /api/v1/launchers/import/parse
 -                    POST /api/v1/launchers/test
 -                    POST /api/v1/launchers/{name}/check
 -                    POST /api/v1/launchers/{name}/restore

@@ -158,6 +158,7 @@ var modelRoutes = []string{
 	"POST /api/v1/launchers/catalog",
 	"GET /api/v1/launchers/import",
 	"POST /api/v1/launchers/import",
+	"POST /api/v1/launchers/import/parse", // a pasted configuration read into provider drafts (#5193)
 	"GET /api/v1/launchers/{name}",
 	"POST /api/v1/launchers",
 	"PUT /api/v1/launchers/{name}",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/identity"
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // The assistant's skills call HTTP APIs as the user through commands (`<command> METHOD PATH [BODY]`, the
@@ -214,9 +215,9 @@ func gateWrite(gates []proto.CommandGate, command string) (proto.CommandGate, bo
 
 func gateWriteDepth(gates []proto.CommandGate, command string, depth int) (proto.CommandGate, bool) {
 	if depth < 16 {
-		if segments, ok := shellSegments(command); ok {
+		if segments, ok := shellcmd.Split(command); ok {
 			for _, segment := range segments {
-				words := segment.words
+				words := segment.Words
 				for len(words) > 0 && isAssignment(words[0]) {
 					words = words[1:]
 				}

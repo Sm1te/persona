@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/nwverse/persona/server/internal/proto"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // The models a launcher's agent offers, for "New Agent"'s model picker (docs/assistant/model-config.md "Choosing a model for a new Agent"): the
@@ -54,7 +55,7 @@ var launcherModelsCache = struct {
 // machine config); empty: what it runs. A launcher whose agent has no list to ask for (a compatible CLI, a runtime's) answers
 // with its agent and no models.
 func (n *Node) launcherModels(ctx context.Context, name, agentType string, refresh bool) (proto.LauncherModels, error) {
-	if name != "claude" && !nameRe.MatchString(name) {
+	if name != "claude" && !shellcmd.NameRe.MatchString(name) {
 		return proto.LauncherModels{}, fmt.Errorf("invalid launcher %q", name)
 	}
 	if res, ok := n.runtimeLauncherModels(name); ok { // a runtime's launcher: static advertisement or native discovery

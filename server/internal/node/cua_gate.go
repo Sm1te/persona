@@ -17,6 +17,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/lazyre"
 	"github.com/nwverse/persona/server/internal/protectedapps"
+	"github.com/nwverse/persona/server/internal/shellcmd"
 )
 
 // cuaToolOf is the Cua Driver tool of an MCP tool name, "" for one of another server: mcp__<server>__<tool> with
@@ -152,12 +153,12 @@ func cuaCallsDepth(cmd string, depth int) (calls []cuaCall, ok bool) {
 	if !strings.Contains(cmd, "cua-driver") {
 		return nil, true
 	}
-	segs, ok := shellSegments(cmd)
+	segs, ok := shellcmd.Split(cmd)
 	if !ok {
 		return nil, !cuaCallText.MatchString(cmd)
 	}
 	for _, s := range segs {
-		words := s.words
+		words := s.Words
 		for {
 			for len(words) > 0 && isAssignment(words[0]) {
 				words = words[1:]
