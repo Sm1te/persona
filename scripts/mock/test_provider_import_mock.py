@@ -180,7 +180,7 @@ class ProviderPasteMockTests(unittest.TestCase):
         self.assertEqual(glm["skipped_env"], [{"name": "HOME", "reason": "computer"}, {"name": "RELAY_TOKEN", "reason": "credential"}])
         self.assertEqual(glm["matches"], [])
         self.assertEqual(out["notes"], [{"code": "not_claude", "name": "ll"}, {"code": "no_gateway", "name": "plain"},
-                                        {"code": "line_unused", "line": 10}])
+                                        {"code": "not_claude", "line": 10}])
 
     def test_shell_variables_alone(self):
         out = self.parse("ANTHROPIC_BASE_URL=\"https://gw.example.com\"\nexport ANTHROPIC_AUTH_TOKEN=$GW_TOKEN # set by the profile\n"
@@ -199,11 +199,13 @@ class ProviderPasteMockTests(unittest.TestCase):
     def test_addresses_without_a_draft(self):
         cases = {"alias a='ANTHROPIC_BASE_URL=$GW claude'": [{"code": "url_shell", "name": "a"}],
                  "ANTHROPIC_BASE_URL=https://me:pw@gw.example.com claude": [{"code": "url_user", "line": 1}],
-                 "export FOO=1": [{"code": "no_gateway"}],
-                 "\n\nK=1 npx something": [{"code": "not_claude", "line": 3}]}
+                 "export ANTHROPIC_MODEL=example-opus": [{"code": "no_gateway"}]}
         for text, notes in cases.items():
             out = self.parse(text)
             self.assertEqual((out["format"], out["drafts"], out["notes"]), ("shell", [], notes), text)
+        # as the hub: no alias, claude command or variable of Claude Code's is nothing it recognizes
+        for text in ("export FOO=1", "\n\nK=1 npx something"):
+            self.assertEqual(self.parse(text), {"format": "", "drafts": [], "notes": [{"code": "unrecognized"}]}, text)
 
     def test_settings_json(self):
         out = self.parse('{"env": {"ANTHROPIC_BASE_URL": "https://gw.example.com/v1", "MAX": 3, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "32000"},'

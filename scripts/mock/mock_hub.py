@@ -11250,12 +11250,14 @@ def _env_drafts(exported, cmds, notes=()):
 
 def _paste_shell(lines):
     """Shell lines: exports and K=V lines collect the variables, aliases and K=V … claude lines are the claude commands
-    (with none, the variables alone make the draft); any other line is unused. None when nothing is any of these."""
-    exported, cmds, marks = {}, [], []
+    (with none, the variables alone make the draft); another command is not Claude Code, a line it can't read unused.
+    None, as the hub, when there is no alias, no claude command and no variable of Claude Code's."""
+    exported, cmds, marks, aliased = {}, [], [], False
     for n, line in lines:
         try: words = next(_commands(_shell_words(line)))
         except ValueError: words = []
         if words[:1] == ["alias"]:
+            aliased = True
             for name, eq, value in (w.partition("=") for w in words[1:]):
                 if not eq or not re.match(r"[A-Za-z_][A-Za-z0-9_-]*$", name): continue
                 try: found = _alias_claude(value)
@@ -11267,8 +11269,8 @@ def _paste_shell(lines):
         env, cmd = _command(words[1:] if export else words)
         if export or (env and not cmd): exported.update(env)
         elif _is_claude(cmd): cmds.append((None, n, env, cmd[1:]))
-        else: marks.append((n, _note("not_claude" if env else "line_unused", line=n)))
-    if not exported and not cmds and all(x["code"] == "line_unused" for _, x in marks): return None
+        else: marks.append((n, _note("not_claude" if cmd else "line_unused", line=n)))
+    if not cmds and not aliased and not any(k.startswith(("ANTHROPIC_", "CLAUDE_")) for k in exported): return None
     drafts, more = _env_drafts(exported, cmds or ([(None, None, {}, [])] if exported else []))
     return drafts, [x for _, x in sorted(marks + more, key=lambda m: m[0])]
 
